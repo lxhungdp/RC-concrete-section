@@ -1,0 +1,13 @@
+{
+  "name": "@pm/geometry",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "polygon-clipping": "^0.15.7"
+  }
+}

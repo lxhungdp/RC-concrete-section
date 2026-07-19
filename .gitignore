@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.yarn/
+.yarn/cache
+.pnp.*
+
+# Next.js / build
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+apps/*/.next/
+apps/*/out/
+apps/*/dist/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Logs & debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Test / coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# Caches & tooling
+.turbo/
+.cache/
+.eslintcache
+.stylelintcache
+*.pid
+*.seed
+*.pid.lock
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+
+# TypeScript / Vercel
+next-env.d.ts
+.vercel
