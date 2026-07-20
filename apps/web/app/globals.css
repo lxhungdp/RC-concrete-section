@@ -34,6 +34,9 @@
   --ui-danger-bg: rgba(220, 38, 38, 0.08);
   --ui-danger-bg-strong: rgba(220, 38, 38, 0.12);
   --ui-danger-border: rgba(220, 38, 38, 0.35);
+  --applied: #15803d;
+  --applied-muted: rgba(21, 128, 61, 0.12);
+  --applied-border: rgba(21, 128, 61, 0.45);
 }
 
 body[data-jscad-theme="dark"] {
@@ -66,6 +69,9 @@ body[data-jscad-theme="dark"] {
   --ui-danger-bg: rgba(127, 29, 29, 0.25);
   --ui-danger-bg-strong: rgba(153, 27, 27, 0.35);
   --ui-danger-border: rgba(248, 113, 113, 0.35);
+  --applied: #4ade80;
+  --applied-muted: rgba(74, 222, 128, 0.14);
+  --applied-border: rgba(74, 222, 128, 0.5);
 }
 
 * {
@@ -77,6 +83,7 @@ body {
   width: 100%;
   height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
 body {
@@ -95,13 +102,16 @@ button {
 }
 
 .pm-shell {
+  position: fixed;
+  inset: 0;
   display: grid;
   grid-template-columns: 380px minmax(0, 1fr);
-  grid-template-rows: 58px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
   padding: 12px;
-  height: 100dvh;
-  min-height: 640px;
+  box-sizing: border-box;
+  align-items: stretch;
+  overflow: hidden;
   background: var(--background-muted);
 }
 
@@ -112,6 +122,7 @@ button {
   align-items: center;
   gap: 18px;
   min-width: 0;
+  min-height: 0;
   padding: 9px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -123,14 +134,26 @@ button {
 .pm-side-panel {
   display: flex;
   min-width: 0;
+  min-height: 0;
+  max-height: 100%;
   flex-direction: column;
-  gap: 18px;
+  gap: 0;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--card);
   box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.pm-side-panel-body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 14px;
   overflow: auto;
+  padding-bottom: 2px;
 }
 
 .pm-brand {
@@ -343,8 +366,11 @@ button {
 }
 
 .pm-vertex-section {
+  display: flex;
   min-height: 0;
-  flex: 1;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .pm-boundary-switch {
@@ -441,6 +467,104 @@ button {
   color: var(--accent);
 }
 
+.pm-ring-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+
+.pm-ring-nav__outers {
+  display: inline-flex;
+  flex-wrap: wrap;
+  width: fit-content;
+  max-width: 100%;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-muted, var(--btn-secondary-bg));
+  gap: 0;
+}
+
+.pm-ring-nav__outer,
+.pm-ring-nav__context {
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--foreground-secondary);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.pm-ring-nav__outer:hover,
+.pm-ring-nav__context:hover {
+  color: var(--foreground);
+}
+
+.pm-ring-nav__outer.is-active,
+.pm-ring-nav__context.is-editing {
+  background: var(--btn-secondary-bg);
+  color: var(--foreground);
+  box-shadow: 0 0 0 1px var(--btn-secondary-border);
+}
+
+.pm-ring-nav__outer.is-editing,
+.pm-ring-nav__context.is-editing {
+  color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-border);
+}
+
+.pm-ring-nav__holes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  padding-left: 2px;
+}
+
+.pm-ring-nav__holes button {
+  min-height: 18px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--foreground-muted);
+  cursor: pointer;
+  font-size: 0.65rem;
+  font-weight: 500;
+}
+
+.pm-ring-nav__holes button:hover {
+  color: var(--foreground);
+  background: var(--btn-secondary-hover-bg);
+}
+
+.pm-ring-nav__holes button.is-active {
+  color: var(--accent);
+  background: var(--accent-muted);
+  font-weight: 600;
+}
+
+.pm-point-table-caption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--foreground);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.pm-point-table-caption span {
+  color: var(--foreground-muted);
+  font-weight: 500;
+}
+
 .pm-side-panel .pm-section-title h2 {
   font-family: var(--font-sans);
   font-size: 0.8rem;
@@ -449,7 +573,18 @@ button {
 }
 
 .pm-boundary-list-section {
-  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 36%;
+}
+
+.pm-boundary-list {
+  display: grid;
+  gap: 5px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .pm-boundary-list-actions {
@@ -493,13 +628,6 @@ button {
   color: var(--btn-primary-foreground);
 }
 
-.pm-boundary-list {
-  display: grid;
-  gap: 5px;
-  min-height: 0;
-  overflow: auto;
-}
-
 .pm-boundary-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 24px 24px 24px 24px;
@@ -519,6 +647,29 @@ button {
 
 .pm-boundary-row.is-active {
   box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.pm-boundary-row.is-applied {
+  border-color: var(--applied-border);
+  background: var(--applied-muted);
+}
+
+.pm-boundary-row.is-applied.is-active {
+  box-shadow: inset 3px 0 0 var(--applied);
+}
+
+.pm-boundary-row-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--applied) 18%, transparent);
+  color: var(--applied);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  vertical-align: middle;
 }
 
 .pm-boundary-row-main {
@@ -544,7 +695,15 @@ button {
   border: 1px solid var(--border);
 }
 
-.pm-selection-badge.is-on,
+.pm-selection-badge.is-on {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.pm-selection-badge.is-applied {
+  border-color: var(--applied);
+  background: var(--applied);
+}
 .pm-boundary-row.is-selected .pm-selection-badge {
   background: var(--btn-primary-bg);
   border-color: var(--btn-primary-bg);
@@ -815,9 +974,20 @@ button {
 
 .pm-panel-footer {
   display: grid;
-  gap: 8px;
-  margin-top: auto;
-  padding-top: 4px;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+}
+
+.pm-apply-status {
+  margin: 0;
+  color: var(--foreground-muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.35;
 }
 
 .pm-primary-action,
@@ -876,14 +1046,13 @@ button {
 }
 
 .pm-drawing-stage {
-  display: block;
   position: relative;
   min-width: 0;
   min-height: 0;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
   padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
   overflow: hidden;
 }
 
@@ -960,6 +1129,8 @@ button {
 }
 
 .pm-cad-surface {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
@@ -1052,6 +1223,37 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
 
 .pm-workspace-boundary.is-locked {
   stroke-dasharray: 7 5;
+  cursor: default;
+}
+
+.pm-workspace-boundary.is-applied {
+  fill: var(--applied-muted);
+  stroke: var(--applied);
+  stroke-width: 2.4;
+  stroke-dasharray: none;
+  cursor: default;
+}
+
+.pm-workspace-boundary.is-applied.is-selected,
+.pm-workspace-boundary.is-applied.is-active {
+  fill: color-mix(in srgb, var(--applied) 22%, transparent);
+  stroke: var(--applied);
+  stroke-width: 2.8;
+}
+
+.pm-workspace-boundary.is-applied:hover {
+  fill: color-mix(in srgb, var(--applied) 18%, transparent);
+  stroke: var(--applied);
+}
+
+.pm-applied-section {
+  fill: var(--applied-muted);
+  fill-rule: evenodd;
+  stroke: var(--applied);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
 }
 
 .pm-drawing-preview {
@@ -1164,14 +1366,15 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
 
 @media (max-width: 860px) {
   .pm-shell {
+    position: fixed;
+    inset: 0;
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto minmax(420px, 1fr);
-    height: auto;
-    min-height: 100dvh;
+    grid-template-rows: auto minmax(0, 38%) minmax(0, 1fr);
+    overflow: hidden;
   }
 
   .pm-side-panel {
-    border: 1px solid var(--border);
+    max-height: none;
   }
 
   .pm-app-header {
@@ -1189,7 +1392,11 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
     flex: 1;
   }
 
-  .pm-vertex-section {
-    max-height: 300px;
+  .pm-boundary-list-section {
+    max-height: 40%;
+  }
+
+  .pm-drawing-stage {
+    min-height: 0;
   }
 }

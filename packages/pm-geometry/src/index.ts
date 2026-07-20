@@ -7,12 +7,18 @@ export type Point2 = {
   y: number
 }
 
+/** One contiguous concrete region: exterior ring + optional holes. */
+export type SectionSolid = {
+  outer: Point2[]
+  holes: Point2[][]
+}
+
+/** Section may contain multiple disconnected solids (e.g. twin bridge pier columns). */
 export type SectionGeometry = {
   id: string
   name: string
   unit: 'mm'
-  outer: Point2[]
-  holes: Point2[][]
+  solids: SectionSolid[]
 }
 
 export type GeometrySummary = {
@@ -277,12 +283,43 @@ export const createPrimitive = (
   rings
 })
 
+export const createSectionSolid = (outer: Point2[], holes: Point2[][] = []): SectionSolid => ({
+  outer,
+  holes
+})
+
+export const solidRings = (solid: SectionSolid): Point2[][] => [solid.outer, ...solid.holes]
+
+export const solidNetArea = (solid: SectionSolid) => {
+  const outerArea = Math.abs(signedPolygonArea(solid.outer))
+  const holeArea = solid.holes.reduce((sum, hole) => sum + Math.abs(signedPolygonArea(hole)), 0)
+  return Math.max(0, outerArea - holeArea)
+}
+
+export const solidCentroid = (solid: SectionSolid) => {
+  const outerArea = Math.abs(signedPolygonArea(solid.outer))
+  const outerCentroid = polygonCentroid(solid.outer)
+  let areaSum = outerArea
+  let xSum = outerCentroid.x * outerArea
+  let ySum = outerCentroid.y * outerArea
+
+  for (const hole of solid.holes) {
+    const holeArea = Math.abs(signedPolygonArea(hole))
+    const holeCentroid = polygonCentroid(hole)
+    areaSum -= holeArea
+    xSum -= holeCentroid.x * holeArea
+    ySum -= holeCentroid.y * holeArea
+  }
+
+  if (Math.abs(areaSum) < 1e-9) return { x: 0, y: 0 }
+  return { x: xSum / areaSum, y: ySum / areaSum }
+}
+
 export const defaultSectionGeometry = (): SectionGeometry => ({
   id: 'section-1',
   name: 'Column section',
   unit: 'mm',
-  outer: createRectangleOuter(DEFAULT_RECTANGLE_PARAMS),
-  holes: []
+  solids: [createSectionSolid(createRectangleOuter(DEFAULT_RECTANGLE_PARAMS))]
 })
 
 export const signedPolygonArea = (points: Point2[]) => {
@@ -396,31 +433,35 @@ const normalizeClippingResult = (
   if (solid.length === 0) {
     warnings.push('Boolean composition produced an empty section.')
     return {
-      geometry: { id: options.id, name: options.name, unit: 'mm', outer: [], holes: [] },
+      geometry: { id: options.id, name: options.name, unit: 'mm', solids: [] },
       warnings,
       multipolygon: []
     }
   }
 
   const polygons = [...solid].sort((a, b) => polygonAreaAbs(b) - polygonAreaAbs(a))
-  if (polygons.length > 1) {
-    warnings.push('Boolean composition produced multiple disconnected solids; using the largest one for now.')
-  }
 
-  const selected = polygons[0]
-  const outer = ensureOrientation(clippingRingToPoints(selected[0], 'outer', options), 'ccw')
-  const holes = selected.slice(1).map((ring, index) => ensureOrientation(clippingRingToPoints(ring, `hole-${index + 1}`, options), 'cw'))
-  const multipolygon = polygons.map((polygon, polygonIndex) =>
-    polygon.map((ring, ringIndex) => clippingRingToPoints(ring, `mp-${polygonIndex + 1}-${ringIndex + 1}`, options))
-  )
+  const solids: SectionSolid[] = polygons.map((polygon, polygonIndex) => {
+    const outer = ensureOrientation(
+      clippingRingToPoints(polygon[0], `s${polygonIndex + 1}-outer`, options),
+      'ccw'
+    )
+    const holes = polygon
+      .slice(1)
+      .map((ring, index) =>
+        ensureOrientation(clippingRingToPoints(ring, `s${polygonIndex + 1}-hole-${index + 1}`, options), 'cw')
+      )
+    return createSectionSolid(outer, holes)
+  })
+
+  const multipolygon = solids.map((sectionSolid) => solidRings(sectionSolid))
 
   return {
     geometry: {
       id: options.id,
       name: options.name,
       unit: 'mm',
-      outer,
-      holes
+      solids
     },
     warnings,
     multipolygon
@@ -548,18 +589,16 @@ export const polygonCentroid = (points: Point2[]) => {
 }
 
 export const sectionCentroid = (geometry: SectionGeometry) => {
-  const outerArea = Math.abs(signedPolygonArea(geometry.outer))
-  const outerCentroid = polygonCentroid(geometry.outer)
-  let areaSum = outerArea
-  let xSum = outerCentroid.x * outerArea
-  let ySum = outerCentroid.y * outerArea
+  let areaSum = 0
+  let xSum = 0
+  let ySum = 0
 
-  for (const hole of geometry.holes) {
-    const holeArea = Math.abs(signedPolygonArea(hole))
-    const holeCentroid = polygonCentroid(hole)
-    areaSum -= holeArea
-    xSum -= holeCentroid.x * holeArea
-    ySum -= holeCentroid.y * holeArea
+  for (const solid of geometry.solids) {
+    const area = solidNetArea(solid)
+    const centroid = solidCentroid(solid)
+    areaSum += area
+    xSum += centroid.x * area
+    ySum += centroid.y * area
   }
 
   if (Math.abs(areaSum) < 1e-9) return { x: 0, y: 0 }
@@ -577,29 +616,42 @@ const hasDuplicatePoints = (points: Point2[]) => {
 }
 
 export const summarizeSection = (geometry: SectionGeometry): GeometrySummary => {
-  const outerArea = signedPolygonArea(geometry.outer)
-  const holeArea = geometry.holes.reduce((sum, hole) => sum + Math.abs(signedPolygonArea(hole)), 0)
-  const area = Math.max(0, Math.abs(outerArea) - holeArea)
-  const centroid = sectionCentroid(geometry)
-  const perimeter = polygonPerimeter(geometry.outer) + geometry.holes.reduce((sum, hole) => sum + polygonPerimeter(hole), 0)
   const warnings: string[] = []
+  let area = 0
+  let signedArea = 0
+  let perimeter = 0
 
-  if (geometry.outer.length < 3) warnings.push('Outer boundary needs at least 3 points.')
-  if (Math.abs(outerArea) < 1e-9) warnings.push('Outer boundary area is zero.')
-  if (hasDuplicatePoints(geometry.outer)) warnings.push('Outer boundary has duplicate points.')
-  if (outerArea < 0) warnings.push('Outer boundary is clockwise; P-M kernel will normalize it later.')
-  geometry.holes.forEach((hole, index) => {
-    if (hole.length < 3) warnings.push(`Hole ${index + 1} needs at least 3 points.`)
-    if (Math.abs(signedPolygonArea(hole)) < 1e-9) warnings.push(`Hole ${index + 1} area is zero.`)
-    if (hasDuplicatePoints(hole)) warnings.push(`Hole ${index + 1} has duplicate points.`)
+  if (geometry.solids.length === 0) {
+    warnings.push('Section has no solids.')
+  }
+
+  geometry.solids.forEach((solid, solidIndex) => {
+    const label = geometry.solids.length > 1 ? `Solid ${solidIndex + 1}` : 'Outer boundary'
+    const outerArea = signedPolygonArea(solid.outer)
+    signedArea += outerArea
+    area += solidNetArea(solid)
+    perimeter += polygonPerimeter(solid.outer)
+    solid.holes.forEach((hole) => {
+      perimeter += polygonPerimeter(hole)
+    })
+
+    if (solid.outer.length < 3) warnings.push(`${label} needs at least 3 points.`)
+    if (Math.abs(outerArea) < 1e-9) warnings.push(`${label} area is zero.`)
+    if (hasDuplicatePoints(solid.outer)) warnings.push(`${label} has duplicate points.`)
+    if (outerArea < 0) warnings.push(`${label} is clockwise; P-M kernel will normalize it later.`)
+    solid.holes.forEach((hole, index) => {
+      if (hole.length < 3) warnings.push(`${label} hole ${index + 1} needs at least 3 points.`)
+      if (Math.abs(signedPolygonArea(hole)) < 1e-9) warnings.push(`${label} hole ${index + 1} area is zero.`)
+      if (hasDuplicatePoints(hole)) warnings.push(`${label} hole ${index + 1} has duplicate points.`)
+    })
   })
 
   return {
     area,
-    signedArea: outerArea,
-    centroid,
+    signedArea,
+    centroid: sectionCentroid(geometry),
     perimeter,
-    isClosed: geometry.outer.length >= 3,
+    isClosed: geometry.solids.length > 0 && geometry.solids.every((solid) => solid.outer.length >= 3),
     isValid: warnings.length === 0,
     warnings
   }
