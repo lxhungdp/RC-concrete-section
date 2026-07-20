@@ -21,16 +21,22 @@ import {
 } from 'lucide-react'
 import {
   composeSectionPrimitives,
+  createEmptyGeometryInput,
   createCapsuleRing,
   createCircleRing,
   createPrimitive,
   createRectangleRing,
   createSectionSolid,
+  geometryInputFromSectionGeometry,
+  geometryInputRebars,
   makePointId,
+  sectionGeometryFromGeometryInput,
   solidRings,
   summarizeSection,
+  updateGeometryInputRebars,
+  type GeometryInput,
+  type GeometryInputRebarView,
   type Point2,
-  type Rebar,
   type SectionGeometry
 } from '@pm/geometry'
 import { RebarPanel } from './RebarPanel'
@@ -89,12 +95,6 @@ type BoundaryScreenData = {
 
 const GRID_SPACING_MM = 25
 const DEFAULT_CIRCLE_SEGMENTS = 64
-const emptyGeometry: SectionGeometry = {
-  id: 'section-1',
-  name: 'Column section',
-  unit: 'mm',
-  solids: []
-}
 
 const formatNumber = (value: number, digits = 1) =>
   Math.abs(value) < 1e-9 ? '0' : value.toLocaleString('en-US', { maximumFractionDigits: digits })
@@ -318,7 +318,6 @@ export function SectionDrawingClient() {
   const [tool, setTool] = useState<Tool>('select')
   const [activeModule, setActiveModule] = useState<WorkspaceModule>('geometry')
   const [geometrySubTab, setGeometrySubTab] = useState<GeometrySubTab>('concrete')
-  const [rebars, setRebars] = useState<Rebar[]>([])
   const [selectedRebarId, setSelectedRebarId] = useState<string | null>(null)
   const [boundaries, setBoundaries] = useState<BoundaryObject[]>([])
   const [selectedBoundaryIds, setSelectedBoundaryIds] = useState<string[]>([])
@@ -328,7 +327,9 @@ export function SectionDrawingClient() {
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null)
   const [drawingDraft, setDrawingDraft] = useState<DrawingDraft>(null)
   const [snapCursor, setSnapCursor] = useState<Point2 | null>(null)
-  const [finalSection, setFinalSection] = useState<SectionGeometry>(emptyGeometry)
+  const [appliedGeometryInput, setAppliedGeometryInput] = useState<GeometryInput>(() =>
+    createEmptyGeometryInput({ id: 'section-1', name: 'Column section' })
+  )
   const [lastBooleanWarning, setLastBooleanWarning] = useState<string>('')
   const [detailTab, setDetailTab] = useState<'basic' | 'points'>('basic')
   const [circleSegmentsDraft, setCircleSegmentsDraft] = useState<string | null>(null)
@@ -364,6 +365,11 @@ export function SectionDrawingClient() {
     if (!showBasicDetailTab && detailTab === 'basic') setDetailTab('points')
   }, [showBasicDetailTab, detailTab])
 
+  const finalSection = useMemo(
+    () => sectionGeometryFromGeometryInput(appliedGeometryInput),
+    [appliedGeometryInput]
+  )
+  const rebars = useMemo(() => geometryInputRebars(appliedGeometryInput), [appliedGeometryInput])
   const activeOuter = activeBoundary?.outers[activeOuterIndex] ?? activeBoundary?.outers[0] ?? []
   const activeRing = activeOuter[activeRingIndex] ?? activeOuter[0] ?? []
   const activeSection = activeBoundary ? boundaryToSectionGeometry(activeBoundary) : finalSection
@@ -466,6 +472,10 @@ export function SectionDrawingClient() {
     () => (snapCursor && tool !== 'select' ? { world: snapCursor, screen: worldToScreen(camera, snapCursor, size) } : null),
     [camera, size, snapCursor, tool]
   )
+
+  const updateAppliedRebars = (nextRebars: GeometryInputRebarView[]) => {
+    setAppliedGeometryInput((current) => updateGeometryInputRebars(current, nextRebars))
+  }
 
   const addBoundary = (boundary: BoundaryObject) => {
     setBoundaries((current) => [...current, boundary])
@@ -619,8 +629,7 @@ export function SectionDrawingClient() {
     setBoundaries((current) => current.filter((boundary) => boundary.id !== id))
     setSelectedBoundaryIds((current) => current.filter((selectedId) => selectedId !== id))
     if (finalSection.id === id) {
-      setFinalSection(emptyGeometry)
-      setRebars([])
+      setAppliedGeometryInput(createEmptyGeometryInput({ id: 'section-1', name: 'Column section' }))
       setSelectedRebarId(null)
     }
     if (activeBoundaryId === id) {
@@ -816,10 +825,14 @@ export function SectionDrawingClient() {
     const appliedId = activeBoundary.id
     const previousAppliedId = hasAppliedSection ? finalSection.id : ''
 
-    setFinalSection(boundaryToSectionGeometry(activeBoundary))
+    setAppliedGeometryInput(
+      geometryInputFromSectionGeometry(
+        boundaryToSectionGeometry(activeBoundary),
+        previousAppliedId === appliedId ? geometryInputRebars(appliedGeometryInput) : []
+      )
+    )
     setLastBooleanWarning('')
     if (previousAppliedId && previousAppliedId !== appliedId) {
-      setRebars([])
       setSelectedRebarId(null)
     }
     setBoundaries((current) =>
@@ -1547,7 +1560,7 @@ export function SectionDrawingClient() {
                 rebars={rebars}
                 selectedRebarId={selectedRebarId}
                 onSelectRebar={setSelectedRebarId}
-                onChangeRebars={setRebars}
+                onChangeRebars={updateAppliedRebars}
               />
             )}
           </>

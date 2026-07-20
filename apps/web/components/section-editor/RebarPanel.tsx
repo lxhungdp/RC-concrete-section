@@ -6,7 +6,7 @@ import {
   generateRebarsForSection,
   makeRebarId,
   REBAR_PATTERN_OPTIONS,
-  type Rebar,
+  type GeometryInputRebarView,
   type RebarGenerateParams,
   type RebarPatternKind,
   type SectionGeometry
@@ -15,10 +15,10 @@ import {
 type Props = {
   hasAppliedSection: boolean
   appliedSection: SectionGeometry
-  rebars: Rebar[]
+  rebars: GeometryInputRebarView[]
   selectedRebarId: string | null
   onSelectRebar: (id: string | null) => void
-  onChangeRebars: (rebars: Rebar[]) => void
+  onChangeRebars: (rebars: GeometryInputRebarView[]) => void
 }
 
 const DEFAULT_PARAMS: RebarGenerateParams = {
@@ -50,14 +50,14 @@ export function RebarPanel({
     const generated = generateRebarsForSection(appliedSection, pattern, {
       ...params,
       solidIndex: appliedSection.solids.length > 1 ? params.solidIndex ?? 'all' : 0
-    })
+    }).map((bar) => ({ ...bar, solidIndex: bar.solidIndex ?? 0 }))
     if (generated.length === 0) return
     const next = !replaceExisting ? [...rebars, ...generated] : generated
     onChangeRebars(next)
     onSelectRebar(generated[0]?.id ?? null)
   }
 
-  const updateRebar = (id: string, patch: Partial<Rebar>) => {
+  const updateRebar = (id: string, patch: Partial<GeometryInputRebarView>) => {
     onChangeRebars(rebars.map((bar) => (bar.id === id ? { ...bar, ...patch } : bar)))
   }
 
@@ -66,11 +66,13 @@ export function RebarPanel({
     const outer = appliedSection.solids[0]?.outer ?? []
     const xs = outer.map((p) => p.x)
     const ys = outer.map((p) => p.y)
-    const bar: Rebar = {
+    const targetSolidIndex = typeof params.solidIndex === 'number' ? params.solidIndex : 0
+    const bar: GeometryInputRebarView = {
       id: makeRebarId(),
       x: xs.length ? Math.round((Math.min(...xs) + Math.max(...xs)) / 2) : 0,
       y: ys.length ? Math.round((Math.min(...ys) + Math.max(...ys)) / 2) : 0,
-      dia: params.dia || 20
+      dia: params.dia || 20,
+      solidIndex: targetSolidIndex
     }
     onChangeRebars([...rebars, bar])
     onSelectRebar(bar.id)
