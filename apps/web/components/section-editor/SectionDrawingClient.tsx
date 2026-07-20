@@ -30,8 +30,10 @@ import {
   solidRings,
   summarizeSection,
   type Point2,
+  type Rebar,
   type SectionGeometry
 } from '@pm/geometry'
+import { RebarPanel } from './RebarPanel'
 import {
   createSectionCamera2d,
   panSectionCamera2d,
@@ -54,6 +56,7 @@ type ScreenPoint = {
 type Tool = 'select' | 'draw-rectangle' | 'draw-circle' | 'draw-polygon'
 type Theme = 'light' | 'dark'
 type WorkspaceModule = 'geometry' | 'materials' | 'loadings'
+type GeometrySubTab = 'concrete' | 'rebar'
 type BuilderShape = 'rectangle' | 'circle' | 'capsule'
 type BooleanAction = 'union' | 'subtract'
 type BoundarySource =
@@ -314,6 +317,9 @@ export function SectionDrawingClient() {
   const [theme, setTheme] = useState<Theme>('light')
   const [tool, setTool] = useState<Tool>('select')
   const [activeModule, setActiveModule] = useState<WorkspaceModule>('geometry')
+  const [geometrySubTab, setGeometrySubTab] = useState<GeometrySubTab>('concrete')
+  const [rebars, setRebars] = useState<Rebar[]>([])
+  const [selectedRebarId, setSelectedRebarId] = useState<string | null>(null)
   const [boundaries, setBoundaries] = useState<BoundaryObject[]>([])
   const [selectedBoundaryIds, setSelectedBoundaryIds] = useState<string[]>([])
   const [activeBoundaryId, setActiveBoundaryId] = useState<string>('')
@@ -612,7 +618,11 @@ export function SectionDrawingClient() {
   const deleteBoundary = (id: string) => {
     setBoundaries((current) => current.filter((boundary) => boundary.id !== id))
     setSelectedBoundaryIds((current) => current.filter((selectedId) => selectedId !== id))
-    if (finalSection.id === id) setFinalSection(emptyGeometry)
+    if (finalSection.id === id) {
+      setFinalSection(emptyGeometry)
+      setRebars([])
+      setSelectedRebarId(null)
+    }
     if (activeBoundaryId === id) {
       const nextBoundary = boundaries.find((boundary) => boundary.id !== id)
       setActiveBoundaryId(nextBoundary?.id ?? '')
@@ -808,6 +818,10 @@ export function SectionDrawingClient() {
 
     setFinalSection(boundaryToSectionGeometry(activeBoundary))
     setLastBooleanWarning('')
+    if (previousAppliedId && previousAppliedId !== appliedId) {
+      setRebars([])
+      setSelectedRebarId(null)
+    }
     setBoundaries((current) =>
       current.map((boundary) => {
         if (boundary.id === appliedId) return { ...boundary, locked: true }
@@ -849,6 +863,7 @@ export function SectionDrawingClient() {
     const target = event.target as Element
     const pointId = target.getAttribute('data-point-id')
     const boundaryId = target.getAttribute('data-boundary-id')
+    const rebarId = target.getAttribute('data-rebar-id')
     const outerIndex = Number(target.getAttribute('data-outer-index') ?? '0')
     const ringIndex = Number(target.getAttribute('data-ring-index') ?? '0')
 
@@ -856,6 +871,11 @@ export function SectionDrawingClient() {
 
     if (event.button === 2) return
 
+    if (rebarId) {
+      setSelectedRebarId(rebarId)
+      setGeometrySubTab('rebar')
+      return
+    }
     if (tool === 'draw-rectangle') {
       setSnapCursor(world)
       if (drawingDraft?.tool === 'draw-rectangle') {
@@ -1026,6 +1046,29 @@ export function SectionDrawingClient() {
       <aside className="pm-side-panel">
         <div className="pm-side-panel-body">
         {activeModule === 'geometry' && (
+          <>
+            <div className="pm-geometry-tabs" role="tablist" aria-label="Geometry tabs">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={geometrySubTab === 'concrete'}
+                className={geometrySubTab === 'concrete' ? 'is-active' : ''}
+                onClick={() => setGeometrySubTab('concrete')}
+              >
+                Concrete
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={geometrySubTab === 'rebar'}
+                className={geometrySubTab === 'rebar' ? 'is-active' : ''}
+                onClick={() => setGeometrySubTab('rebar')}
+              >
+                Rebar
+              </button>
+            </div>
+
+            {geometrySubTab === 'concrete' && (
           <>
             {boundaries.length === 0 && (
               <section className="pm-panel-section">
@@ -1495,6 +1538,19 @@ export function SectionDrawingClient() {
               )}
             </section>
           </>
+            )}
+
+            {geometrySubTab === 'rebar' && (
+              <RebarPanel
+                hasAppliedSection={hasAppliedSection}
+                appliedSection={finalSection}
+                rebars={rebars}
+                selectedRebarId={selectedRebarId}
+                onSelectRebar={setSelectedRebarId}
+                onChangeRebars={setRebars}
+              />
+            )}
+          </>
         )}
 
         {activeModule === 'materials' && (
@@ -1520,7 +1576,7 @@ export function SectionDrawingClient() {
         )}
         </div>
 
-        {activeModule === 'geometry' && (
+        {activeModule === 'geometry' && geometrySubTab === 'concrete' && (
           <div className="pm-panel-footer">
             <button
               type="button"
@@ -1633,8 +1689,34 @@ export function SectionDrawingClient() {
               y2={activeCentroidScreen.y + 8}
             />
           </g>
+          <g className="pm-rebar-layer" pointerEvents="none">
+            {hasAppliedSection &&
+              rebars.map((bar, index) => {
+                const screen = worldToScreen(camera, { x: bar.x, y: bar.y }, size)
+                const radiusPx = Math.max(2.5, bar.dia / (2 * camera.unitsPerPixel))
+                const selected = bar.id === selectedRebarId
+                return (
+                  <g key={bar.id} className={selected ? 'is-selected' : ''}>
+                    <circle
+                      className="pm-rebar-dot"
+                      cx={screen.x}
+                      cy={screen.y}
+                      r={radiusPx}
+                      data-rebar-id={bar.id}
+                      style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                    />
+                    {(selected || geometrySubTab === 'rebar') && (
+                      <text className="pm-rebar-label" x={screen.x + radiusPx + 3} y={screen.y - radiusPx - 2}>
+                        {index + 1}
+                      </text>
+                    )}
+                  </g>
+                )
+              })}
+          </g>
           <g className="pm-handles">
-            {boundaryScreenData
+            {geometrySubTab === 'concrete' &&
+              boundaryScreenData
               .filter(({ boundary }) => boundary.id === activeBoundaryId)
               .flatMap(({ boundary, outers }) =>
                 outers.flatMap((outer, outerIndex) =>

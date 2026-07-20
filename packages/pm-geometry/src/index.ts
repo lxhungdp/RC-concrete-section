@@ -656,3 +656,5 @@ export const summarizeSection = (geometry: SectionGeometry): GeometrySummary => 
     warnings
   }
 }
+
+export * from './rebar'

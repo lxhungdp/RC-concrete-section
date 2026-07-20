@@ -605,6 +605,198 @@ button {
   flex-shrink: 0;
 }
 
+.pm-geometry-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--toggle-bg);
+  flex-shrink: 0;
+}
+
+.pm-geometry-tabs button {
+  min-height: 28px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--foreground-secondary);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.pm-geometry-tabs button:hover {
+  color: var(--foreground);
+  background: var(--btn-secondary-hover-bg);
+}
+
+.pm-geometry-tabs button.is-active {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-foreground);
+}
+
+.pm-rebar-quick {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.pm-rebar-patterns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pm-rebar-patterns button {
+  flex: 1 1 0;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--btn-secondary-bg);
+  color: var(--foreground-secondary);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.pm-rebar-patterns button:hover {
+  color: var(--foreground);
+  background: var(--btn-secondary-hover-bg);
+}
+
+.pm-rebar-patterns button.is-active {
+  border-color: var(--accent-border);
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+
+.pm-rebar-params {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pm-rebar-params-full {
+  grid-column: 1 / -1;
+}
+
+.pm-rebar-params select {
+  width: 100%;
+  min-height: 28px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--input-bg);
+  color: var(--foreground);
+}
+
+.pm-rebar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pm-rebar-replace {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--foreground-muted);
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.pm-rebar-count {
+  color: var(--foreground-muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
+.pm-rebar-empty {
+  padding: 12px 6px !important;
+  color: var(--foreground-muted);
+  text-align: center;
+}
+
+.pm-rebar-list-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.pm-rebar-table-wrap {
+  flex: 0 1 auto;
+  max-height: min(42vh, 360px);
+  overflow: auto;
+}
+
+.pm-rebar-list-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-top: 4px;
+}
+
+.pm-rebar-remove-all {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 0;
+  min-height: 24px;
+  padding: 3px 9px;
+  border: 1px solid var(--ui-danger-border);
+  border-radius: var(--ui-modal-btn-radius, 0.375rem);
+  background: var(--btn-secondary-bg);
+  color: var(--ui-danger-bright);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.pm-rebar-remove-all:hover:not(:disabled) {
+  color: #fff;
+  background: var(--ui-danger-bright);
+  border-color: var(--ui-danger-bright);
+}
+
+.pm-rebar-remove-all:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.pm-rebar-dot {
+  fill: #b45309;
+  stroke: #78350f;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.pm-rebar-layer .is-selected .pm-rebar-dot {
+  fill: #ea580c;
+  stroke: #9a3412;
+  stroke-width: 1.6;
+}
+
+.pm-rebar-label {
+  fill: var(--foreground-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
 .pm-detail-tabs button {
   min-height: 24px;
   padding: 0 9px;
