@@ -14,6 +14,7 @@ export type GeometryInputOuter = {
 
 export type GeometryInputRebar = {
   id: string
+  steelMaterialId?: string
   dia: number
   x: number
   y: number
@@ -55,12 +56,12 @@ export const createGeometryInputOuter = (
 type RebarWithOuterIndex = GeometryInputRebar & { solidIndex?: number }
 
 export const cloneRebars = (rebars: GeometryInputRebar[]): GeometryInputRebar[] =>
-  rebars.map(({ id, dia, x, y }) => ({ id, dia, x, y }))
+  rebars.map(({ id, steelMaterialId, dia, x, y }) => ({ id, steelMaterialId, dia, x, y }))
 
 const rebarsForOuter = (rebars: RebarWithOuterIndex[], outerIndex: number) =>
   rebars
     .filter((bar) => (Number.isFinite(bar.solidIndex) ? bar.solidIndex === outerIndex : outerIndex === 0))
-    .map(({ id, dia, x, y }) => ({ id, dia, x, y }))
+    .map(({ id, steelMaterialId, dia, x, y }) => ({ id, steelMaterialId, dia, x, y }))
 
 export const geometryInputFromSectionGeometry = (
   geometry: SectionGeometry,

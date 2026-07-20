@@ -39,6 +39,8 @@ import {
   type Point2,
   type SectionGeometry
 } from '@pm/geometry'
+import { createDefaultMaterialStore, type MaterialStore } from '@pm/materials'
+import { MaterialPanel } from './MaterialPanel'
 import { RebarPanel } from './RebarPanel'
 import {
   createSectionCamera2d,
@@ -330,6 +332,7 @@ export function SectionDrawingClient() {
   const [appliedGeometryInput, setAppliedGeometryInput] = useState<GeometryInput>(() =>
     createEmptyGeometryInput({ id: 'section-1', name: 'Column section' })
   )
+  const [materialStore, setMaterialStore] = useState<MaterialStore>(() => createDefaultMaterialStore())
   const [lastBooleanWarning, setLastBooleanWarning] = useState<string>('')
   const [detailTab, setDetailTab] = useState<'basic' | 'points'>('basic')
   const [circleSegmentsDraft, setCircleSegmentsDraft] = useState<string | null>(null)
@@ -1060,7 +1063,7 @@ export function SectionDrawingClient() {
         <div className="pm-side-panel-body">
         {activeModule === 'geometry' && (
           <>
-            <div className="pm-geometry-tabs" role="tablist" aria-label="Geometry tabs">
+            <div className="pm-page-tabs" role="tablist" aria-label="Geometry tabs">
               <button
                 type="button"
                 role="tab"
@@ -1558,6 +1561,8 @@ export function SectionDrawingClient() {
                 hasAppliedSection={hasAppliedSection}
                 appliedSection={finalSection}
                 rebars={rebars}
+                steelMaterials={materialStore.steel}
+                defaultSteelMaterialId={materialStore.defaults.steelMaterialId}
                 selectedRebarId={selectedRebarId}
                 onSelectRebar={setSelectedRebarId}
                 onChangeRebars={updateAppliedRebars}
@@ -1566,16 +1571,7 @@ export function SectionDrawingClient() {
           </>
         )}
 
-        {activeModule === 'materials' && (
-          <section className="pm-panel-section">
-            <div className="pm-section-title">
-              <h2>Materials</h2>
-            </div>
-            <div className="pm-placeholder-panel">
-              <span>Concrete, steel, and code models will live here.</span>
-            </div>
-          </section>
-        )}
+        {activeModule === 'materials' && <MaterialPanel store={materialStore} onChange={setMaterialStore} />}
 
         {activeModule === 'loadings' && (
           <section className="pm-panel-section">

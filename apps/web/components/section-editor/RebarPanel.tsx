@@ -11,11 +11,14 @@ import {
   type RebarPatternKind,
   type SectionGeometry
 } from '@pm/geometry'
+import type { SteelMaterial } from '@pm/materials'
 
 type Props = {
   hasAppliedSection: boolean
   appliedSection: SectionGeometry
   rebars: GeometryInputRebarView[]
+  steelMaterials: SteelMaterial[]
+  defaultSteelMaterialId: string
   selectedRebarId: string | null
   onSelectRebar: (id: string | null) => void
   onChangeRebars: (rebars: GeometryInputRebarView[]) => void
@@ -33,6 +36,8 @@ export function RebarPanel({
   hasAppliedSection,
   appliedSection,
   rebars,
+  steelMaterials,
+  defaultSteelMaterialId,
   selectedRebarId,
   onSelectRebar,
   onChangeRebars
@@ -50,7 +55,7 @@ export function RebarPanel({
     const generated = generateRebarsForSection(appliedSection, pattern, {
       ...params,
       solidIndex: appliedSection.solids.length > 1 ? params.solidIndex ?? 'all' : 0
-    }).map((bar) => ({ ...bar, solidIndex: bar.solidIndex ?? 0 }))
+    }).map((bar) => ({ ...bar, steelMaterialId: defaultSteelMaterialId, solidIndex: bar.solidIndex ?? 0 }))
     if (generated.length === 0) return
     const next = !replaceExisting ? [...rebars, ...generated] : generated
     onChangeRebars(next)
@@ -72,6 +77,7 @@ export function RebarPanel({
       x: xs.length ? Math.round((Math.min(...xs) + Math.max(...xs)) / 2) : 0,
       y: ys.length ? Math.round((Math.min(...ys) + Math.max(...ys)) / 2) : 0,
       dia: params.dia || 20,
+      steelMaterialId: defaultSteelMaterialId,
       solidIndex: targetSolidIndex
     }
     onChangeRebars([...rebars, bar])
@@ -211,6 +217,7 @@ export function RebarPanel({
               <tr>
                 <th>#</th>
                 <th>Dia</th>
+                <th>Mat</th>
                 <th>X</th>
                 <th>Y</th>
                 <th>
@@ -223,7 +230,7 @@ export function RebarPanel({
             <tbody>
               {rebars.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="pm-rebar-empty">
+                  <td colSpan={6} className="pm-rebar-empty">
                     No bars yet. Use Quick Generate.
                   </td>
                 </tr>
@@ -246,6 +253,20 @@ export function RebarPanel({
                       onFocus={() => onSelectRebar(bar.id)}
                       onChange={(event) => updateRebar(bar.id, { dia: Number(event.target.value) || 1 })}
                     />
+                  </td>
+                  <td>
+                    <select
+                      value={bar.steelMaterialId ?? defaultSteelMaterialId}
+                      aria-label={`Bar ${index + 1} steel material`}
+                      onFocus={() => onSelectRebar(bar.id)}
+                      onChange={(event) => updateRebar(bar.id, { steelMaterialId: event.target.value })}
+                    >
+                      {steelMaterials.map((material) => (
+                        <option key={material.id} value={material.id}>
+                          {material.name}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                   <td>
                     <input

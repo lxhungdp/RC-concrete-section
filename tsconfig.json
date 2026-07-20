@@ -14,7 +14,9 @@
     "jsx": "preserve",
     "paths": {
       "@pm/geometry": ["./packages/pm-geometry/src"],
-      "@pm/geometry/*": ["./packages/pm-geometry/src/*"]
+      "@pm/geometry/*": ["./packages/pm-geometry/src/*"],
+      "@pm/materials": ["./packages/pm-materials/src"],
+      "@pm/materials/*": ["./packages/pm-materials/src/*"]
     },
     "plugins": [
       {

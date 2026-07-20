@@ -93,7 +93,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -330,6 +331,7 @@ button {
 }
 
 .pm-field input,
+.pm-field select,
 .pm-vertex-row input {
   min-width: 0;
   border: 1px solid var(--border);
@@ -339,13 +341,15 @@ button {
   outline: none;
 }
 
-.pm-field input {
+.pm-field input,
+.pm-field select {
   width: 100%;
   padding: 7px 8px;
   font-size: 0.78rem;
 }
 
 .pm-field input:focus,
+.pm-field select:focus,
 .pm-vertex-row input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--ui-focus-ring);
@@ -605,35 +609,68 @@ button {
   flex-shrink: 0;
 }
 
+.pm-page-tabs,
 .pm-geometry-tabs {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2px;
-  padding: 2px;
+  gap: 0;
+  padding: 3px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 9px;
   background: var(--toggle-bg);
   flex-shrink: 0;
+  overflow: hidden;
 }
 
+.pm-page-tabs::before,
+.pm-geometry-tabs::before {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / 2);
+  border-radius: 6px;
+  background: var(--btn-primary-bg);
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.08),
+    inset 0 0 0 1px color-mix(in srgb, var(--btn-primary-foreground) 12%, transparent);
+  content: '';
+  transition: transform var(--ui-transition);
+}
+
+.pm-page-tabs:has(button:nth-child(2).is-active)::before,
+.pm-geometry-tabs:has(button:nth-child(2).is-active)::before {
+  transform: translateX(100%);
+}
+
+.pm-page-tabs button,
 .pm-geometry-tabs button {
-  min-height: 28px;
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: transparent;
   color: var(--foreground-secondary);
   cursor: pointer;
   font-size: 0.72rem;
   font-weight: 600;
+  letter-spacing: 0;
+  transition: color var(--ui-transition);
 }
 
+.pm-page-tabs button:hover,
 .pm-geometry-tabs button:hover {
   color: var(--foreground);
-  background: var(--btn-secondary-hover-bg);
 }
 
+.pm-page-tabs button.is-active,
 .pm-geometry-tabs button.is-active {
-  background: var(--btn-primary-bg);
   color: var(--btn-primary-foreground);
 }
 
@@ -1056,8 +1093,321 @@ button {
   outline: none;
 }
 
+.pm-point-table select {
+  width: 100%;
+  height: 23px;
+  min-width: 0;
+  padding: 1px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.68rem;
+  outline: none;
+}
+
 .pm-point-table tr.is-selected input,
-.pm-point-table input:focus {
+.pm-point-table tr.is-selected select,
+.pm-point-table input:focus,
+.pm-point-table select:focus {
+  border-color: var(--accent-border);
+  background: var(--card);
+}
+
+.pm-material-list {
+  display: grid;
+  gap: 5px;
+}
+
+.pm-material-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--foreground);
+}
+
+.pm-material-row:hover {
+  border-color: var(--border);
+}
+
+.pm-material-row.is-active {
+  border-color: var(--accent-border);
+  background: var(--accent-muted);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.pm-material-row-main {
+  min-width: 0;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-material-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ui-danger-bright);
+  cursor: pointer;
+}
+
+.pm-material-remove:hover:not(:disabled) {
+  background: var(--ui-danger-bright);
+  color: #fff;
+}
+
+.pm-material-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.pm-material-add-bottom {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  background: var(--accent-muted);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.pm-material-add-bottom:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.pm-material-row span,
+.pm-material-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-material-row span {
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.pm-material-row small {
+  color: var(--foreground-muted);
+  font-size: 0.65rem;
+  font-weight: 500;
+}
+
+.pm-material-form,
+.pm-material-editor {
+  display: grid;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.pm-material-editor {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pm-material-row-2,
+.pm-material-row-3 {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pm-material-row-2 {
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr);
+}
+
+.pm-material-row-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.pm-material-stress-box {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 2px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--card) 94%, var(--background-muted));
+}
+
+.pm-material-stress-title {
+  color: var(--foreground);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.pm-material-editor-title,
+.pm-material-field-full {
+  grid-column: 1 / -1;
+}
+
+.pm-material-editor-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--foreground);
+  font-size: 0.74rem;
+}
+
+.pm-material-editor-title span {
+  color: var(--foreground-muted);
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
+.pm-material-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--foreground-muted);
+  cursor: pointer;
+  font-size: 0.7rem;
+  line-height: 1.3;
+}
+
+.pm-material-toggle input {
+  flex: 0 0 auto;
+}
+
+.pm-material-curve {
+  display: grid;
+  gap: 7px;
+  padding-top: 4px;
+}
+
+.pm-material-curve svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.pm-material-curve line {
+  stroke: var(--border);
+  stroke-width: 1.2;
+}
+
+.pm-material-curve-axis-mid {
+  stroke-dasharray: 4 4;
+  opacity: 0.55;
+}
+
+.pm-material-curve path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pm-material-curve text {
+  fill: var(--foreground-muted);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.pm-material-curve p {
+  margin: 0;
+  color: var(--foreground-muted);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.pm-user-curve-editor {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.pm-user-curve-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.7rem;
+}
+
+.pm-user-curve-table th {
+  height: 24px;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground-muted);
+  font-weight: 600;
+  text-align: left;
+}
+
+.pm-user-curve-table th:first-child,
+.pm-user-curve-table td:first-child {
+  width: 30px;
+  text-align: center;
+}
+
+.pm-user-curve-table th:last-child,
+.pm-user-curve-table td:last-child {
+  width: 30px;
+  text-align: center;
+}
+
+.pm-user-curve-table th:last-child {
+  padding: 0;
+}
+
+.pm-user-curve-table td {
+  height: 29px;
+  padding: 2px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.pm-user-curve-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.pm-user-curve-table input {
+  width: 100%;
+  height: 23px;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.7rem;
+  outline: none;
+}
+
+.pm-user-curve-table input:focus {
   border-color: var(--accent-border);
   background: var(--card);
 }
