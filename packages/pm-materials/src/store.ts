@@ -5,16 +5,18 @@ export const updateConcreteMaterial = (
   patch: Partial<ConcreteMaterial>
 ): MaterialStore => ({
   ...store,
-  concrete: { ...store.concrete, ...patch }
+  concrete: { ...store.concrete, ...patch, id: store.concrete.id }
 })
 
 export const updateSteelMaterial = (
   store: MaterialStore,
-  id: string,
+  id: number,
   patch: Partial<SteelMaterial>
 ): MaterialStore => ({
   ...store,
-  steel: store.steel.map((material) => (material.id === id ? { ...material, ...patch } : material))
+  steel: store.steel.map((material) =>
+    material.id === id ? { ...material, ...patch, id: material.id } : material
+  )
 })
 
 export const addSteelMaterial = (store: MaterialStore, material: SteelMaterial): MaterialStore => ({
@@ -25,14 +27,14 @@ export const addSteelMaterial = (store: MaterialStore, material: SteelMaterial):
     : { ...store.defaults, steelMaterialId: material.id }
 })
 
-export const removeSteelMaterial = (store: MaterialStore, id: string): MaterialStore => {
+export const removeSteelMaterial = (store: MaterialStore, id: number): MaterialStore => {
   const steel = store.steel.filter((material) => material.id !== id)
   return {
     ...store,
     steel,
     defaults: {
       ...store.defaults,
-      steelMaterialId: store.defaults.steelMaterialId === id ? steel[0]?.id ?? '' : store.defaults.steelMaterialId
+      steelMaterialId: store.defaults.steelMaterialId === id ? steel[0]?.id ?? 1 : store.defaults.steelMaterialId
     }
   }
 }

@@ -1,8 +1,9 @@
 import polygonClipping from 'polygon-clipping'
 import type { MultiPolygon, Pair, Polygon, Ring } from 'polygon-clipping'
+import { allocateIds, isValidEntityId, nextAvailableId } from './ids'
 
 export type Point2 = {
-  id: string
+  id: number
   x: number
   y: number
 }
@@ -15,9 +16,8 @@ export type SectionSolid = {
 
 /** Section may contain multiple disconnected solids (e.g. twin bridge pier columns). */
 export type SectionGeometry = {
-  id: string
+  id: number
   name: string
-  unit: 'mm'
   solids: SectionSolid[]
 }
 
@@ -52,14 +52,14 @@ export type ChamferedRectangleParams = {
 export type SectionPrimitiveOperation = 'add' | 'subtract' | 'intersect'
 
 export type SectionPrimitive = {
-  id: string
+  id: number
   name?: string
   operation: SectionPrimitiveOperation
   rings: Point2[][]
 }
 
 export type SectionComposeOptions = {
-  id?: string
+  id?: number
   name?: string
   coordinatePrecision?: number
   collinearTolerance?: number
@@ -73,10 +73,12 @@ export type SectionComposeResult = {
 
 export type RectangleRingParams = RectangleParams & {
   center?: { x: number; y: number }
+  usedIds?: Iterable<number>
 }
 
 export type CircleRingParams = CircleParams & {
   center?: { x: number; y: number }
+  usedIds?: Iterable<number>
 }
 
 export type SemicircleRingParams = {
@@ -85,6 +87,7 @@ export type SemicircleRingParams = {
   startAngle: number
   endAngle: number
   segments?: number
+  usedIds?: Iterable<number>
 }
 
 export type CapsuleRingParams = {
@@ -92,6 +95,7 @@ export type CapsuleRingParams = {
   width: number
   height: number
   segmentsPerCap?: number
+  usedIds?: Iterable<number>
 }
 
 export const DEFAULT_RECTANGLE_PARAMS: RectangleParams = { width: 400, height: 300 }
@@ -102,21 +106,19 @@ export const DEFAULT_CHAMFERED_RECTANGLE_PARAMS: ChamferedRectangleParams = {
   chamfer: 40
 }
 
-export const makePointId = () => `p-${Math.random().toString(36).slice(2, 9)}`
+export { allocateIds, collectIds, isValidEntityId, nextAvailableId, type EntityId } from './ids'
 
-const pointsFromCoords = (coords: Array<{ x: number; y: number }>): Point2[] =>
-  coords.map((coord, index) => ({
-    id: `p${index + 1}`,
+/** Next point id against already-used point ids. */
+export const makePointId = (used: Iterable<number> = []) => nextAvailableId(used)
+
+const pointsFromCoords = (coords: Array<{ x: number; y: number }>, used: Iterable<number> = []): Point2[] => {
+  const ids = allocateIds(coords.length, used)
+  return coords.map((coord, index) => ({
+    id: ids[index],
     x: Math.round(coord.x * 1000) / 1000,
     y: Math.round(coord.y * 1000) / 1000
   }))
-
-const pointsFromCoordsWithPrefix = (coords: Array<{ x: number; y: number }>, prefix: string): Point2[] =>
-  coords.map((coord, index) => ({
-    id: `${prefix}-${index + 1}`,
-    x: Math.round(coord.x * 1000) / 1000,
-    y: Math.round(coord.y * 1000) / 1000
-  }))
+}
 
 export const createRectangleOuter = (params: RectangleParams = DEFAULT_RECTANGLE_PARAMS): Point2[] => {
   const width = Math.max(1, params.width)
@@ -195,14 +197,14 @@ export const createRectangleRing = (params: RectangleRingParams): Point2[] => {
   const hx = width / 2
   const hy = height / 2
 
-  return pointsFromCoordsWithPrefix(
+  return pointsFromCoords(
     [
       { x: center.x - hx, y: center.y - hy },
       { x: center.x + hx, y: center.y - hy },
       { x: center.x + hx, y: center.y + hy },
       { x: center.x - hx, y: center.y + hy }
     ],
-    'rect'
+    params.usedIds
   )
 }
 
@@ -220,7 +222,7 @@ export const createCircleRing = (params: CircleRingParams): Point2[] => {
     })
   }
 
-  return pointsFromCoordsWithPrefix(coords, 'circle')
+  return pointsFromCoords(coords, params.usedIds)
 }
 
 export const createSemicircleRing = (params: SemicircleRingParams): Point2[] => {
@@ -238,7 +240,7 @@ export const createSemicircleRing = (params: SemicircleRingParams): Point2[] => 
     })
   }
 
-  return pointsFromCoordsWithPrefix(coords, 'semi')
+  return pointsFromCoords(coords, params.usedIds)
 }
 
 export const createCapsuleRing = (params: CapsuleRingParams): Point2[] => {
@@ -268,11 +270,11 @@ export const createCapsuleRing = (params: CapsuleRingParams): Point2[] => {
     })
   }
 
-  return pointsFromCoordsWithPrefix(coords, 'capsule')
+  return pointsFromCoords(coords, params.usedIds)
 }
 
 export const createPrimitive = (
-  id: string,
+  id: number,
   operation: SectionPrimitiveOperation,
   rings: Point2[][],
   name?: string
@@ -316,9 +318,8 @@ export const solidCentroid = (solid: SectionSolid) => {
 }
 
 export const defaultSectionGeometry = (): SectionGeometry => ({
-  id: 'section-1',
+  id: 1,
   name: 'Column section',
-  unit: 'mm',
   solids: [createSectionSolid(createRectangleOuter(DEFAULT_RECTANGLE_PARAMS))]
 })
 
@@ -375,7 +376,7 @@ const normalizeRing = (
   options: Pick<Required<SectionComposeOptions>, 'coordinatePrecision' | 'collinearTolerance'>
 ) => {
   const rounded = removeAdjacentDuplicatePoints(points).map((point, index) => ({
-    id: point.id || `p-${index + 1}`,
+    id: isValidEntityId(point.id) ? point.id : index + 1,
     x: roundCoordinate(point.x, options.coordinatePrecision),
     y: roundCoordinate(point.y, options.coordinatePrecision)
   }))
@@ -407,22 +408,21 @@ const primitiveToClippingPolygon = (
 const polygonAreaAbs = (polygon: Polygon) => {
   const [outer] = polygon
   if (!outer) return 0
-  return Math.abs(signedPolygonArea(outer.slice(0, -1).map(([x, y], index) => ({ id: `a-${index}`, x, y }))))
+  return Math.abs(
+    signedPolygonArea(outer.slice(0, -1).map(([x, y], index) => ({ id: index + 1, x, y })))
+  )
 }
 
 const clippingRingToPoints = (
   ring: Ring,
-  prefix: string,
+  usedPointIds: number[],
   options: Pick<Required<SectionComposeOptions>, 'coordinatePrecision' | 'collinearTolerance'>
-) =>
-  normalizeRing(
-    ring.slice(0, -1).map(([x, y], index) => ({
-      id: `${prefix}-${index + 1}`,
-      x,
-      y
-    })),
-    options
-  )
+) => {
+  const coords = ring.slice(0, -1).map(([x, y]) => ({ x, y }))
+  const points = pointsFromCoords(coords, usedPointIds)
+  for (const point of points) usedPointIds.push(point.id)
+  return normalizeRing(points, options)
+}
 
 const normalizeClippingResult = (
   solid: MultiPolygon,
@@ -433,24 +433,20 @@ const normalizeClippingResult = (
   if (solid.length === 0) {
     warnings.push('Boolean composition produced an empty section.')
     return {
-      geometry: { id: options.id, name: options.name, unit: 'mm', solids: [] },
+      geometry: { id: options.id, name: options.name, solids: [] },
       warnings,
       multipolygon: []
     }
   }
 
   const polygons = [...solid].sort((a, b) => polygonAreaAbs(b) - polygonAreaAbs(a))
+  const usedPointIds: number[] = []
 
-  const solids: SectionSolid[] = polygons.map((polygon, polygonIndex) => {
-    const outer = ensureOrientation(
-      clippingRingToPoints(polygon[0], `s${polygonIndex + 1}-outer`, options),
-      'ccw'
-    )
+  const solids: SectionSolid[] = polygons.map((polygon) => {
+    const outer = ensureOrientation(clippingRingToPoints(polygon[0], usedPointIds, options), 'ccw')
     const holes = polygon
       .slice(1)
-      .map((ring, index) =>
-        ensureOrientation(clippingRingToPoints(ring, `s${polygonIndex + 1}-hole-${index + 1}`, options), 'cw')
-      )
+      .map((ring) => ensureOrientation(clippingRingToPoints(ring, usedPointIds, options), 'cw'))
     return createSectionSolid(outer, holes)
   })
 
@@ -460,7 +456,6 @@ const normalizeClippingResult = (
     geometry: {
       id: options.id,
       name: options.name,
-      unit: 'mm',
       solids
     },
     warnings,
@@ -473,7 +468,7 @@ export const composeSectionPrimitives = (
   options: SectionComposeOptions = {}
 ): SectionComposeResult => {
   const resolvedOptions: Required<SectionComposeOptions> = {
-    id: options.id ?? 'composed-section',
+    id: options.id ?? 1,
     name: options.name ?? 'Composed section',
     coordinatePrecision: options.coordinatePrecision ?? 6,
     collinearTolerance: options.collinearTolerance ?? 1e-9
@@ -515,38 +510,54 @@ export const composeSectionPrimitives = (
 
 export const createExampleCapsuleSectionWithHoles = () => {
   const outerRect = createPrimitive(
-    'outer-rect',
+    1,
     'add',
     [createRectangleRing({ center: { x: 0, y: 0 }, width: 420, height: 260 })],
     'Outer rectangle'
   )
   const leftCap = createPrimitive(
-    'outer-left-cap',
+    2,
     'add',
-    [createSemicircleRing({ center: { x: -210, y: 0 }, radius: 130, startAngle: Math.PI / 2, endAngle: (Math.PI * 3) / 2, segments: 32 })],
+    [
+      createSemicircleRing({
+        center: { x: -210, y: 0 },
+        radius: 130,
+        startAngle: Math.PI / 2,
+        endAngle: (Math.PI * 3) / 2,
+        segments: 32
+      })
+    ],
     'Outer left semicircle'
   )
   const rightCap = createPrimitive(
-    'outer-right-cap',
+    3,
     'add',
-    [createSemicircleRing({ center: { x: 210, y: 0 }, radius: 130, startAngle: -Math.PI / 2, endAngle: Math.PI / 2, segments: 32 })],
+    [
+      createSemicircleRing({
+        center: { x: 210, y: 0 },
+        radius: 130,
+        startAngle: -Math.PI / 2,
+        endAngle: Math.PI / 2,
+        segments: 32
+      })
+    ],
     'Outer right semicircle'
   )
   const leftHole = createPrimitive(
-    'left-hole',
+    4,
     'subtract',
     [createCapsuleRing({ center: { x: -105, y: 0 }, width: 130, height: 70, segmentsPerCap: 20 })],
     'Left rectangle + semicircle hole'
   )
   const rightHole = createPrimitive(
-    'right-hole',
+    5,
     'subtract',
     [createCapsuleRing({ center: { x: 105, y: 0 }, width: 130, height: 70, segmentsPerCap: 20 })],
     'Right rectangle + semicircle hole'
   )
 
   return composeSectionPrimitives([outerRect, leftCap, rightCap, leftHole, rightHole], {
-    id: 'capsule-with-two-holes',
+    id: 1,
     name: 'Rectangle and semicircle section with two holes'
   })
 }

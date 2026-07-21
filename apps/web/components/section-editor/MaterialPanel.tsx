@@ -4,10 +4,11 @@ import { useMemo, useState } from 'react'
 import { Plus, X } from 'lucide-react'
 import {
   aciBeta1,
+  applyKdsConcreteDerived,
   compileConcreteMaterial,
   compileSteelMaterial,
-  createKdsConcrete,
   createKdsRebarSteel,
+  DEFAULT_CONCRETE_DENSITY,
   kdsConcreteParams,
   type ConcreteMaterial,
   type MaterialStore,
@@ -64,17 +65,20 @@ const steelFormula = (material: SteelMaterial) => {
 const withConcreteModelDefaults = (material: ConcreteMaterial, type: ConcreteMaterial['stressStrain']['type']) => {
   if (type === 'kds-parabolic') {
     const params = kdsConcreteParams(material.fck)
-    return {
+    const next: ConcreteMaterial = {
       ...material,
+      mc: material.mc ?? DEFAULT_CONCRETE_DENSITY,
       standard: material.standard === 'CUSTOM' ? 'CUSTOM' : 'KDS',
       stressStrain: { type, ...params },
       limits: { ...material.limits, eps0: params.eps0, epsCu: params.epsCu },
       factors: { ...material.factors, alpha: params.alpha }
-    } satisfies ConcreteMaterial
+    }
+    return next.standard === 'KDS' ? applyKdsConcreteDerived(next) : next
   }
   if (type === 'aci-whitney-block') {
     return {
       ...material,
+      mc: material.mc ?? DEFAULT_CONCRETE_DENSITY,
       standard: material.standard === 'CUSTOM' ? 'CUSTOM' : 'ACI318',
       stressStrain: { type, beta1: aciBeta1(material.fck), epsCu: 0.003, alpha: 0.85 },
       limits: { ...material.limits, eps0: undefined, epsCu: 0.003 },
@@ -84,6 +88,7 @@ const withConcreteModelDefaults = (material: ConcreteMaterial, type: ConcreteMat
   if (type === 'ec2-parabolic-rectangular') {
     return {
       ...material,
+      mc: material.mc ?? DEFAULT_CONCRETE_DENSITY,
       standard: material.standard === 'CUSTOM' ? 'CUSTOM' : 'EC2',
       stressStrain: { type, n: 2, epsC2: 0.002, epsCu2: 0.0035, alpha: 1 },
       limits: { ...material.limits, eps0: 0.002, epsCu: 0.0035 },
@@ -92,6 +97,7 @@ const withConcreteModelDefaults = (material: ConcreteMaterial, type: ConcreteMat
   }
   return {
     ...material,
+    mc: material.mc ?? DEFAULT_CONCRETE_DENSITY,
     standard: 'CUSTOM',
     stressStrain: {
       type,
@@ -255,19 +261,22 @@ export function MaterialPanel({ store, onChange }: Props) {
     onChange({ ...store, concrete: map(store.concrete) })
   }
 
-  const updateSteel = (id: string, map: (material: SteelMaterial) => SteelMaterial) => {
+  const updateSteel = (id: number, map: (material: SteelMaterial) => SteelMaterial) => {
     onChange({
       ...store,
       steel: store.steel.map((material) => (material.id === id ? map(material) : material))
     })
   }
 
-  const selectSteel = (id: string) => {
+  const selectSteel = (id: number) => {
     onChange({ ...store, defaults: { ...store.defaults, steelMaterialId: id } })
   }
 
   const addSteel = () => {
-    const material = createKdsRebarSteel({ name: `Steel ${store.steel.length + 1}` })
+    const material = createKdsRebarSteel(
+      { name: `Steel ${store.steel.length + 1}` },
+      store.steel.map((item) => item.id)
+    )
     onChange({
       ...store,
       steel: [...store.steel, material],
@@ -275,7 +284,7 @@ export function MaterialPanel({ store, onChange }: Props) {
     })
   }
 
-  const removeSteel = (id: string) => {
+  const removeSteel = (id: number) => {
     if (store.steel.length <= 1) return
     const steel = store.steel.filter((material) => material.id !== id)
     onChange({
@@ -330,10 +339,11 @@ export function MaterialPanel({ store, onChange }: Props) {
               <select
                 value={store.concrete.standard}
                 onChange={(event) =>
-                  updateConcrete((material) => ({
-                    ...material,
-                    standard: event.target.value as ConcreteMaterial['standard']
-                  }))
+                  updateConcrete((material) => {
+                    const standard = event.target.value as ConcreteMaterial['standard']
+                    const next = { ...material, standard, mc: material.mc ?? DEFAULT_CONCRETE_DENSITY }
+                    return standard === 'KDS' ? applyKdsConcreteDerived(next) : next
+                  })
                 }
               >
                 <option value="KDS">KDS</option>
@@ -344,7 +354,7 @@ export function MaterialPanel({ store, onChange }: Props) {
             </label>
             </div>
 
-            <div className="pm-material-row-3">
+            <div className="pm-material-row-2">
               <label className="pm-field">
                 <span>fc</span>
                 <input
@@ -354,38 +364,53 @@ export function MaterialPanel({ store, onChange }: Props) {
                   onChange={(event) =>
                     updateConcrete((material) => {
                       const fck = numberValue(event.target.value, material.fck)
-                      if (material.stressStrain.type === 'kds-parabolic') {
-                        return createKdsConcrete({
-                          id: material.id,
-                          name: material.name,
-                          standard: material.standard,
-                          fck,
-                          elasticModulus: material.elasticModulus
-                        })
-                      }
-                      if (material.stressStrain.type === 'aci-whitney-block') {
+                      const next = { ...material, fck, mc: material.mc ?? DEFAULT_CONCRETE_DENSITY }
+                      if (next.standard === 'KDS') return applyKdsConcreteDerived(next)
+                      if (next.stressStrain.type === 'aci-whitney-block') {
                         return {
-                          ...material,
-                          fck,
-                          stressStrain: { ...material.stressStrain, beta1: aciBeta1(fck) }
+                          ...next,
+                          stressStrain: { ...next.stressStrain, beta1: aciBeta1(fck) }
                         }
                       }
-                      return { ...material, fck }
+                      return next
                     })
                   }
                 />
               </label>
               <label className="pm-field">
+                <span>mc (kg/m³)</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={store.concrete.mc ?? DEFAULT_CONCRETE_DENSITY}
+                  onChange={(event) =>
+                    updateConcrete((material) => {
+                      const mc = numberValue(event.target.value, material.mc ?? DEFAULT_CONCRETE_DENSITY)
+                      const next = { ...material, mc }
+                      return next.standard === 'KDS' ? applyKdsConcreteDerived(next) : next
+                    })
+                  }
+                />
+              </label>
+            </div>
+
+            <div className="pm-material-row-2">
+              <label className="pm-field">
                 <span>Ec</span>
                 <input
                   type="number"
                   min={0}
-                  value={store.concrete.elasticModulus ?? ''}
-                  placeholder="auto"
+                  step="1"
+                  value={
+                    store.concrete.elasticModulus === undefined
+                      ? ''
+                      : Number(store.concrete.elasticModulus.toFixed(1))
+                  }
                   onChange={(event) =>
                     updateConcrete((material) => ({
                       ...material,
-                      elasticModulus: event.target.value === '' ? undefined : numberValue(event.target.value, 0)
+                      elasticModulus:
+                        event.target.value === '' ? undefined : numberValue(event.target.value, 0)
                     }))
                   }
                 />
@@ -398,10 +423,20 @@ export function MaterialPanel({ store, onChange }: Props) {
                   min={0}
                   value={store.concrete.limits.epsCu}
                   onChange={(event) =>
-                    updateConcrete((material) => ({
-                      ...material,
-                      limits: { ...material.limits, epsCu: numberValue(event.target.value, material.limits.epsCu) }
-                    }))
+                    updateConcrete((material) => {
+                      const epsCu = numberValue(event.target.value, material.limits.epsCu)
+                      if (material.stressStrain.type === 'kds-parabolic') {
+                        return {
+                          ...material,
+                          limits: { ...material.limits, epsCu },
+                          stressStrain: { ...material.stressStrain, epsCu }
+                        }
+                      }
+                      return {
+                        ...material,
+                        limits: { ...material.limits, epsCu }
+                      }
+                    })
                   }
                 />
               </label>
@@ -427,17 +462,27 @@ export function MaterialPanel({ store, onChange }: Props) {
                   </select>
                 </label>
                 <label className="pm-field">
-                  <span>ε0</span>
+                  <span>εc0</span>
                   <input
                     type="number"
                     step="0.0001"
                     min={0}
                     value={store.concrete.limits.eps0 ?? ''}
                     onChange={(event) =>
-                      updateConcrete((material) => ({
-                        ...material,
-                        limits: { ...material.limits, eps0: numberValue(event.target.value, material.limits.eps0 ?? 0.002) }
-                      }))
+                      updateConcrete((material) => {
+                        const eps0 = numberValue(event.target.value, material.limits.eps0 ?? 0.002)
+                        if (material.stressStrain.type === 'kds-parabolic') {
+                          return {
+                            ...material,
+                            limits: { ...material.limits, eps0 },
+                            stressStrain: { ...material.stressStrain, eps0 }
+                          }
+                        }
+                        return {
+                          ...material,
+                          limits: { ...material.limits, eps0 }
+                        }
+                      })
                     }
                   />
                 </label>
@@ -475,7 +520,7 @@ export function MaterialPanel({ store, onChange }: Props) {
                       value={
                         store.concrete.stressStrain.type === 'kds-parabolic' ||
                         store.concrete.stressStrain.type === 'ec2-parabolic-rectangular'
-                          ? store.concrete.stressStrain.n
+                          ? Number(store.concrete.stressStrain.n.toFixed(4))
                           : ''
                       }
                       disabled={store.concrete.stressStrain.type === 'user-curve'}

@@ -18,9 +18,9 @@ type Props = {
   appliedSection: SectionGeometry
   rebars: GeometryInputRebarView[]
   steelMaterials: SteelMaterial[]
-  defaultSteelMaterialId: string
-  selectedRebarId: string | null
-  onSelectRebar: (id: string | null) => void
+  defaultSteelMaterialId: number
+  selectedRebarId: number | null
+  onSelectRebar: (id: number | null) => void
   onChangeRebars: (rebars: GeometryInputRebarView[]) => void
 }
 
@@ -54,6 +54,7 @@ export function RebarPanel({
     if (!hasAppliedSection) return
     const generated = generateRebarsForSection(appliedSection, pattern, {
       ...params,
+      usedIds: replaceExisting ? [] : rebars.map((bar) => bar.id),
       solidIndex: appliedSection.solids.length > 1 ? params.solidIndex ?? 'all' : 0
     }).map((bar) => ({ ...bar, steelMaterialId: defaultSteelMaterialId, solidIndex: bar.solidIndex ?? 0 }))
     if (generated.length === 0) return
@@ -62,7 +63,7 @@ export function RebarPanel({
     onSelectRebar(generated[0]?.id ?? null)
   }
 
-  const updateRebar = (id: string, patch: Partial<GeometryInputRebarView>) => {
+  const updateRebar = (id: number, patch: Partial<GeometryInputRebarView>) => {
     onChangeRebars(rebars.map((bar) => (bar.id === id ? { ...bar, ...patch } : bar)))
   }
 
@@ -73,7 +74,7 @@ export function RebarPanel({
     const ys = outer.map((p) => p.y)
     const targetSolidIndex = typeof params.solidIndex === 'number' ? params.solidIndex : 0
     const bar: GeometryInputRebarView = {
-      id: makeRebarId(),
+      id: makeRebarId(rebars.map((item) => item.id)),
       x: xs.length ? Math.round((Math.min(...xs) + Math.max(...xs)) / 2) : 0,
       y: ys.length ? Math.round((Math.min(...ys) + Math.max(...ys)) / 2) : 0,
       dia: params.dia || 20,
@@ -84,7 +85,7 @@ export function RebarPanel({
     onSelectRebar(bar.id)
   }
 
-  const deleteRebar = (id: string) => {
+  const deleteRebar = (id: number) => {
     const next = rebars.filter((bar) => bar.id !== id)
     onChangeRebars(next)
     if (selectedRebarId === id) onSelectRebar(next[0]?.id ?? null)
@@ -215,7 +216,7 @@ export function RebarPanel({
           <table className="pm-point-table">
             <thead>
               <tr>
-                <th>#</th>
+                <th>id</th>
                 <th>Dia</th>
                 <th>Mat</th>
                 <th>X</th>
@@ -235,21 +236,21 @@ export function RebarPanel({
                   </td>
                 </tr>
               )}
-              {rebars.map((bar, index) => (
+              {rebars.map((bar) => (
                 <tr
                   key={bar.id}
                   className={selectedRebarId === bar.id ? 'is-selected' : ''}
                   onClick={() => onSelectRebar(bar.id)}
                 >
                   <td>
-                    <span className="pm-point-index">{index + 1}</span>
+                    <span className="pm-point-index">{bar.id}</span>
                   </td>
                   <td>
                     <input
                       type="number"
                       min={1}
                       value={bar.dia}
-                      aria-label={`Bar ${index + 1} diameter`}
+                      aria-label={`Bar ${bar.id} diameter`}
                       onFocus={() => onSelectRebar(bar.id)}
                       onChange={(event) => updateRebar(bar.id, { dia: Number(event.target.value) || 1 })}
                     />
@@ -257,9 +258,9 @@ export function RebarPanel({
                   <td>
                     <select
                       value={bar.steelMaterialId ?? defaultSteelMaterialId}
-                      aria-label={`Bar ${index + 1} steel material`}
+                      aria-label={`Bar ${bar.id} steel material`}
                       onFocus={() => onSelectRebar(bar.id)}
-                      onChange={(event) => updateRebar(bar.id, { steelMaterialId: event.target.value })}
+                      onChange={(event) => updateRebar(bar.id, { steelMaterialId: Number(event.target.value) })}
                     >
                       {steelMaterials.map((material) => (
                         <option key={material.id} value={material.id}>
@@ -272,7 +273,7 @@ export function RebarPanel({
                     <input
                       type="number"
                       value={bar.x}
-                      aria-label={`Bar ${index + 1} X`}
+                      aria-label={`Bar ${bar.id} X`}
                       onFocus={() => onSelectRebar(bar.id)}
                       onChange={(event) => updateRebar(bar.id, { x: Number(event.target.value) || 0 })}
                     />
@@ -281,7 +282,7 @@ export function RebarPanel({
                     <input
                       type="number"
                       value={bar.y}
-                      aria-label={`Bar ${index + 1} Y`}
+                      aria-label={`Bar ${bar.id} Y`}
                       onFocus={() => onSelectRebar(bar.id)}
                       onChange={(event) => updateRebar(bar.id, { y: Number(event.target.value) || 0 })}
                     />

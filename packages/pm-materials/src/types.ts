@@ -1,22 +1,28 @@
-export type MaterialUnit = 'MPa'
+import { nextAvailableId } from './ids'
+
 export type StrainSignConvention = 'compression-positive'
 export type MaterialStandard = 'KDS' | 'ACI318' | 'EC2' | 'CUSTOM'
 
+/** Implicit units: stress MPa (N/mm²). Not stored in project JSON. */
 export type MaterialStore = {
-  unit: MaterialUnit
   strainSign: StrainSignConvention
   concrete: ConcreteMaterial
   steel: SteelMaterial[]
   defaults: {
-    steelMaterialId: string
+    steelMaterialId: number
   }
 }
 
 export type ConcreteMaterial = {
-  id: string
+  /** Always 1 in the concrete namespace. */
+  id: number
   name: string
   standard: MaterialStandard
+  /** Characteristic compressive strength fck / fc (MPa). */
   fck: number
+  /** Concrete density mc (kg/m³), used by KDS Ec formula. */
+  mc: number
+  /** Elastic modulus Ec (MPa). */
   elasticModulus?: number
   stressStrain: ConcreteStressStrainModel
   limits: {
@@ -59,7 +65,7 @@ export type ConcreteStressStrainModel =
     }
 
 export type SteelMaterial = {
-  id: string
+  id: number
   name: string
   standard: MaterialStandard
   fy: number
@@ -96,7 +102,7 @@ export type StressStrainPoint = {
 export type MaterialDefinition = ConcreteMaterial | SteelMaterial
 
 export type CompiledMaterial = {
-  id: string
+  id: number
   family: 'concrete' | 'steel'
   stress: (strain: number) => number
   tangent: (strain: number) => number
@@ -106,3 +112,6 @@ export type CompiledMaterial = {
     epsYield?: number
   }
 }
+
+export const nextSteelMaterialId = (steel: Array<{ id: number }>) =>
+  nextAvailableId(steel.map((item) => item.id))

@@ -10,7 +10,10 @@ apps/
 
 packages/
   cad-drawing/            Reusable CAD drawing foundation adapted from the develop/frame reference
+  pm-ids/                 Shared positive-integer entity id helpers (gap-fill)
   pm-geometry/            Geometry data model and polygon calculations
+  pm-materials/           Material definitions and stress-strain compile pipeline
+  pm-project/             Versioned project JSON document (geometry, materials, loadings, …)
 
 docs/
   specs/                  P-M-M algorithm specifications and calculation workflow notes
@@ -29,11 +32,13 @@ The first working slice is the geometry editor:
 - fixed-size labels, dimensions, handles, and toolbar controls
 - light/dark theme tokens aligned with the referenced `develop/frame` platform
 - separate geometry package for later use by the P-M-M calculation kernel
+- toolbar Import / Export JSON for the full project input document (`@pm/project`)
 
 ## Commands
 
 ```bash
 npm run dev
 npm run typecheck
+npm run test
 npm run build
 ```

@@ -8,7 +8,8 @@
     "build": "npm run build -w @pm/web",
     "lint": "npm run typecheck -w @pm/web",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck"
+    "test": "npm run typecheck && npm run test:roundtrip",
+    "test:roundtrip": "npx --yes tsx packages/pm-project/src/roundtrip.selftest.ts"
   },
   "workspaces": [
     "apps/*",

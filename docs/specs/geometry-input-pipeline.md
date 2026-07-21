@@ -8,18 +8,18 @@ Use `GeometryInput` from `@pm/geometry` as the persisted geometry input model:
 
 ```ts
 type GeometryInput = {
-  id: string
+  id: number
   name: string
-  unit: 'mm'
   outers: Array<{
-    id: string
-    points: Array<{ id: string; x: number; y: number }>
+    id: number
+    points: Array<{ id: number; x: number; y: number }>
     holes: Array<{
-      id: string
-      points: Array<{ id: string; x: number; y: number }>
+      id: number
+      points: Array<{ id: number; x: number; y: number }>
     }>
     rebars: Array<{
-      id: string
+      id: number
+      steelMaterialId?: number
       dia: number
       x: number
       y: number
@@ -28,7 +28,10 @@ type GeometryInput = {
 }
 ```
 
-This is intentionally input-shaped, not solver-shaped. Multiple disconnected concrete regions are represented by multiple `outers`. Each outer owns its own holes and rebars. Point IDs and rebar IDs must remain unique across the whole geometry input, even when they belong to different outers.
+Length unit is implicitly **mm** (not stored in JSON). Entity ids are positive integers
+shared with the UI via `@pm/ids`; each kind (outer / hole / point / rebar) has its own id space and
+new ids take the smallest unused integer. Apply builds `GeometryInput` from boundary rings through
+`geometryInputFromOuterRings` (point ids preserved).
 
 ## Pipeline
 
@@ -41,10 +44,12 @@ flowchart LR
   D --> F["Outer-owned rebar input"]
   E --> G["Summary, validation, boolean helpers"]
   E --> H["Future P-M/P-M-M kernel"]
-  D --> I["Future export/import/project save"]
+  D --> I["PmProjectDocument inputs.geometry"]
 ```
 
 `SectionGeometry` remains the concrete-analysis adapter used by geometry math helpers. It should be derived from `GeometryInput` through `sectionGeometryFromGeometryInput`, not stored as a parallel source of truth in the app.
+
+Project save/open uses `@pm/project` (`PmProjectDocument`). See `docs/specs/project-document.md`.
 
 ## Ownership
 

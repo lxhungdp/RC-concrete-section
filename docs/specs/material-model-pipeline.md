@@ -8,15 +8,30 @@ The section solver should consume compiled material functions instead of branchi
 
 ```ts
 type MaterialStore = {
-  unit: 'MPa'
   strainSign: 'compression-positive'
-  concrete: ConcreteMaterial
-  steel: SteelMaterial[]
+  concrete: ConcreteMaterial  // id always 1
+  steel: SteelMaterial[]      // ids 1, 2, 3… in steel namespace
   defaults: {
-    steelMaterialId: string
+    steelMaterialId: number
   }
 }
 ```
+
+Stress unit is implicitly **MPa** (not stored in JSON). Material `name` is display-only;
+rebars reference steel via integer `steelMaterialId`.
+
+Concrete also stores density `mc` (kg/m³, default 2350) for the KDS Ec formula.
+
+### KDS derived fields
+
+When `standard === 'KDS'`:
+
+- Changing **fc** or **mc**, or selecting KDS, recomputes **Ec** and **εcu**.
+- Ec = `0.077 · mc^1.5 · fcm^(1/3)` with fcm = fc+4 (fc≤40), fc+6 (fc≥60), else 1.1·fc.
+- When model is also `kds-parabolic`, **εc0** and **n** are recomputed from fc.
+
+Users may edit Ec / εcu / εc0 / n directly; the next KDS auto pass overwrites them.
+`alpha` remains stored on the model but is not driven by UI yet.
 
 ## Geometry Relation
 
@@ -25,8 +40,8 @@ Steel material belongs to each rebar.
 
 ```ts
 type GeometryInputRebar = {
-  id: string
-  steelMaterialId?: string
+  id: number
+  steelMaterialId?: number
   dia: number
   x: number
   y: number
@@ -39,7 +54,7 @@ Every design-standard material is compiled to the same runtime shape.
 
 ```ts
 type CompiledMaterial = {
-  id: string
+  id: number
   family: 'concrete' | 'steel'
   stress: (strain: number) => number
   tangent: (strain: number) => number
@@ -63,3 +78,10 @@ Current steel models:
 - `elastic-perfectly-plastic`
 - `bilinear`
 - `user-curve`
+
+## Persistence
+
+Material definitions are stored inside `PmProjectDocument.inputs.materials` (`@pm/project`).
+Export / import JSON round-trips the definition store; solvers must call `compileMaterialStore` after open.
+
+Entity ids use `@pm/ids` (`nextAvailableId` gap-fill). Concrete id is fixed at `1`.

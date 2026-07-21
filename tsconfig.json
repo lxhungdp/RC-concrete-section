@@ -13,10 +13,14 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "paths": {
+      "@pm/ids": ["./packages/pm-ids/src"],
+      "@pm/ids/*": ["./packages/pm-ids/src/*"],
       "@pm/geometry": ["./packages/pm-geometry/src"],
       "@pm/geometry/*": ["./packages/pm-geometry/src/*"],
       "@pm/materials": ["./packages/pm-materials/src"],
-      "@pm/materials/*": ["./packages/pm-materials/src/*"]
+      "@pm/materials/*": ["./packages/pm-materials/src/*"],
+      "@pm/project": ["./packages/pm-project/src"],
+      "@pm/project/*": ["./packages/pm-project/src/*"]
     },
     "plugins": [
       {

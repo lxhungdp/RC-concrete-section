@@ -2,7 +2,7 @@ import type { CompiledMaterial, ConcreteMaterial, SteelMaterial, StressStrainPoi
 import { interpolateLinear, numericalTangent } from './math'
 
 const compileUserCurve = (
-  id: string,
+  id: number,
   family: 'concrete' | 'steel',
   points: StressStrainPoint[],
   limits: CompiledMaterial['limits'],

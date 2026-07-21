@@ -1,0 +1,83 @@
+import assert from 'node:assert/strict'
+import { createEmptyGeometryInput } from '@pm/geometry'
+import { createDefaultMaterialStore, createKdsRebarSteel } from '@pm/materials'
+import {
+  createEmptyLoadingsInput,
+  createEmptyProjectDocument,
+  createLoadCombination,
+  createProjectDocument,
+  parseProjectDocument,
+  serializeProjectDocument
+} from './index'
+
+const run = () => {
+  const materials = createDefaultMaterialStore()
+  const steel2 = createKdsRebarSteel({ name: 'SD500', fy: 500 }, materials.steel.map((item) => item.id))
+  materials.steel.push(steel2)
+
+  const geometry = createEmptyGeometryInput({ id: 1, name: 'Roundtrip section' })
+  geometry.outers = [
+    {
+      id: 1,
+      points: [
+        { id: 1, x: 0, y: 0 },
+        { id: 2, x: 400, y: 0 },
+        { id: 3, x: 400, y: 600 },
+        { id: 4, x: 0, y: 600 }
+      ],
+      holes: [
+        {
+          id: 1,
+          points: [
+            { id: 5, x: 100, y: 100 },
+            { id: 6, x: 200, y: 100 },
+            { id: 7, x: 200, y: 200 },
+            { id: 8, x: 100, y: 200 }
+          ]
+        }
+      ],
+      rebars: [
+        { id: 1, dia: 25, x: 50, y: 50, steelMaterialId: 1 },
+        { id: 2, dia: 25, x: 350, y: 550, steelMaterialId: 2 }
+      ]
+    }
+  ]
+
+  const loadings = createEmptyLoadingsInput()
+  loadings.combinations.push(createLoadCombination({ name: 'ULS', P: 1_000_000, Mx: 50_000_000, My: 0 }, []))
+
+  const original = createProjectDocument({
+    geometry,
+    materials,
+    loadings,
+    meta: { id: 1, name: 'Roundtrip project' }
+  })
+
+  const raw = serializeProjectDocument(original)
+  const json = JSON.parse(raw) as Record<string, unknown>
+  assert.equal(json.version, 2)
+  assert.equal((json.inputs as { geometry: { unit?: unknown } }).geometry.unit, undefined)
+  assert.equal((json.inputs as { materials: { unit?: unknown } }).materials.unit, undefined)
+  assert.equal((json.inputs as { loadings: { forceUnit?: unknown } }).loadings.forceUnit, undefined)
+
+  const parsed = parseProjectDocument(raw)
+  assert.equal(parsed.ok, true)
+  if (!parsed.ok) return
+
+  assert.equal(parsed.document.meta.id, 1)
+  assert.equal(parsed.document.inputs.geometry.outers[0]?.points[0]?.id, 1)
+  assert.equal(parsed.document.inputs.materials.concrete.id, 1)
+  assert.equal(parsed.document.inputs.materials.concrete.mc, 2350)
+  assert.ok((parsed.document.inputs.materials.concrete.elasticModulus ?? 0) > 0)
+  assert.equal(parsed.document.inputs.materials.steel[1]?.id, 2)
+  assert.equal(parsed.document.inputs.geometry.outers[0]?.rebars[1]?.steelMaterialId, 2)
+  assert.equal(parsed.document.inputs.loadings.combinations[0]?.P, 1_000_000)
+
+  const empty = createEmptyProjectDocument({ id: 1, name: 'Empty' })
+  const emptyParsed = parseProjectDocument(serializeProjectDocument(empty))
+  assert.equal(emptyParsed.ok, true)
+
+  console.log('pm-project roundtrip selftest: ok')
+}
+
+run()

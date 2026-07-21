@@ -8,6 +8,8 @@ import {
   Eraser,
   Eye,
   EyeOff,
+  FileDown,
+  FileUp,
   Layers3,
   Lock,
   Maximize2,
@@ -20,6 +22,7 @@ import {
   X
 } from 'lucide-react'
 import {
+  allocateIds,
   composeSectionPrimitives,
   createEmptyGeometryInput,
   createCapsuleRing,
@@ -27,9 +30,10 @@ import {
   createPrimitive,
   createRectangleRing,
   createSectionSolid,
-  geometryInputFromSectionGeometry,
+  geometryInputFromOuterRings,
   geometryInputRebars,
   makePointId,
+  nextAvailableId,
   sectionGeometryFromGeometryInput,
   solidRings,
   summarizeSection,
@@ -40,6 +44,14 @@ import {
   type SectionGeometry
 } from '@pm/geometry'
 import { createDefaultMaterialStore, type MaterialStore } from '@pm/materials'
+import {
+  createEmptyLoadingsInput,
+  createProjectDocument,
+  parseProjectDocument,
+  projectDocumentFileName,
+  serializeProjectDocument,
+  type LoadingsInput
+} from '@pm/project'
 import { MaterialPanel } from './MaterialPanel'
 import { RebarPanel } from './RebarPanel'
 import {
@@ -79,7 +91,7 @@ type DrawingDraft =
   | null
 
 type BoundaryObject = {
-  id: string
+  id: number
   name: string
   /** List of outers; each entry is [outerRing, ...holeRings]. */
   outers: Point2[][][]
@@ -91,7 +103,7 @@ type BoundaryObject = {
 
 type BoundaryScreenData = {
   boundary: BoundaryObject
-  outers: Array<Array<Array<ScreenPoint & { id: string; wx: number; wy: number }>>>
+  outers: Array<Array<Array<ScreenPoint & { id: number; wx: number; wy: number }>>>
   path: string
 }
 
@@ -119,27 +131,14 @@ const boundaryHoleCount = (boundary: BoundaryObject) =>
 const boundaryPointCount = (boundary: BoundaryObject) =>
   boundary.outers.reduce((sum, outer) => sum + outer.reduce((ringSum, ring) => ringSum + ring.length, 0), 0)
 
-/** Global 1..N labels matching canvas order: Outer1 points, then its holes, then Outer2, … */
-const buildPointDisplayIndexMap = (outers: Point2[][][]) => {
-  const map = new Map<string, number>()
-  let index = 0
-  for (const outer of outers) {
-    for (const ring of outer) {
-      for (const point of ring) {
-        index += 1
-        map.set(point.id, index)
-      }
-    }
-  }
-  return map
-}
+const collectBoundaryPointIds = (boundary: BoundaryObject): number[] =>
+  boundary.outers.flatMap((outer) => outer.flatMap((ring) => ring.map((point) => point.id)))
 
 const cloneRing = (ring: Point2[]): Point2[] => ring.map((point) => ({ ...point }))
 
 const boundaryToSectionGeometry = (boundary: BoundaryObject): SectionGeometry => ({
   id: boundary.id,
   name: boundary.name,
-  unit: 'mm',
   solids: boundary.outers
     .filter((outer) => (outer[0]?.length ?? 0) >= 3)
     .map((outer) => createSectionSolid(cloneRing(outer[0] ?? []), outer.slice(1).map(cloneRing)))
@@ -161,7 +160,34 @@ const sectionGeometryToBoundary = (
   locked: patch.locked ?? false
 })
 
-const makeBoundaryId = () => `b-${Math.random().toString(36).slice(2, 9)}`
+const geometryInputToBoundary = (input: GeometryInput): BoundaryObject => ({
+  id: input.id,
+  name: input.name,
+  sourceKind: 'manual',
+  source: { kind: 'manual' },
+  outers: input.outers
+    .filter((outer) => outer.points.length >= 3)
+    .map((outer) => [cloneRing(outer.points), ...outer.holes.map((hole) => cloneRing(hole.points))]),
+  visible: true,
+  locked: true
+})
+
+const makeBoundaryId = (used: Iterable<number>) => nextAvailableId(used)
+
+const remapBoundaryPoints = (outers: Point2[][][], dx = 0, dy = 0): Point2[][][] => {
+  const count = outers.reduce((sum, outer) => sum + outer.reduce((ringSum, ring) => ringSum + ring.length, 0), 0)
+  const ids = allocateIds(count, [])
+  let index = 0
+  return outers.map((outer) =>
+    outer.map((ring) =>
+      ring.map((point) => ({
+        id: ids[index++]!,
+        x: point.x + dx,
+        y: point.y + dy
+      }))
+    )
+  )
+}
 
 const ringBounds = (ring: Point2[]) => {
   if (ring.length === 0) return { centerX: 0, centerY: 0, width: 0, height: 0 }
@@ -207,14 +233,16 @@ const mapOuterRing = (
       : outer.map((ring, currentRingIndex) => (currentRingIndex !== ringIndex ? ring : mapRing(ring)))
   )
 
-const boundaryToPrimitives = (boundary: BoundaryObject, operation: 'add' | 'subtract') =>
-  boundary.outers.map((outer, index) =>
-    createPrimitive(`${boundary.id}-o${index}`, operation, outer, boundary.name)
-  )
+const boundaryToPrimitives = (boundary: BoundaryObject, operation: 'add' | 'subtract', usedIds: number[]) =>
+  boundary.outers.map((outer) => {
+    const id = nextAvailableId(usedIds)
+    usedIds.push(id)
+    return createPrimitive(id, operation, outer, boundary.name)
+  })
 
 const rectangleSourceFromCorners = (a: Point2, b: Point2): Extract<BoundarySource, { kind: 'rectangle' }> => ({
   kind: 'rectangle',
-  center: { id: makePointId(), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+  center: { id: makePointId([]), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
   width: Math.max(1, Math.abs(b.x - a.x)),
   height: Math.max(1, Math.abs(b.y - a.y))
 })
@@ -310,29 +338,37 @@ const fitCameraToPointsWithInsets = (
 
 export function SectionDrawingClient() {
   const svgRef = useRef<SVGSVGElement | null>(null)
+  const importInputRef = useRef<HTMLInputElement | null>(null)
+  const pendingFitAfterImportRef = useRef(false)
   const dragRef = useRef<
     | { kind: 'pan'; last: ScreenPoint }
-    | { kind: 'vertex'; boundaryId: string; outerIndex: number; ringIndex: number; pointId: string; last: ScreenPoint }
-    | { kind: 'boundary'; boundaryId: string; lastWorld: Point2 }
+    | { kind: 'vertex'; boundaryId: number; outerIndex: number; ringIndex: number; pointId: number; last: ScreenPoint }
+    | { kind: 'boundary'; boundaryId: number; lastWorld: Point2 }
     | null
   >(null)
   const [theme, setTheme] = useState<Theme>('light')
   const [tool, setTool] = useState<Tool>('select')
   const [activeModule, setActiveModule] = useState<WorkspaceModule>('geometry')
   const [geometrySubTab, setGeometrySubTab] = useState<GeometrySubTab>('concrete')
-  const [selectedRebarId, setSelectedRebarId] = useState<string | null>(null)
+  const [selectedRebarId, setSelectedRebarId] = useState<number | null>(null)
   const [boundaries, setBoundaries] = useState<BoundaryObject[]>([])
-  const [selectedBoundaryIds, setSelectedBoundaryIds] = useState<string[]>([])
-  const [activeBoundaryId, setActiveBoundaryId] = useState<string>('')
+  const [selectedBoundaryIds, setSelectedBoundaryIds] = useState<number[]>([])
+  const [activeBoundaryId, setActiveBoundaryId] = useState<number>(0)
   const [activeRingIndex, setActiveRingIndex] = useState(0)
   const [activeOuterIndex, setActiveOuterIndex] = useState(0)
-  const [selectedPointId, setSelectedPointId] = useState<string | null>(null)
+  const [selectedPointId, setSelectedPointId] = useState<number | null>(null)
   const [drawingDraft, setDrawingDraft] = useState<DrawingDraft>(null)
   const [snapCursor, setSnapCursor] = useState<Point2 | null>(null)
   const [appliedGeometryInput, setAppliedGeometryInput] = useState<GeometryInput>(() =>
-    createEmptyGeometryInput({ id: 'section-1', name: 'Column section' })
+    createEmptyGeometryInput({ id: 1, name: 'Column section' })
   )
   const [materialStore, setMaterialStore] = useState<MaterialStore>(() => createDefaultMaterialStore())
+  const [loadingsInput, setLoadingsInput] = useState<LoadingsInput>(() => createEmptyLoadingsInput())
+  const [projectMeta, setProjectMeta] = useState(() => ({
+    id: 1,
+    name: 'Column project',
+    createdAt: new Date().toISOString()
+  }))
   const [lastBooleanWarning, setLastBooleanWarning] = useState<string>('')
   const [detailTab, setDetailTab] = useState<'basic' | 'points'>('basic')
   const [circleSegmentsDraft, setCircleSegmentsDraft] = useState<string | null>(null)
@@ -380,13 +416,9 @@ export function SectionDrawingClient() {
     () => ringBounds(activeBoundary?.outers[0]?.[0] ?? []),
     [activeBoundary?.outers]
   )
-  const pointDisplayIndexById = useMemo(
-    () => (activeBoundary ? buildPointDisplayIndexMap(activeBoundary.outers) : new Map<string, number>()),
-    [activeBoundary]
-  )
   const activeOuterHoleCount = Math.max(0, activeOuter.length - 1)
   const hasAppliedSection = finalSection.solids.some((solid) => solid.outer.length >= 3)
-  const appliedBoundaryId = hasAppliedSection ? finalSection.id : ''
+  const appliedBoundaryId = hasAppliedSection ? finalSection.id : 0
   const canApplySection = Boolean(
     activeBoundary && !(activeBoundary.id === appliedBoundaryId && activeBoundary.locked)
   )
@@ -492,7 +524,7 @@ export function SectionDrawingClient() {
   const commitDrawnBoundary = (name: string, sourceKind: BoundaryObject['sourceKind'], ring: Point2[], source?: BoundarySource) => {
     if (ring.length < 3) return
     const boundary: BoundaryObject = {
-      id: makeBoundaryId(),
+      id: makeBoundaryId(boundaries.map((item) => item.id)),
       name,
       outers: [[ring]],
       sourceKind,
@@ -506,13 +538,16 @@ export function SectionDrawingClient() {
     setTool('select')
   }
 
-  const worldPointFromPointer = (event: React.PointerEvent<SVGSVGElement>, svg: SVGSVGElement) =>
-    (() => {
-      const point = snapWorldPoint(screenToWorld(camera, eventPoint(event, svg), size), GRID_SPACING_MM)
-      return { id: makePointId(), x: point.x, y: point.y }
-    })()
+  const worldPointFromPointer = (
+    event: React.PointerEvent<SVGSVGElement> | React.WheelEvent<SVGSVGElement>,
+    svg: SVGSVGElement,
+    used: Iterable<number> = []
+  ) => {
+    const point = snapWorldPoint(screenToWorld(camera, eventPoint(event, svg), size), GRID_SPACING_MM)
+    return { id: makePointId(used), x: point.x, y: point.y }
+  }
 
-  const selectBoundary = (id: string, additive = false) => {
+  const selectBoundary = (id: number, additive = false) => {
     setCircleSegmentsDraft(null)
     setActiveBoundaryId(id)
     setActiveOuterIndex(0)
@@ -532,17 +567,41 @@ export function SectionDrawingClient() {
     setCircleSegmentsDraft(null)
   }
 
-  const updateBoundary = (id: string, patch: Partial<BoundaryObject>) => {
+  const updateBoundary = (id: number, patch: Partial<BoundaryObject>) => {
     setBoundaries((current) => current.map((boundary) => (boundary.id === id ? { ...boundary, ...patch } : boundary)))
   }
 
   const updateActiveBoundarySource = (source: BoundarySource) => {
     if (!activeBoundary || activeBoundary.locked) return
+
+    const existingHoles = activeBoundary.outers[0]?.slice(1) ?? []
+    const usedHolePointIds = existingHoles.flatMap((ring) => ring.map((point) => point.id))
+
     const outers: Point2[][][] =
       source.kind === 'rectangle'
-        ? [[createRectangleRing({ center: source.center, width: source.width, height: source.height })]]
+        ? [
+            [
+              createRectangleRing({
+                center: source.center,
+                width: source.width,
+                height: source.height,
+                usedIds: usedHolePointIds
+              }),
+              ...existingHoles.map(cloneRing)
+            ]
+          ]
         : source.kind === 'circle'
-          ? [[createCircleRing({ center: source.center, radius: source.radius, segments: source.segments })]]
+          ? [
+              [
+                createCircleRing({
+                  center: source.center,
+                  radius: source.radius,
+                  segments: source.segments,
+                  usedIds: usedHolePointIds
+                }),
+                ...existingHoles.map(cloneRing)
+              ]
+            ]
           : source.kind === 'capsule'
             ? [
                 [
@@ -550,8 +609,10 @@ export function SectionDrawingClient() {
                     center: source.center,
                     width: source.width,
                     height: source.height,
-                    segmentsPerCap: Math.max(4, Math.round(source.segments / 2))
-                  })
+                    segmentsPerCap: Math.max(4, Math.round(source.segments / 2)),
+                    usedIds: usedHolePointIds
+                  }),
+                  ...existingHoles.map(cloneRing)
                 ]
               ]
             : activeBoundary.outers
@@ -628,23 +689,23 @@ export function SectionDrawingClient() {
     )
   }
 
-  const deleteBoundary = (id: string) => {
+  const deleteBoundary = (id: number) => {
     setBoundaries((current) => current.filter((boundary) => boundary.id !== id))
     setSelectedBoundaryIds((current) => current.filter((selectedId) => selectedId !== id))
     if (finalSection.id === id) {
-      setAppliedGeometryInput(createEmptyGeometryInput({ id: 'section-1', name: 'Column section' }))
+      setAppliedGeometryInput(createEmptyGeometryInput({ id: 1, name: 'Column section' }))
       setSelectedRebarId(null)
     }
     if (activeBoundaryId === id) {
       const nextBoundary = boundaries.find((boundary) => boundary.id !== id)
-      setActiveBoundaryId(nextBoundary?.id ?? '')
+      setActiveBoundaryId(nextBoundary?.id ?? 0)
       setActiveOuterIndex(0)
       setActiveRingIndex(0)
       setSelectedPointId(nextBoundary?.outers[0]?.[0]?.[0]?.id ?? null)
     }
   }
 
-  const requestDeleteBoundary = (id: string) => {
+  const requestDeleteBoundary = (id: number) => {
     const boundary = boundaries.find((item) => item.id === id)
     if (!boundary) return
 
@@ -659,14 +720,12 @@ export function SectionDrawingClient() {
   }
 
   const duplicateBoundary = (boundary: BoundaryObject) => {
-    const id = makeBoundaryId()
+    const id = makeBoundaryId(boundaries.map((item) => item.id))
     const duplicate: BoundaryObject = {
       ...boundary,
       id,
       name: `${boundary.name} Copy`,
-      outers: boundary.outers.map((outer) =>
-        outer.map((ring) => ring.map((point) => ({ ...point, id: makePointId(), x: point.x + 25, y: point.y + 25 })))
-      ),
+      outers: remapBoundaryPoints(boundary.outers, 25, 25),
       sourceKind: 'manual',
       source: { kind: 'manual' }
     }
@@ -687,19 +746,20 @@ export function SectionDrawingClient() {
       return areaB - areaA
     })
 
+    const usedPrimitiveIds: number[] = []
     const primitives =
       action === 'union'
-        ? selectedBoundaries.flatMap((boundary) => boundaryToPrimitives(boundary, 'add'))
+        ? selectedBoundaries.flatMap((boundary) => boundaryToPrimitives(boundary, 'add', usedPrimitiveIds))
         : (() => {
             const [outer, ...inners] = rankedByArea
             return [
-              ...boundaryToPrimitives(outer, 'add'),
-              ...inners.flatMap((boundary) => boundaryToPrimitives(boundary, 'subtract'))
+              ...boundaryToPrimitives(outer, 'add', usedPrimitiveIds),
+              ...inners.flatMap((boundary) => boundaryToPrimitives(boundary, 'subtract', usedPrimitiveIds))
             ]
           })()
 
     const result = composeSectionPrimitives(primitives, {
-      id: makeBoundaryId(),
+      id: makeBoundaryId(boundaries.map((item) => item.id)),
       name: action === 'union' ? 'Union result' : 'Subtract result'
     })
     setLastBooleanWarning(result.warnings.join(' '))
@@ -714,7 +774,7 @@ export function SectionDrawingClient() {
     addBoundary(resultBoundary)
   }
 
-  const updateActivePoint = (id: string, patch: Partial<Point2>) => {
+  const updateActivePoint = (id: number, patch: Partial<Point2>) => {
     if (!activeBoundary || activeBoundary.locked) return
     setBoundaries((current) =>
       current.map((boundary) => {
@@ -729,7 +789,7 @@ export function SectionDrawingClient() {
     )
   }
 
-  const moveBoundary = (id: string, delta: { x: number; y: number }) => {
+  const moveBoundary = (id: number, delta: { x: number; y: number }) => {
     setBoundaries((current) =>
       current.map((boundary) => {
         if (boundary.id !== id || boundary.locked) return boundary
@@ -763,10 +823,10 @@ export function SectionDrawingClient() {
   }
 
   const updateBoundaryPoint = (
-    boundaryId: string,
+    boundaryId: number,
     outerIndex: number,
     ringIndex: number,
-    pointId: string,
+    pointId: number,
     patch: Partial<Point2>
   ) => {
     setBoundaries((current) =>
@@ -788,7 +848,7 @@ export function SectionDrawingClient() {
     const currentPoint = activeRing[selectedIndex] ?? { x: 0, y: 0 }
     const nextPoint = activeRing[(selectedIndex + 1) % activeRing.length] ?? currentPoint
     const point = {
-      id: makePointId(),
+      id: makePointId(collectBoundaryPointIds(activeBoundary)),
       x: Math.round((currentPoint.x + nextPoint.x) / 2 / GRID_SPACING_MM) * GRID_SPACING_MM,
       y: Math.round((currentPoint.y + nextPoint.y) / 2 / GRID_SPACING_MM) * GRID_SPACING_MM
     }
@@ -826,11 +886,13 @@ export function SectionDrawingClient() {
   const applyActiveAsSection = () => {
     if (!activeBoundary || !canApplySection) return
     const appliedId = activeBoundary.id
-    const previousAppliedId = hasAppliedSection ? finalSection.id : ''
+    const previousAppliedId = hasAppliedSection ? finalSection.id : 0
 
     setAppliedGeometryInput(
-      geometryInputFromSectionGeometry(
-        boundaryToSectionGeometry(activeBoundary),
+      geometryInputFromOuterRings(
+        appliedId,
+        activeBoundary.name,
+        activeBoundary.outers,
         previousAppliedId === appliedId ? geometryInputRebars(appliedGeometryInput) : []
       )
     )
@@ -858,6 +920,114 @@ export function SectionDrawingClient() {
     )
   }
 
+  useEffect(() => {
+    if (!pendingFitAfterImportRef.current) return
+    pendingFitAfterImportRef.current = false
+    setCamera(
+      fitCameraToPointsWithInsets(allVisiblePoints, size, {
+        top: 74,
+        right: 36,
+        bottom: 96,
+        left: 36
+      })
+    )
+  }, [allVisiblePoints, size])
+
+  const exportProjectJson = () => {
+    const draftCount = boundaries.filter((boundary) => boundary.id !== appliedBoundaryId).length
+    if (!hasAppliedSection && boundaries.length > 0) {
+      const proceed = window.confirm(
+        'No applied section yet. Export will write empty geometry.\n\nApply a boundary first for a complete file.\nContinue export anyway?'
+      )
+      if (!proceed) return
+    } else if (hasAppliedSection && draftCount > 0) {
+      const proceed = window.confirm(
+        `${draftCount} draft boundary(ies) are not applied and will not be included in the JSON.\n\nOnly the applied section is exported.\nContinue?`
+      )
+      if (!proceed) return
+    }
+
+    const document = createProjectDocument({
+      geometry: appliedGeometryInput,
+      materials: materialStore,
+      loadings: loadingsInput,
+      meta: {
+        id: projectMeta.id,
+        name: projectMeta.name || appliedGeometryInput.name || 'Column project',
+        createdAt: projectMeta.createdAt
+      }
+    })
+    setProjectMeta({
+      id: document.meta.id,
+      name: document.meta.name,
+      createdAt: document.meta.createdAt
+    })
+
+    const blob = new Blob([serializeProjectDocument(document)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = window.document.createElement('a')
+    anchor.href = url
+    anchor.download = projectDocumentFileName(document)
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const applyImportedProject = (raw: string) => {
+    const result = parseProjectDocument(raw)
+    if (!result.ok) {
+      window.alert(`Import failed:\n${result.error}`)
+      return
+    }
+
+    const { document, warnings } = result
+    const geometry = document.inputs.geometry
+    const hasGeometry = geometry.outers.some((outer) => outer.points.length >= 3)
+
+    setAppliedGeometryInput(geometry)
+    setMaterialStore(document.inputs.materials)
+    setLoadingsInput(document.inputs.loadings)
+    setProjectMeta({
+      id: document.meta.id,
+      name: document.meta.name,
+      createdAt: document.meta.createdAt
+    })
+    setSelectedRebarId(null)
+    setDrawingDraft(null)
+    setSnapCursor(null)
+    setTool('select')
+    setLastBooleanWarning(warnings.join(' '))
+
+    if (hasGeometry) {
+      const boundary = geometryInputToBoundary(geometry)
+      setBoundaries([boundary])
+      setSelectedBoundaryIds([boundary.id])
+      setActiveBoundaryId(boundary.id)
+      setActiveOuterIndex(0)
+      setActiveRingIndex(0)
+      setSelectedPointId(boundary.outers[0]?.[0]?.[0]?.id ?? null)
+      pendingFitAfterImportRef.current = true
+    } else {
+      setBoundaries([])
+      setSelectedBoundaryIds([])
+      setActiveBoundaryId(0)
+      setActiveOuterIndex(0)
+      setActiveRingIndex(0)
+      setSelectedPointId(null)
+    }
+  }
+
+  const handleImportFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const text = await file.text()
+      applyImportedProject(text)
+    } catch {
+      window.alert('Import failed: could not read the selected file.')
+    }
+  }
+
   const toggleDrawTool = (nextTool: Exclude<Tool, 'select'>) => {
     setTool((current) => (current === nextTool ? 'select' : nextTool))
     setDrawingDraft(null)
@@ -877,9 +1047,12 @@ export function SectionDrawingClient() {
     const point = eventPoint(event, svg)
     const world = worldPointFromPointer(event, svg)
     const target = event.target as Element
-    const pointId = target.getAttribute('data-point-id')
-    const boundaryId = target.getAttribute('data-boundary-id')
-    const rebarId = target.getAttribute('data-rebar-id')
+    const pointIdAttr = target.getAttribute('data-point-id')
+    const boundaryIdAttr = target.getAttribute('data-boundary-id')
+    const rebarIdAttr = target.getAttribute('data-rebar-id')
+    const pointId = pointIdAttr != null ? Number(pointIdAttr) : null
+    const boundaryId = boundaryIdAttr != null ? Number(boundaryIdAttr) : null
+    const rebarId = rebarIdAttr != null ? Number(rebarIdAttr) : null
     const outerIndex = Number(target.getAttribute('data-outer-index') ?? '0')
     const ringIndex = Number(target.getAttribute('data-ring-index') ?? '0')
 
@@ -887,7 +1060,7 @@ export function SectionDrawingClient() {
 
     if (event.button === 2) return
 
-    if (rebarId) {
+    if (rebarId != null && Number.isFinite(rebarId)) {
       setSelectedRebarId(rebarId)
       setGeometrySubTab('rebar')
       return
@@ -926,14 +1099,20 @@ export function SectionDrawingClient() {
       setSnapCursor(world)
       setDrawingDraft((current) => {
         if (current?.tool === 'draw-polygon') {
-          return { ...current, points: [...current.points, world], cursor: world }
+          const nextPoint = worldPointFromPointer(
+            event,
+            svg,
+            current.points.map((item) => item.id)
+          )
+          return { ...current, points: [...current.points, nextPoint], cursor: nextPoint }
         }
-        return { tool: 'draw-polygon', points: [world], cursor: world }
+        const firstPoint = worldPointFromPointer(event, svg)
+        return { tool: 'draw-polygon', points: [firstPoint], cursor: firstPoint }
       })
       return
     }
 
-    if (pointId && boundaryId) {
+    if (pointId != null && Number.isFinite(pointId) && boundaryId != null && Number.isFinite(boundaryId)) {
       selectBoundary(boundaryId, event.shiftKey || event.metaKey)
       setActiveOuterIndex(Number.isFinite(outerIndex) ? outerIndex : 0)
       setActiveRingIndex(Number.isFinite(ringIndex) ? ringIndex : 0)
@@ -949,7 +1128,7 @@ export function SectionDrawingClient() {
       return
     }
 
-    if (boundaryId) {
+    if (boundaryId != null && Number.isFinite(boundaryId)) {
       selectBoundary(boundaryId, event.shiftKey || event.metaKey)
       const boundary = boundaries.find((item) => item.id === boundaryId)
       if (!event.shiftKey && !event.metaKey && boundary && !boundary.locked) {
@@ -1056,6 +1235,20 @@ export function SectionDrawingClient() {
           <button onClick={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))} title="Theme">
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           </button>
+          <span className="pm-toolbar-sep" aria-hidden="true" />
+          <button onClick={() => importInputRef.current?.click()} title="Import project JSON">
+            <FileUp size={18} />
+          </button>
+          <button onClick={exportProjectJson} title="Export project JSON">
+            <FileDown size={18} />
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={handleImportFileChange}
+          />
         </div>
       </header>
 
@@ -1490,7 +1683,7 @@ export function SectionDrawingClient() {
                     <table className="pm-point-table">
                       <thead>
                         <tr>
-                          <th>#</th>
+                          <th>id</th>
                           <th>X</th>
                           <th>Y</th>
                           <th>
@@ -1507,16 +1700,14 @@ export function SectionDrawingClient() {
                         </tr>
                       </thead>
                       <tbody>
-                        {activeRing.map((point) => {
-                          const displayIndex = pointDisplayIndexById.get(point.id) ?? 0
-                          return (
+                        {activeRing.map((point) => (
                             <tr className={selectedPointId === point.id ? 'is-selected' : ''} key={point.id}>
                               <td>
-                                <span className="pm-point-index">{displayIndex}</span>
+                                <span className="pm-point-index">{point.id}</span>
                               </td>
                               <td>
                                 <input
-                                  aria-label={`Point ${displayIndex} X`}
+                                  aria-label={`Point ${point.id} X`}
                                   value={point.x}
                                   type="number"
                                   readOnly={activeBoundary.locked}
@@ -1526,7 +1717,7 @@ export function SectionDrawingClient() {
                               </td>
                               <td>
                                 <input
-                                  aria-label={`Point ${displayIndex} Y`}
+                                  aria-label={`Point ${point.id} Y`}
                                   value={point.y}
                                   type="number"
                                   readOnly={activeBoundary.locked}
@@ -1545,8 +1736,7 @@ export function SectionDrawingClient() {
                                 </button>
                               </td>
                             </tr>
-                          )
-                        })}
+                          ))}
                       </tbody>
                     </table>
                   </div>
@@ -1579,7 +1769,12 @@ export function SectionDrawingClient() {
               <h2>Loadings</h2>
             </div>
             <div className="pm-placeholder-panel">
-              <span>Axial load, moments, and load combinations will live here.</span>
+              <span>
+                Axial load (N), moments (N·mm), and load combinations will live here.
+                {loadingsInput.combinations.length > 0
+                  ? ` Imported ${loadingsInput.combinations.length} combination(s) are retained in project JSON.`
+                  : ' Export already includes an empty loadings block for future use.'}
+              </span>
             </div>
           </section>
         )}
@@ -1700,7 +1895,7 @@ export function SectionDrawingClient() {
           </g>
           <g className="pm-rebar-layer" pointerEvents="none">
             {hasAppliedSection &&
-              rebars.map((bar, index) => {
+              rebars.map((bar) => {
                 const screen = worldToScreen(camera, { x: bar.x, y: bar.y }, size)
                 const radiusPx = Math.max(2.5, bar.dia / (2 * camera.unitsPerPixel))
                 const selected = bar.id === selectedRebarId
@@ -1716,7 +1911,7 @@ export function SectionDrawingClient() {
                     />
                     {(selected || geometrySubTab === 'rebar') && (
                       <text className="pm-rebar-label" x={screen.x + radiusPx + 3} y={screen.y - radiusPx - 2}>
-                        {index + 1}
+                        {bar.id}
                       </text>
                     )}
                   </g>
@@ -1731,7 +1926,6 @@ export function SectionDrawingClient() {
                 outers.flatMap((outer, outerIndex) =>
                   outer.flatMap((ring, ringIndex) =>
                     ring.map((point) => {
-                      const label = pointDisplayIndexById.get(point.id) ?? 0
                       const isActiveRing = outerIndex === activeOuterIndex && ringIndex === activeRingIndex
                       return (
                         <g key={point.id}>
@@ -1746,7 +1940,7 @@ export function SectionDrawingClient() {
                             r={isActiveRing || selectedPointId === point.id ? 4 : 3.5}
                           />
                           <text className="pm-point-label" x={point.x + 5} y={point.y - 5}>
-                            {label}
+                            {point.id}
                           </text>
                         </g>
                       )

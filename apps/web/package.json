@@ -11,6 +11,7 @@
   "dependencies": {
     "@pm/geometry": "0.1.0",
     "@pm/materials": "0.1.0",
+    "@pm/project": "0.1.0",
     "@structures/cad-drawing": "0.1.0",
     "lucide-react": "latest",
     "next": "latest",

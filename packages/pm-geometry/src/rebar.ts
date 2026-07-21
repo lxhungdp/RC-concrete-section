@@ -1,11 +1,12 @@
+import { nextAvailableId } from './ids'
 import type { Point2, SectionGeometry, SectionSolid } from './index'
 
 export type Rebar = {
-  id: string
+  id: number
   x: number
   y: number
   dia: number
-  groupId?: string
+  groupId?: number
   solidIndex?: number
 }
 
@@ -25,15 +26,22 @@ export type RebarGenerateParams = {
   x?: number
   y?: number
   solidIndex?: number | 'all'
+  /** Existing rebar ids so newly generated bars fill gaps. */
+  usedIds?: Iterable<number>
 }
 
 const DEFAULT_DIA = 20
 const DEFAULT_COVER = 40
 
-export const makeRebarId = () => `rb-${Math.random().toString(36).slice(2, 9)}`
-export const makeRebarGroupId = (kind: string) => `rg-${kind}-${Math.random().toString(36).slice(2, 7)}`
+export const makeRebarId = (used: Iterable<number> = []) => nextAvailableId(used)
 
-const makeTempId = () => `t-${Math.random().toString(36).slice(2, 9)}`
+export const makeRebarGroupId = (used: Iterable<number> = []) => nextAvailableId(used)
+
+const makeTempPoint = (x: number, y: number, used: number[]): Point2 => {
+  const id = nextAvailableId(used)
+  used.push(id)
+  return { id, x, y }
+}
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
@@ -92,7 +100,8 @@ const ringBounds = (ring: Point2[]) => {
 
 export const offsetRingInward = (ring: Point2[], cover: number): Point2[] => {
   const src = ensureCcw(ring)
-  if (src.length < 3 || cover <= 0) return src.map((p) => ({ id: makeTempId(), x: p.x, y: p.y }))
+  const used: number[] = []
+  if (src.length < 3 || cover <= 0) return src.map((p) => makeTempPoint(p.x, p.y, used))
 
   const n = src.length
   const result: Point2[] = []
@@ -110,11 +119,7 @@ export const offsetRingInward = (ring: Point2[], cover: number): Point2[] => {
 
     const cos = clamp(bis.x * n1.x + bis.y * n1.y, 0.15, 1)
     const dist = cover / cos
-    result.push({
-      id: makeTempId(),
-      x: curr.x + bis.x * dist,
-      y: curr.y + bis.y * dist
-    })
+    result.push(makeTempPoint(curr.x + bis.x * dist, curr.y + bis.y * dist, used))
   }
 
   return result
@@ -153,17 +158,22 @@ const pointAtArcLength = (ring: Point2[], distance: number) => {
 const barsFromPositions = (
   positions: Array<{ x: number; y: number }>,
   dia: number,
-  groupId: string,
-  solidIndex: number
+  groupId: number,
+  solidIndex: number,
+  usedIds: number[]
 ): Rebar[] =>
-  positions.map((pos) => ({
-    id: makeRebarId(),
-    x: Math.round(pos.x * 1000) / 1000,
-    y: Math.round(pos.y * 1000) / 1000,
-    dia,
-    groupId,
-    solidIndex
-  }))
+  positions.map((pos) => {
+    const id = nextAvailableId(usedIds)
+    usedIds.push(id)
+    return {
+      id,
+      x: Math.round(pos.x * 1000) / 1000,
+      y: Math.round(pos.y * 1000) / 1000,
+      dia,
+      groupId,
+      solidIndex
+    }
+  })
 
 const sampleRingByCount = (ring: Point2[], count: number) => {
   const n = Math.max(1, Math.round(count))
@@ -185,17 +195,25 @@ const generatePerimeterSpacingBars = (
   solid: SectionSolid,
   params: { cover: number; dia: number; spacing: number },
   solidIndex: number,
-  groupId: string
+  groupId: number,
+  usedIds: number[]
 ) => {
   const offset = offsetRingInward(solid.outer, Math.max(0, params.cover))
-  return barsFromPositions(sampleRingBySpacing(offset, Math.max(1, params.spacing)), params.dia, groupId, solidIndex)
+  return barsFromPositions(
+    sampleRingBySpacing(offset, Math.max(1, params.spacing)),
+    params.dia,
+    groupId,
+    solidIndex,
+    usedIds
+  )
 }
 
 const generateTopBottomBars = (
   solid: SectionSolid,
   params: { cover: number; dia: number; topCount: number; bottomCount: number },
   solidIndex: number,
-  groupId: string
+  groupId: number,
+  usedIds: number[]
 ) => {
   const bounds = ringBounds(solid.outer)
   const cover = Math.max(0, params.cover)
@@ -219,7 +237,8 @@ const generateTopBottomBars = (
     [...distribute(params.bottomCount, bottom), ...distribute(params.topCount, top)],
     params.dia,
     groupId,
-    solidIndex
+    solidIndex,
+    usedIds
   )
 }
 
@@ -227,7 +246,8 @@ const generateSideBars = (
   solid: SectionSolid,
   params: { cover: number; dia: number; leftCount: number; rightCount: number },
   solidIndex: number,
-  groupId: string
+  groupId: number,
+  usedIds: number[]
 ) => {
   const bounds = ringBounds(solid.outer)
   const cover = Math.max(0, params.cover)
@@ -252,7 +272,8 @@ const generateSideBars = (
     [...distribute(params.leftCount, left), ...distribute(params.rightCount, right)],
     params.dia,
     groupId,
-    solidIndex
+    solidIndex,
+    usedIds
   )
 }
 
@@ -272,7 +293,8 @@ export const generateRebarsForSection = (
 ): Rebar[] => {
   const cover = params.cover ?? DEFAULT_COVER
   const dia = params.dia ?? DEFAULT_DIA
-  const groupId = makeRebarGroupId(kind)
+  const usedIds = [...(params.usedIds ?? [])]
+  const groupId = makeRebarGroupId([])
   const targets = selectSolids(geometry, params.solidIndex)
   const bars: Rebar[] = []
 
@@ -280,7 +302,13 @@ export const generateRebarsForSection = (
     switch (kind) {
       case 'perimeter-spacing':
         bars.push(
-          ...generatePerimeterSpacingBars(solid, { cover, dia, spacing: params.spacing ?? 100 }, index, groupId)
+          ...generatePerimeterSpacingBars(
+            solid,
+            { cover, dia, spacing: params.spacing ?? 100 },
+            index,
+            groupId,
+            usedIds
+          )
         )
         break
       case 'top-bottom': {
@@ -295,7 +323,8 @@ export const generateRebarsForSection = (
               bottomCount: params.bottomCount ?? count
             },
             index,
-            groupId
+            groupId,
+            usedIds
           )
         )
         break
@@ -312,7 +341,8 @@ export const generateRebarsForSection = (
               rightCount: params.rightCount ?? count
             },
             index,
-            groupId
+            groupId,
+            usedIds
           )
         )
         break
