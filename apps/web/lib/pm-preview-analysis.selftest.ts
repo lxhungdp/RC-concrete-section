@@ -23,6 +23,7 @@ import { resolve } from 'node:path'
 import {
   buildConcreteMesh,
   geometryInputRebars,
+  netConcreteCentroid,
   sectionGeometryFromGeometryInput,
   type GeometryInputRebarView,
   type SectionGeometry
@@ -279,7 +280,36 @@ const run = () => {
   )
   console.log()
 
-  console.log('== 9. Advisory: concrete law above epsCu ==')
+  console.log('== 9. Reference origin and translation invariance ==')
+  // The workbook defines eps0 on the centroidal axis: `eps0 = ecu*(c - (Ymax - yc))/c`, sheet
+  // `2D (15deg)` L132, with `yc` = H48. Sheet `Input` geometry is already centred, so yc = 0.
+  const origin = netConcreteCentroid(SECTION)
+  check('origin x = workbook xc (mm)', origin.x, 0, 1e-9, 1)
+  check('origin y = workbook yc (mm)', origin.y, 0, 1e-9, 1)
+  // Nothing may depend on where the user happened to draw the section.
+  const OFFSET = { x: -3210.5, y: 777.25 }
+  const movedSection: SectionGeometry = {
+    ...SECTION,
+    solids: SECTION.solids.map((solid) => ({
+      outer: solid.outer.map((point) => ({ ...point, x: point.x + OFFSET.x, y: point.y + OFFSET.y })),
+      holes: solid.holes.map((hole) => hole.map((point) => ({ ...point, x: point.x + OFFSET.x, y: point.y + OFFSET.y })))
+    }))
+  }
+  const movedRebars = REBARS.map((bar) => ({ ...bar, x: bar.x + OFFSET.x, y: bar.y + OFFSET.y }))
+  const movedOrigin = netConcreteCentroid(movedSection)
+  check('translated origin x (mm)', movedOrigin.x, OFFSET.x, 1e-9)
+  check('translated origin y (mm)', movedOrigin.y, OFFSET.y, 1e-9)
+  for (const station of [0, 5, 18]) {
+    const movedState = previewStationState(movedSection, movedRebars, BETA, station, epsCu, epsY)
+    const movedLedger = evaluatePreviewState(movedSection, movedRebars, MATERIALS, movedState)
+    const momentScale = Math.abs(WORKBOOK.neutralAxisAtFarBar.total.Mx)
+    check(`P${station} translated eps0`, movedState.e0, states[station].e0, 1e-12)
+    checkResultant(`P${station} translated conc`, scale(movedLedger.concrete), scale(ledgers[station].concrete), 1e-12, momentScale)
+    checkResultant(`P${station} translated steel`, scale(movedLedger.steel), scale(ledgers[station].steel), 1e-12, momentScale)
+  }
+  console.log()
+
+  console.log('== 10. Advisory: concrete law above epsCu ==')
   // Not exercised by P0..P18 (check 4 proves the peak strain never exceeds epsCu), but the Newton
   // inverse solver does visit such planes, where a drop to zero is a force discontinuity.
   const plateau = 0.85 * MATERIALS.concrete.fck

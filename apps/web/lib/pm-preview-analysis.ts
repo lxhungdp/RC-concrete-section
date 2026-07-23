@@ -1,9 +1,9 @@
 import {
   buildConcreteMesh,
+  netConcreteCentroid,
   type ConcreteMeshOptions,
   type ConcreteMeshReport,
   type GeometryInputRebarView,
-  type Point2,
   type SectionGeometry
 } from '@pm/geometry'
 import { compileMaterialStore, type MaterialStore } from '@pm/materials'
@@ -15,11 +15,21 @@ export type Resultant = {
   My: number
 }
 
+/**
+ * Strain plane `eps(x,y) = e0 + kx*y + ky*x`.
+ *
+ * `x, y` are measured from the analysis reference origin, i.e. the exact centroid of the net
+ * concrete region (`docs/02` §1 step 9). `e0` is therefore the strain at that centroidal axis and
+ * `Mx, My` are moments about it, which is what the reference workbook's `xc`/`yc` cells establish.
+ */
 export type StrainState = {
   e0: number
   kx: number
   ky: number
 }
+
+/** Analysis reference origin (net-concrete centroid) that all preview results are reported about. */
+export type AnalysisOrigin = { x: number; y: number }
 
 /**
  * Contribution ledger for one strain state.
@@ -129,9 +139,6 @@ export const PREVIEW_STATIONS: StationDefinition[] = [
   { kind: 'pure-tension' }
 ]
 
-const allSectionPoints = (section: SectionGeometry) =>
-  section.solids.flatMap((solid) => [solid.outer, ...solid.holes].flat())
-
 /**
  * Concrete fibers from the exact clipped-cell mesh (`docs/02` §5). Every weight is the area of a
  * real clipped triangle, so meshed area and first moments reproduce the exact polygon properties
@@ -139,19 +146,25 @@ const allSectionPoints = (section: SectionGeometry) =>
  */
 const buildConcreteFibers = (
   section: SectionGeometry,
+  origin: AnalysisOrigin,
   options: ConcreteMeshOptions = {}
 ): { fibers: Fiber[]; report: ConcreteMeshReport } => {
   const mesh = buildConcreteMesh(section, options)
   return {
-    fibers: mesh.points.map((point) => ({ x: point.x, y: point.y, area: point.area, kind: 'concrete' })),
+    fibers: mesh.points.map((point) => ({
+      x: point.x - origin.x,
+      y: point.y - origin.y,
+      area: point.area,
+      kind: 'concrete'
+    })),
     report: mesh.report
   }
 }
 
-const buildRebarFibers = (rebars: GeometryInputRebarView[]): Fiber[] =>
+const buildRebarFibers = (rebars: GeometryInputRebarView[], origin: AnalysisOrigin): Fiber[] =>
   rebars.map((bar) => ({
-    x: bar.x,
-    y: bar.y,
+    x: bar.x - origin.x,
+    y: bar.y - origin.y,
     area: (Math.PI * bar.dia * bar.dia) / 4,
     kind: 'rebar',
     steelMaterialId: bar.steelMaterialId
@@ -203,12 +216,21 @@ const evaluate = (
   return { concrete, steelGross, displacedConcrete, steel, total: addResultant(concrete, steel) }
 }
 
-const projectedExtents = (section: SectionGeometry, beta: number, rebars: GeometryInputRebarView[] = []) => {
-  const points = allSectionPoints(section)
+/**
+ * Support coordinates for one direction, measured from the analysis origin (`docs/02` §3).
+ * Only outer rings define the exterior compression support; holes never do.
+ */
+const projectedExtents = (
+  section: SectionGeometry,
+  beta: number,
+  origin: AnalysisOrigin,
+  rebars: GeometryInputRebarView[] = []
+) => {
   const c = Math.cos(beta)
   const s = Math.sin(beta)
-  const sectionValues = points.map((point) => point.y * c + point.x * s)
-  const rebarValues = rebars.map((bar) => bar.y * c + bar.x * s)
+  const project = (point: { x: number; y: number }) => (point.y - origin.y) * c + (point.x - origin.x) * s
+  const sectionValues = section.solids.flatMap((solid) => solid.outer).map(project)
+  const rebarValues = rebars.map(project)
   return {
     min: Math.min(...sectionValues),
     max: Math.max(...sectionValues),
@@ -229,13 +251,14 @@ export const previewStationState = (
   beta: number,
   stationIndex: number,
   epsCu: number,
-  epsY: number
+  epsY: number,
+  origin: AnalysisOrigin = netConcreteCentroid(section)
 ): StrainState => {
   const station = PREVIEW_STATIONS[stationIndex]
   if (!station || station.kind === 'pure-compression') return { e0: epsCu, kx: 0, ky: 0 }
   if (station.kind === 'pure-tension') return { e0: -0.05, kx: 0, ky: 0 }
 
-  const { max, tensionControl } = projectedExtents(section, beta, rebars)
+  const { max, tensionControl } = projectedExtents(section, beta, origin, rebars)
   const compressionProjection = max
   const c1 = Math.max(1e-9, compressionProjection - tensionControl)
   const controlProjection =
@@ -276,10 +299,11 @@ export const evaluatePreviewState = (
   rebars: GeometryInputRebarView[],
   materialStore: MaterialStore,
   state: StrainState,
-  meshOptions: ConcreteMeshOptions = {}
+  meshOptions: ConcreteMeshOptions = {},
+  origin: AnalysisOrigin = netConcreteCentroid(section)
 ): ResultantLedger =>
   evaluate(
-    [...buildConcreteFibers(section, meshOptions).fibers, ...buildRebarFibers(rebars)],
+    [...buildConcreteFibers(section, origin, meshOptions).fibers, ...buildRebarFibers(rebars, origin)],
     compileMaterialStore(materialStore),
     materialStore.defaults.steelMaterialId,
     state
@@ -292,8 +316,9 @@ export const buildPreviewSurface = (
   fixedP = 0,
   meshOptions: ConcreteMeshOptions = {}
 ): PreviewSurface => {
-  const { fibers: concreteFibers, report: meshReport } = buildConcreteFibers(section, meshOptions)
-  const fibers = [...concreteFibers, ...buildRebarFibers(rebars)]
+  const origin = netConcreteCentroid(section)
+  const { fibers: concreteFibers, report: meshReport } = buildConcreteFibers(section, origin, meshOptions)
+  const fibers = [...concreteFibers, ...buildRebarFibers(rebars, origin)]
   const materials = compileMaterialStore(materialStore)
   const epsCu = materialStore.concrete.limits.epsCu
   const defaultSteel =
@@ -309,7 +334,7 @@ export const buildPreviewSurface = (
 
   for (const beta of PREVIEW_BETAS) {
     for (let station = 0; station < PREVIEW_STATIONS.length; station++) {
-      const state = previewStationState(section, rebars, beta, station, epsCu, epsY)
+      const state = previewStationState(section, rebars, beta, station, epsCu, epsY, origin)
       const ledger = evaluate(fibers, materials, materialStore.defaults.steelMaterialId, state)
       points.push({
         id: `${Math.round((beta * 180) / Math.PI)}-${station}`,
@@ -426,8 +451,9 @@ export const solveInversePreview = (
   contour: PreviewContourPoint[],
   meshOptions: ConcreteMeshOptions = {}
 ): InversePreviewResult => {
-  // Same mesh as the capacity surface: demand and capacity must not be integrated on different grids.
-  const fibers = [...buildConcreteFibers(section, meshOptions).fibers, ...buildRebarFibers(rebars)]
+  // Same mesh and same reference origin as the capacity surface.
+  const origin = netConcreteCentroid(section)
+  const fibers = [...buildConcreteFibers(section, origin, meshOptions).fibers, ...buildRebarFibers(rebars, origin)]
   const materials = compileMaterialStore(materialStore)
   const demand = { P: loadcase.P, Mx: loadcase.Mx, My: loadcase.My }
   let state: StrainState = { e0: 0.0002, kx: 0, ky: 0 }

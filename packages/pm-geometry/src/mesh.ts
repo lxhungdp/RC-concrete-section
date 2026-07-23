@@ -124,6 +124,17 @@ export const multiPolygonProperties = (multi: MultiPolygon) => {
   return { area: area / 2, firstMomentX: firstMomentX / 6, firstMomentY: firstMomentY / 6 }
 }
 
+/**
+ * Exact centroid of the net concrete region — the analysis reference origin required by
+ * `docs/02` §1 step 9. Rebar is excluded, matching the workbook's `xc`/`yc` cells, which are
+ * computed from the concrete boundary and voids only.
+ */
+export const netConcreteCentroid = (section: SectionGeometry): { x: number; y: number } => {
+  const properties = multiPolygonProperties(netConcreteMultiPolygon(section))
+  if (Math.abs(properties.area) < 1e-9) return { x: 0, y: 0 }
+  return { x: properties.firstMomentY / properties.area, y: properties.firstMomentX / properties.area }
+}
+
 const ringArea = (pairs: Pair[]) => {
   let sum = 0
   for (let i = 0; i < pairs.length; i++) {
