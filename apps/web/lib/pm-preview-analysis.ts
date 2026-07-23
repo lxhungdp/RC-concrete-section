@@ -531,9 +531,42 @@ export type SectionFieldSample = {
   kind: 'concrete' | 'rebar'
 }
 
+export type SectionFieldRebar = {
+  id: number
+  x: number
+  y: number
+  dia: number
+  area: number
+  strain: number
+  stress: number
+  /** Axial force in the bar, N (compression positive with the strain convention). */
+  force: number
+}
+
+/** One mesh triangle with vertex field values for continuous canvas shading. */
+export type SectionFieldTriangle = {
+  ax: number
+  ay: number
+  bx: number
+  by: number
+  cx: number
+  cy: number
+  strainA: number
+  strainB: number
+  strainC: number
+  stressA: number
+  stressB: number
+  stressC: number
+}
+
 export type SectionFieldMap = {
   origin: AnalysisOrigin
+  /** Legacy quadrature samples (debug / hover). */
   samples: SectionFieldSample[]
+  /** Clipped-cell triangles in world coordinates — primary field visualization. */
+  triangles: SectionFieldTriangle[]
+  rebars: SectionFieldRebar[]
+  bounds: { minX: number; maxX: number; minY: number; maxY: number }
   mesh: ConcreteMeshReport
 }
 
@@ -546,32 +579,90 @@ export const buildSectionFieldMap = (
   meshOptions: ConcreteMeshOptions = {}
 ): SectionFieldMap => {
   const origin = netConcreteCentroid(section)
-  const { fibers, report } = buildConcreteFibers(section, origin, meshOptions)
+  const mesh = buildConcreteMesh(section, meshOptions)
   const materials = compileMaterialStore(materialStore)
-  const samples: SectionFieldSample[] = fibers.map((fiber) => {
-    const strain = strainAt(state, fiber)
+
+  const valueAt = (xWorld: number, yWorld: number) => {
+    const local = { x: xWorld - origin.x, y: yWorld - origin.y }
+    const strain = strainAt(state, local)
+    return { strain, stress: materials.concrete.stress(strain) }
+  }
+
+  const triangles: SectionFieldTriangle[] = mesh.triangles.map((tri) => {
+    const a = valueAt(tri.ax, tri.ay)
+    const b = valueAt(tri.bx, tri.by)
+    const c = valueAt(tri.cx, tri.cy)
     return {
-      x: fiber.x + origin.x,
-      y: fiber.y + origin.y,
-      area: fiber.area,
+      ax: tri.ax,
+      ay: tri.ay,
+      bx: tri.bx,
+      by: tri.by,
+      cx: tri.cx,
+      cy: tri.cy,
+      strainA: a.strain,
+      strainB: b.strain,
+      strainC: c.strain,
+      stressA: a.stress,
+      stressB: b.stress,
+      stressC: c.stress
+    }
+  })
+
+  const samples: SectionFieldSample[] = mesh.points.map((point) => {
+    const { strain, stress } = valueAt(point.x, point.y)
+    return {
+      x: point.x,
+      y: point.y,
+      area: point.area,
       strain,
-      stress: materials.concrete.stress(strain),
+      stress,
       kind: 'concrete' as const
     }
   })
 
-  for (const fiber of buildRebarFibers(rebars, origin)) {
-    const strain = strainAt(state, fiber)
-    const steel = materials.steel.get(fiber.steelMaterialId ?? materialStore.defaults.steelMaterialId)
-    samples.push({
-      x: fiber.x + origin.x,
-      y: fiber.y + origin.y,
-      area: fiber.area,
+  const rebarSamples: SectionFieldRebar[] = rebars.map((bar) => {
+    const local = { x: bar.x - origin.x, y: bar.y - origin.y }
+    const strain = strainAt(state, local)
+    const steel = materials.steel.get(bar.steelMaterialId ?? materialStore.defaults.steelMaterialId)
+    const stress = steel ? steel.stress(strain) : materials.concrete.stress(strain)
+    const area = (Math.PI * bar.dia * bar.dia) / 4
+    return {
+      id: bar.id,
+      x: bar.x,
+      y: bar.y,
+      dia: bar.dia,
+      area,
       strain,
-      stress: steel ? steel.stress(strain) : materials.concrete.stress(strain),
-      kind: 'rebar'
-    })
+      stress,
+      force: stress * area
+    }
+  })
+
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  for (const solid of section.solids) {
+    for (const point of solid.outer) {
+      minX = Math.min(minX, point.x)
+      maxX = Math.max(maxX, point.x)
+      minY = Math.min(minY, point.y)
+      maxY = Math.max(maxY, point.y)
+    }
+  }
+  if (!Number.isFinite(minX)) {
+    minX = 0
+    maxX = 1
+    minY = 0
+    maxY = 1
   }
 
-  return { origin, samples, mesh: report }
+  return {
+    origin,
+    samples,
+    triangles,
+    rebars: rebarSamples,
+    bounds: { minX, maxX, minY, maxY },
+    mesh: mesh.report
+  }
 }

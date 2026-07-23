@@ -13,6 +13,7 @@ import {
   type PreviewSurfacePoint
 } from '../../lib/pm-preview-analysis'
 import { PlotlyChart, type PlotlyClickPayload } from './PlotlyChart'
+import { momentAngleDeg, neutralAxisAngleDeg, SectionFieldChart } from './SectionFieldChart'
 
 type ResultsViewMode = 'overview' | 'loadcase'
 type OverviewChartId = 'vertical' | 'surface3d' | 'fixedP'
@@ -38,6 +39,10 @@ const fmt = (value: number, digits = 1) =>
   Math.abs(value) < 1e-9 ? '0' : value.toLocaleString('en-US', { maximumFractionDigits: digits })
 const kn = (value: number) => value / 1000
 const knm = (value: number) => value / 1_000_000
+const sci = (value: number, digits = 3) => {
+  if (!Number.isFinite(value) || Math.abs(value) < 1e-16) return '0'
+  return value.toExponential(digits)
+}
 
   const plotTheme = {
   paper_bgcolor: 'rgba(0,0,0,0)',
@@ -139,6 +144,9 @@ export function ResultsWorkspace({
 }: Props) {
   const [sliceAngle, setSliceAngle] = useState(0)
   const [fieldMode, setFieldMode] = useState<FieldMode>('strain')
+  const [showNeutralAxis, setShowNeutralAxis] = useState(true)
+  const [showMoments, setShowMoments] = useState(true)
+  const [includeRebar, setIncludeRebar] = useState(false)
   const [overviewPrimary, setOverviewPrimary] = useState<OverviewChartId>('vertical')
   const [overviewVisible, setOverviewVisible] = useState<Record<OverviewChartId, boolean>>({
     vertical: true,
@@ -373,79 +381,27 @@ export function ResultsWorkspace({
     return buildSectionFieldMap(section, rebars, materialStore, inverseResult.state)
   }, [inverseResult, isLoadcaseMode, materialStore, rebars, section])
 
-  const heatmapData = useMemo(() => {
-    if (!fieldMap) return []
-    const concrete = fieldMap.samples.filter((sample) => sample.kind === 'concrete')
-    const steel = fieldMap.samples.filter((sample) => sample.kind === 'rebar')
-    const values = concrete.map((sample) => (fieldMode === 'strain' ? sample.strain : sample.stress))
-    const outlineTraces = section.solids.flatMap((solid, solidIndex) => {
-      const rings = [solid.outer, ...solid.holes]
-      return rings.map((ring, ringIndex) => ({
-        type: 'scatter',
-        name: ringIndex === 0 ? `Outer ${solidIndex + 1}` : `Hole ${solidIndex + 1}.${ringIndex}`,
-        mode: 'lines',
-        x: [...ring.map((point) => point.x), ring[0]?.x],
-        y: [...ring.map((point) => point.y), ring[0]?.y],
-        line: { color: ringIndex === 0 ? '#111827' : '#64748b', width: ringIndex === 0 ? 1.6 : 1 },
-        hoverinfo: 'skip',
-        showlegend: false
-      }))
-    })
-
-    return [
-      {
-        type: 'scatter',
-        name: fieldMode === 'strain' ? 'Strain' : 'Stress',
-        mode: 'markers',
-        x: concrete.map((sample) => sample.x),
-        y: concrete.map((sample) => sample.y),
-        marker: {
-          size: concrete.map((sample) => Math.max(4, Math.min(14, Math.sqrt(sample.area) * 0.35))),
-          color: values,
-          colorscale: fieldColorscale,
-          colorbar: {
-            title: fieldMode === 'strain' ? 'ε' : 'σ (MPa)',
-            thickness: 12,
-            len: 0.7
-          },
-          line: { width: 0 }
-        },
-        customdata: values,
-        hovertemplate:
-          fieldMode === 'strain'
-            ? 'x=%{x:.1f}<br>y=%{y:.1f}<br>ε=%{customdata:.6f}<extra>Concrete</extra>'
-            : 'x=%{x:.1f}<br>y=%{y:.1f}<br>σ=%{customdata:.2f} MPa<extra>Concrete</extra>'
-      },
-      {
-        type: 'scatter',
-        name: 'Rebar',
-        mode: 'markers',
-        x: steel.map((sample) => sample.x),
-        y: steel.map((sample) => sample.y),
-        marker: {
-          size: 8,
-          color: steel.map((sample) => (fieldMode === 'strain' ? sample.strain : sample.stress)),
-          colorscale: fieldColorscale,
-          symbol: 'circle-open',
-          line: { width: 2, color: '#111827' }
-        },
-        hovertemplate: 'x=%{x:.1f}<br>y=%{y:.1f}<extra>Rebar</extra>'
-      },
-      ...outlineTraces
-    ]
-  }, [fieldMap, fieldMode, section.solids])
-
-  const heatmapLayout = useMemo(
-    () => ({
-      ...plotTheme,
-      margin: { l: 48, r: 70, t: 10, b: 42 },
-      xaxis: { title: 'x (mm)', zeroline: true, zerolinecolor: '#94a3b8', gridcolor: '#e5e7eb', scaleanchor: 'y' },
-      yaxis: { title: 'y (mm)', zeroline: true, zerolinecolor: '#94a3b8', gridcolor: '#e5e7eb' },
-      hovermode: 'closest',
-      showlegend: false
-    }),
-    []
-  )
+  const fieldExtremes = useMemo(() => {
+    if (!fieldMap) return null
+    let epsMin = Number.POSITIVE_INFINITY
+    let epsMax = Number.NEGATIVE_INFINITY
+    let sigMin = Number.POSITIVE_INFINITY
+    let sigMax = Number.NEGATIVE_INFINITY
+    const push = (eps: number, sig: number) => {
+      epsMin = Math.min(epsMin, eps)
+      epsMax = Math.max(epsMax, eps)
+      sigMin = Math.min(sigMin, sig)
+      sigMax = Math.max(sigMax, sig)
+    }
+    for (const tri of fieldMap.triangles) {
+      push(tri.strainA, tri.stressA)
+      push(tri.strainB, tri.stressB)
+      push(tri.strainC, tri.stressC)
+    }
+    for (const bar of fieldMap.rebars) push(bar.strain, bar.stress)
+    if (!Number.isFinite(epsMin)) return null
+    return { epsMin, epsMax, sigMin, sigMax }
+  }, [fieldMap])
 
   const handle2dClick = (event: PlotlyClickPayload) => {
     if (isLoadcaseMode) return
@@ -606,39 +562,172 @@ export function ResultsWorkspace({
             onMakePrimary: () => setLoadcasePrimary('heatmap'),
             onToggleVisible: () => toggleLoadcaseVisible('heatmap'),
             controls: (
-              <div className="pm-field-mode-toggle" role="group" aria-label="Field mode">
-                <button
-                  type="button"
-                  className={fieldMode === 'strain' ? 'is-active' : ''}
-                  onClick={() => setFieldMode('strain')}
-                >
-                  Strain
-                </button>
-                <button
-                  type="button"
-                  className={fieldMode === 'stress' ? 'is-active' : ''}
-                  onClick={() => setFieldMode('stress')}
-                >
-                  Stress
-                </button>
+              <div className="pm-section-field-toolbar" role="group" aria-label="Section field options">
+                <div className="pm-field-mode-toggle" role="group" aria-label="Field mode">
+                  <button
+                    type="button"
+                    className={fieldMode === 'strain' ? 'is-active' : ''}
+                    onClick={() => setFieldMode('strain')}
+                  >
+                    Strain
+                  </button>
+                  <button
+                    type="button"
+                    className={fieldMode === 'stress' ? 'is-active' : ''}
+                    onClick={() => setFieldMode('stress')}
+                  >
+                    Stress
+                  </button>
+                </div>
+                <label className={`pm-field-check${showNeutralAxis ? ' is-on' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={showNeutralAxis}
+                    onChange={(event) => setShowNeutralAxis(event.target.checked)}
+                  />
+                  N.A.
+                </label>
+                <label className={`pm-field-check${showMoments ? ' is-on' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={showMoments}
+                    onChange={(event) => setShowMoments(event.target.checked)}
+                  />
+                  Moments
+                </label>
+                <label className={`pm-field-check${includeRebar ? ' is-on' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={includeRebar}
+                    onChange={(event) => setIncludeRebar(event.target.checked)}
+                  />
+                  Rebar
+                </label>
               </div>
             ),
             footer: inverseResult ? (
-              <div className="pm-strain-state-bar">
-                <span>e0</span>
-                <strong>{fmt(inverseResult.state.e0, 6)}</strong>
-                <span>kx</span>
-                <strong>{fmt(inverseResult.state.kx, 9)}</strong>
-                <span>ky</span>
-                <strong>{fmt(inverseResult.state.ky, 9)}</strong>
-                <span>η</span>
-                <strong>
-                  {inverseResult.utilization == null ? 'n/a' : fmt(inverseResult.utilization, 3)}
-                </strong>
+              <div className="pm-section-field-metrics">
+                <article className="pm-field-metric-card">
+                  <header>Solver</header>
+                  <div className="pm-field-metric-rows">
+                    <div>
+                      <span>Status</span>
+                      <strong className={inverseResult.ok ? 'is-ok' : 'is-warn'}>
+                        {inverseResult.ok ? 'Converged' : 'Approx'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Iter / η</span>
+                      <strong>
+                        {inverseResult.iterations}
+                        {' · '}
+                        {inverseResult.utilization == null ? 'n/a' : fmt(inverseResult.utilization, 3)}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Residual</span>
+                      <strong>{sci(inverseResult.residualNorm, 2)}</strong>
+                    </div>
+                  </div>
+                </article>
+
+                <article className="pm-field-metric-card">
+                  <header>Strain</header>
+                  <div className="pm-field-metric-rows">
+                    <div>
+                      <span>ε₀</span>
+                      <strong>{fmt(inverseResult.state.e0, 6)}</strong>
+                    </div>
+                    <div>
+                      <span>kx / ky</span>
+                      <strong>
+                        {sci(inverseResult.state.kx, 2)} / {sci(inverseResult.state.ky, 2)}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>ε max / min</span>
+                      <strong>
+                        {fieldExtremes
+                          ? `${fmt(fieldExtremes.epsMax, 6)} / ${fmt(fieldExtremes.epsMin, 6)}`
+                          : '—'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>N.A.</span>
+                      <strong>
+                        {(() => {
+                          const angle = neutralAxisAngleDeg(inverseResult.state)
+                          return angle == null ? 'n/a' : `${fmt(angle, 1)}°`
+                        })()}
+                      </strong>
+                    </div>
+                  </div>
+                </article>
+
+                <article className="pm-field-metric-card">
+                  <header>Stress</header>
+                  <div className="pm-field-metric-rows">
+                    <div>
+                      <span>σ max</span>
+                      <strong>{fieldExtremes ? `${fmt(fieldExtremes.sigMax, 2)} MPa` : '—'}</strong>
+                    </div>
+                    <div>
+                      <span>σ min</span>
+                      <strong>{fieldExtremes ? `${fmt(fieldExtremes.sigMin, 2)} MPa` : '—'}</strong>
+                    </div>
+                    <div>
+                      <span>Δσ</span>
+                      <strong>
+                        {fieldExtremes
+                          ? `${fmt(fieldExtremes.sigMax - fieldExtremes.sigMin, 2)} MPa`
+                          : '—'}
+                      </strong>
+                    </div>
+                  </div>
+                </article>
+
+                <article className="pm-field-metric-card">
+                  <header>Demand</header>
+                  <div className="pm-field-metric-rows">
+                    <div>
+                      <span>Pu</span>
+                      <strong>{fmt(kn(inverseResult.demand.P), 1)} kN</strong>
+                    </div>
+                    <div>
+                      <span>Mux</span>
+                      <strong>{fmt(knm(inverseResult.demand.Mx), 1)} kN·m</strong>
+                    </div>
+                    <div>
+                      <span>Muy</span>
+                      <strong>{fmt(knm(inverseResult.demand.My), 1)} kN·m</strong>
+                    </div>
+                    <div>
+                      <span>|M| / ∠M</span>
+                      <strong>
+                        {fmt(knm(Math.hypot(inverseResult.demand.Mx, inverseResult.demand.My)), 1)}
+                        {' · '}
+                        {(() => {
+                          const angle = momentAngleDeg(inverseResult.demand.Mx, inverseResult.demand.My)
+                          return angle == null ? 'n/a' : `${fmt(angle, 1)}°`
+                        })()}
+                      </strong>
+                    </div>
+                  </div>
+                </article>
               </div>
             ) : null,
-            children: inverseResult ? (
-              <PlotlyChart data={heatmapData} layout={heatmapLayout} config={plotConfig} />
+            children: fieldMap && inverseResult ? (
+              <SectionFieldChart
+                fieldMap={fieldMap}
+                section={section}
+                fieldMode={fieldMode}
+                state={inverseResult.state}
+                Mx={inverseResult.demand.Mx}
+                My={inverseResult.demand.My}
+                showNeutralAxis={showNeutralAxis}
+                showMoments={showMoments}
+                includeRebar={includeRebar}
+              />
             ) : (
               <div className="pm-results-plot-placeholder">Inverse solution is calculating…</div>
             )

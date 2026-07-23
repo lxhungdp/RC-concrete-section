@@ -2306,23 +2306,116 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   box-shadow: 0 0 0 1px var(--border);
 }
 
-.pm-strain-state-bar {
+.pm-section-field-toolbar {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: min(100%, 520px);
+}
+
+.pm-field-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--foreground-muted);
+  font-size: 0.64rem;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.pm-field-check.is-on {
+  border-color: var(--accent-border);
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+
+.pm-field-check input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.pm-section-field-metrics {
   display: grid;
-  grid-template-columns: repeat(4, auto minmax(0, 1fr));
-  gap: 4px 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid var(--border-subtle);
-  color: var(--foreground-muted);
-  font-size: 0.66rem;
 }
 
-.pm-strain-state-bar strong {
+.pm-field-metric-card {
+  min-width: 0;
+  padding: 5px 8px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--foreground) 2.5%, var(--card));
+}
+
+.pm-field-metric-card header {
+  margin-bottom: 3px;
+  color: var(--foreground);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.pm-field-metric-rows {
+  display: grid;
+  gap: 1px 0;
+  color: var(--foreground-muted);
+  font-size: 0.62rem;
+  line-height: 1.35;
+}
+
+.pm-field-metric-rows > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px;
+  align-items: baseline;
+  min-height: 0;
+}
+
+.pm-field-metric-rows strong {
   color: var(--foreground);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  text-align: right;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-field-metric-rows strong.is-ok {
+  color: var(--applied);
+}
+
+.pm-field-metric-rows strong.is-warn {
+  color: #c2410c;
+}
+
+.pm-field-metric-grid {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .pm-section-field-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.pm-section-field-meta {
+  display: none;
+}
+
+.pm-strain-state-bar {
+  display: none;
 }
 
 .pm-results-topbar {
@@ -2409,6 +2502,51 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   height: 100%;
   min-height: 0;
   overflow: visible;
+}
+
+.pm-section-field-host {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+.pm-section-field-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.pm-section-field-tooltip {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  gap: 2px;
+  min-width: 148px;
+  max-width: 220px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  box-shadow: 0 10px 24px -18px rgba(15, 23, 42, 0.55);
+  color: var(--foreground-muted);
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.35;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
+.pm-section-field-tooltip strong {
+  color: var(--foreground);
+  font-size: 0.7rem;
+}
+
+.pm-section-field-tooltip-secondary {
+  opacity: 0.78;
+  font-weight: 500;
 }
 
 .pm-plotly-host {

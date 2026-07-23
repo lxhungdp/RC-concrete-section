@@ -24,6 +24,22 @@ export type MeshQuadraturePoint = {
   point: 0 | 1 | 2
 }
 
+/** One integration triangle from the clipped-cell mesh (world coordinates, mm). */
+export type MeshTriangle = {
+  ax: number
+  ay: number
+  bx: number
+  by: number
+  cx: number
+  cy: number
+  area: number
+  cellI: number
+  cellJ: number
+  depth: number
+  component: number
+  triangle: number
+}
+
 export type ConcreteMeshReport = {
   /** Base grid cell size (mm). */
   cellSize: number
@@ -50,6 +66,8 @@ export type ConcreteMeshReport = {
 
 export type ConcreteMesh = {
   points: MeshQuadraturePoint[]
+  /** Triangle connectivity used for field visualization; same triangles as the quadrature rule. */
+  triangles: MeshTriangle[]
   report: ConcreteMeshReport
 }
 
@@ -262,6 +280,7 @@ export const buildConcreteMesh = (
     warnings.push(message)
     return {
       points: [],
+      triangles: [],
       report: {
         cellSize: 0,
         minCaliperWidth: 0,
@@ -308,6 +327,7 @@ export const buildConcreteMesh = (
   const tolArea = Math.max(1e-12 * lRef * lRef, 64 * Number.EPSILON * lRef * lRef)
 
   const points: MeshQuadraturePoint[] = []
+  const trianglesList: MeshTriangle[] = []
   let components = 0
   let triangles = 0
   let cells = 0
@@ -374,6 +394,20 @@ export const buildConcreteMesh = (
         }
         triangulatedArea += area
         triangles++
+        trianglesList.push({
+          ax: a[0],
+          ay: a[1],
+          bx: b[0],
+          by: b[1],
+          cx: c[0],
+          cy: c[1],
+          area,
+          cellI,
+          cellJ,
+          depth,
+          component: componentIndex,
+          triangle: triangleIndex
+        })
         TRIANGLE_RULE.forEach(([w0, w1, w2], pointIndex) => {
           points.push({
             x: w0 * a[0] + w1 * b[0] + w2 * c[0],
@@ -444,6 +478,7 @@ export const buildConcreteMesh = (
 
   return {
     points,
+    triangles: trianglesList,
     report: {
       cellSize,
       minCaliperWidth: dMin,
