@@ -670,3 +670,4 @@ export const summarizeSection = (geometry: SectionGeometry): GeometrySummary => 
 
 export * from './rebar'
 export * from './section-input'
+export * from './mesh'

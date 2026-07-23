@@ -1,4 +1,11 @@
-import type { GeometryInputRebarView, Point2, SectionGeometry } from '@pm/geometry'
+import {
+  buildConcreteMesh,
+  type ConcreteMeshOptions,
+  type ConcreteMeshReport,
+  type GeometryInputRebarView,
+  type Point2,
+  type SectionGeometry
+} from '@pm/geometry'
 import { compileMaterialStore, type MaterialStore } from '@pm/materials'
 import type { LoadCombination } from '@pm/project'
 
@@ -14,11 +21,32 @@ export type StrainState = {
   ky: number
 }
 
+/**
+ * Contribution ledger for one strain state.
+ *
+ * `docs/11` §3.3 requires the embedded-bar contribution `steel - displaced concrete` to keep the
+ * full-steel and displaced-concrete terms separately, so a contribution-factor transform can be
+ * applied (or rejected) per independently factorable group.
+ */
+export type ResultantLedger = {
+  /** Concrete integrated over the concrete fibers only. */
+  concrete: Resultant
+  /** fs·As at every bar, before the displaced-concrete deduction. */
+  steelGross: Resultant
+  /** −fc·As at every bar (concrete replaced by the bar). */
+  displacedConcrete: Resultant
+  /** steelGross + displacedConcrete — the reference-workbook "Steel" column. */
+  steel: Resultant
+  /** concrete + steel. */
+  total: Resultant
+}
+
 export type PreviewSurfacePoint = Resultant & {
   id: string
   beta: number
   station: number
   state: StrainState
+  ledger: ResultantLedger
 }
 
 export type PreviewSurface = {
@@ -33,6 +61,7 @@ export type PreviewSurface = {
     workbook: string
     notes: string[]
   }
+  mesh: ConcreteMeshReport
   warnings: string[]
 }
 
@@ -66,14 +95,19 @@ type Fiber = {
 }
 
 const PREVIEW_BETAS = Array.from({ length: 24 }, (_, index) => (index * Math.PI) / 12)
-type StationDefinition =
+export type StationDefinition =
   | { kind: 'pure-compression' }
   | { kind: 'neutral-axis-ratio'; cOverC1: number }
   | { kind: 'steel-strain'; strain: number }
   | { kind: 'steel-yield-ratio'; ratio: number }
   | { kind: 'pure-tension' }
 
-const PREVIEW_STATIONS: StationDefinition[] = [
+/**
+ * `P0…P18` reporting stations, taken from the `PM-advanced (7) 2D.xlsx` Summary sheet station
+ * schedule (see `docs/05` §2 "Compatibility with P0–P18 reports"). Tension strains are negative
+ * under the compression-positive convention.
+ */
+export const PREVIEW_STATIONS: StationDefinition[] = [
   { kind: 'pure-compression' },
   { kind: 'neutral-axis-ratio', cOverC1: 3 },
   { kind: 'neutral-axis-ratio', cOverC1: 2 },
@@ -95,52 +129,23 @@ const PREVIEW_STATIONS: StationDefinition[] = [
   { kind: 'pure-tension' }
 ]
 
-const pointInRing = (point: { x: number; y: number }, ring: Point2[]) => {
-  let inside = false
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const a = ring[i]
-    const b = ring[j]
-    const crosses = a.y > point.y !== b.y > point.y
-    if (crosses && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y || 1e-12) + a.x) {
-      inside = !inside
-    }
-  }
-  return inside
-}
-
-const pointInSolid = (point: { x: number; y: number }, solid: SectionGeometry['solids'][number]) =>
-  pointInRing(point, solid.outer) && solid.holes.every((hole) => !pointInRing(point, hole))
-
 const allSectionPoints = (section: SectionGeometry) =>
   section.solids.flatMap((solid) => [solid.outer, ...solid.holes].flat())
 
-const buildConcreteFibers = (section: SectionGeometry, targetDivisions = 34): Fiber[] => {
-  const points = allSectionPoints(section)
-  if (points.length === 0) return []
-  const xs = points.map((point) => point.x)
-  const ys = points.map((point) => point.y)
-  const minX = Math.min(...xs)
-  const maxX = Math.max(...xs)
-  const minY = Math.min(...ys)
-  const maxY = Math.max(...ys)
-  const width = Math.max(1, maxX - minX)
-  const height = Math.max(1, maxY - minY)
-  const nx = Math.max(10, Math.ceil(targetDivisions * Math.sqrt(width / height)))
-  const ny = Math.max(10, Math.ceil(targetDivisions * Math.sqrt(height / width)))
-  const dx = width / nx
-  const dy = height / ny
-  const fibers: Fiber[] = []
-
-  for (let ix = 0; ix < nx; ix++) {
-    for (let iy = 0; iy < ny; iy++) {
-      const x = minX + (ix + 0.5) * dx
-      const y = minY + (iy + 0.5) * dy
-      const solid = section.solids.find((item) => pointInSolid({ x, y }, item))
-      if (solid) fibers.push({ x, y, area: dx * dy, kind: 'concrete' })
-    }
+/**
+ * Concrete fibers from the exact clipped-cell mesh (`docs/02` §5). Every weight is the area of a
+ * real clipped triangle, so meshed area and first moments reproduce the exact polygon properties
+ * instead of rasterising the boundary.
+ */
+const buildConcreteFibers = (
+  section: SectionGeometry,
+  options: ConcreteMeshOptions = {}
+): { fibers: Fiber[]; report: ConcreteMeshReport } => {
+  const mesh = buildConcreteMesh(section, options)
+  return {
+    fibers: mesh.points.map((point) => ({ x: point.x, y: point.y, area: point.area, kind: 'concrete' })),
+    report: mesh.report
   }
-
-  return fibers
 }
 
 const buildRebarFibers = (rebars: GeometryInputRebarView[]): Fiber[] =>
@@ -155,31 +160,47 @@ const buildRebarFibers = (rebars: GeometryInputRebarView[]): Fiber[] =>
 const strainAt = (state: StrainState, fiber: Pick<Fiber, 'x' | 'y'>) =>
   state.e0 + state.kx * fiber.y + state.ky * fiber.x
 
+const zeroResultant = (): Resultant => ({ P: 0, Mx: 0, My: 0 })
+
+const accumulate = (target: Resultant, force: number, fiber: Pick<Fiber, 'x' | 'y'>) => {
+  target.P += force
+  target.Mx += force * fiber.y
+  target.My += force * fiber.x
+}
+
+const addResultant = (a: Resultant, b: Resultant): Resultant => ({
+  P: a.P + b.P,
+  Mx: a.Mx + b.Mx,
+  My: a.My + b.My
+})
+
 const evaluate = (
   fibers: Fiber[],
   materials: ReturnType<typeof compileMaterialStore>,
   defaultSteelMaterialId: number,
   state: StrainState
-): Resultant => {
-  let P = 0
-  let Mx = 0
-  let My = 0
+): ResultantLedger => {
+  const concrete = zeroResultant()
+  const steelGross = zeroResultant()
+  const displacedConcrete = zeroResultant()
 
   for (const fiber of fibers) {
     const strain = strainAt(state, fiber)
     const concreteStress = materials.concrete.stress(strain)
+
+    if (fiber.kind !== 'rebar') {
+      accumulate(concrete, concreteStress * fiber.area, fiber)
+      continue
+    }
+
     const steelStress =
-      fiber.kind === 'rebar'
-        ? materials.steel.get(fiber.steelMaterialId ?? defaultSteelMaterialId)?.stress(strain) ?? concreteStress
-        : concreteStress
-    const stress = fiber.kind === 'rebar' ? steelStress - concreteStress : concreteStress
-    const force = stress * fiber.area
-    P += force
-    Mx += force * fiber.y
-    My += force * fiber.x
+      materials.steel.get(fiber.steelMaterialId ?? defaultSteelMaterialId)?.stress(strain) ?? concreteStress
+    accumulate(steelGross, steelStress * fiber.area, fiber)
+    accumulate(displacedConcrete, -concreteStress * fiber.area, fiber)
   }
 
-  return { P, Mx, My }
+  const steel = addResultant(steelGross, displacedConcrete)
+  return { concrete, steelGross, displacedConcrete, steel, total: addResultant(concrete, steel) }
 }
 
 const projectedExtents = (section: SectionGeometry, beta: number, rebars: GeometryInputRebarView[] = []) => {
@@ -201,7 +222,8 @@ const farTensionSteelStrain = (station: StationDefinition, epsY: number) => {
   return 0
 }
 
-const makeState = (
+/** Strain plane for reporting station `P{stationIndex}` in direction `beta`. */
+export const previewStationState = (
   section: SectionGeometry,
   rebars: GeometryInputRebarView[],
   beta: number,
@@ -245,13 +267,32 @@ const interpolate = (a: PreviewSurfacePoint, b: PreviewSurfacePoint, P: number):
   }
 }
 
+/**
+ * Integrate one explicit strain plane and return the full contribution ledger. Exported so
+ * verification fixtures can replay a reference strain state instead of only the station schedule.
+ */
+export const evaluatePreviewState = (
+  section: SectionGeometry,
+  rebars: GeometryInputRebarView[],
+  materialStore: MaterialStore,
+  state: StrainState,
+  meshOptions: ConcreteMeshOptions = {}
+): ResultantLedger =>
+  evaluate(
+    [...buildConcreteFibers(section, meshOptions).fibers, ...buildRebarFibers(rebars)],
+    compileMaterialStore(materialStore),
+    materialStore.defaults.steelMaterialId,
+    state
+  )
+
 export const buildPreviewSurface = (
   section: SectionGeometry,
   rebars: GeometryInputRebarView[],
   materialStore: MaterialStore,
-  fixedP = 0
+  fixedP = 0,
+  meshOptions: ConcreteMeshOptions = {}
 ): PreviewSurface => {
-  const concreteFibers = buildConcreteFibers(section)
+  const { fibers: concreteFibers, report: meshReport } = buildConcreteFibers(section, meshOptions)
   const fibers = [...concreteFibers, ...buildRebarFibers(rebars)]
   const materials = compileMaterialStore(materialStore)
   const epsCu = materialStore.concrete.limits.epsCu
@@ -263,18 +304,20 @@ export const buildPreviewSurface = (
 
   if (section.solids.length !== 1) warnings.push('Preview engine supports one concrete region best; multi-region output is approximate.')
   if (concreteFibers.length === 0) warnings.push('No concrete fibers were generated. Apply a valid concrete section first.')
+  for (const issue of meshReport.warnings) warnings.push(`Concrete mesh: ${issue}`)
   if (rebars.length === 0) warnings.push('No rebars are present; steel contribution is zero.')
 
   for (const beta of PREVIEW_BETAS) {
     for (let station = 0; station < PREVIEW_STATIONS.length; station++) {
-      const state = makeState(section, rebars, beta, station, epsCu, epsY)
-      const result = evaluate(fibers, materials, materialStore.defaults.steelMaterialId, state)
+      const state = previewStationState(section, rebars, beta, station, epsCu, epsY)
+      const ledger = evaluate(fibers, materials, materialStore.defaults.steelMaterialId, state)
       points.push({
         id: `${Math.round((beta * 180) / Math.PI)}-${station}`,
         beta,
         station,
         state,
-        ...result
+        ledger,
+        ...ledger.total
       })
     }
   }
@@ -292,6 +335,7 @@ export const buildPreviewSurface = (
       Mx: [Math.min(...Mx), Math.max(...Mx)],
       My: [Math.min(...My), Math.max(...My)]
     },
+    mesh: meshReport,
     comparison: {
       workbook: 'docs/example case/PM-advanced (7) 2D.xlsx',
       notes: [
@@ -379,13 +423,15 @@ export const solveInversePreview = (
   rebars: GeometryInputRebarView[],
   materialStore: MaterialStore,
   loadcase: LoadCombination,
-  contour: PreviewContourPoint[]
+  contour: PreviewContourPoint[],
+  meshOptions: ConcreteMeshOptions = {}
 ): InversePreviewResult => {
-  const fibers = [...buildConcreteFibers(section, 30), ...buildRebarFibers(rebars)]
+  // Same mesh as the capacity surface: demand and capacity must not be integrated on different grids.
+  const fibers = [...buildConcreteFibers(section, meshOptions).fibers, ...buildRebarFibers(rebars)]
   const materials = compileMaterialStore(materialStore)
   const demand = { P: loadcase.P, Mx: loadcase.Mx, My: loadcase.My }
   let state: StrainState = { e0: 0.0002, kx: 0, ky: 0 }
-  let response = evaluate(fibers, materials, materialStore.defaults.steelMaterialId, state)
+  let response = evaluate(fibers, materials, materialStore.defaults.steelMaterialId, state).total
   let residual = { P: response.P - demand.P, Mx: response.Mx - demand.Mx, My: response.My - demand.My }
   let norm = residualNorm(residual, demand)
   let iterations = 0
@@ -397,7 +443,7 @@ export const solveInversePreview = (
       if (index === 0) trial.e0 += step
       if (index === 1) trial.kx += step
       if (index === 2) trial.ky += step
-      const r = evaluate(fibers, materials, materialStore.defaults.steelMaterialId, trial)
+      const r = evaluate(fibers, materials, materialStore.defaults.steelMaterialId, trial).total
       return [(r.P - response.P) / step, (r.Mx - response.Mx) / step, (r.My - response.My) / step]
     })
     const matrix = [
@@ -415,7 +461,7 @@ export const solveInversePreview = (
         kx: state.kx + delta[1] * factor,
         ky: state.ky + delta[2] * factor
       }
-      const trialResponse = evaluate(fibers, materials, materialStore.defaults.steelMaterialId, trial)
+      const trialResponse = evaluate(fibers, materials, materialStore.defaults.steelMaterialId, trial).total
       const trialResidual = {
         P: trialResponse.P - demand.P,
         Mx: trialResponse.Mx - demand.Mx,

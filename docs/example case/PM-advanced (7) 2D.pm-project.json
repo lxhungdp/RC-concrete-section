@@ -1,0 +1,352 @@
+{
+  "schema": "pm-column-project",
+  "version": 2,
+  "meta": {
+    "id": 1,
+    "name": "PM-advanced (7) 2D reference case",
+    "createdAt": "2026-07-23T00:00:00.000Z",
+    "updatedAt": "2026-07-23T00:00:00.000Z"
+  },
+  "inputs": {
+    "geometry": {
+      "id": 1,
+      "name": "PM-advanced (7) 2D — 1500x1200 chamfered section, two voids",
+      "outers": [
+        {
+          "id": 1,
+          "points": [
+            {
+              "id": 1,
+              "x": -550,
+              "y": 600
+            },
+            {
+              "id": 2,
+              "x": 550,
+              "y": 600
+            },
+            {
+              "id": 3,
+              "x": 750,
+              "y": 400
+            },
+            {
+              "id": 4,
+              "x": 750,
+              "y": -400
+            },
+            {
+              "id": 5,
+              "x": 550,
+              "y": -600
+            },
+            {
+              "id": 6,
+              "x": -550,
+              "y": -600
+            },
+            {
+              "id": 7,
+              "x": -750,
+              "y": -400
+            },
+            {
+              "id": 8,
+              "x": -750,
+              "y": 400
+            }
+          ],
+          "holes": [
+            {
+              "id": 1,
+              "points": [
+                {
+                  "id": 101,
+                  "x": -450,
+                  "y": 400
+                },
+                {
+                  "id": 102,
+                  "x": -250,
+                  "y": 400
+                },
+                {
+                  "id": 103,
+                  "x": -150,
+                  "y": 300
+                },
+                {
+                  "id": 104,
+                  "x": -150,
+                  "y": -300
+                },
+                {
+                  "id": 105,
+                  "x": -250,
+                  "y": -400
+                },
+                {
+                  "id": 106,
+                  "x": -450,
+                  "y": -400
+                },
+                {
+                  "id": 107,
+                  "x": -550,
+                  "y": -300
+                },
+                {
+                  "id": 108,
+                  "x": -550,
+                  "y": 300
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "points": [
+                {
+                  "id": 201,
+                  "x": 250,
+                  "y": 400
+                },
+                {
+                  "id": 202,
+                  "x": 450,
+                  "y": 400
+                },
+                {
+                  "id": 203,
+                  "x": 550,
+                  "y": 300
+                },
+                {
+                  "id": 204,
+                  "x": 550,
+                  "y": -300
+                },
+                {
+                  "id": 205,
+                  "x": 450,
+                  "y": -400
+                },
+                {
+                  "id": 206,
+                  "x": 250,
+                  "y": -400
+                },
+                {
+                  "id": 207,
+                  "x": 150,
+                  "y": -300
+                },
+                {
+                  "id": 208,
+                  "x": 150,
+                  "y": 300
+                }
+              ]
+            }
+          ],
+          "rebars": [
+            {
+              "id": 1,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": -400,
+              "y": 530
+            },
+            {
+              "id": 2,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": -200,
+              "y": 530
+            },
+            {
+              "id": 3,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": 0,
+              "y": 530
+            },
+            {
+              "id": 4,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": 200,
+              "y": 530
+            },
+            {
+              "id": 5,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": 400,
+              "y": 530
+            },
+            {
+              "id": 6,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": -400,
+              "y": -530
+            },
+            {
+              "id": 7,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": -200,
+              "y": -530
+            },
+            {
+              "id": 8,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": 0,
+              "y": -530
+            },
+            {
+              "id": 9,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": 200,
+              "y": -530
+            },
+            {
+              "id": 10,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": 400,
+              "y": -530
+            },
+            {
+              "id": 11,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": -680,
+              "y": 300
+            },
+            {
+              "id": 12,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": -680,
+              "y": 100
+            },
+            {
+              "id": 13,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": -680,
+              "y": -100
+            },
+            {
+              "id": 14,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": -680,
+              "y": -300
+            },
+            {
+              "id": 15,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": 680,
+              "y": 300
+            },
+            {
+              "id": 16,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": 680,
+              "y": 100
+            },
+            {
+              "id": 17,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": 680,
+              "y": -100
+            },
+            {
+              "id": 18,
+              "steelMaterialId": 1,
+              "dia": 32,
+              "x": 680,
+              "y": -300
+            }
+          ]
+        }
+      ]
+    },
+    "materials": {
+      "strainSign": "compression-positive",
+      "concrete": {
+        "id": 1,
+        "name": "KDS C30 (workbook Input)",
+        "standard": "KDS",
+        "fck": 30,
+        "mc": 2350,
+        "elasticModulus": 28417.47528313351,
+        "stressStrain": {
+          "type": "kds-parabolic",
+          "eps0": 0.002,
+          "epsCu": 0.0033,
+          "n": 2,
+          "alpha": 0.85
+        },
+        "limits": {
+          "eps0": 0.002,
+          "epsCu": 0.0033,
+          "ignoreTension": true
+        },
+        "factors": {
+          "alpha": 0.85
+        }
+      },
+      "steel": [
+        {
+          "id": 1,
+          "name": "SD400 (workbook Input)",
+          "standard": "KDS",
+          "fy": 400,
+          "elasticModulus": 200000,
+          "stressStrain": {
+            "type": "elastic-perfectly-plastic"
+          },
+          "limits": {
+            "epsY": 0.002
+          }
+        }
+      ],
+      "defaults": {
+        "steelMaterialId": 1
+      }
+    },
+    "loadings": {
+      "combinations": [
+        {
+          "id": 1,
+          "name": "ULS-1 workbook Newton demand (on the 15 deg surface)",
+          "P": 24942922.10245218,
+          "Mx": 3714165943.842699,
+          "My": 1431780727.695074
+        },
+        {
+          "id": 2,
+          "name": "ULS-2 same axial, half moment (inside)",
+          "P": 24942922.10245218,
+          "Mx": 1857082971.9213495,
+          "My": 715890363.8475369
+        },
+        {
+          "id": 3,
+          "name": "ULS-3 low axial, high moment",
+          "P": 5000000,
+          "Mx": 4000000000,
+          "My": 1500000000
+        }
+      ]
+    }
+  }
+}
