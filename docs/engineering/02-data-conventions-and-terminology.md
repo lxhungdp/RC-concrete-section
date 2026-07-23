@@ -1,0 +1,98 @@
+# Engineering Data, Conventions, and Terminology
+
+## 1. Canonical units
+
+The current `pm-column-project` schema version 2 uses one fixed canonical system:
+
+| Quantity | Canonical unit |
+|---|---|
+| length, coordinate, bar diameter | mm |
+| area | mm² |
+| stress, elastic modulus | MPa = N/mm² |
+| force `P` | N |
+| moment `Mx`, `My` | N·mm |
+| strain | dimensionless |
+| angle | rad internally |
+
+These units are explicit through the schema contract even though v2 does not repeat unit fields in
+every object. External import/UI adapters may accept other units only when the source unit is
+declared and converted once at the boundary. Values must never be interpreted by magnitude.
+
+Results and reports store the canonical units and may add presentation-unit metadata. Display-unit
+changes shall not rerun or alter resistance calculations.
+
+## 2. Coordinates, signs, and moments
+
+- global `X` is positive right and global `Y` is positive up;
+- compression strain, compression stress, and compression axial force are positive;
+- tension values are negative;
+- the reference origin is explicit and immutable during one analysis;
+- the default analysis origin is the exact net-concrete geometric centroid; a user origin is
+  allowed only when stored with the transformation;
+- internally, angles are radians and positive counter-clockwise unless a named adapter states its
+  input mapping.
+
+The generalized strain plane is:
+
+`ε(x,y) = ε0 + κx·y + κy·x`
+
+The resultants about the declared origin are:
+
+`P = ∫σ dA`, `Mx = ∫σ y dA`, `My = ∫σ x dA`.
+
+If the new origin is offset by `(Δx, Δy)` from the old origin, with new coordinates
+`x' = x - Δx`, `y' = y - Δy`:
+
+`Mx' = Mx - P·Δy`, `My' = My - P·Δx`.
+
+This convention is authoritative. Import adapters must transform external sign conventions and
+record the mapping rather than changing the kernel convention.
+
+## 3. Required terminology
+
+| Term | Meaning |
+|---|---|
+| `raw input` | user/import data before complete validation |
+| `normalized geometry` | immutable, oriented, topology-checked geometry in the analysis frame |
+| `material definition` | serializable data describing a uniaxial material law and its limits/source |
+| `compiled material` | runtime evaluator derived from one validated definition; never persisted |
+| `design basis` | exact standard identity, method, jurisdiction choices, classifications, and options |
+| `demand` | action vector to compare or equilibrate, with explicit action basis |
+| `nominalReference` | auditable reference resultant at a stored ULS strain state |
+| `designResistance` | resultant permitted for comparison with factored ULS demand |
+| `utilization` | named comparison metric; the default is proportional 3D load scaling |
+| `accepted result` | converged result that passed all required engineering gates |
+| `preview` | non-acceptance visualization or partial diagnostic output |
+
+Avoid bare labels such as `factor`, `factored`, `strength`, or `loadcase result` when their basis is
+ambiguous. Use `globalStrengthReduction`, `designMaterialStrength`, `factoredULSDemand`, and
+`loadCombinationResult` as applicable.
+
+## 4. Identity and traceability
+
+Entity IDs are stable positive integers within a declared namespace. Display order is not identity.
+Geometry regions, holes, points, bars, material definitions, cases, combinations, and result records
+have separate namespaces unless a schema explicitly declares otherwise.
+
+Every accepted calculation preserves:
+
+- original input snapshot and normalized representation;
+- schema and migration versions;
+- profile, method, adapter, and material-model versions;
+- entity IDs needed to trace warnings and contributions;
+- expanded options and tolerances;
+- engine and numerically relevant dependency versions;
+- timestamps, input/result hashes, and review state.
+
+Names are user-facing labels and are never used as foreign keys.
+
+## 5. Finite and typed data policy
+
+All public numeric values must be finite. `NaN`, `Infinity`, empty strings converted to zero, and
+sentinel extreme numbers are not valid engineering states. Lengths, diameters, areas, elastic
+moduli, strengths, limits, and resource counts must satisfy model-specific ranges.
+
+Validation returns issues with stable code, severity, path/entity ID, safe message, and technical
+context. A warning cannot override an error. Automatic repairs are allowed only in an explicit
+import-repair preview and must be disclosed; accepted analysis uses the repaired snapshot as a new
+versioned input, never an invisible mutation.

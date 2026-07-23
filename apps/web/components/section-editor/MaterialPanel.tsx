@@ -18,6 +18,7 @@ import {
 
 type Props = {
   store: MaterialStore
+  usedSteelMaterialIds?: Set<number>
   onChange: (store: MaterialStore) => void
 }
 
@@ -253,7 +254,7 @@ function UserCurveEditor({
   )
 }
 
-export function MaterialPanel({ store, onChange }: Props) {
+export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChange }: Props) {
   const [activePage, setActivePage] = useState<MaterialPage>('concrete')
   const activeSteel = store.steel.find((material) => material.id === store.defaults.steelMaterialId) ?? store.steel[0]
 
@@ -286,6 +287,7 @@ export function MaterialPanel({ store, onChange }: Props) {
 
   const removeSteel = (id: number) => {
     if (store.steel.length <= 1) return
+    if (usedSteelMaterialIds.has(id)) return
     const steel = store.steel.filter((material) => material.id !== id)
     onChange({
       ...store,
@@ -599,9 +601,9 @@ export function MaterialPanel({ store, onChange }: Props) {
                 <button
                   type="button"
                   className="pm-material-remove"
-                  disabled={store.steel.length <= 1}
+                  disabled={store.steel.length <= 1 || usedSteelMaterialIds.has(material.id)}
                   onClick={() => removeSteel(material.id)}
-                  title="Remove steel"
+                  title={usedSteelMaterialIds.has(material.id) ? 'Steel is used by rebar' : 'Remove steel'}
                 >
                   <X size={13} />
                 </button>

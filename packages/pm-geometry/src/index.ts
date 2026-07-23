@@ -574,7 +574,7 @@ export const polygonPerimeter = (points: Point2[]) => {
 }
 
 export const polygonCentroid = (points: Point2[]) => {
-  // Docs (PM-software-summary §5.2 / PM-curve-spec):
+  // Detailed reference: docs/02-meshing-2d.md §2 (polygon properties).
   // D_i = x_i*y_{i+1} - x_{i+1}*y_i
   // Cx = Σ((x_i + x_{i+1}) * D_i) / (3 * ΣD_i)
   // Cy = Σ((y_i + y_{i+1}) * D_i) / (3 * ΣD_i)

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Activity,
   Atom,
   Boxes,
   Circle,
@@ -10,7 +11,6 @@ import {
   EyeOff,
   FileDown,
   FileUp,
-  Layers3,
   Lock,
   Maximize2,
   Moon,
@@ -50,10 +50,14 @@ import {
   parseProjectDocument,
   projectDocumentFileName,
   serializeProjectDocument,
+  type LoadCombination,
   type LoadingsInput
 } from '@pm/project'
+import { buildPreviewSurface, solveInversePreview, type InversePreviewResult } from '../../lib/pm-preview-analysis'
+import { LoadingsPanel } from './LoadingsPanel'
 import { MaterialPanel } from './MaterialPanel'
 import { RebarPanel } from './RebarPanel'
+import { ResultsWorkspace } from './ResultsWorkspace'
 import {
   createSectionCamera2d,
   panSectionCamera2d,
@@ -75,7 +79,7 @@ type ScreenPoint = {
 
 type Tool = 'select' | 'draw-rectangle' | 'draw-circle' | 'draw-polygon'
 type Theme = 'light' | 'dark'
-type WorkspaceModule = 'geometry' | 'materials' | 'loadings'
+type WorkspaceModule = 'geometry' | 'materials' | 'results'
 type GeometrySubTab = 'concrete' | 'rebar'
 type BuilderShape = 'rectangle' | 'circle' | 'capsule'
 type BooleanAction = 'union' | 'subtract'
@@ -364,6 +368,9 @@ export function SectionDrawingClient() {
   )
   const [materialStore, setMaterialStore] = useState<MaterialStore>(() => createDefaultMaterialStore())
   const [loadingsInput, setLoadingsInput] = useState<LoadingsInput>(() => createEmptyLoadingsInput())
+  const [selectedLoadcaseId, setSelectedLoadcaseId] = useState<number | null>(null)
+  const [fixedResultP, setFixedResultP] = useState(0)
+  const [inverseResults, setInverseResults] = useState<Record<number, InversePreviewResult>>({})
   const [projectMeta, setProjectMeta] = useState(() => ({
     id: 1,
     name: 'Column project',
@@ -423,6 +430,10 @@ export function SectionDrawingClient() {
     activeBoundary && !(activeBoundary.id === appliedBoundaryId && activeBoundary.locked)
   )
   const activeSummary = useMemo(() => summarizeSection(activeSection), [activeSection])
+  const resultSurface = useMemo(
+    () => (hasAppliedSection ? buildPreviewSurface(finalSection, rebars, materialStore, fixedResultP) : null),
+    [finalSection, fixedResultP, hasAppliedSection, materialStore, rebars]
+  )
   const gridLines = useMemo(() => buildGridLines(camera, size), [camera, size])
   const activeCentroidScreen = useMemo(
     () => worldToScreen(camera, activeSummary.centroid, size),
@@ -477,6 +488,27 @@ export function SectionDrawingClient() {
   const selectedBoundaries = selectedBoundaryIds
     .map((id) => boundaries.find((boundary) => boundary.id === id))
     .filter((boundary): boundary is BoundaryObject => Boolean(boundary))
+
+  useEffect(() => {
+    setInverseResults({})
+  }, [appliedGeometryInput, materialStore, loadingsInput, fixedResultP])
+
+  const calculateInverseForLoadcase = (loadcase: LoadCombination) => {
+    setSelectedLoadcaseId(loadcase.id)
+    if (!hasAppliedSection || !resultSurface) return
+    if (inverseResults[loadcase.id]) return
+    const result = solveInversePreview(finalSection, rebars, materialStore, loadcase, resultSurface.contour)
+    setInverseResults((current) => ({ ...current, [loadcase.id]: result }))
+  }
+
+  const runInverseForLoadcase = (id: number) => {
+    const loadcase = loadingsInput.combinations.find((item) => item.id === id)
+    if (!loadcase) {
+      setSelectedLoadcaseId(id)
+      return
+    }
+    calculateInverseForLoadcase(loadcase)
+  }
 
   const draftRing = useMemo(() => {
     if (!drawingDraft) return []
@@ -986,6 +1018,8 @@ export function SectionDrawingClient() {
     setAppliedGeometryInput(geometry)
     setMaterialStore(document.inputs.materials)
     setLoadingsInput(document.inputs.loadings)
+    setSelectedLoadcaseId(document.inputs.loadings.combinations[0]?.id ?? null)
+    setInverseResults({})
     setProjectMeta({
       id: document.meta.id,
       name: document.meta.name,
@@ -1216,9 +1250,9 @@ export function SectionDrawingClient() {
             <Atom size={16} />
             <span>Materials</span>
           </button>
-          <button className={activeModule === 'loadings' ? 'is-active' : ''} onClick={() => setActiveModule('loadings')}>
-            <Layers3 size={16} />
-            <span>Loadings</span>
+          <button className={activeModule === 'results' ? 'is-active' : ''} onClick={() => setActiveModule('results')}>
+            <Activity size={16} />
+            <span>Results</span>
           </button>
         </nav>
 
@@ -1761,9 +1795,50 @@ export function SectionDrawingClient() {
           </>
         )}
 
-        {activeModule === 'materials' && <MaterialPanel store={materialStore} onChange={setMaterialStore} />}
+        {activeModule === 'materials' && (
+          <MaterialPanel
+            store={materialStore}
+            usedSteelMaterialIds={new Set(rebars.map((bar) => bar.steelMaterialId ?? materialStore.defaults.steelMaterialId))}
+            onChange={setMaterialStore}
+          />
+        )}
 
-        {activeModule === 'loadings' && (
+        {activeModule === 'results' && (
+          <>
+            <LoadingsPanel
+              input={loadingsInput}
+              selectedLoadcaseId={selectedLoadcaseId}
+              onSelectLoadcase={setSelectedLoadcaseId}
+              onActivateLoadcase={calculateInverseForLoadcase}
+              onChange={setLoadingsInput}
+            />
+            <section className="pm-panel-section">
+              <div className="pm-section-title">
+                <h2>Result Status</h2>
+              </div>
+              <div className="pm-result-status-list">
+                <span>Applied section</span>
+                <strong>{hasAppliedSection ? 'Ready' : 'Missing'}</strong>
+                <span>Rebars</span>
+                <strong>{rebars.length}</strong>
+                <span>Loadcases</span>
+                <strong>{loadingsInput.combinations.length}</strong>
+                <span>Surface points</span>
+                <strong>{resultSurface?.points.length ?? 0}</strong>
+              </div>
+            </section>
+            <section className="pm-panel-section">
+              <div className="pm-section-title">
+                <h2>Verification Note</h2>
+              </div>
+              <p className="pm-preview-hint">
+                Preview compares material constants and P0/P18 landmarks against PM-advanced (7) 2D. Full certified V&amp;V stays for the next phase.
+              </p>
+            </section>
+          </>
+        )}
+
+        {false && (
           <section className="pm-panel-section">
             <div className="pm-section-title">
               <h2>Loadings</h2>
@@ -1795,7 +1870,20 @@ export function SectionDrawingClient() {
         )}
       </aside>
 
-      <section className="pm-drawing-stage" aria-label="Section drawing">
+      <section className="pm-drawing-stage" aria-label={activeModule === 'results' ? 'Analysis results' : 'Section drawing'}>
+        {activeModule === 'results' ? (
+          <ResultsWorkspace
+            ready={hasAppliedSection}
+            surface={resultSurface}
+            loadcases={loadingsInput.combinations}
+            selectedLoadcaseId={selectedLoadcaseId}
+            inverseResult={selectedLoadcaseId == null ? null : inverseResults[selectedLoadcaseId] ?? null}
+            fixedP={fixedResultP}
+            onFixedPChange={setFixedResultP}
+            onSelectLoadcase={runInverseForLoadcase}
+          />
+        ) : (
+        <>
         <div className="pm-canvas-toolbox" aria-label="Boundary drawing tools">
           <button
             className={tool === 'draw-rectangle' ? 'is-active' : ''}
@@ -1964,6 +2052,8 @@ export function SectionDrawingClient() {
             <strong>{formatNumber(activeSummary.centroid.y)} mm</strong>
           </div>
         </div>
+        </>
+        )}
       </section>
     </main>
   )
