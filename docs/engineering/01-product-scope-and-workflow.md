@@ -59,19 +59,27 @@ the analysis must reject unsupported topology with a typed blocking issue.
 The UI and report shall display exclusions relevant to the selected analysis. A section result shall
 not be titled “column design complete” when member-level checks are excluded.
 
-## 5. Module workflow and gates
+## 5. Workflow areas and gates
 
-| Module | Engineering input | Required output gate |
+Current UI workflow:
+
+```text
+Geometry -> Materials -> Results -> Report
+```
+
+Loadcases remain engineering input, but simple `Pu/Mux/Muy` entry belongs inside the Results
+workspace until source-load management becomes large enough to justify a separate module. Analysis
+is an internal pipeline behind Results, not a top-level menu.
+
+| Workflow area | Engineering input | Required output gate |
 |---|---|---|
 | Geometry | concrete boundaries, holes, bars, origin/axes | valid normalized topology and reinforcement references |
 | Materials | concrete/steel definitions and sources | validated material definitions and compatible selected profile |
-| Loadings | cases/combinations, action basis, origin/axes/units | finite, uniquely identified, basis-compatible demands |
-| Analysis | normalized scenario, profile, accuracy options | converged accepted result or typed failure |
-| Results | immutable result package | plots/tables derived without recomputing engineering rules |
+| Results | loadcases/combinations, normalized scenario, profile, accuracy options, immutable result package | finite compatible demands, converged accepted result or typed failure, plots/tables derived without recomputing engineering rules |
 | Report | accepted result plus presentation options | released Excel/PDF carrying result identity and limitations |
 
 The user may edit modules in any order, but analysis starts only after all prerequisite gates pass.
-Changing Geometry, Materials, Loadings, design basis, or analysis options makes downstream Results
+Changing Geometry, Materials, loadcases, design basis, or analysis options makes downstream Results
 and Report stale.
 
 ## 6. Result-state lifecycle

@@ -22,11 +22,11 @@ certification.
 | KDS helpers | derived concrete parameters/modulus and default definitions | implemented preview | exact normative profile trace and independent verification |
 | ACI Whitney model | helper/type/UI option | implemented but blocked | `beta1` is unused in current local stress evaluation; redesign required |
 | project JSON | schema/version/meta, geometry/material/loadings, import/export, round-trip self-test | implemented | migrations, strict semantic issues, no invisible repair, result/design-basis artifacts |
-| Loadings data | empty/combination definitions and clone/create helpers | implemented seed | owning package, action basis/frame, validator, functional UI |
-| Loadings UI | placeholder retaining imported combinations | not implemented | full vertical slice |
+| Loadings data | empty/combination definitions and clone/create helpers | implemented seed | action basis/frame, validator, future owning package when complexity warrants |
+| Results-sidebar loadcases | add/edit/delete/duplicate/select Pu/Mux/Muy combinations in Results | implemented preview | typed validation, import, stale-state graph, accepted demand checks |
 | analysis core | detailed specifications only | not implemented | packages, mechanics, mesh, surface, checks, V&V |
 | design-code registry | detailed specification only | not implemented | exact profiles, traceability, review/evidence |
-| Results | menu/DTO/plots/check tables | not implemented | accepted result contract and full UI slice |
+| Results | Plotly 3D preview surface, 2D fixed-P slice, vertical slice, lazy inverse loadcase detail | implemented preview | accepted result contract, DTO-driven plots, checks, convergence evidence |
 | Report | Excel/PDF model/renderers | not implemented | accepted-result-only pipeline and render verification |
 | tests | TypeScript check script and one project round-trip self-test | initial only | geometry/material/unit/property/differential/UI/V&V suites |
 
@@ -43,7 +43,7 @@ certification.
 
 ## 3. Blocking inconsistencies and risks
 
-### P0 — engineering correctness blockers
+### P0 - engineering correctness blockers
 
 1. **No production geometry gateway.** `summarizeSection` warnings are too weak for topology and bar
    acceptance.
@@ -58,10 +58,10 @@ certification.
 6. **Insufficient verification.** Geometry/material behavior currently lacks the required test
    matrix and independent oracles.
 
-### P1 — architecture and data-integrity risks
+### P1 - architecture and data-integrity risks
 
 1. `SectionDrawingClient.tsx` combines many use cases and UI concerns, increasing accidental
-   coupling as Loadings/Results/Report are added.
+   coupling as Results/Report grow.
 2. Removing a steel material can leave bars referring to a missing ID; parsing later warns and
    selects a default, which is unsuitable for accepted analysis.
 3. Project parsing currently repairs an invalid default steel ID after parsing rather than returning
@@ -74,7 +74,7 @@ certification.
 7. Current editor coordinate rounding/fixed tolerances are not separated from engineering topology
    and convergence tolerances.
 
-### P2 — scale-up risks
+### P2 - scale-up risks
 
 1. Current v2 stores one concrete material while geometry can store multiple regions.
 2. Current loadings support combinations but not source load-case provenance.
@@ -86,28 +86,28 @@ certification.
 ## 4. Documentation decisions closed by this baseline
 
 - engineering and programming instructions are separate groups;
-- the product flow is Geometry -> Materials -> Loadings -> Analysis -> Results -> Report;
+- the current UI flow is Geometry -> Materials -> Results -> Report;
 - the current input packages are retained and hardened rather than bypassed;
 - multiple geometry regions are a persisted/editor capability but are analysis capability-gated;
 - project v2 units are fixed by schema, while external adapters must declare source units;
 - material family labels are not complete design-code profiles;
-- Loadings distinguish action basis and eventually cases from combinations;
+- loadcases distinguish action basis and eventually source cases from combinations;
 - Results are immutable artifacts with preview/current/stale/accepted states;
 - Report consumes only accepted results and shares one format-neutral model for Excel/PDF;
 - current Geometry and Materials behavior remains preview until its production gates pass.
 
 ## 5. Recommended phased roadmap
 
-### Phase 0 — documentation baseline
+### Phase 0 - documentation baseline
 
-- maintain this two-group instruction structure;
+- maintain the role-based instruction structure and [`../01-control-map.md`](../01-control-map.md);
 - assign requirement IDs and resolve remaining normative decisions;
 - preserve the current detailed numerical specifications as supporting references.
 
 Exit: structural and software owners approve scope, conventions, package/pipeline boundaries, and
 current-state classification.
 
-### Phase 1 — shared foundations
+### Phase 1 - shared foundations
 
 - introduce shared typed issues/results/provenance and canonical hashing;
 - make tests fully local/reproducible and pin intentional dependency versions;
@@ -116,7 +116,7 @@ current-state classification.
 
 Exit: package-level validation failures and project round-trips are deterministic and fully tested.
 
-### Phase 2 — harden Geometry and Materials
+### Phase 2 - harden Geometry and Materials
 
 - implement geometry schema/topology/normalization/exact-property/rebar validators;
 - define cover semantics and restrict/validate generators;
@@ -128,15 +128,16 @@ Exit: package-level validation failures and project round-trips are deterministi
 Exit: normalized geometry and compiled material set are typed production gateway outputs, still
 without claiming a verified design code.
 
-### Phase 3 — complete Loadings vertical slice
+### Phase 3 - complete Results-sidebar loadcase slice
 
-- create `@pm/loadings` with action-basis/frame-aware contracts and validation;
-- implement combination table/import/editing and project round-trip;
+- harden Results-sidebar combination editing and project round-trip;
+- create `@pm/loadings` only when action-basis/frame-aware contracts, source-load provenance, or
+  import/edit behavior outgrow the project seed;
 - add cross-module readiness and stale-result behavior.
 
-Exit: Geometry, Materials, and Loadings form a complete validated input snapshot.
+Exit: Geometry, Materials, and loadcases form a complete validated input snapshot.
 
-### Phase 4 — mechanics/reference kernel
+### Phase 4 - mechanics/reference kernel
 
 - implement exact geometry support, integration/quadrature/refinement, forward resultants,
   contribution ledger, scaled algebra, and independent fixtures;
@@ -145,7 +146,7 @@ Exit: Geometry, Materials, and Loadings form a complete validated input snapshot
 
 Exit: mechanics verification Gate C passes for a standard-neutral reference mode.
 
-### Phase 5 — one complete ULS design profile
+### Phase 5 - one complete ULS design profile
 
 - select exact first standard/edition/method and complete clause trace;
 - implement strain domain, nominal/design sequencing, surface refinement, caps, topology, demand
@@ -154,7 +155,7 @@ Exit: mechanics verification Gate C passes for a standard-neutral reference mode
 
 Exit: one declared scope can produce an accepted result; all other profiles remain draft/blocked.
 
-### Phase 6 — Results
+### Phase 6 - Results
 
 - add result schemas/package, history/current/stale states, tables, plots, per-combination details,
   convergence and diagnostics;
@@ -162,7 +163,7 @@ Exit: one declared scope can produce an accepted result; all other profiles rema
 
 Exit: structural reviewers can audit every accepted combination through the UI.
 
-### Phase 7 — Report
+### Phase 7 - Report
 
 - add format-neutral report model and eligibility checks;
 - implement Excel, then PDF renderers;
@@ -184,10 +185,10 @@ Materials gateways. Specifically:
 6. wire the UI to show typed blocking issues while retaining existing editing behavior.
 
 This produces an end-to-end improvement in the already built Geometry/Materials slices and creates
-the stable foundation needed before Loadings or numerical analysis is expanded.
+the stable foundation needed before loadcases or numerical analysis are expanded.
 
-## 7. Roadmap update rule
+## 7. Roadmap Update Rule
 
 When a capability is implemented, update its row with evidence links and keep its status at
 `implemented` or `preview` until the applicable engineering gates pass. Do not move directly from
-“not implemented” to “verified” in one code change without the required independent evidence.
+`not implemented` to `verified` in one code change without the required independent evidence.

@@ -1,119 +1,90 @@
-# P-M Column Designer — Documentation Control Center
+# P-M Column Designer - Instruction Index
 
-Status: **documentation baseline for development**. It is not a design-code certification and it
-does not make the current application suitable for production design.
+Status: **development baseline, not design certification**.
 
-This repository has two independent instruction sets. They deliberately answer different
-questions and must not be merged into one document.
+This folder has one entry point and one authority map. Start here, then go only to the section that
+matches your role.
 
-| Instruction set | Primary reader | Governing question |
+## 1. Read This First
+
+| Reader | Read | Purpose |
 |---|---|---|
-| [`engineering/`](engineering/00-README.md) | Structural engineer, checker, approver | What does P-M calculate, under which assumptions, standards, conventions, limits, and acceptance rules? |
-| [`development/`](development/00-README.md) | Software engineer and coding AI | How is that intent implemented as versioned packages, pipelines, APIs, tests, UI modules, results, and reports? |
+| Structural engineer | [`engineering/00-README.md`](engineering/00-README.md) | Engineering meaning, assumptions, formulas, standards, acceptance gates. |
+| Software engineer | [`development/00-README.md`](development/00-README.md) | Packages, APIs, persistence, UI, tests, release workflow. |
+| Any person changing formulas, mesh, standards, or result behavior | [`01-control-map.md`](01-control-map.md) | Single source of truth for where a rule or parameter is allowed to live. |
 
-A structural engineer can control the engineering behavior by reading only the first group. A
-software engineer must read the engineering group first, then the development group. Programming
-instructions may explain implementation, but may not create or alter engineering truth.
+Do not treat the numbered root files as a third instruction set. They are detailed references
+linked from the control map.
 
-## 1. Product workflow
+## 2. Product Workflow
 
 ```text
-Geometry -> Materials -> Loadings -> Analysis -> Results -> Report
+Geometry -> Materials -> Results -> Report
 ```
 
-The application menu is organized as:
+Current UI note:
 
-1. **Geometry** — concrete regions, holes, reinforcement, coordinate system, and section
-   properties.
-2. **Materials** — serializable concrete and reinforcement definitions plus their source and
-   verification status.
-3. **Loadings** — load cases/combinations and design-action basis.
-4. **Results** — capacity domain, per-combination checks, convergence, diagnostics, and plots.
-5. **Report** — controlled Excel or PDF output built only from an accepted result package.
+- `Results` owns loadcase entry in its sidebar for the current simple `Pu/Mux/Muy` workflow.
+- A separate `Loadings` workspace is intentionally avoided until source-load management becomes
+  large enough to justify it.
+- `Analysis` is a pipeline behind Results, not a top-level menu.
+- `Report` remains downstream of an accepted result and is not implemented in the current preview.
 
-`Analysis` is a pipeline between menus, not necessarily a top-level menu. `Results` and `Report`
-remain disabled until their prerequisites and quality gates pass.
-
-## 2. Current implementation status
+## 3. Current Implementation Status
 
 As of 2026-07-23:
 
-- `Geometry` has an interactive editor, boolean composition, an applied-section boundary, rebar
-  input, and project JSON round-trip.
-- `Materials` has concrete/steel editors, serializable definitions, preview stress-strain curves,
-  compilation helpers, and project JSON round-trip.
-- `Loadings` has a persisted data contract but the UI is still a placeholder.
-- the engineering analysis kernel, accepted Results workflow, and Excel/PDF Report workflow are not
-  implemented.
-- the repository therefore produces **input/previews only**, not verified design results.
+- Geometry editor, material editor, rebar input, project JSON round trip, Results preview plots, and
+  loadcase entry are implemented as **preview** capability.
+- The current Results charts use Plotly for interactive visualization, but the underlying
+  calculation is still a preview kernel.
+- Accepted engineering analysis, verified design-code profiles, certified result DTOs, and
+  Excel/PDF report release are not complete.
+- Preview data cannot be promoted to accepted design output.
 
-The evidence and known gaps are maintained in
+The detailed status and roadmap live in
 [`development/06-current-state-and-roadmap.md`](development/06-current-state-and-roadmap.md).
 
-## 3. Status vocabulary
-
-Use these words consistently in code, UI, issues, results, and documentation:
+## 4. Status Vocabulary
 
 | Status | Meaning |
 |---|---|
 | `implemented` | Code exists and can be exercised; engineering correctness is not implied. |
-| `preview` | Useful for editing or visualization but prohibited from design acceptance/report release. |
-| `reviewed` | Requirements and implementation have received the named discipline review. |
-| `verified` | Requirement traceability and prescribed verification evidence pass for the declared scope/version. |
+| `preview` | Useful for editing or visualization; prohibited from design acceptance/report release. |
+| `reviewed` | Requirements or implementation have received named discipline review. |
+| `verified` | Requirement traceability and prescribed verification evidence pass for a declared scope/version. |
 | `acceptedResult` | One run passed input, adapter, convergence, topology, and uncertainty gates. |
-| `releasedReport` | A report was generated from an immutable accepted result and carries its provenance/hash. |
+| `releasedReport` | A report was generated from an immutable accepted result and carries provenance/hash. |
 
 Do not use `certified`, `code compliant`, `exact`, or `validated` unless the corresponding approval
-process and evidence are explicitly defined and complete.
+process and evidence are complete.
 
-## 4. Authority and conflict resolution
+## 5. Authority Order
 
-From highest to lowest authority:
+When two documents conflict, resolve in this order:
 
-1. governing law, adopted design standard, project design basis, and approved interpretations;
-2. verified design-code profile with clause-level traceability;
-3. the [`engineering/`](engineering/00-README.md) instruction set;
-4. the [`development/`](development/00-README.md) instruction set;
-5. detailed numbered technical references in this directory;
-6. architecture decision records, tests, examples, spreadsheets, and current source code;
-7. UI labels and screenshots.
+1. governing law, adopted design standard, project design basis, and approved interpretation;
+2. verified design-code profile with clause traceability;
+3. [`01-control-map.md`](01-control-map.md);
+4. [`engineering/`](engineering/00-README.md);
+5. [`development/`](development/00-README.md);
+6. numbered detailed references in this folder;
+7. tests, examples, spreadsheets, and source code;
+8. UI labels and screenshots.
 
-Existing code and Excel workbooks are evidence or regression oracles, not automatic engineering
-authority. If implementation and engineering instructions conflict, stop the affected result path,
-record the conflict, and resolve it at the higher level. Never edit an engineering rule only to make
-an existing snapshot pass.
+Existing Excel workbooks are regression oracles and examples, not automatic authority. If code and
+engineering instructions conflict, stop the affected result path and resolve the rule at the higher
+authority level.
 
-## 5. Detailed technical references
+## 6. Change Rule
 
-The numbered files retain the detailed mathematical and quality specification. They are supporting
-references, not a third instruction group:
+Any result-affecting change must update the same authority path in one change set:
 
-1. [`01-data-model-and-materials.md`](01-data-model-and-materials.md)
-2. [`02-meshing-2d.md`](02-meshing-2d.md)
-3. [`03-forward-analysis-and-jacobian.md`](03-forward-analysis-and-jacobian.md)
-4. [`04-initial-guess-feasibility-newton.md`](04-initial-guess-feasibility-newton.md)
-5. [`05-pm-diagram-19points-angles-plotting.md`](05-pm-diagram-19points-angles-plotting.md)
-6. [`06-mesh-sizing-and-convergence.md`](06-mesh-sizing-and-convergence.md)
-7. [`07-integration-edge-cases-and-qa.md`](07-integration-edge-cases-and-qa.md)
-8. [`08-software-architecture-and-api.md`](08-software-architecture-and-api.md)
-9. [`09-verification-validation-and-release.md`](09-verification-validation-and-release.md)
-10. [`10-normative-references-and-change-control.md`](10-normative-references-and-change-control.md)
-11. [`11-design-standards-and-resistance-formats.md`](11-design-standards-and-resistance-formats.md)
+- engineering rule or formula authority;
+- development/package/API contract;
+- options/defaults or parameter registry;
+- tests and verification evidence;
+- schema/provenance/report impact when applicable.
 
-Files `01` and `02` describe the **normalized analysis model**. The currently persisted editor model
-is `GeometryInput` with `outers[]`; the development instructions define the mandatory adapter
-between them. File `11` remains the detailed authority for nominal-to-design resistance sequencing,
-subject to a verified governing-code profile.
-
-## 6. Documentation change rule
-
-Every change that can affect calculated results must update, in the same change set:
-
-- the applicable engineering requirement;
-- the development/package contract;
-- verification tests and evidence owner;
-- schema, migration, provenance, and report impact;
-- an architecture/engineering decision record when the decision is not already closed.
-
-Documentation links and examples must be checked before merge. A broken or contradictory
-instruction blocks the affected implementation just as a failing test does.
+Do not duplicate a formula, tolerance, mesh size, standard factor, or UI workflow in a second place.
+If a topic appears to need two owners, update [`01-control-map.md`](01-control-map.md) first.

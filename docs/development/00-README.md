@@ -1,19 +1,25 @@
-# Development Instructions — Package, Pipeline, and Coding Baseline
+# Development Instructions - Package, Pipeline, and Coding Baseline
 
-This group defines how software implements the approved engineering intent. It is for software
-engineers and coding agents. Read the complete
-[`../engineering/`](../engineering/00-README.md) group first.
+This group is for software engineers and coding agents. It explains how the code implements approved
+engineering intent. Read [`../engineering/00-README.md`](../engineering/00-README.md) first, then use
+[`../01-control-map.md`](../01-control-map.md) before changing formulas, parameters, schemas, result
+behavior, or package ownership.
 
-## Read order
+## 1. Read Order
 
-1. [`01-architecture-and-package-boundaries.md`](01-architecture-and-package-boundaries.md)
-2. [`02-data-contracts-persistence-and-versioning.md`](02-data-contracts-persistence-and-versioning.md)
-3. [`03-geometry-and-material-pipelines.md`](03-geometry-and-material-pipelines.md)
-4. [`04-loadings-analysis-results-and-report-pipelines.md`](04-loadings-analysis-results-and-report-pipelines.md)
-5. [`05-coding-quality-and-ai-workflow.md`](05-coding-quality-and-ai-workflow.md)
-6. [`06-current-state-and-roadmap.md`](06-current-state-and-roadmap.md)
+| Step | Document | Use it for |
+|---|---|---|
+| 1 | [`01-architecture-and-package-boundaries.md`](01-architecture-and-package-boundaries.md) | Package ownership, dependency direction, runtime separation. |
+| 2 | [`02-data-contracts-persistence-and-versioning.md`](02-data-contracts-persistence-and-versioning.md) | Project schema, migrations, persisted definitions, result identity. |
+| 3 | [`03-geometry-and-material-pipelines.md`](03-geometry-and-material-pipelines.md) | Validation, normalization, compilation, UI-to-domain boundaries. |
+| 4 | [`04-loadings-analysis-results-and-report-pipelines.md`](04-loadings-analysis-results-and-report-pipelines.md) | Loadcase data, engine orchestration, results, Plotly adapter, reports. |
+| 5 | [`05-coding-quality-and-ai-workflow.md`](05-coding-quality-and-ai-workflow.md) | Testing discipline, review workflow, AI coding constraints. |
+| 6 | [`06-current-state-and-roadmap.md`](06-current-state-and-roadmap.md) | Current implementation status and phased delivery order. |
 
-## Mandatory development principles
+The numbered root files are technical references, not competing implementation instructions. The
+control map names the single owner for each rule or parameter.
+
+## 2. Mandatory Development Principles
 
 | ID | Rule |
 |---|---|
@@ -28,7 +34,7 @@ engineers and coding agents. Read the complete
 | `DEV-009` | Schema, numeric dependency, algorithm, and design-code changes are versioned and impact-assessed. |
 | `DEV-010` | A coding AI may implement requirements but may not invent engineering assumptions or normative values. |
 
-## Standard implementation pipeline
+## 3. Standard Pipeline
 
 ```text
 RawDefinition
@@ -42,18 +48,17 @@ RawDefinition
   -> Excel/PDF
 ```
 
-Do not bypass a stage for convenience. Do not send editor state directly to the kernel or compiled
-functions into persistence.
+Do not bypass stages. Do not send editor state directly to the kernel or compiled functions into
+persistence.
 
-## Definition of done for a development slice
+## 4. Definition Of Done
 
-A slice is complete only when:
+A development slice is complete only when:
 
-- its engineering requirement IDs and scope are named;
+- requirement IDs and engineering scope are named;
 - public data/API changes and compatibility are documented;
 - validation and failure behavior are implemented;
-- unit, integration, property/invariant, and regression tests appropriate to risk pass;
-- no lower package imports UI, project state, plotting, report, browser, or network concerns;
-- relevant documentation and current-state matrix are updated;
-- result-impacting changes include provenance/version and V&V impact;
-- the app demonstrates the slice without becoming a second source of engineering truth.
+- suitable unit, integration, property/invariant, and regression tests pass;
+- lower packages do not import UI, project state, plotting, report, browser, or network concerns;
+- current-state docs and the control map are updated when ownership or parameters change;
+- result-impacting changes include provenance/version and verification impact.

@@ -3,7 +3,8 @@
 ## 1. Loadings package
 
 The current `LoadingsInput` with `combinations[]` is a valid minimal persistence seed. Extract its
-business logic from `@pm/project` when the Loadings UI is implemented.
+business logic from `@pm/project` when loadcase validation, source-load provenance, or import/edit
+behavior becomes large enough to need a dedicated package.
 
 Target definitions distinguish action basis:
 
@@ -217,7 +218,7 @@ dependency versions.
 
 ## 9. Recommended vertical delivery order
 
-1. Loadings definitions/validator/package plus functional UI table and project round-trip.
+1. Results-sidebar loadcase entry, project round-trip, and typed seed validation.
 2. Shared typed issues, canonical hashing, and stale-state graph.
 3. Geometry/material production validation gateways.
 4. Minimal verified forward mechanics fixture without design-code claims.
