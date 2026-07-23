@@ -1911,12 +1911,28 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   font-size: 0.7rem;
 }
 
+.pm-loadcase-table col.pm-col-name {
+  width: 18%;
+}
+
+.pm-loadcase-table col.pm-col-load {
+  width: 22%;
+}
+
+.pm-loadcase-table col.pm-col-ur {
+  width: 2.4rem;
+}
+
+.pm-loadcase-table col.pm-col-action {
+  width: 1.6rem;
+}
+
 .pm-loadcase-table th {
   position: sticky;
   top: 0;
   z-index: 1;
   height: 30px;
-  padding: 0 4px;
+  padding: 0 3px;
   border-bottom: 1px solid var(--border);
   background: var(--card);
   color: var(--foreground-muted);
@@ -1925,17 +1941,17 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   line-height: 1.1;
 }
 
-.pm-loadcase-table th:first-child {
-  width: 74px;
-}
-
-.pm-loadcase-table th:last-child {
-  width: 54px;
+.pm-loadcase-table th.pm-col-ur,
+.pm-loadcase-table td.pm-col-ur,
+.pm-loadcase-table th.pm-col-action,
+.pm-loadcase-table td.pm-col-action {
+  padding: 2px 0;
+  text-align: center;
 }
 
 .pm-loadcase-table td {
   height: 30px;
-  padding: 2px;
+  padding: 2px 3px;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -1963,12 +1979,37 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
 }
 
 .pm-loadcase-actions {
-  display: grid;
-  grid-template-columns: 22px 22px;
-  gap: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.pm-loadcase-unit-grid,
+.pm-loadcase-ur {
+  display: inline-block;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--foreground-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  user-select: none;
+}
+
+.pm-loadcase-ur.is-pending {
+  opacity: 0.45;
+}
+
+.pm-loadcase-ur.is-pass {
+  color: #15803d;
+}
+
+.pm-loadcase-ur.is-fail {
+  color: #b91c1c;
+}
+
 .pm-result-status-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1977,7 +2018,6 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   font-size: 0.72rem;
 }
 
-.pm-loadcase-unit-grid strong,
 .pm-result-status-list strong {
   color: var(--foreground);
   font-weight: 600;

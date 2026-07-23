@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Eye, EyeOff, Maximize2, RotateCw } from 'lucide-react'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
@@ -8,6 +8,7 @@ import type { LoadCombination } from '@pm/project'
 import {
   buildSectionFieldMap,
   sliceFixedP,
+  VERTICAL_SLICE_KEY_STATIONS,
   type InversePreviewResult,
   type PreviewSurface,
   type PreviewSurfacePoint
@@ -44,7 +45,7 @@ const sci = (value: number, digits = 3) => {
   return value.toExponential(digits)
 }
 
-  const plotTheme = {
+const plotTheme = {
   paper_bgcolor: 'rgba(0,0,0,0)',
   plot_bgcolor: 'rgba(0,0,0,0)',
   autosize: true,
@@ -84,6 +85,21 @@ const normalizeAngleDeg = (degrees: number) => {
 
 const loadcaseAngleDeg = (loadcase: LoadCombination) =>
   normalizeAngleDeg((Math.atan2(loadcase.My, loadcase.Mx) * 180) / Math.PI)
+
+const pickBetaCurve = (rows: ReturnType<typeof groupByBeta>, angleDeg: number) => {
+  if (rows.length === 0) return []
+  const target = (normalizeAngleDeg(angleDeg) * Math.PI) / 180
+  let best = rows[0]
+  for (let i = 1; i < rows.length; i++) {
+    const current = rows[i]
+    const delta = Math.abs(current.beta - target)
+    const wrap = Math.min(delta, Math.abs(delta - 2 * Math.PI))
+    const bestDelta = Math.abs(best.beta - target)
+    const bestWrap = Math.min(bestDelta, Math.abs(bestDelta - 2 * Math.PI))
+    if (wrap < bestWrap) best = current
+  }
+  return best.curve
+}
 
 const SyncedControl = ({
   label,
@@ -143,6 +159,8 @@ export function ResultsWorkspace({
   onSelectLoadcase
 }: Props) {
   const [sliceAngle, setSliceAngle] = useState(0)
+  const [includeOppositeMoment, setIncludeOppositeMoment] = useState(false)
+  const [showSceneAxes, setShowSceneAxes] = useState(false)
   const [fieldMode, setFieldMode] = useState<FieldMode>('strain')
   const [showNeutralAxis, setShowNeutralAxis] = useState(true)
   const [showMoments, setShowMoments] = useState(true)
@@ -178,12 +196,126 @@ export function ResultsWorkspace({
 
   const surfaceGrid = useMemo(() => (surface ? groupByBeta(surface.points) : []), [surface])
 
+  useEffect(() => {
+    if (!includeOppositeMoment) return
+    const wrapped = normalizeAngleDeg(sliceAngle)
+    if (wrapped > 180) setSliceAngle(wrapped - 180)
+  }, [includeOppositeMoment, sliceAngle])
+
+  const angleSliderMax = includeOppositeMoment ? 180 : 345
+
   const surfaceData = useMemo(() => {
     if (!surface) return []
     const x = surfaceGrid.map((row) => row.curve.map((point) => knm(point.Mx)))
     const y = surfaceGrid.map((row) => row.curve.map((point) => knm(point.My)))
     const z = surfaceGrid.map((row) => row.curve.map((point) => kn(point.P)))
     const customdata = surfaceGrid.map((row) => row.curve.map((point) => point.id))
+
+    const mxSpan = Math.max(Math.abs(surface.bounds.Mx[0]), Math.abs(surface.bounds.Mx[1]), 1)
+    const mySpan = Math.max(Math.abs(surface.bounds.My[0]), Math.abs(surface.bounds.My[1]), 1)
+    const radius = knm(Math.hypot(mxSpan, mySpan)) * 1.05
+    const p0 = kn(surface.bounds.P[0])
+    const p1 = kn(surface.bounds.P[1])
+    const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
+    const c = Math.cos(theta)
+    const s = Math.sin(theta)
+    const m0 = includeOppositeMoment ? -radius : 0
+    const m1 = radius
+    const pPlane = activeFixedPKn
+
+    const verticalPlane = {
+      type: 'surface',
+      name: 'Vertical plane',
+      x: [
+        [m0 * c, m1 * c],
+        [m0 * c, m1 * c]
+      ],
+      y: [
+        [m0 * s, m1 * s],
+        [m0 * s, m1 * s]
+      ],
+      z: [
+        [p0, p0],
+        [p1, p1]
+      ],
+      opacity: 0.22,
+      showscale: false,
+      colorscale: [
+        [0, '#7c3aed'],
+        [1, '#7c3aed']
+      ],
+      hoverinfo: 'skip',
+      contours: { x: { highlight: false }, y: { highlight: false }, z: { highlight: false } }
+    }
+
+    const mxMin = -knm(mxSpan) * 1.05
+    const mxMax = knm(mxSpan) * 1.05
+    const myMin = -knm(mySpan) * 1.05
+    const myMax = knm(mySpan) * 1.05
+    const fixedPPlane = {
+      type: 'surface',
+      name: 'Fixed-P plane',
+      x: [
+        [mxMin, mxMax],
+        [mxMin, mxMax]
+      ],
+      y: [
+        [myMin, myMin],
+        [myMax, myMax]
+      ],
+      z: [
+        [pPlane, pPlane],
+        [pPlane, pPlane]
+      ],
+      opacity: 0.18,
+      showscale: false,
+      colorscale: [
+        [0, '#2563eb'],
+        [1, '#2563eb']
+      ],
+      hoverinfo: 'skip',
+      contours: { x: { highlight: false }, y: { highlight: false }, z: { highlight: false } }
+    }
+
+    const ring = contour.length
+      ? {
+          type: 'scatter3d',
+          name: 'Fixed-P ring',
+          mode: 'lines',
+          x: [...contour.map((point) => knm(point.Mx)), knm(contour[0].Mx)],
+          y: [...contour.map((point) => knm(point.My)), knm(contour[0].My)],
+          z: [...contour.map(() => pPlane), pPlane],
+          line: { color: '#2563eb', width: 5 },
+          hoverinfo: 'skip'
+        }
+      : null
+
+    const sliceCurve = pickBetaCurve(surfaceGrid, activeAngle)
+    const sliceTrace = {
+      type: 'scatter3d',
+      name: 'Vertical slice',
+      mode: 'lines',
+      x: sliceCurve.map((point) => knm(point.Mx)),
+      y: sliceCurve.map((point) => knm(point.My)),
+      z: sliceCurve.map((point) => kn(point.P)),
+      line: { color: '#7c3aed', width: 6 },
+      hoverinfo: 'skip'
+    }
+
+    const oppositeCurve = includeOppositeMoment ? pickBetaCurve(surfaceGrid, activeAngle + 180) : []
+    const oppositeTrace =
+      oppositeCurve.length > 0
+        ? {
+            type: 'scatter3d',
+            name: 'Opposite slice',
+            mode: 'lines',
+            x: oppositeCurve.map((point) => knm(point.Mx)),
+            y: oppositeCurve.map((point) => knm(point.My)),
+            z: oppositeCurve.map((point) => kn(point.P)),
+            line: { color: '#c4b5fd', width: 5 },
+            hoverinfo: 'skip'
+          }
+        : null
 
     return [
       {
@@ -194,7 +326,7 @@ export function ResultsWorkspace({
         z,
         customdata,
         colorscale: fieldColorscale,
-        opacity: 0.78,
+        opacity: 0.72,
         colorbar: {
           title: 'P (kN)',
           thickness: 15,
@@ -205,43 +337,76 @@ export function ResultsWorkspace({
         },
         hovertemplate: 'P=%{z:.1f} kN<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>Surface</extra>'
       },
+      verticalPlane,
+      fixedPPlane,
+      sliceTrace,
+      ...(oppositeTrace ? [oppositeTrace] : []),
+      ...(ring ? [ring] : []),
       {
         type: 'scatter3d',
         name: 'Loadcases',
-        mode: 'markers+text',
+        mode: 'markers',
         x: loadcases.map((item) => knm(item.Mx)),
         y: loadcases.map((item) => knm(item.My)),
         z: loadcases.map((item) => kn(item.P)),
-        text: loadcases.map((item) => item.name),
-        textposition: 'top center',
-        customdata: loadcases.map((item) => item.id),
+        customdata: loadcases.map((item) => [item.id, item.name]),
         marker: {
           size: loadcases.map((item) => (item.id === selectedLoadcaseId ? 7 : 5)),
           color: loadcases.map((item) => (item.id === selectedLoadcaseId ? '#f97316' : '#dc2626')),
           line: { color: '#ffffff', width: 1 }
         },
-        hovertemplate: '%{text}<br>P=%{z:.1f} kN<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>Demand</extra>'
+        hovertemplate: '%{customdata[1]}<br>P=%{z:.1f} kN<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>Demand</extra>'
       }
     ]
-  }, [loadcases, selectedLoadcaseId, surface, surfaceGrid])
+  }, [
+    activeAngle,
+    activeFixedPKn,
+    contour,
+    includeOppositeMoment,
+    loadcases,
+    selectedLoadcaseId,
+    surface,
+    surfaceGrid
+  ])
 
-  const surfaceLayout = useMemo(
-    () => ({
+  const surfaceLayout = useMemo(() => {
+    const axis = (title: string) =>
+      showSceneAxes
+        ? {
+            title,
+            showbackground: false,
+            showgrid: true,
+            zeroline: true,
+            showticklabels: true,
+            gridcolor: '#e5e7eb',
+            zerolinecolor: '#94a3b8',
+            tickfont: { size: 10 }
+          }
+        : {
+            title: '',
+            showbackground: false,
+            showgrid: false,
+            zeroline: false,
+            showticklabels: false,
+            showspikes: false,
+            visible: false
+          }
+
+    return {
       ...plotTheme,
-      margin: { l: 0, r: 28, t: 2, b: 0 },
+      margin: { l: 0, r: showSceneAxes ? 28 : 8, t: 2, b: 0 },
       showlegend: false,
       scene: {
-        xaxis: { title: 'Mx (kN.m)', gridcolor: '#e5e7eb', zerolinecolor: '#94a3b8' },
-        yaxis: { title: 'My (kN.m)', gridcolor: '#e5e7eb', zerolinecolor: '#94a3b8' },
-        zaxis: { title: 'P (kN)', gridcolor: '#e5e7eb', zerolinecolor: '#94a3b8' },
+        xaxis: axis('Mx (kN.m)'),
+        yaxis: axis('My (kN.m)'),
+        zaxis: axis('P (kN)'),
         aspectmode: 'cube',
         camera: { eye: { x: 1.45, y: 1.35, z: 0.9 } }
       },
       hovermode: 'closest',
       clickmode: 'event+select'
-    }),
-    []
-  )
+    }
+  }, [showSceneAxes])
 
   const contourData = useMemo(() => {
     const closedX = [...contour.map((point) => knm(point.Mx))]
@@ -250,40 +415,6 @@ export function ResultsWorkspace({
       closedX.push(knm(contour[0].Mx))
       closedY.push(knm(contour[0].My))
     }
-
-    const demandTrace =
-      isLoadcaseMode && selectedLoadcase
-        ? [
-            {
-              type: 'scatter',
-              name: selectedLoadcase.name,
-              mode: 'markers+text',
-              x: [knm(selectedLoadcase.Mx)],
-              y: [knm(selectedLoadcase.My)],
-              text: [selectedLoadcase.name],
-              textposition: 'top center',
-              marker: { size: 12, color: '#f97316', line: { color: '#ffffff', width: 1 } },
-              hovertemplate: '%{text}<br>Mx=%{x:.1f}<br>My=%{y:.1f}<extra>Demand</extra>'
-            }
-          ]
-        : [
-            {
-              type: 'scatter',
-              name: 'Loadcases',
-              mode: 'markers+text',
-              x: loadcases.map((item) => knm(item.Mx)),
-              y: loadcases.map((item) => knm(item.My)),
-              text: loadcases.map((item) => item.name),
-              textposition: 'top center',
-              customdata: loadcases.map((item) => item.id),
-              marker: {
-                size: loadcases.map((item) => (item.id === selectedLoadcaseId ? 12 : 8)),
-                color: loadcases.map((item) => (item.id === selectedLoadcaseId ? '#f97316' : '#dc2626')),
-                line: { color: '#ffffff', width: 1 }
-              },
-              hovertemplate: '%{text}<br>Mx=%{x:.1f}<br>My=%{y:.1f}<extra>Demand</extra>'
-            }
-          ]
 
     return [
       {
@@ -295,16 +426,56 @@ export function ResultsWorkspace({
         line: { color: '#2563eb', width: 2.25, shape: 'spline', smoothing: 1.05 },
         marker: { size: 5, color: '#0ea5e9' },
         hovertemplate: 'Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>Fixed P</extra>'
-      },
-      ...demandTrace
+      }
     ]
-  }, [activeFixedPKn, contour, isLoadcaseMode, loadcases, selectedLoadcase, selectedLoadcaseId])
+  }, [activeFixedPKn, contour])
 
   const contourLayout = useMemo(
     () => ({
       ...plotTheme,
-      xaxis: { title: 'Mx (kN.m)', zeroline: true, zerolinecolor: '#94a3b8', gridcolor: '#e5e7eb' },
-      yaxis: { title: 'My (kN.m)', zeroline: true, zerolinecolor: '#94a3b8', gridcolor: '#e5e7eb', scaleanchor: 'x' },
+      margin: { l: 44, r: 48, t: 18, b: 40 },
+      xaxis: {
+        title: '',
+        zeroline: true,
+        zerolinecolor: '#94a3b8',
+        gridcolor: '#e5e7eb',
+        automargin: false,
+        tickfont: { size: 10 },
+        titlefont: { size: 11 }
+      },
+      yaxis: {
+        title: '',
+        zeroline: true,
+        zerolinecolor: '#94a3b8',
+        gridcolor: '#e5e7eb',
+        scaleanchor: 'x',
+        automargin: false,
+        tickfont: { size: 10 }
+      },
+      annotations: [
+        {
+          xref: 'paper',
+          x: 0,
+          yref: 'paper',
+          y: 1.02,
+          text: 'My (kN.m)',
+          showarrow: false,
+          xanchor: 'left',
+          yanchor: 'bottom',
+          font: { size: 11, color: '#6b7280' }
+        },
+        {
+          xref: 'paper',
+          x: 1.01,
+          yref: 'paper',
+          y: 0,
+          text: 'Mx (kN.m)',
+          showarrow: false,
+          xanchor: 'left',
+          yanchor: 'top',
+          font: { size: 11, color: '#6b7280' }
+        }
+      ],
       hovermode: 'closest',
       clickmode: 'event+select',
       showlegend: false
@@ -312,64 +483,184 @@ export function ResultsWorkspace({
     []
   )
 
-  const verticalCurve = useMemo(() => {
-    if (!surface || surface.points.length === 0) return []
-    const target = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
-    const rows = groupByBeta(surface.points)
-    if (rows.length === 0) return []
-    let best = rows[0]
-    for (let i = 1; i < rows.length; i++) {
-      const current = rows[i]
-      if (Math.abs(current.beta - target) < Math.abs(best.beta - target)) best = current
+  const verticalSlice = useMemo(() => {
+    const empty = {
+      primaryPath: [] as Array<{ m: number; p: number; station: number }>,
+      oppositePath: [] as Array<{ m: number; p: number; station: number }>,
+      stations: [] as Array<{ m: number; p: number; station: number }>,
+      keys: [] as Array<{ m: number; p: number; station: number; label: string; side: 'primary' | 'opposite' }>
     }
-    return best.curve
-  }, [activeAngle, surface])
+    if (!surface || surfaceGrid.length === 0) return empty
+
+    const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
+    const cx = Math.cos(theta)
+    const sy = Math.sin(theta)
+    const project = (point: PreviewSurfacePoint) => ({
+      m: knm(point.Mx * cx + point.My * sy),
+      p: kn(point.P),
+      station: point.station
+    })
+
+    const primaryPath = pickBetaCurve(surfaceGrid, activeAngle).map(project)
+    const oppositePath = includeOppositeMoment
+      ? pickBetaCurve(surfaceGrid, activeAngle + 180).map(project)
+      : []
+
+    const stations = includeOppositeMoment && oppositePath.length > 0 ? [...primaryPath, ...oppositePath] : primaryPath
+
+    const pickKeys = (
+      curve: Array<{ m: number; p: number; station: number }>,
+      side: 'primary' | 'opposite'
+    ) =>
+      VERTICAL_SLICE_KEY_STATIONS.flatMap(({ station, label }) => {
+        const point = curve.find((item) => item.station === station)
+        return point ? [{ ...point, label, side }] : []
+      })
+
+    const keys = [
+      ...pickKeys(primaryPath, 'primary'),
+      ...(includeOppositeMoment
+        ? pickKeys(oppositePath, 'opposite').filter((item) => Math.abs(item.m) > 1e-6)
+        : [])
+    ]
+
+    return { primaryPath, oppositePath, stations, keys }
+  }, [activeAngle, includeOppositeMoment, surface, surfaceGrid])
 
   const verticalData = useMemo(() => {
-    const curve = {
-      type: 'scatter',
-      name: `Angle ${fmt(activeAngle, 0)} deg`,
-      mode: 'lines+markers',
-      x: verticalCurve.map((point) => knm(Math.hypot(point.Mx, point.My))),
-      y: verticalCurve.map((point) => kn(point.P)),
-      line: { color: '#7c3aed', width: 2.25, shape: 'spline', smoothing: 1.05 },
-      marker: { size: 5, color: '#a855f7' },
-      hovertemplate: 'M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra>Vertical slice</extra>'
+    const primaryKeys = verticalSlice.keys.filter((point) => point.side === 'primary')
+    const oppositeKeys = verticalSlice.keys.filter((point) => point.side === 'opposite')
+    const smoothLine = {
+      color: '#7c3aed',
+      width: 2.25,
+      shape: 'spline' as const,
+      smoothing: 1.05
     }
 
-    if (!isLoadcaseMode || !selectedLoadcase) return [curve]
-
-    const demandM = knm(Math.hypot(selectedLoadcase.Mx, selectedLoadcase.My))
     return [
-      curve,
       {
         type: 'scatter',
-        name: selectedLoadcase.name,
-        mode: 'markers+text',
-        x: [demandM],
-        y: [kn(selectedLoadcase.P)],
-        text: [selectedLoadcase.name],
-        textposition: 'top center',
-        marker: { size: 11, color: '#f97316', line: { color: '#ffffff', width: 1 } },
-        hovertemplate: '%{text}<br>M=%{x:.1f}<br>P=%{y:.1f}<extra>Demand</extra>'
+        name: `Angle ${fmt(activeAngle, 0)} deg`,
+        mode: 'lines',
+        x: verticalSlice.primaryPath.map((point) => point.m),
+        y: verticalSlice.primaryPath.map((point) => point.p),
+        line: smoothLine,
+        hoverinfo: 'skip'
+      },
+      ...(verticalSlice.oppositePath.length > 0
+        ? [
+            {
+              type: 'scatter',
+              name: `Angle ${fmt(normalizeAngleDeg(activeAngle + 180), 0)} deg`,
+              mode: 'lines',
+              x: verticalSlice.oppositePath.map((point) => point.m),
+              y: verticalSlice.oppositePath.map((point) => point.p),
+              line: { ...smoothLine, color: '#8b5cf6' },
+              hoverinfo: 'skip'
+            }
+          ]
+        : []),
+      {
+        type: 'scatter',
+        name: 'Stations',
+        mode: 'markers',
+        x: verticalSlice.stations.map((point) => point.m),
+        y: verticalSlice.stations.map((point) => point.p),
+        marker: { size: 5, color: '#a855f7' },
+        customdata: verticalSlice.stations.map((point) => point.station),
+        hovertemplate: 'P%{customdata}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra>Vertical slice</extra>'
       },
       {
         type: 'scatter',
-        name: 'Ray',
-        mode: 'lines',
-        x: [0, demandM * 1.15],
-        y: [kn(selectedLoadcase.P), kn(selectedLoadcase.P)],
-        line: { color: '#fb923c', width: 1, dash: 'dot' },
-        hoverinfo: 'skip'
-      }
+        name: 'Key stations',
+        mode: 'markers+text',
+        x: primaryKeys.map((point) => point.m),
+        y: primaryKeys.map((point) => point.p),
+        text: primaryKeys.map((point) => point.label),
+        textposition: 'top center',
+        textfont: { size: 10, color: '#5b21b6', family: 'IBM Plex Sans, system-ui, sans-serif' },
+        marker: {
+          size: 8,
+          color: '#5b21b6',
+          symbol: 'diamond',
+          line: { color: '#ffffff', width: 1 }
+        },
+        hovertemplate: '%{text}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra></extra>'
+      },
+      ...(oppositeKeys.length > 0
+        ? [
+            {
+              type: 'scatter',
+              name: 'Opposite keys',
+              mode: 'markers+text',
+              x: oppositeKeys.map((point) => point.m),
+              y: oppositeKeys.map((point) => point.p),
+              text: oppositeKeys.map((point) => point.label),
+              textposition: 'top center',
+              textfont: { size: 10, color: '#7c3aed', family: 'IBM Plex Sans, system-ui, sans-serif' },
+              marker: {
+                size: 7,
+                color: '#c4b5fd',
+                symbol: 'diamond',
+                line: { color: '#ffffff', width: 1 }
+              },
+              hovertemplate: '%{text}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra></extra>'
+            }
+          ]
+        : [])
     ]
-  }, [activeAngle, isLoadcaseMode, selectedLoadcase, verticalCurve])
+  }, [activeAngle, verticalSlice])
 
   const verticalLayout = useMemo(
     () => ({
       ...plotTheme,
-      xaxis: { title: 'M (kN.m)', zeroline: true, zerolinecolor: '#94a3b8', gridcolor: '#e5e7eb' },
-      yaxis: { title: 'P (kN)', zeroline: true, zerolinecolor: '#94a3b8', gridcolor: '#e5e7eb' },
+      margin: { l: 42, r: 52, t: 18, b: 36 },
+      xaxis: {
+        title: '',
+        zeroline: true,
+        zerolinecolor: '#94a3b8',
+        gridcolor: '#e5e7eb',
+        automargin: false,
+        tickfont: { size: 10 },
+        ticks: 'outside',
+        ticklen: 4,
+        tickcolor: '#cbd5e1'
+      },
+      yaxis: {
+        title: '',
+        zeroline: true,
+        zerolinecolor: '#94a3b8',
+        gridcolor: '#e5e7eb',
+        automargin: false,
+        tickfont: { size: 10 },
+        ticks: 'outside',
+        ticklen: 4,
+        tickcolor: '#cbd5e1'
+      },
+      annotations: [
+        {
+          xref: 'paper',
+          x: 0,
+          yref: 'paper',
+          y: 1.02,
+          text: 'P (kN)',
+          showarrow: false,
+          xanchor: 'left',
+          yanchor: 'bottom',
+          font: { size: 11, color: '#6b7280' }
+        },
+        {
+          xref: 'paper',
+          x: 1.01,
+          yref: 'paper',
+          y: 0,
+          text: 'M (kN.m)',
+          showarrow: false,
+          xanchor: 'left',
+          yanchor: 'top',
+          font: { size: 11, color: '#6b7280' }
+        }
+      ],
       hovermode: 'closest',
       showlegend: false
     }),
@@ -403,16 +694,12 @@ export function ResultsWorkspace({
     return { epsMin, epsMax, sigMin, sigMax }
   }, [fieldMap])
 
-  const handle2dClick = (event: PlotlyClickPayload) => {
-    if (isLoadcaseMode) return
-    const point = event.points?.[0]
-    if (typeof point?.customdata === 'number') onSelectLoadcase(point.customdata)
-  }
-
   const handle3dClick = (event: PlotlyClickPayload) => {
     if (isLoadcaseMode) return
     const point = event.points?.[0]
-    if (typeof point?.customdata === 'number') onSelectLoadcase(point.customdata)
+    const data = point?.customdata
+    const id = Array.isArray(data) ? data[0] : data
+    if (typeof id === 'number') onSelectLoadcase(id)
   }
 
   const toggleOverviewVisible = (id: OverviewChartId) => {
@@ -628,6 +915,15 @@ export function ResultsWorkspace({
                       <span>Residual</span>
                       <strong>{sci(inverseResult.residualNorm, 2)}</strong>
                     </div>
+                    <div>
+                      <span>N.A.</span>
+                      <strong>
+                        {(() => {
+                          const angle = neutralAxisAngleDeg(inverseResult.state)
+                          return angle == null ? 'n/a' : `${fmt(angle, 1)}°`
+                        })()}
+                      </strong>
+                    </div>
                   </div>
                 </article>
 
@@ -645,21 +941,12 @@ export function ResultsWorkspace({
                       </strong>
                     </div>
                     <div>
-                      <span>ε max / min</span>
-                      <strong>
-                        {fieldExtremes
-                          ? `${fmt(fieldExtremes.epsMax, 6)} / ${fmt(fieldExtremes.epsMin, 6)}`
-                          : '—'}
-                      </strong>
+                      <span>ε max</span>
+                      <strong>{fieldExtremes ? fmt(fieldExtremes.epsMax, 6) : '—'}</strong>
                     </div>
                     <div>
-                      <span>N.A.</span>
-                      <strong>
-                        {(() => {
-                          const angle = neutralAxisAngleDeg(inverseResult.state)
-                          return angle == null ? 'n/a' : `${fmt(angle, 1)}°`
-                        })()}
-                      </strong>
+                      <span>ε min</span>
+                      <strong>{fieldExtremes ? fmt(fieldExtremes.epsMin, 6) : '—'}</strong>
                     </div>
                   </div>
                 </article>
@@ -765,16 +1052,26 @@ export function ResultsWorkspace({
             onMakePrimary: () => setLoadcasePrimary('vertical'),
             onToggleVisible: () => toggleLoadcaseVisible('vertical'),
             controls: (
-              <SyncedControl
-                label="Angle"
-                value={Number(activeAngle.toFixed(0))}
-                min={0}
-                max={360}
-                step={1}
-                unit="deg"
-                disabled
-                onChange={() => undefined}
-              />
+              <>
+                <SyncedControl
+                  label="Angle"
+                  value={Number(activeAngle.toFixed(0))}
+                  min={0}
+                  max={360}
+                  step={1}
+                  unit="deg"
+                  disabled
+                  onChange={() => undefined}
+                />
+                <label className={`pm-field-check${includeOppositeMoment ? ' is-on' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={includeOppositeMoment}
+                    onChange={(event) => setIncludeOppositeMoment(event.target.checked)}
+                  />
+                  Opposite
+                </label>
+              </>
             ),
             children: <PlotlyChart data={verticalData} layout={verticalLayout} config={plotConfig} />
           })}
@@ -807,15 +1104,25 @@ export function ResultsWorkspace({
           onMakePrimary: () => setOverviewPrimary('vertical'),
           onToggleVisible: () => toggleOverviewVisible('vertical'),
           controls: (
-            <SyncedControl
-              label="Angle"
-              value={sliceAngle}
-              min={0}
-              max={345}
-              step={15}
-              unit="deg"
-              onChange={setSliceAngle}
-            />
+            <>
+              <SyncedControl
+                label="Angle"
+                value={sliceAngle}
+                min={0}
+                max={angleSliderMax}
+                step={15}
+                unit="deg"
+                onChange={setSliceAngle}
+              />
+              <label className={`pm-field-check${includeOppositeMoment ? ' is-on' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={includeOppositeMoment}
+                  onChange={(event) => setIncludeOppositeMoment(event.target.checked)}
+                />
+                Opposite
+              </label>
+            </>
           ),
           children: <PlotlyChart data={verticalData} layout={verticalLayout} config={plotConfig} />
         })}
@@ -828,6 +1135,16 @@ export function ResultsWorkspace({
           visible: overviewVisible.surface3d,
           onMakePrimary: () => setOverviewPrimary('surface3d'),
           onToggleVisible: () => toggleOverviewVisible('surface3d'),
+          controls: (
+            <label className={`pm-field-check${showSceneAxes ? ' is-on' : ''}`}>
+              <input
+                type="checkbox"
+                checked={showSceneAxes}
+                onChange={(event) => setShowSceneAxes(event.target.checked)}
+              />
+              Axes
+            </label>
+          ),
           children: <PlotlyChart data={surfaceData} layout={surfaceLayout} config={plotConfig} onClick={handle3dClick} />
         })}
 
@@ -850,9 +1167,7 @@ export function ResultsWorkspace({
               onChange={(value) => onFixedPChange(value * 1000)}
             />
           ),
-          children: (
-            <PlotlyChart data={contourData} layout={contourLayout} config={plotConfig} onClick={handle2dClick} />
-          )
+          children: <PlotlyChart data={contourData} layout={contourLayout} config={plotConfig} />
         })}
       </div>
     </section>

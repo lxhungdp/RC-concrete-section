@@ -1876,12 +1876,29 @@ export function SectionDrawingClient() {
             <LoadingsPanel
               input={loadingsInput}
               selectedLoadcaseId={resultsViewMode === 'loadcase' ? selectedLoadcaseId : null}
+              utilizationById={Object.fromEntries(
+                Object.entries(inverseResults).map(([id, result]) => [Number(id), result.utilization])
+              )}
               onSelectLoadcase={(id) => {
                 if (id == null) {
                   selectResultsOverview()
                   return
                 }
                 runInverseForLoadcase(id)
+              }}
+              onDemandChanged={(loadcase) => {
+                if (!hasAppliedSection || !resultSurface) {
+                  setInverseResults((current) => {
+                    if (!(loadcase.id in current)) return current
+                    const next = { ...current }
+                    delete next[loadcase.id]
+                    return next
+                  })
+                  return
+                }
+                const contour = sliceFixedP(resultSurface.points, loadcase.P)
+                const result = solveInversePreview(finalSection, rebars, materialStore, loadcase, contour)
+                setInverseResults((current) => ({ ...current, [loadcase.id]: result }))
               }}
               onChange={setLoadingsInput}
             />

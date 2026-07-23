@@ -139,6 +139,28 @@ export const PREVIEW_STATIONS: StationDefinition[] = [
   { kind: 'pure-tension' }
 ]
 
+/** Labels drawn on the vertical P–M slice (steel limit stations only). */
+export const VERTICAL_SLICE_KEY_STATIONS: Array<{ station: number; label: string }> = [
+  { station: 5, label: 'fs = 0' },
+  { station: 9, label: 'fs = fy' }
+]
+
+export const stationDefinitionLabel = (station: StationDefinition): string => {
+  if (station.kind === 'pure-compression') return 'Pure compression'
+  if (station.kind === 'pure-tension') return 'Pure tension'
+  if (station.kind === 'neutral-axis-ratio') return `c = ${station.cOverC1.toFixed(1)}·c₁`
+  if (station.kind === 'steel-yield-ratio') {
+    if (station.ratio === 0) return 'fs = 0'
+    if (Math.abs(station.ratio - 1) < 1e-9) return 'fs = fy'
+    return `fs = ${station.ratio}·fy`
+  }
+  if (station.kind === 'steel-strain') {
+    if (Math.abs(station.strain) < 1e-12) return 'fs = 0'
+    return `εs = ${station.strain}`
+  }
+  return 'Station'
+}
+
 /**
  * Concrete fibers from the exact clipped-cell mesh (`docs/02` §5). Every weight is the area of a
  * real clipped triangle, so meshed area and first moments reproduce the exact polygon properties
