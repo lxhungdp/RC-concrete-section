@@ -2100,6 +2100,62 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   gap: 6px;
 }
 
+.pm-results-export {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pm-export-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.pm-export-button:hover:not(:disabled) {
+  background: var(--surface-strong, rgba(37, 99, 235, 0.08));
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+.pm-export-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pm-export-message {
+  color: var(--foreground-muted);
+  font-size: 0.68rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-export-message.is-error {
+  color: #b91c1c;
+}
+
+.pm-spin {
+  animation: pm-spin 900ms linear infinite;
+}
+
+@keyframes pm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .pm-chart-restore-bar {
   display: flex;
   flex-wrap: wrap;

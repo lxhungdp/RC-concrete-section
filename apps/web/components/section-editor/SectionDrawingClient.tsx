@@ -1931,6 +1931,7 @@ export function SectionDrawingClient() {
             rebars={rebars}
             materialStore={materialStore}
             loadcases={loadingsInput.combinations}
+            projectName={projectMeta.name || appliedGeometryInput.name || 'Column project'}
             selectedLoadcaseId={selectedLoadcaseId}
             inverseResult={selectedLoadcaseId == null ? null : inverseResults[selectedLoadcaseId] ?? null}
             fixedP={fixedResultP}

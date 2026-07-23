@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Eye, EyeOff, Maximize2, RotateCw } from 'lucide-react'
+import { Eye, EyeOff, FileSpreadsheet, Loader2, Maximize2, RotateCw } from 'lucide-react'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
 import type { LoadCombination } from '@pm/project'
@@ -13,6 +13,7 @@ import {
   type PreviewSurface,
   type PreviewSurfacePoint
 } from '../../lib/pm-preview-analysis'
+import { ExcelExportError, exportSectionWorkbook, sectionWorkbookFileName } from '../../lib/pm-excel-export'
 import { PlotlyChart, type PlotlyClickPayload } from './PlotlyChart'
 import { momentAngleDeg, neutralAxisAngleDeg, SectionFieldChart } from './SectionFieldChart'
 
@@ -29,6 +30,7 @@ type Props = {
   rebars: GeometryInputRebarView[]
   materialStore: MaterialStore
   loadcases: LoadCombination[]
+  projectName: string
   selectedLoadcaseId: number | null
   inverseResult: InversePreviewResult | null
   fixedP: number
@@ -152,6 +154,7 @@ export function ResultsWorkspace({
   rebars,
   materialStore,
   loadcases,
+  projectName,
   selectedLoadcaseId,
   inverseResult,
   fixedP,
@@ -171,6 +174,8 @@ export function ResultsWorkspace({
     surface3d: true,
     fixedP: true
   })
+  const [exportState, setExportState] = useState<'idle' | 'working' | 'error'>('idle')
+  const [exportMessage, setExportMessage] = useState('')
   const [loadcasePrimary, setLoadcasePrimary] = useState<LoadcaseChartId>('heatmap')
   const [loadcaseVisible, setLoadcaseVisible] = useState<Record<LoadcaseChartId, boolean>>({
     heatmap: true,
@@ -694,6 +699,40 @@ export function ResultsWorkspace({
     return { epsMin, epsMax, sigMin, sigMax }
   }, [fieldMap])
 
+  const handleExcelExport = async () => {
+    if (!selectedLoadcase) return
+    setExportState('working')
+    setExportMessage('')
+    try {
+      const payload = {
+        projectName,
+        sectionName: section.name,
+        section,
+        rebars,
+        materialStore,
+        angleDeg: activeAngle,
+        fixedP: activeFixedP,
+        loadcase: selectedLoadcase
+      }
+      const blob = await exportSectionWorkbook(payload)
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = sectionWorkbookFileName(payload)
+      anchor.click()
+      URL.revokeObjectURL(url)
+      setExportState('idle')
+      setExportMessage(`Saved ${sectionWorkbookFileName(payload)}`)
+    } catch (error) {
+      setExportState('error')
+      setExportMessage(
+        error instanceof ExcelExportError
+          ? error.message
+          : `Export failed: ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
+  }
+
   const handle3dClick = (event: PlotlyClickPayload) => {
     if (isLoadcaseMode) return
     const point = event.points?.[0]
@@ -818,12 +857,22 @@ export function ResultsWorkspace({
     return (
       <section className="pm-results-stage pm-results-stage--charts-only">
         <div className="pm-results-toolbar">
-          <div className="pm-results-toolbar-meta">
-            <strong>{selectedLoadcase.name}</strong>
-            <span>
-              Pu {fmt(kn(selectedLoadcase.P), 1)} kN · Mux {fmt(knm(selectedLoadcase.Mx), 1)} · Muy{' '}
-              {fmt(knm(selectedLoadcase.My), 1)} kN·m
-            </span>
+          <div className="pm-results-export" role="toolbar" aria-label="Export results">
+            <button
+              type="button"
+              className="pm-export-button"
+              onClick={handleExcelExport}
+              disabled={exportState === 'working' || !surface}
+              title="Export the full section calculation to Excel, with live formulas"
+            >
+              {exportState === 'working' ? <Loader2 size={14} className="pm-spin" /> : <FileSpreadsheet size={14} />}
+              {exportState === 'working' ? 'Building…' : 'Excel'}
+            </button>
+            {exportMessage ? (
+              <span className={`pm-export-message${exportState === 'error' ? ' is-error' : ''}`} role="status">
+                {exportMessage}
+              </span>
+            ) : null}
           </div>
         </div>
 

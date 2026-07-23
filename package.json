@@ -8,9 +8,10 @@
     "build": "npm run build -w @pm/web",
     "lint": "npm run typecheck -w @pm/web",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npm run test:roundtrip && npm run test:pm-stations",
+    "test": "npm run typecheck && npm run test:roundtrip && npm run test:pm-stations && npm run test:excel-export",
     "test:roundtrip": "npx --yes tsx packages/pm-project/src/roundtrip.selftest.ts",
     "test:pm-stations": "npx --yes tsx apps/web/lib/pm-preview-analysis.selftest.ts",
+    "test:excel-export": "npx --yes tsx apps/web/lib/pm-excel-export.selftest.ts",
     "fixture:reference-json": "npx --yes tsx apps/web/lib/pm-reference-case.write.ts"
   },
   "workspaces": [
@@ -19,6 +20,7 @@
   ],
   "dependencies": {
     "@jscad/regl-renderer": "^2.6.15",
+    "exceljs": "^4.4.0",
     "gl-mat4": "^1.2.0",
     "gl-vec3": "^1.1.3",
     "lucide-react": "latest",
@@ -30,6 +32,7 @@
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "hyperformula": "^3.3.0",
     "typescript": "^5.9.3"
   },
   "packageManager": "npm@11.5.0"
