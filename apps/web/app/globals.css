@@ -1983,14 +1983,346 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   font-weight: 600;
 }
 
-.pm-results-stage {
+.pm-result-status-card {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.pm-result-status-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.pm-result-status-card.is-selected {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent-muted) 70%, var(--card));
+}
+
+.pm-result-status-hint {
+  color: var(--foreground-muted);
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
+.pm-results-stage {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   width: 100%;
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+.pm-results-stage--charts-only {
+  min-height: 0;
+}
+
+.pm-results-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 2px;
+}
+
+.pm-results-toolbar-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pm-results-toolbar-meta strong {
+  color: var(--foreground);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.pm-results-toolbar-meta span {
+  color: var(--foreground-muted);
+  font-size: 0.68rem;
+}
+
+.pm-results-toolbar-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.pm-chart-restore-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 2px 0;
+}
+
+.pm-chart-restore {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--accent-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--card));
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.pm-chart-restore:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--card));
+  color: var(--accent);
+}
+
+.pm-results-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.pm-results-grid--dynamic {
+  grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.85fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  grid-auto-flow: dense;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.pm-results-grid--dynamic.count-1 {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.pm-results-grid--dynamic.count-1 .pm-results-plot {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.pm-results-grid--dynamic.count-2 {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.pm-results-grid--dynamic.count-2 .pm-results-plot {
+  grid-column: auto;
+  grid-row: 1;
+}
+
+.pm-results-grid--dynamic.count-2 .pm-results-plot.is-primary {
+  grid-column: auto;
+  grid-row: 1;
+}
+
+.pm-results-grid--dynamic.count-3 .pm-results-plot.is-primary {
+  grid-column: 1;
+  grid-row: 1 / 3;
+}
+
+.pm-results-grid--dynamic.count-3 .pm-results-plot:not(.is-primary) {
+  grid-column: 2;
+  min-height: 0;
+}
+
+.pm-results-plot {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.pm-results-plot.is-primary {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.pm-results-plot-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--foreground);
+  font-size: 0.76rem;
+  font-weight: 700;
+  min-width: 0;
+}
+
+.pm-results-plot-heading {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.pm-results-plot-heading strong {
+  color: var(--foreground-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.pm-results-plot-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  max-width: 100%;
+}
+
+.pm-results-plot-body {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.pm-results-plot-canvas {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pm-results-plot-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--foreground-muted);
+  font-size: 0.78rem;
+}
+
+.pm-chart-tool {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--foreground-muted);
+  cursor: pointer;
+}
+
+.pm-chart-tool:hover {
+  border-color: var(--border);
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.pm-chart-tool.is-active {
+  border-color: var(--accent-border);
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.pm-synced-control {
+  display: inline-grid;
+  grid-template-columns: auto minmax(56px, 88px) 58px auto;
+  align-items: center;
+  gap: 5px;
+  color: var(--foreground-muted);
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
+.pm-synced-control input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.pm-synced-control input[type='number'] {
+  width: 64px;
+  height: 26px;
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--input-bg);
+  color: var(--foreground);
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.pm-synced-control em {
+  font-style: normal;
+  color: var(--foreground-muted);
+}
+
+.pm-synced-control.is-locked {
+  opacity: 0.72;
+}
+
+.pm-synced-control.is-locked input {
+  cursor: not-allowed;
+}
+
+.pm-field-mode-toggle {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--foreground) 3%, var(--card));
+}
+
+.pm-field-mode-toggle button {
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--foreground-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pm-field-mode-toggle button.is-active {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.pm-strain-state-bar {
+  display: grid;
+  grid-template-columns: repeat(4, auto minmax(0, 1fr));
+  gap: 4px 8px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--foreground-muted);
+  font-size: 0.66rem;
+}
+
+.pm-strain-state-bar strong {
+  color: var(--foreground);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pm-results-topbar {
@@ -2071,45 +2403,6 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   text-align: right;
 }
 
-.pm-results-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 10px;
-  min-height: 0;
-}
-
-.pm-results-plot {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-width: 0;
-  min-height: 0;
-  padding: 9px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-}
-
-.pm-results-plot--wide {
-  grid-row: 1 / 3;
-}
-
-.pm-results-plot-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--foreground);
-  font-size: 0.76rem;
-  font-weight: 700;
-}
-
-.pm-results-plot-title strong {
-  color: var(--foreground-muted);
-  font-size: 0.68rem;
-  font-weight: 600;
-}
-
 .pm-results-svg {
   display: block;
   width: 100%;
@@ -2119,9 +2412,13 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
 }
 
 .pm-plotly-host {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
+  min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .pm-plotly-host .modebar {

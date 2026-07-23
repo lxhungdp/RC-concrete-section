@@ -53,7 +53,12 @@ import {
   type LoadCombination,
   type LoadingsInput
 } from '@pm/project'
-import { buildPreviewSurface, solveInversePreview, type InversePreviewResult } from '../../lib/pm-preview-analysis'
+import {
+  buildPreviewSurface,
+  sliceFixedP,
+  solveInversePreview,
+  type InversePreviewResult
+} from '../../lib/pm-preview-analysis'
 import { LoadingsPanel } from './LoadingsPanel'
 import { MaterialPanel } from './MaterialPanel'
 import { RebarPanel } from './RebarPanel'
@@ -369,6 +374,7 @@ export function SectionDrawingClient() {
   const [materialStore, setMaterialStore] = useState<MaterialStore>(() => createDefaultMaterialStore())
   const [loadingsInput, setLoadingsInput] = useState<LoadingsInput>(() => createEmptyLoadingsInput())
   const [selectedLoadcaseId, setSelectedLoadcaseId] = useState<number | null>(null)
+  const [resultsViewMode, setResultsViewMode] = useState<'overview' | 'loadcase'>('overview')
   const [fixedResultP, setFixedResultP] = useState(0)
   const [inverseResults, setInverseResults] = useState<Record<number, InversePreviewResult>>({})
   const [projectMeta, setProjectMeta] = useState(() => ({
@@ -431,9 +437,22 @@ export function SectionDrawingClient() {
   )
   const activeSummary = useMemo(() => summarizeSection(activeSection), [activeSection])
   const resultSurface = useMemo(
-    () => (hasAppliedSection ? buildPreviewSurface(finalSection, rebars, materialStore, fixedResultP) : null),
-    [finalSection, fixedResultP, hasAppliedSection, materialStore, rebars]
+    () => (hasAppliedSection ? buildPreviewSurface(finalSection, rebars, materialStore, 0) : null),
+    [finalSection, hasAppliedSection, materialStore, rebars]
   )
+  const appliedSummary = useMemo(() => summarizeSection(finalSection), [finalSection])
+  const steelArea = useMemo(
+    () => rebars.reduce((sum, bar) => sum + (Math.PI * bar.dia * bar.dia) / 4, 0),
+    [rebars]
+  )
+  const betaCount = useMemo(() => {
+    if (!resultSurface) return 0
+    return new Set(resultSurface.points.map((point) => point.beta)).size
+  }, [resultSurface])
+  const stationCount = useMemo(() => {
+    if (!resultSurface) return 0
+    return new Set(resultSurface.points.map((point) => point.station)).size
+  }, [resultSurface])
   const gridLines = useMemo(() => buildGridLines(camera, size), [camera, size])
   const activeCentroidScreen = useMemo(
     () => worldToScreen(camera, activeSummary.centroid, size),
@@ -491,13 +510,27 @@ export function SectionDrawingClient() {
 
   useEffect(() => {
     setInverseResults({})
-  }, [appliedGeometryInput, materialStore, loadingsInput, fixedResultP])
+  }, [appliedGeometryInput, materialStore, loadingsInput])
+
+  useEffect(() => {
+    if (!resultSurface) return
+    if (fixedResultP !== 0) return
+    const mid = (resultSurface.bounds.P[0] + resultSurface.bounds.P[1]) / 2
+    setFixedResultP(mid)
+  }, [fixedResultP, resultSurface])
+
+  const selectResultsOverview = () => {
+    setResultsViewMode('overview')
+    setSelectedLoadcaseId(null)
+  }
 
   const calculateInverseForLoadcase = (loadcase: LoadCombination) => {
+    setResultsViewMode('loadcase')
     setSelectedLoadcaseId(loadcase.id)
     if (!hasAppliedSection || !resultSurface) return
     if (inverseResults[loadcase.id]) return
-    const result = solveInversePreview(finalSection, rebars, materialStore, loadcase, resultSurface.contour)
+    const contour = sliceFixedP(resultSurface.points, loadcase.P)
+    const result = solveInversePreview(finalSection, rebars, materialStore, loadcase, contour)
     setInverseResults((current) => ({ ...current, [loadcase.id]: result }))
   }
 
@@ -505,6 +538,7 @@ export function SectionDrawingClient() {
     const loadcase = loadingsInput.combinations.find((item) => item.id === id)
     if (!loadcase) {
       setSelectedLoadcaseId(id)
+      setResultsViewMode('loadcase')
       return
     }
     calculateInverseForLoadcase(loadcase)
@@ -1805,53 +1839,53 @@ export function SectionDrawingClient() {
 
         {activeModule === 'results' && (
           <>
-            <LoadingsPanel
-              input={loadingsInput}
-              selectedLoadcaseId={selectedLoadcaseId}
-              onSelectLoadcase={setSelectedLoadcaseId}
-              onActivateLoadcase={calculateInverseForLoadcase}
-              onChange={setLoadingsInput}
-            />
             <section className="pm-panel-section">
               <div className="pm-section-title">
                 <h2>Result Status</h2>
               </div>
-              <div className="pm-result-status-list">
-                <span>Applied section</span>
-                <strong>{hasAppliedSection ? 'Ready' : 'Missing'}</strong>
-                <span>Rebars</span>
-                <strong>{rebars.length}</strong>
-                <span>Loadcases</span>
-                <strong>{loadingsInput.combinations.length}</strong>
-                <span>Surface points</span>
-                <strong>{resultSurface?.points.length ?? 0}</strong>
-              </div>
+              <button
+                type="button"
+                className={`pm-result-status-card${resultsViewMode === 'overview' ? ' is-selected' : ''}`}
+                onClick={selectResultsOverview}
+              >
+                <div className="pm-result-status-list">
+                  <span>Applied section</span>
+                  <strong>{hasAppliedSection ? 'Ready' : 'Missing'}</strong>
+                  <span>Ac</span>
+                  <strong>{hasAppliedSection ? `${Math.round(appliedSummary.area).toLocaleString('en-US')} mm²` : '—'}</strong>
+                  <span>As</span>
+                  <strong>{`${Math.round(steelArea).toLocaleString('en-US')} mm²`}</strong>
+                  <span>Rebars</span>
+                  <strong>{rebars.length}</strong>
+                  <span>Mesh cells</span>
+                  <strong>{resultSurface?.mesh.cells ?? 0}</strong>
+                  <span>Mesh points</span>
+                  <strong>{resultSurface?.mesh.points ?? 0}</strong>
+                  <span>Surface points</span>
+                  <strong>{resultSurface?.points.length ?? 0}</strong>
+                  <span>Angles (β)</span>
+                  <strong>{betaCount}</strong>
+                  <span>Stations</span>
+                  <strong>{stationCount}</strong>
+                  <span>Loadcases</span>
+                  <strong>{loadingsInput.combinations.length}</strong>
+                </div>
+                <span className="pm-result-status-hint">Select to view section overview charts</span>
+              </button>
             </section>
-            <section className="pm-panel-section">
-              <div className="pm-section-title">
-                <h2>Verification Note</h2>
-              </div>
-              <p className="pm-preview-hint">
-                Preview compares material constants and P0/P18 landmarks against PM-advanced (7) 2D. Full certified V&amp;V stays for the next phase.
-              </p>
-            </section>
+            <LoadingsPanel
+              input={loadingsInput}
+              selectedLoadcaseId={resultsViewMode === 'loadcase' ? selectedLoadcaseId : null}
+              onSelectLoadcase={(id) => {
+                if (id == null) {
+                  selectResultsOverview()
+                  return
+                }
+                runInverseForLoadcase(id)
+              }}
+              onChange={setLoadingsInput}
+            />
           </>
-        )}
-
-        {false && (
-          <section className="pm-panel-section">
-            <div className="pm-section-title">
-              <h2>Loadings</h2>
-            </div>
-            <div className="pm-placeholder-panel">
-              <span>
-                Axial load (N), moments (N·mm), and load combinations will live here.
-                {loadingsInput.combinations.length > 0
-                  ? ` Imported ${loadingsInput.combinations.length} combination(s) are retained in project JSON.`
-                  : ' Export already includes an empty loadings block for future use.'}
-              </span>
-            </div>
-          </section>
         )}
         </div>
 
@@ -1874,7 +1908,11 @@ export function SectionDrawingClient() {
         {activeModule === 'results' ? (
           <ResultsWorkspace
             ready={hasAppliedSection}
+            viewMode={resultsViewMode}
             surface={resultSurface}
+            section={finalSection}
+            rebars={rebars}
+            materialStore={materialStore}
             loadcases={loadingsInput.combinations}
             selectedLoadcaseId={selectedLoadcaseId}
             inverseResult={selectedLoadcaseId == null ? null : inverseResults[selectedLoadcaseId] ?? null}

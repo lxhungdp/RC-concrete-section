@@ -521,3 +521,57 @@ export const solveInversePreview = (
     message: norm <= 1e-5 ? 'Converged preview equilibrium.' : 'Preview solver stopped before strict convergence.'
   }
 }
+
+export type SectionFieldSample = {
+  x: number
+  y: number
+  area: number
+  strain: number
+  stress: number
+  kind: 'concrete' | 'rebar'
+}
+
+export type SectionFieldMap = {
+  origin: AnalysisOrigin
+  samples: SectionFieldSample[]
+  mesh: ConcreteMeshReport
+}
+
+/** Mesh samples colored by strain/stress for a known strain plane (loadcase inverse state). */
+export const buildSectionFieldMap = (
+  section: SectionGeometry,
+  rebars: GeometryInputRebarView[],
+  materialStore: MaterialStore,
+  state: StrainState,
+  meshOptions: ConcreteMeshOptions = {}
+): SectionFieldMap => {
+  const origin = netConcreteCentroid(section)
+  const { fibers, report } = buildConcreteFibers(section, origin, meshOptions)
+  const materials = compileMaterialStore(materialStore)
+  const samples: SectionFieldSample[] = fibers.map((fiber) => {
+    const strain = strainAt(state, fiber)
+    return {
+      x: fiber.x + origin.x,
+      y: fiber.y + origin.y,
+      area: fiber.area,
+      strain,
+      stress: materials.concrete.stress(strain),
+      kind: 'concrete' as const
+    }
+  })
+
+  for (const fiber of buildRebarFibers(rebars, origin)) {
+    const strain = strainAt(state, fiber)
+    const steel = materials.steel.get(fiber.steelMaterialId ?? materialStore.defaults.steelMaterialId)
+    samples.push({
+      x: fiber.x + origin.x,
+      y: fiber.y + origin.y,
+      area: fiber.area,
+      strain,
+      stress: steel ? steel.stress(strain) : materials.concrete.stress(strain),
+      kind: 'rebar'
+    })
+  }
+
+  return { origin, samples, mesh: report }
+}
