@@ -207,6 +207,29 @@ const run = async () => {
     throw new Error(`header "${text}" not found on row ${headerRow} of ${sheet.name}`)
   }
 
+  console.log('== 2a. No array-forcing idiom that real Excel rejects ==')
+  // HyperFormula evaluates SUMPRODUCT(MAX(array)) and MAX(SQRT(range)) correctly, but a plain
+  // cell in real Excel does not force array context into a reducing function, so those give
+  // #VALUE!. Scan the written formulas for the pattern rather than trusting the recalc above.
+  const unsafeIdioms = ['SUMPRODUCT(MAX(', 'SUMPRODUCT(MIN(', 'MAX(SQRT(', 'MIN(SQRT(', 'MAX(ABS(MxMy', 'MAX(ABS(Mesh']
+  let idiomHits = 0
+  for (const sheet of readBack.worksheets) {
+    for (let r = 1; r <= sheet.rowCount; r++) {
+      for (let c = 1; c <= sheet.columnCount; c++) {
+        const value = sheet.getCell(r, c).value
+        if (!value || typeof value !== 'object' || !('formula' in value)) continue
+        const formula = String((value as { formula: string }).formula).replace(/\s+/g, '')
+        const hit = unsafeIdioms.find((token) => formula.includes(token))
+        if (hit) {
+          idiomHits++
+          if (idiomHits <= 5) console.log(`FAIL  ${sheet.name}!${sheet.getCell(r, c).address} uses "${hit}": ${formula.slice(0, 80)}`)
+        }
+      }
+    }
+  }
+  if (idiomHits > 0) failures.push(`FAIL  ${idiomHits} formula(s) use an array idiom Excel will not evaluate`)
+  else console.log('PASS  no array-forcing reducer over a range in any formula\n')
+
   console.log('== 2b. Defined names are legal Excel names ==')
   // Excel drops a name it reads as a reference and then removes every formula that used it, which
   // appears only as a repair dialog. `C1_len` was rejected this way: R/C followed by a digit is the
@@ -266,6 +289,28 @@ const run = async () => {
   if (missing > 0) failures.push(`FAIL  ${missing} formula reference(s) to an undeclared name`)
   if (nameProblems === 0 && missing === 0) console.log('PASS  all defined names are legal and every formula name resolves\n')
 
+  console.log('== 2c. Symbols are Greek, not spelled out ==')
+  const spelledGreek = /(alpha|beta|gamma|theta|kappa|sigma|epsilon)/i
+  // These tokens are legitimate inside a defined-name mention within an explanatory note.
+  const nameMentions = ['alpha_source', 'alpha_cc', 'alpha_eff', 'gamma_c', 'gamma_s', 'alpha1', 'PM_Theta', 'theta_L']
+  let spelledHits = 0
+  for (const sheet of readBack.worksheets) {
+    for (let r = 1; r <= sheet.rowCount; r++) {
+      for (let c = 1; c <= sheet.columnCount; c++) {
+        const value = sheet.getCell(r, c).value
+        if (typeof value !== 'string') continue // formulas are objects; only plain text matters
+        let text = value
+        for (const token of nameMentions) text = text.split(token).join('')
+        if (spelledGreek.test(text)) {
+          spelledHits++
+          if (spelledHits <= 8) console.log(`FAIL  ${sheet.name}!${sheet.getCell(r, c).address} spells a Greek letter: ${value.slice(0, 70)}`)
+        }
+      }
+    }
+  }
+  if (spelledHits > 0) failures.push(`FAIL  ${spelledHits} visible cell(s) spell out a Greek letter`)
+  else console.log('PASS  no visible label spells out a Greek letter')
+
   console.log('== 3. Geometry formulas ==')
   const geomSheet = readBack.getWorksheet('Geometry')!
   check('Geometry net area (mm2)', cellValue('Geometry', `D${findLabelRow(geomSheet, 'Net area')}`), 1120000, 1e-9)
@@ -284,7 +329,7 @@ const run = async () => {
   const cSteelP = headerColumn(pmSheet, PM_HEAD, 'P (kN)', cCon.P + 1)
   const cTotP = headerColumn(pmSheet, PM_HEAD, 'P (kN)', cSteelP + 1)
   const cEng = headerColumn(pmSheet, PM_HEAD, 'P engine (kN)')
-  const cE0 = headerColumn(pmSheet, PM_HEAD, 'eps_0')
+  const cE0 = headerColumn(pmSheet, PM_HEAD, 'ε₀')
   console.log(
     `      columns → concrete P ${colName(cCon.P)}, steel P ${colName(cSteelP)}, total P ${colName(cTotP)}, engine ${colName(cEng)}`
   )
@@ -385,8 +430,8 @@ const run = async () => {
 
   console.log('== 9. The two angles are kept apart ==')
   const inputSheet2 = readBack.getWorksheet('Input')!
-  const betaCell = cellValue('Input', `C${findLabelRow(inputSheet2, 'beta (strain-plane angle)')}`)
-  const thetaCell = cellValue('Input', `C${findLabelRow(inputSheet2, 'theta_L (demand direction)')}`)
+  const betaCell = cellValue('Input', `C${findLabelRow(inputSheet2, 'β (strain-plane angle)')}`)
+  const thetaCell = cellValue('Input', `C${findLabelRow(inputSheet2, 'θ_L (demand direction)')}`)
   const thetaExpected = (Math.atan2(loadcase.My, loadcase.Mx) * 180) / Math.PI
   check('beta (strain-plane, deg)', betaCell, BETA_DEG, 1e-12)
   check('theta_L derived in Excel (deg)', thetaCell, thetaExpected, 1e-9)
