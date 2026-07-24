@@ -54,11 +54,10 @@ import {
   type LoadingsInput
 } from '@pm/project'
 import {
-  buildPreviewSurface,
-  sliceFixedPContour,
-  solveInversePreview,
-  type InversePreviewResult
+  type InversePreviewResult,
+  type PreviewSurface
 } from '../../lib/pm-preview-analysis'
+import { buildPreviewSurfaceAsync, checkLoadcaseAsync } from '../../lib/workers/pm-analysis-client'
 import { LoadingsPanel } from './LoadingsPanel'
 import { MaterialPanel } from './MaterialPanel'
 import { RebarPanel } from './RebarPanel'
@@ -349,6 +348,7 @@ export function SectionDrawingClient() {
   const svgRef = useRef<SVGSVGElement | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const pendingFitAfterImportRef = useRef(false)
+  const analysisRevisionRef = useRef(0)
   const dragRef = useRef<
     | { kind: 'pan'; last: ScreenPoint }
     | { kind: 'vertex'; boundaryId: number; outerIndex: number; ringIndex: number; pointId: number; last: ScreenPoint }
@@ -376,7 +376,11 @@ export function SectionDrawingClient() {
   const [selectedLoadcaseId, setSelectedLoadcaseId] = useState<number | null>(null)
   const [resultsViewMode, setResultsViewMode] = useState<'overview' | 'loadcase'>('overview')
   const [fixedResultP, setFixedResultP] = useState(0)
+  const [resultSurface, setResultSurface] = useState<PreviewSurface | null>(null)
+  const [surfaceStatus, setSurfaceStatus] = useState<'idle' | 'working' | 'error'>('idle')
+  const [surfaceMessage, setSurfaceMessage] = useState('')
   const [inverseResults, setInverseResults] = useState<Record<number, InversePreviewResult>>({})
+  const [inverseWorkingById, setInverseWorkingById] = useState<Record<number, boolean>>({})
   const [projectMeta, setProjectMeta] = useState(() => ({
     id: 1,
     name: 'Column project',
@@ -436,10 +440,36 @@ export function SectionDrawingClient() {
     activeBoundary && !(activeBoundary.id === appliedBoundaryId && activeBoundary.locked)
   )
   const activeSummary = useMemo(() => summarizeSection(activeSection), [activeSection])
-  const resultSurface = useMemo(
-    () => (hasAppliedSection ? buildPreviewSurface(finalSection, rebars, materialStore, 0) : null),
-    [finalSection, hasAppliedSection, materialStore, rebars]
-  )
+  useEffect(() => {
+    let cancelled = false
+    setResultSurface(null)
+    setSurfaceMessage('')
+
+    if (!hasAppliedSection) {
+      setSurfaceStatus('idle')
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setSurfaceStatus('working')
+    buildPreviewSurfaceAsync({ section: finalSection, rebars, materialStore, fixedP: 0 })
+      .then((surface) => {
+        if (cancelled) return
+        setResultSurface(surface)
+        setSurfaceStatus('idle')
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setResultSurface(null)
+        setSurfaceStatus('error')
+        setSurfaceMessage(error instanceof Error ? error.message : String(error))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [finalSection, hasAppliedSection, materialStore, rebars])
   const appliedSummary = useMemo(() => summarizeSection(finalSection), [finalSection])
   const steelArea = useMemo(
     () => rebars.reduce((sum, bar) => sum + (Math.PI * bar.dia * bar.dia) / 4, 0),
@@ -509,8 +539,14 @@ export function SectionDrawingClient() {
     .filter((boundary): boundary is BoundaryObject => Boolean(boundary))
 
   useEffect(() => {
+    analysisRevisionRef.current += 1
     setInverseResults({})
-  }, [appliedGeometryInput, materialStore, loadingsInput])
+    setInverseWorkingById({})
+  }, [appliedGeometryInput, materialStore])
+
+  useEffect(() => {
+    setInverseResults({})
+  }, [loadingsInput])
 
   useEffect(() => {
     if (!resultSurface) return
@@ -524,14 +560,31 @@ export function SectionDrawingClient() {
     setSelectedLoadcaseId(null)
   }
 
-  const calculateInverseForLoadcase = (loadcase: LoadCombination) => {
+  const calculateInverseForLoadcase = (loadcase: LoadCombination, force = false) => {
     setResultsViewMode('loadcase')
     setSelectedLoadcaseId(loadcase.id)
     if (!hasAppliedSection || !resultSurface) return
-    if (inverseResults[loadcase.id]) return
-    const contour = sliceFixedPContour(resultSurface.points, loadcase.P)
-    const result = solveInversePreview(finalSection, rebars, materialStore, loadcase, contour)
-    setInverseResults((current) => ({ ...current, [loadcase.id]: result }))
+    if (!force && inverseResults[loadcase.id]) return
+    if (inverseWorkingById[loadcase.id]) return
+    const revision = analysisRevisionRef.current
+    setInverseWorkingById((current) => ({ ...current, [loadcase.id]: true }))
+    checkLoadcaseAsync({ section: finalSection, rebars, materialStore, loadcase, surface: resultSurface })
+      .then((result) => {
+        if (analysisRevisionRef.current !== revision) return
+        setInverseResults((current) => ({ ...current, [loadcase.id]: result }))
+      })
+      .catch((error) => {
+        if (analysisRevisionRef.current !== revision) return
+        setSurfaceMessage(error instanceof Error ? error.message : String(error))
+      })
+      .finally(() => {
+        if (analysisRevisionRef.current !== revision) return
+        setInverseWorkingById((current) => {
+          const next = { ...current }
+          delete next[loadcase.id]
+          return next
+        })
+      })
   }
 
   const runInverseForLoadcase = (id: number) => {
@@ -1851,6 +1904,10 @@ export function SectionDrawingClient() {
                 <div className="pm-result-status-list">
                   <span>Applied section</span>
                   <strong>{hasAppliedSection ? 'Ready' : 'Missing'}</strong>
+                  <span>Analysis</span>
+                  <strong>
+                    {surfaceStatus === 'working' ? 'Calculating...' : surfaceStatus === 'error' ? 'Error' : 'Ready'}
+                  </strong>
                   <span>Ac</span>
                   <strong>{hasAppliedSection ? `${Math.round(appliedSummary.area).toLocaleString('en-US')} mm²` : '—'}</strong>
                   <span>As</span>
@@ -1870,7 +1927,9 @@ export function SectionDrawingClient() {
                   <span>Loadcases</span>
                   <strong>{loadingsInput.combinations.length}</strong>
                 </div>
-                <span className="pm-result-status-hint">Select to view section overview charts</span>
+                <span className="pm-result-status-hint">
+                  {surfaceMessage || 'Select to view section overview charts'}
+                </span>
               </button>
             </section>
             <LoadingsPanel
@@ -1896,9 +1955,13 @@ export function SectionDrawingClient() {
                   })
                   return
                 }
-                const contour = sliceFixedPContour(resultSurface.points, loadcase.P)
-                const result = solveInversePreview(finalSection, rebars, materialStore, loadcase, contour)
-                setInverseResults((current) => ({ ...current, [loadcase.id]: result }))
+                setInverseResults((current) => {
+                  if (!(loadcase.id in current)) return current
+                  const next = { ...current }
+                  delete next[loadcase.id]
+                  return next
+                })
+                calculateInverseForLoadcase(loadcase, true)
               }}
               onChange={setLoadingsInput}
             />

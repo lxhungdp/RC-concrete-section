@@ -6,7 +6,6 @@ import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
 import type { LoadCombination } from '@pm/project'
 import {
-  buildSectionFieldMap,
   sliceFixedP,
   sliceFixedPContour,
   sliceMomentPlane,
@@ -15,9 +14,11 @@ import {
   type InversePreviewResult,
   type PreviewSurface,
   type PreviewSurfacePoint,
-  type PreviewMomentPlanePoint
+  type PreviewMomentPlanePoint,
+  type SectionFieldMap
 } from '../../lib/pm-preview-analysis'
-import { ExcelExportError, exportSectionWorkbook, sectionWorkbookFileName } from '../../lib/pm-excel-export'
+import { ExcelExportError, sectionWorkbookFileName } from '../../lib/pm-excel-export'
+import { buildSectionFieldMapAsync, exportSectionWorkbookAsync } from '../../lib/workers/pm-analysis-client'
 import { PlotlyChart, type PlotlyClickPayload } from './PlotlyChart'
 import { momentAngleDeg, neutralAxisAngleDeg, SectionFieldChart } from './SectionFieldChart'
 
@@ -186,12 +187,56 @@ export function ResultsWorkspace({
     fixedP: true,
     vertical: true
   })
+  const [fieldMap, setFieldMap] = useState<SectionFieldMap | null>(null)
+  const [fieldMapWorking, setFieldMapWorking] = useState(false)
 
   const selectedLoadcase = loadcases.find((item) => item.id === selectedLoadcaseId) ?? null
   const isLoadcaseMode = viewMode === 'loadcase' && selectedLoadcase != null
 
+  useEffect(() => {
+    let cancelled = false
+    setFieldMap(null)
+
+    if (!isLoadcaseMode || !inverseResult) {
+      setFieldMapWorking(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setFieldMapWorking(true)
+    buildSectionFieldMapAsync({ section, rebars, materialStore, state: inverseResult.state })
+      .then((map) => {
+        if (cancelled) return
+        setFieldMap(map)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setFieldMap(null)
+      })
+      .finally(() => {
+        if (cancelled) return
+        setFieldMapWorking(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [inverseResult, isLoadcaseMode, materialStore, rebars, section])
+
   const activeFixedP = isLoadcaseMode ? selectedLoadcase.P : fixedP
   const activeAngle = isLoadcaseMode ? loadcaseAngleDeg(selectedLoadcase) : sliceAngle
+  const demandProjection = useMemo(() => {
+    if (!isLoadcaseMode || !selectedLoadcase) return null
+    const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
+    return {
+      mx: knm(selectedLoadcase.Mx),
+      my: knm(selectedLoadcase.My),
+      p: kn(selectedLoadcase.P),
+      m: knm(selectedLoadcase.Mx * Math.cos(theta) + selectedLoadcase.My * Math.sin(theta)),
+      name: selectedLoadcase.name
+    }
+  }, [activeAngle, isLoadcaseMode, selectedLoadcase])
 
   const pRange = surface?.bounds.P ?? [0, 0]
   const minPKn = Math.floor(kn(pRange[0]))
@@ -435,6 +480,12 @@ export function ResultsWorkspace({
     const rayRadius = Math.max(...contour.map((point) => knm(Math.hypot(point.Mx, point.My))), 1) * 1.18
     const radialX = strainAngleSamples.flatMap((point) => [0, rayRadius * Math.cos(point.beta), null])
     const radialY = strainAngleSamples.flatMap((point) => [0, rayRadius * Math.sin(point.beta), null])
+    const demandGuideX = demandProjection
+      ? [demandProjection.mx, demandProjection.mx, null, 0, demandProjection.mx]
+      : []
+    const demandGuideY = demandProjection
+      ? [0, demandProjection.my, null, demandProjection.my, demandProjection.my]
+      : []
 
     return [
       {
@@ -446,6 +497,19 @@ export function ResultsWorkspace({
         line: { color: '#9ca3af', width: 1, dash: 'dot' },
         hoverinfo: 'skip'
       },
+      ...(demandProjection
+        ? [
+            {
+              type: 'scatter',
+              name: 'Demand guides',
+              mode: 'lines',
+              x: demandGuideX,
+              y: demandGuideY,
+              line: { color: '#ff1f3d', width: 1, dash: 'dot' },
+              hoverinfo: 'skip'
+            }
+          ]
+        : []),
       {
         type: 'scatter',
         name: `P = ${fmt(activeFixedPKn, 1)} kN`,
@@ -476,15 +540,39 @@ export function ResultsWorkspace({
         ]),
         hovertemplate:
           'N.A. sample α=%{customdata[0]}°<br>Moment angle θ=%{customdata[1]}°<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra></extra>'
-      }
+      },
+      ...(demandProjection
+        ? [
+            {
+              type: 'scatter',
+              name: 'Demand point',
+              mode: 'markers',
+              x: [demandProjection.mx],
+              y: [demandProjection.my],
+              marker: {
+                size: 10,
+                color: '#ff1f3d',
+                symbol: 'circle',
+                line: { color: '#ffffff', width: 1 }
+              },
+              customdata: [[demandProjection.name, demandProjection.p]],
+              hovertemplate:
+                '%{customdata[0]}<br>Mux=%{x:.1f} kN.m<br>Muy=%{y:.1f} kN.m<br>Pu=%{customdata[1]:.1f} kN<extra>Demand</extra>'
+            }
+          ]
+        : [])
     ]
-  }, [activeFixedPKn, contour, strainAngleSamples])
+  }, [activeFixedPKn, contour, demandProjection, strainAngleSamples])
 
   const contourAxisRange = useMemo(() => {
     const points = [...contour, ...strainAngleSamples]
-    if (points.length === 0) return null
+    if (points.length === 0 && !demandProjection) return null
     const xs = points.map((point) => knm(point.Mx))
     const ys = points.map((point) => knm(point.My))
+    if (demandProjection) {
+      xs.push(demandProjection.mx)
+      ys.push(demandProjection.my)
+    }
     const minX = Math.min(...xs, 0)
     const maxX = Math.max(...xs, 0)
     const minY = Math.min(...ys, 0)
@@ -497,7 +585,7 @@ export function ResultsWorkspace({
       x: [centerX - half, centerX + half] as [number, number],
       y: [centerY - half, centerY + half] as [number, number]
     }
-  }, [contour, strainAngleSamples])
+  }, [contour, demandProjection, strainAngleSamples])
 
   const contourLayout = useMemo(
     () => ({
@@ -619,6 +707,8 @@ export function ResultsWorkspace({
     const oppositeKeys = verticalSlice.keys.filter((point) => point.side === 'opposite')
     const keyRays = verticalSlice.keys.flatMap((point) => [0, point.m, null])
     const keyRayP = verticalSlice.keys.flatMap((point) => [0, point.p, null])
+    const demandGuideM = demandProjection ? [demandProjection.m, demandProjection.m, null, 0, demandProjection.m] : []
+    const demandGuideP = demandProjection ? [0, demandProjection.p, null, demandProjection.p, demandProjection.p] : []
     const smoothLine = {
       color: '#2563eb',
       width: 2.4
@@ -634,6 +724,19 @@ export function ResultsWorkspace({
         line: { color: '#9ca3af', width: 1, dash: 'dot' },
         hoverinfo: 'skip'
       },
+      ...(demandProjection
+        ? [
+            {
+              type: 'scatter',
+              name: 'Demand guides',
+              mode: 'lines',
+              x: demandGuideM,
+              y: demandGuideP,
+              line: { color: '#ff1f3d', width: 1, dash: 'dot' },
+              hoverinfo: 'skip'
+            }
+          ]
+        : []),
       {
         type: 'scatter',
         name: `Angle ${fmt(activeAngle, 0)} deg`,
@@ -710,9 +813,29 @@ export function ResultsWorkspace({
               hovertemplate: '%{text}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra></extra>'
             }
           ]
+        : []),
+      ...(demandProjection
+        ? [
+            {
+              type: 'scatter',
+              name: 'Demand point',
+              mode: 'markers',
+              x: [demandProjection.m],
+              y: [demandProjection.p],
+              marker: {
+                size: 10,
+                color: '#ff1f3d',
+                symbol: 'circle',
+                line: { color: '#ffffff', width: 1 }
+              },
+              customdata: [[demandProjection.name, demandProjection.mx, demandProjection.my]],
+              hovertemplate:
+                '%{customdata[0]}<br>Mθ=%{x:.1f} kN.m<br>Pu=%{y:.1f} kN<br>Mux=%{customdata[1]:.1f} kN.m<br>Muy=%{customdata[2]:.1f} kN.m<extra>Demand</extra>'
+            }
+          ]
         : [])
     ]
-  }, [activeAngle, verticalSlice])
+  }, [activeAngle, demandProjection, verticalSlice])
 
   const verticalLayout = useMemo(
     () => ({
@@ -770,11 +893,6 @@ export function ResultsWorkspace({
     []
   )
 
-  const fieldMap = useMemo(() => {
-    if (!isLoadcaseMode || !inverseResult) return null
-    return buildSectionFieldMap(section, rebars, materialStore, inverseResult.state)
-  }, [inverseResult, isLoadcaseMode, materialStore, rebars, section])
-
   const fieldExtremes = useMemo(() => {
     if (!fieldMap) return null
     let epsMin = Number.POSITIVE_INFINITY
@@ -821,7 +939,7 @@ export function ResultsWorkspace({
         loadcase: selectedLoadcase,
         equilibrium: equilibrium ?? null
       }
-      const blob = await exportSectionWorkbook(payload)
+      const blob = await exportSectionWorkbookAsync(payload)
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
@@ -1172,7 +1290,9 @@ export function ResultsWorkspace({
                 includeRebar={includeRebar}
               />
             ) : (
-              <div className="pm-results-plot-placeholder">Inverse solution is calculating…</div>
+              <div className="pm-results-plot-placeholder">
+                {fieldMapWorking ? 'Field map is calculating...' : 'Inverse solution is calculating...'}
+              </div>
             )
           })}
 
