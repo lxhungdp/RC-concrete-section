@@ -125,10 +125,22 @@ At minimum:
 Concrete definitions support KDS parabolic, ACI Whitney block, EC2 parabolic-rectangular, and user
 curve discriminants. Steel supports elastic-perfectly-plastic, bilinear, and user curves.
 
+The editor exposes this through one source/standard selector. Code keeps the stored enum values
+`KDS`, `ACI318`, `EC2`, and `CUSTOM`; the UI labels are `KDS`, `ACI 318`,
+`EN 1992-1-1 (EC2)`, and `Custom`. That selector is responsible for deriving the current
+`stressStrain`, `limits`, `elasticModulus`, and optional `factors` fields. A second independent
+stress-strain-model selector must not be reintroduced unless the schema is redesigned, because it
+would allow contradictory states such as `standard = EC2` with an unrelated law and hidden factors.
+
 ### Implemented compilation
 
 `compileConcreteMaterial`, `compileSteelMaterial`, and `compileMaterialStore` produce stress/tangent
 functions and a small limit record. The UI uses these functions to draw preview curves.
+
+Concrete compilers currently read `factors.alpha` and `factors.gammaC` when present and use the
+effective multiplier `alpha / gammaC`. Steel compilers currently read `factors.gammaS` when present
+and use `fy / gammaS` as the model yield stress. The Excel export must mirror these effective values
+in its named inputs (`alpha`, `fy`) while also displaying the characteristic/source values for audit.
 
 This is a useful package boundary, but the current compiler is not an analysis acceptance boundary:
 

@@ -1,9 +1,11 @@
 import {
   buildPreviewSurface,
   buildSectionFieldMap,
+  checkLoadcasesUtilizationFromSurface,
   sliceFixedPContour,
   solveInversePreview,
   type InversePreviewResult,
+  type LoadcaseQuickCheckResult,
   type PreviewSurface,
   type SectionFieldMap
 } from '../pm-preview-analysis'
@@ -13,7 +15,8 @@ import type {
   AnalysisWorkerResponse,
   BuildFieldMapPayload,
   BuildSurfacePayload,
-  CheckLoadcasePayload
+  CheckLoadcasePayload,
+  CheckLoadcasesPayload
 } from '../../workers/pm-analysis.worker'
 
 type PendingJob = {
@@ -87,6 +90,11 @@ const runWorkerOrFallback = async <T>(request: Omit<AnalysisWorkerRequest, 'jobI
 export const buildPreviewSurfaceAsync = (payload: BuildSurfacePayload): Promise<PreviewSurface> =>
   runWorkerOrFallback<PreviewSurface>({ type: 'buildSurface', payload }, () =>
     buildPreviewSurface(payload.section, payload.rebars, payload.materialStore, payload.fixedP ?? 0)
+  )
+
+export const checkLoadcasesAsync = (payload: CheckLoadcasesPayload): Promise<LoadcaseQuickCheckResult[]> =>
+  runWorkerOrFallback<LoadcaseQuickCheckResult[]>({ type: 'checkLoadcases', payload }, () =>
+    checkLoadcasesUtilizationFromSurface(payload.surface, payload.loadcases)
   )
 
 export const checkLoadcaseAsync = (payload: CheckLoadcasePayload): Promise<InversePreviewResult> =>

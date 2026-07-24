@@ -408,10 +408,14 @@ const primitiveToClippingPolygon = (
 const polygonAreaAbs = (polygon: Polygon) => {
   const [outer] = polygon
   if (!outer) return 0
-  return Math.abs(
-    signedPolygonArea(outer.slice(0, -1).map(([x, y], index) => ({ id: index + 1, x, y })))
-  )
+  const area = (ring: Ring) =>
+    Math.abs(signedPolygonArea(ring.slice(0, -1).map(([x, y], index) => ({ id: index + 1, x, y }))))
+  const holes = polygon.slice(1).reduce((sum, ring) => sum + area(ring), 0)
+  return Math.max(0, area(outer) - holes)
 }
+
+const multiPolygonAreaAbs = (multiPolygon: MultiPolygon) =>
+  multiPolygon.reduce((sum, polygon) => sum + polygonAreaAbs(polygon), 0)
 
 const clippingRingToPoints = (
   ring: Ring,
@@ -491,6 +495,11 @@ export const composeSectionPrimitives = (
     if (primitive.operation === 'subtract') {
       if (!solid) {
         warnings.push(`Subtract primitive "${primitive.name ?? primitive.id}" was ignored because no solid exists yet.`)
+        continue
+      }
+      const overlap = polygonClipping.intersection(solid, polygon)
+      if (multiPolygonAreaAbs(overlap) <= 1e-9) {
+        warnings.push(`Subtract primitive "${primitive.name ?? primitive.id}" was ignored because it does not overlap the current solid.`)
         continue
       }
       solid = polygonClipping.difference(solid, polygon)

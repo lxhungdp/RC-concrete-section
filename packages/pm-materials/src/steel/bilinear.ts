@@ -1,18 +1,21 @@
 import type { CompiledMaterial, SteelMaterial } from '../types'
 
+const designFy = (material: SteelMaterial) => material.fy / (material.factors?.gammaS ?? 1)
+
 export const stressBilinearSteel = (material: SteelMaterial, strain: number) => {
   const model = material.stressStrain.type === 'bilinear' ? material.stressStrain : null
   const hardeningRatio = Math.max(0, model?.hardeningRatio ?? 0.01)
-  const epsY = material.limits?.epsY ?? material.fy / material.elasticModulus
+  const fy = designFy(material)
+  const epsY = material.limits?.epsY ?? fy / material.elasticModulus
   const absStrain = Math.abs(strain)
   const sign = strain < 0 ? -1 : 1
   if (absStrain <= epsY) return material.elasticModulus * strain
-  return sign * (material.fy + material.elasticModulus * hardeningRatio * (absStrain - epsY))
+  return sign * (fy + material.elasticModulus * hardeningRatio * (absStrain - epsY))
 }
 
 export const compileBilinearSteel = (material: SteelMaterial): CompiledMaterial => {
   const model = material.stressStrain.type === 'bilinear' ? material.stressStrain : null
-  const epsY = material.limits?.epsY ?? material.fy / material.elasticModulus
+  const epsY = material.limits?.epsY ?? designFy(material) / material.elasticModulus
   return {
     id: material.id,
     family: 'steel',

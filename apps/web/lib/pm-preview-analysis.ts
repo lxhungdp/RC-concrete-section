@@ -102,6 +102,14 @@ export type InversePreviewResult = {
   message: string
 }
 
+export type LoadcaseQuickCheckResult = {
+  loadcaseId: number
+  demand: LoadCombination
+  utilization: number | null
+  contourPoint: PreviewMomentPlanePoint | null
+  message: string
+}
+
 type Fiber = {
   x: number
   y: number
@@ -651,6 +659,29 @@ const estimateUtilization = (demand: LoadCombination, contour: PreviewContourPoi
     point: best
   }
 }
+
+export const checkLoadcaseUtilizationFromSurface = (
+  surface: PreviewSurface,
+  loadcase: LoadCombination
+): LoadcaseQuickCheckResult => {
+  const contour = sliceFixedPContour(surface.points, loadcase.P)
+  const utilization = estimateUtilization(loadcase, contour)
+  return {
+    loadcaseId: loadcase.id,
+    demand: loadcase,
+    utilization: utilization.utilization,
+    contourPoint: utilization.point,
+    message:
+      utilization.utilization == null
+        ? 'No demand-ray crossing was found on the fixed-P contour.'
+        : 'Checked from fixed-P contour and demand moment ray.'
+  }
+}
+
+export const checkLoadcasesUtilizationFromSurface = (
+  surface: PreviewSurface,
+  loadcases: LoadCombination[]
+): LoadcaseQuickCheckResult[] => loadcases.map((loadcase) => checkLoadcaseUtilizationFromSurface(surface, loadcase))
 
 export const solveInversePreview = (
   section: SectionGeometry,

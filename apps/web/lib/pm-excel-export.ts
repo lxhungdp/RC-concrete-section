@@ -5,7 +5,8 @@
  * Contract: the only numbers written as constants are the ones the engine owns — the clipped-cell
  * mesh (`No | X | Y | A`), the bar schedule, the polygon vertices, and the material/demand inputs.
  * Every strain, stress, force, moment, station parameter and interaction point is a live Excel
- * formula, so changing `fck`, `fy`, `beta` or `Pu` in the workbook recalculates the whole thing.
+ * formula, so changing `fck`, material factors, design `fy`, `beta` or `Pu` in the workbook
+ * recalculates the whole thing.
  *
  * Two angles are kept strictly apart (`docs/engineering/02`):
  *   `beta`    strain-plane sampling angle that generates the boundary states;
@@ -256,16 +257,32 @@ const steelLaw = (material: SteelMaterial): MaterialLaw => {
 // Engine-side data collection
 // ---------------------------------------------------------------------------
 
+const concreteAlphaSource = (material: ConcreteMaterial) => {
+  const model = material.stressStrain
+  const modelAlpha =
+    model.type === 'kds-parabolic' || model.type === 'ec2-parabolic-rectangular' || model.type === 'aci-whitney-block'
+      ? model.alpha
+      : undefined
+  return material.factors?.gammaC !== undefined
+    ? material.factors.alpha ?? modelAlpha ?? 1
+    : modelAlpha ?? material.factors?.alpha ?? 1
+}
+
+const concreteEffectiveAlpha = (material: ConcreteMaterial) =>
+  concreteAlphaSource(material) / (material.factors?.gammaC ?? 1)
+
+const steelDesignFy = (material: SteelMaterial) => material.fy / (material.factors?.gammaS ?? 1)
+
 const concreteModelParameters = (material: ConcreteMaterial) => {
   const model = material.stressStrain
   if (model.type === 'kds-parabolic') {
-    return { eps0: model.eps0, epsCu: model.epsCu, n: model.n, alpha: model.alpha }
+    return { eps0: model.eps0, epsCu: model.epsCu, n: model.n, alpha: concreteEffectiveAlpha(material) }
   }
   if (model.type === 'ec2-parabolic-rectangular') {
-    return { eps0: model.epsC2, epsCu: model.epsCu2, n: model.n, alpha: model.alpha }
+    return { eps0: model.epsC2, epsCu: model.epsCu2, n: model.n, alpha: concreteEffectiveAlpha(material) }
   }
   if (model.type === 'aci-whitney-block') {
-    return { eps0: material.limits.eps0 ?? 0.002, epsCu: model.epsCu, n: 2, alpha: model.alpha }
+    return { eps0: material.limits.eps0 ?? 0.002, epsCu: model.epsCu, n: 2, alpha: concreteEffectiveAlpha(material) }
   }
   return { eps0: material.limits.eps0 ?? 0.002, epsCu: material.limits.epsCu, n: 2, alpha: 0.85 }
 }
@@ -335,7 +352,8 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const cLaw = concreteLaw(concrete)
   const sLaw = steelLaw(steel)
   const params = concreteModelParameters(concrete)
-  const epsY = steel.fy / steel.elasticModulus
+  const fyModel = steelDesignFy(steel)
+  const epsY = steel.limits?.epsY ?? fyModel / steel.elasticModulus
   const origin = netConcreteCentroid(section)
   const mesh = exportMesh(section, input.maxMeshPoints ?? DEFAULT_MAX_MESH_POINTS)
   const beta = (input.betaDeg * Math.PI) / 180
@@ -432,14 +450,29 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   inputSheet.getCell('E2').alignment = { wrapText: true, vertical: 'top' }
   inputSheet.mergeCells('E2:E4')
 
-  type NamedInput = { row: number; label: string; value: number | string; unit: string; name?: string; note?: string }
+  type NamedInput = {
+    row: number
+    label: string
+    value: number | string
+    unit: string
+    name?: string
+    note?: string
+    formula?: string
+  }
 
   let row = 6
   sectionHeading(inputSheet, row, 'Concrete', 4)
   row += 1
+  const appliesConcreteGamma = concrete.factors?.gammaC !== undefined
+  const concreteGammaC = concrete.factors?.gammaC ?? 1
+  const concreteAlpha = concreteAlphaSource(concrete)
   const concreteInputs: NamedInput[] = [
-    { row: row++, label: 'fck', value: concrete.fck, unit: 'MPa', name: 'fck', note: concrete.name },
-    { row: row++, label: 'alpha', value: params.alpha, unit: '-', name: 'alpha', note: 'stress-block factor' },
+    { row: row++, label: 'standard', value: concrete.standard, unit: '', note: concrete.name },
+    { row: row++, label: 'fck', value: concrete.fck, unit: 'MPa', name: 'fck', note: 'characteristic/input strength' },
+    { row: row++, label: 'alpha source', value: concreteAlpha, unit: '-', name: 'alpha_source', note: 'alpha_cc for EN 1992, alpha1/block factor for other families' },
+    { row: row++, label: 'gamma_c', value: concreteGammaC, unit: '-', name: 'gamma_c', note: concrete.factors?.gammaC === undefined ? 'not applied by this material family' : 'material partial factor' },
+    { row: row++, label: 'alpha_eff', value: params.alpha, unit: '-', name: 'alpha', note: appliesConcreteGamma ? 'stress multiplier used by formulas: alpha_source / gamma_c' : 'stress multiplier used by formulas', formula: appliesConcreteGamma ? 'alpha_source/gamma_c' : 'alpha_source' },
+    { row: row++, label: 'fcd = alpha_eff*fck', value: params.alpha * concrete.fck, unit: 'MPa', name: 'fcd', formula: 'alpha*fck' },
     { row: row++, label: 'eps_co', value: params.eps0, unit: '-', name: 'eco' },
     { row: row++, label: 'eps_cu', value: params.epsCu, unit: '-', name: 'ecu' },
     { row: row++, label: 'n', value: params.n, unit: '-', name: 'n' },
@@ -449,10 +482,15 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   row += 1
   sectionHeading(inputSheet, row, 'Reinforcement', 4)
   row += 1
+  const appliesSteelGamma = steel.factors?.gammaS !== undefined
+  const steelGammaS = steel.factors?.gammaS ?? 1
   const steelInputs: NamedInput[] = [
-    { row: row++, label: 'Es', value: steel.elasticModulus, unit: 'MPa', name: 'Es', note: steel.name },
-    { row: row++, label: 'fy', value: steel.fy, unit: 'MPa', name: 'fy' },
-    { row: row++, label: 'eps_y = fy/Es', value: epsY, unit: '-', note: 'used by the fs/fy stations' },
+    { row: row++, label: 'standard', value: steel.standard, unit: '', note: steel.name },
+    { row: row++, label: 'Es', value: steel.elasticModulus, unit: 'MPa', name: 'Es' },
+    { row: row++, label: 'fy characteristic', value: steel.fy, unit: 'MPa', name: 'fy_char' },
+    { row: row++, label: 'gamma_s', value: steelGammaS, unit: '-', name: 'gamma_s', note: steel.factors?.gammaS === undefined ? 'not applied by this material family' : 'material partial factor' },
+    { row: row++, label: 'fy model / fyd', value: fyModel, unit: 'MPa', name: 'fy', note: 'yield stress used by formulas', formula: appliesSteelGamma ? 'fy_char/gamma_s' : 'fy_char' },
+    { row: row++, label: 'eps_y = fy_model/Es', value: epsY, unit: '-', note: 'used by the fs/fy stations', formula: 'fy/Es' },
     { row: row++, label: 'law', value: sLaw.description, unit: '', note: '' }
   ]
 
@@ -480,7 +518,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   for (const entry of [...concreteInputs, ...steelInputs, ...analysisInputs, ...demandInputs]) {
     inputSheet.getCell(entry.row, 2).value = entry.label
     const valueCell = inputSheet.getCell(entry.row, 3)
-    valueCell.value = entry.value
+    valueCell.value = entry.formula ? { formula: entry.formula, result: entry.value } : entry.value
     valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INPUT_FILL } }
     valueCell.border = { top: { style: 'hair' }, left: { style: 'hair' }, bottom: { style: 'hair' }, right: { style: 'hair' } }
     if (typeof entry.value === 'number') {

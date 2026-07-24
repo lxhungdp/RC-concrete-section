@@ -5,7 +5,9 @@ export const aciBeta1 = (fc: number) => Math.max(0.65, Math.min(0.85, 0.85 - Mat
 export const stressAciWhitneyConcrete = (material: ConcreteMaterial, strain: number) => {
   const model = material.stressStrain.type === 'aci-whitney-block' ? material.stressStrain : null
   const epsCu = model?.epsCu ?? material.limits.epsCu
-  const alpha = model?.alpha ?? material.factors?.alpha ?? 0.85
+  const alphaSource =
+    material.factors?.gammaC !== undefined ? material.factors?.alpha ?? model?.alpha : model?.alpha ?? material.factors?.alpha
+  const alpha = (alphaSource ?? 0.85) / (material.factors?.gammaC ?? 1)
   if (strain <= 0 && material.limits.ignoreTension) return 0
   if (strain <= 0 || strain > epsCu) return 0
   return alpha * material.fck

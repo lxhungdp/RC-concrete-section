@@ -59,10 +59,11 @@ mode.
 
 | Current model/helper | Code status | Engineering use until hardened/verified |
 |---|---|---|
-| KDS parabolic concrete and derived values | implemented preview | curve preview and regression only; exact profile/clauses and domain behavior still require verification |
-| elastic-perfectly-plastic steel | implemented preview | usable only in non-certified development fixtures |
+| KDS parabolic concrete and derived values | implemented preview | material-family curve preview and regression only; exact profile/clauses and domain behavior still require verification |
+| elastic-perfectly-plastic steel | implemented preview | material-family model only; global or state-dependent resistance factors are outside the material definition |
 | bilinear steel | implemented preview | hardening/ultimate range and kink behavior require validation |
-| EC2 parabolic-rectangular concrete | implemented preview | generic model family, not an edition/National-Annex profile |
+| EN 1992-1-1 (EC2) parabolic-rectangular concrete | implemented preview | generic model family with editable `alpha_cc` and `gamma_c`; not a complete edition/National-Annex profile |
+| EN 1992 reinforcement factor `gamma_s` | implemented preview | material-family design yield is available for preview; exact annex/profile scope still requires verification |
 | user curves | implemented preview | blocked from accepted analysis until strict curve/extrapolation validation exists |
 | ACI Whitney helper | implemented but not analysis-valid | current evaluator ignores `beta1` in local stress integration; it must be redesigned as a code-specific equivalent-block operation or replaced by a verified fiber law |
 
@@ -72,6 +73,42 @@ for UI preview only and shall not enter an accepted result.
 The current project schema stores one concrete definition (`id = 1`) and multiple steel definitions.
 That is the supported persisted v2 scope. A future multi-concrete-region capability requires a
 versioned mapping/migration; it shall not infer material assignment by array order.
+
+### Current material editor pipeline
+
+The material editor intentionally exposes one **Standard / Source** selector, not a separate
+stress-strain model selector. The selected source derives the model family and its editable
+parameters:
+
+| UI label | Stored `standard` | Concrete effect | Reinforcement effect |
+|---|---|---|---|
+| `KDS` | `KDS` | KDS parabola-rectangle helper derives `Ec`, `eps0`, `epsCu`, and `n` from `fck` and density; `alpha` is stored as a material factor/source coefficient. | Elastic-perfectly-plastic steel with `Es = 200000 MPa`; no material partial factor is applied. |
+| `ACI 318` | `ACI318` | ACI Whitney/block-family preview with `alpha = 0.85` and `epsCu = 0.003`; `beta1` is stored for traceability but is not a verified local fiber-law check. | Elastic-perfectly-plastic steel with `Es = 200000 MPa`; strength reduction `phi` is not a material property. |
+| `EN 1992-1-1 (EC2)` | `EC2` | EC2 parabola-rectangle preview with `epsC2 = 0.002`, `epsCu2 = 0.0035`, `n = 2`; user-visible `alpha_cc`, `gamma_c`, and derived `fcd` are captured. | Elastic-perfectly-plastic steel with `Es = 200000 MPa`; user-visible `gamma_s` and derived `fyd` are captured. |
+| `Custom` | `CUSTOM` | User-defined stress-strain points; standard-derived `eps0`, `n`, and partial-factor controls are hidden. | User-defined stress-strain points; standard-derived partial-factor controls are hidden. |
+
+The source selector is a derivation convenience, not a certification statement. It may populate
+`stressStrain`, `limits`, `elasticModulus`, and `factors`, but an accepted design check still needs
+a separate design-code resistance profile.
+
+### Required import/export capture
+
+Project JSON and report artifacts must preserve the full material definition, not merely the
+displayed source label. The required persisted/audited fields are:
+
+- concrete: `standard`, `fck`, `mc`, optional `elasticModulus`, full `stressStrain` discriminant and
+  parameters/points, `limits.eps0`, `limits.epsCu`, `limits.ignoreTension`, and `factors.alpha`,
+  `factors.gammaC` when present;
+- steel: `id`, `name`, `standard`, `fy`, `elasticModulus`, full `stressStrain` discriminant and
+  parameters/points, `limits.epsY`, `limits.epsU` when present, and `factors.gammaS` when present;
+- store metadata: `strainSign = compression-positive`, the steel list, and
+  `defaults.steelMaterialId`.
+
+Excel export must show both characteristic/input values and design values used by the formulas. For
+EN 1992 preview this means `alpha_source`, `gamma_c`, `alpha_eff`, `fcd`, `fy characteristic`,
+`gamma_s`, and `fy model / fyd` are all explicit. The live formulas use the same effective material
+law as the engine. A reviewer must be able to trace whether a factor was applied in the material law
+or reserved for a later resistance-profile stage.
 
 ## 6. Nominal/reference and design resistance
 

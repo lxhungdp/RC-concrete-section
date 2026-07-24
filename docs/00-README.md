@@ -32,10 +32,13 @@ Current UI note:
 
 ## 3. Current Implementation Status
 
-As of 2026-07-23:
+As of 2026-07-24:
 
 - Geometry editor, material editor, rebar input, project JSON round trip, Results preview plots, and
   loadcase entry are implemented as **preview** capability.
+- The material editor now uses one source/standard selector for KDS, ACI 318, EN 1992-1-1 (EC2),
+  and Custom. The project file preserves the full material law, limits, and partial-factor fields;
+  the selector is not a complete design-code resistance profile.
 - The current Results charts use Plotly for interactive visualization, but the underlying
   calculation is still a preview kernel.
 - Accepted engineering analysis, verified design-code profiles, certified result DTOs, and

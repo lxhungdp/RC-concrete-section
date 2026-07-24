@@ -1,9 +1,11 @@
 import {
   buildPreviewSurface,
   buildSectionFieldMap,
+  checkLoadcasesUtilizationFromSurface,
   sliceFixedPContour,
   solveInversePreview,
   type InversePreviewResult,
+  type LoadcaseQuickCheckResult,
   type PreviewSurface,
   type SectionFieldMap
 } from '../lib/pm-preview-analysis'
@@ -34,14 +36,21 @@ export type BuildFieldMapPayload = {
   state: InversePreviewResult['state']
 }
 
+export type CheckLoadcasesPayload = {
+  surface: PreviewSurface
+  loadcases: LoadCombination[]
+}
+
 export type AnalysisWorkerRequest =
   | { type: 'buildSurface'; jobId: string; payload: BuildSurfacePayload }
+  | { type: 'checkLoadcases'; jobId: string; payload: CheckLoadcasesPayload }
   | { type: 'checkLoadcase'; jobId: string; payload: CheckLoadcasePayload }
   | { type: 'buildFieldMap'; jobId: string; payload: BuildFieldMapPayload }
   | { type: 'exportExcel'; jobId: string; payload: ExcelExportInput }
 
 export type AnalysisWorkerResultMap = {
   buildSurface: PreviewSurface
+  checkLoadcases: LoadcaseQuickCheckResult[]
   checkLoadcase: InversePreviewResult
   buildFieldMap: SectionFieldMap
   exportExcel: ArrayBuffer
@@ -69,6 +78,13 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
     if (request.type === 'buildSurface') {
       const { section, rebars, materialStore, fixedP = 0 } = request.payload
       const result = buildPreviewSurface(section, rebars, materialStore, fixedP)
+      workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
+      return
+    }
+
+    if (request.type === 'checkLoadcases') {
+      const { surface, loadcases } = request.payload
+      const result = checkLoadcasesUtilizationFromSurface(surface, loadcases)
       workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
       return
     }

@@ -130,6 +130,20 @@ No standard/model switch has a default fallback. An unknown discriminant is a ty
 evaluators expose stress, tangent, breakpoints, admissibility, and contribution components required
 by the selected analysis mode.
 
+Current v2 project JSON must preserve the complete material store:
+
+- `strainSign`, concrete definition, steel definitions, and `defaults.steelMaterialId`;
+- concrete `standard`, `fck`, `mc`, optional `elasticModulus`, complete `stressStrain`, `limits`,
+  and optional `factors.alpha` / `factors.gammaC`;
+- steel `id`, `name`, `standard`, `fy`, `elasticModulus`, complete `stressStrain`, optional
+  `limits`, and optional `factors.gammaS`;
+- every user-curve point in order after validation, including interpolation mode and concrete
+  `zeroTension` when present.
+
+The parser must never preserve only `standard` and re-derive the rest on open. Re-derivation is a
+user action in the material editor or a versioned migration with explicit warnings; otherwise import
+and export must be a lossless engineering snapshot.
+
 ## 8. Identity and references
 
 - IDs are positive integers and unique per declared namespace.
@@ -165,6 +179,7 @@ For every supported project version:
 - unknown/invalid versions fail with a clear migration message;
 - canonical units and signs do not drift;
 - imported definitions compile to tolerance-equivalent runtime behavior;
+- material round trips cover KDS, ACI318, EC2 partial-factor fields, and Custom user curves;
 - load ordering and entity ordering remain deterministic;
 - fixtures cover empty, ordinary, complex, boundary-limit, and malicious/resource-exhaustion data.
 

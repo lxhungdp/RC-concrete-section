@@ -344,9 +344,35 @@ button {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--card);
+  background: var(--input-bg);
   color: var(--foreground);
   outline: none;
+}
+
+.pm-field select,
+.pm-point-table select,
+.pm-rebar-params select {
+  color-scheme: light;
+}
+
+body[data-jscad-theme="dark"] .pm-field select,
+body[data-jscad-theme="dark"] .pm-point-table select,
+body[data-jscad-theme="dark"] .pm-rebar-params select {
+  color-scheme: dark;
+}
+
+.pm-field select option,
+.pm-point-table select option,
+.pm-rebar-params select option {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+body[data-jscad-theme="dark"] .pm-field select option,
+body[data-jscad-theme="dark"] .pm-point-table select option,
+body[data-jscad-theme="dark"] .pm-rebar-params select option {
+  background: #111317;
+  color: #f7f8f8;
 }
 
 .pm-field input,
@@ -1124,7 +1150,10 @@ button {
 
 .pm-material-list {
   display: grid;
-  gap: 5px;
+  gap: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 .pm-material-row {
@@ -1132,22 +1161,26 @@ button {
   grid-template-columns: minmax(0, 1fr) 24px;
   align-items: center;
   gap: 4px;
-  min-height: 34px;
-  padding: 6px 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: var(--card);
+  min-height: 30px;
+  padding: 3px 6px;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
   color: var(--foreground);
 }
 
+.pm-material-row:last-child {
+  border-bottom: 0;
+}
+
 .pm-material-row:hover {
-  border-color: var(--border);
+  background: var(--surface);
 }
 
 .pm-material-row.is-active {
-  border-color: var(--accent-border);
-  background: var(--accent-muted);
-  box-shadow: inset 3px 0 0 var(--accent);
+  background: color-mix(in srgb, var(--accent-muted) 42%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .pm-material-row-main {
@@ -1187,26 +1220,6 @@ button {
 .pm-material-remove:disabled {
   cursor: not-allowed;
   opacity: 0.35;
-}
-
-.pm-material-add-bottom {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 30px;
-  padding: 5px 10px;
-  border: 1px solid var(--accent-border);
-  border-radius: 6px;
-  background: var(--accent-muted);
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 0.74rem;
-  font-weight: 600;
-}
-
-.pm-material-add-bottom:hover {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .pm-material-row span,
@@ -1711,13 +1724,13 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
 }
 
 .pm-grid line {
-  stroke: var(--border-subtle);
+  stroke: color-mix(in srgb, var(--border-subtle) 78%, var(--foreground-muted));
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
 .pm-grid line.is-major {
-  stroke: var(--border);
+  stroke: color-mix(in srgb, var(--border) 58%, var(--foreground-muted));
 }
 
 .pm-axes line {

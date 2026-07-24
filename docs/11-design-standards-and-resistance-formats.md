@@ -260,6 +260,13 @@ edition, amendment, jurisdiction, and clause set pass the verification gates in 
 The first production release should enable only profiles whose `status` is `verified`. Draft rows
 may be visible in a developer registry but must be rejected by certification/report APIs.
 
+Current material UI support for `KDS`, `ACI318`, `EC2`, and `CUSTOM` is not this registry. It is a
+serializable material-source layer that chooses stress-strain families and stores their parameters.
+For EN 1992 preview, `alpha_cc`, `gamma_c`, and `gamma_s` are applied inside the material laws, so a
+later EN resistance profile must recognize that it is using a design-material reevaluation path and
+must not apply another global ACI/KDS-style factor. For ACI preview, material definitions store a
+Whitney/block-family helper, but `phi` remains a future design-code profile operation.
+
 ## 8. ACI 318-19(22) transition example
 
 For a reviewed ACI 318-19(22) implementation, the state factor for combined moment and axial force

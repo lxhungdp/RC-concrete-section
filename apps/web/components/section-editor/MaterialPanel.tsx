@@ -4,6 +4,10 @@ import { useMemo, useState } from 'react'
 import { Plus, X } from 'lucide-react'
 import {
   aciBeta1,
+  applyAci318ConcreteDerived,
+  applyAci318SteelDerived,
+  applyEn1992ConcreteDerived,
+  applyEn1992SteelDerived,
   applyKdsConcreteDerived,
   compileConcreteMaterial,
   compileSteelMaterial,
@@ -29,20 +33,114 @@ const numberValue = (value: string, fallback: number) => {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+const standardLabel = (standard: ConcreteMaterial['standard'] | SteelMaterial['standard']) => {
+  switch (standard) {
+    case 'ACI318':
+      return 'ACI 318'
+    case 'EC2':
+      return 'EN 1992-1-1 (EC2)'
+    case 'CUSTOM':
+      return 'Custom'
+    default:
+      return 'KDS'
+  }
+}
+
+const concreteStandardDefaults = (
+  material: ConcreteMaterial,
+  standard: ConcreteMaterial['standard']
+): ConcreteMaterial => {
+  const next = { ...material, standard, mc: material.mc ?? DEFAULT_CONCRETE_DENSITY }
+  if (standard === 'KDS') {
+    const params = kdsConcreteParams(next.fck)
+    return applyKdsConcreteDerived({
+      ...next,
+      stressStrain: { type: 'kds-parabolic', ...params },
+      factors: { ...next.factors, alpha: params.alpha, gammaC: undefined }
+    })
+  }
+  if (standard === 'ACI318') {
+    return applyAci318ConcreteDerived({ ...next, factors: { ...next.factors, alpha: 0.85, gammaC: undefined } })
+  }
+  if (standard === 'EC2') {
+    return applyEn1992ConcreteDerived({ ...next, factors: { ...next.factors, alpha: 0.85, gammaC: 1.5 } })
+  }
+  return {
+    ...next,
+    standard: 'CUSTOM',
+    factors: { ...next.factors, gammaC: undefined },
+    stressStrain: {
+      type: 'user-curve',
+      interpolation: 'linear',
+      zeroTension: next.limits.ignoreTension,
+      points: [
+        { strain: 0, stress: 0 },
+        { strain: next.limits.eps0 ?? 0.002, stress: next.fck },
+        { strain: next.limits.epsCu, stress: next.fck }
+      ]
+    }
+  }
+}
+
+const steelStandardDefaults = (material: SteelMaterial, standard: SteelMaterial['standard']): SteelMaterial => {
+  const next = { ...material, standard }
+  if (standard === 'ACI318') return applyAci318SteelDerived({ ...next, stressStrain: { type: 'elastic-perfectly-plastic' } })
+  if (standard === 'EC2') {
+    return applyEn1992SteelDerived({
+      ...next,
+      stressStrain: { type: 'elastic-perfectly-plastic' },
+      factors: { ...next.factors, gammaS: 1.15 }
+    })
+  }
+  if (standard === 'KDS') {
+    const elasticModulus = 200000
+    return {
+      ...next,
+      elasticModulus,
+      stressStrain: { type: 'elastic-perfectly-plastic' },
+      factors: { ...next.factors, gammaS: undefined },
+      limits: { ...next.limits, epsY: next.fy / elasticModulus }
+    }
+  }
+  return {
+    ...next,
+    standard: 'CUSTOM',
+    factors: { ...next.factors, gammaS: undefined },
+    stressStrain: {
+      type: 'user-curve',
+      interpolation: 'linear',
+      points: [
+        { strain: -next.fy / next.elasticModulus, stress: -next.fy },
+        { strain: 0, stress: 0 },
+        { strain: next.fy / next.elasticModulus, stress: next.fy }
+      ]
+    }
+  }
+}
+
 const modelName = (type: ConcreteMaterial['stressStrain']['type'] | SteelMaterial['stressStrain']['type']) =>
-  type
-    .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
+  ({
+    'kds-parabolic': 'KDS Parabola-Rectangle',
+    'aci-whitney-block': 'ACI Whitney Block',
+    'ec2-parabolic-rectangular': 'EC2 Parabola-Rectangle',
+    'elastic-perfectly-plastic': 'Elastic Perfectly Plastic',
+    bilinear: 'Bilinear',
+    'user-curve': 'User-Defined Curve'
+  })[type]
+
+const formatFormulaNumber = (value: number, digits = 4) =>
+  Number(value.toFixed(digits)).toLocaleString('en-US', {
+    maximumFractionDigits: digits
+  })
 
 const concreteFormula = (material: ConcreteMaterial) => {
   switch (material.stressStrain.type) {
     case 'kds-parabolic':
-      return `σc = ${material.stressStrain.alpha} fck [1 - (1 - ε / ε0)^${material.stressStrain.n.toFixed(2)}], then plateau to εcu`
+      return `σc = ${formatFormulaNumber(material.stressStrain.alpha)} fck [1 - (1 - ε / ε0)^${formatFormulaNumber(material.stressStrain.n, 2)}], then plateau to εcu`
     case 'aci-whitney-block':
-      return `σc = ${material.stressStrain.alpha} fck over equivalent block, β1 = ${material.stressStrain.beta1.toFixed(2)}`
+      return `σc = ${formatFormulaNumber(material.stressStrain.alpha)} fck over equivalent block, β1 = ${formatFormulaNumber(material.stressStrain.beta1, 2)}`
     case 'ec2-parabolic-rectangular':
-      return `σc = ${material.stressStrain.alpha} fck [1 - (1 - ε / εc2)^${material.stressStrain.n.toFixed(2)}], then plateau`
+      return `σc = ${formatFormulaNumber(material.stressStrain.alpha)} fck [1 - (1 - ε / εc2)^${formatFormulaNumber(material.stressStrain.n, 2)}], then plateau`
     case 'user-curve':
       return 'σc is linearly interpolated from user-defined ε-σ points'
     default:
@@ -55,92 +153,12 @@ const steelFormula = (material: SteelMaterial) => {
     case 'elastic-perfectly-plastic':
       return `σs = Es ε, limited to ±fy; εy = fy / Es`
     case 'bilinear':
-      return `σs = Es ε to ±fy, then hardening with ratio ${material.stressStrain.hardeningRatio}`
+      return `σs = Es ε to ±fy, then hardening with ratio ${formatFormulaNumber(material.stressStrain.hardeningRatio)}`
     case 'user-curve':
       return 'σs is linearly interpolated from user-defined ε-σ points'
     default:
       return ''
   }
-}
-
-const withConcreteModelDefaults = (material: ConcreteMaterial, type: ConcreteMaterial['stressStrain']['type']) => {
-  if (type === 'kds-parabolic') {
-    const params = kdsConcreteParams(material.fck)
-    const next: ConcreteMaterial = {
-      ...material,
-      mc: material.mc ?? DEFAULT_CONCRETE_DENSITY,
-      standard: material.standard === 'CUSTOM' ? 'CUSTOM' : 'KDS',
-      stressStrain: { type, ...params },
-      limits: { ...material.limits, eps0: params.eps0, epsCu: params.epsCu },
-      factors: { ...material.factors, alpha: params.alpha }
-    }
-    return next.standard === 'KDS' ? applyKdsConcreteDerived(next) : next
-  }
-  if (type === 'aci-whitney-block') {
-    return {
-      ...material,
-      mc: material.mc ?? DEFAULT_CONCRETE_DENSITY,
-      standard: material.standard === 'CUSTOM' ? 'CUSTOM' : 'ACI318',
-      stressStrain: { type, beta1: aciBeta1(material.fck), epsCu: 0.003, alpha: 0.85 },
-      limits: { ...material.limits, eps0: undefined, epsCu: 0.003 },
-      factors: { ...material.factors, alpha: 0.85 }
-    } satisfies ConcreteMaterial
-  }
-  if (type === 'ec2-parabolic-rectangular') {
-    return {
-      ...material,
-      mc: material.mc ?? DEFAULT_CONCRETE_DENSITY,
-      standard: material.standard === 'CUSTOM' ? 'CUSTOM' : 'EC2',
-      stressStrain: { type, n: 2, epsC2: 0.002, epsCu2: 0.0035, alpha: 1 },
-      limits: { ...material.limits, eps0: 0.002, epsCu: 0.0035 },
-      factors: { ...material.factors, alpha: 1 }
-    } satisfies ConcreteMaterial
-  }
-  return {
-    ...material,
-    mc: material.mc ?? DEFAULT_CONCRETE_DENSITY,
-    standard: 'CUSTOM',
-    stressStrain: {
-      type,
-      interpolation: 'linear',
-      zeroTension: material.limits.ignoreTension,
-      points: [
-        { strain: 0, stress: 0 },
-        { strain: material.limits.eps0 ?? 0.002, stress: material.fck },
-        { strain: material.limits.epsCu, stress: material.fck }
-      ]
-    }
-  } satisfies ConcreteMaterial
-}
-
-const withSteelModelDefaults = (material: SteelMaterial, type: SteelMaterial['stressStrain']['type']) => {
-  if (type === 'bilinear') {
-    return {
-      ...material,
-      stressStrain: { type, hardeningRatio: 0.01 },
-      limits: { ...material.limits, epsY: material.fy / material.elasticModulus }
-    } satisfies SteelMaterial
-  }
-  if (type === 'user-curve') {
-    return {
-      ...material,
-      standard: 'CUSTOM',
-      stressStrain: {
-        type,
-        interpolation: 'linear',
-        points: [
-          { strain: -material.fy / material.elasticModulus, stress: -material.fy },
-          { strain: 0, stress: 0 },
-          { strain: material.fy / material.elasticModulus, stress: material.fy }
-        ]
-      }
-    } satisfies SteelMaterial
-  }
-  return {
-    ...material,
-    stressStrain: { type },
-    limits: { ...material.limits, epsY: material.fy / material.elasticModulus }
-  } satisfies SteelMaterial
 }
 
 function StressStrainCurve({ material }: { material: ConcreteMaterial | SteelMaterial }) {
@@ -343,15 +361,15 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
                 onChange={(event) =>
                   updateConcrete((material) => {
                     const standard = event.target.value as ConcreteMaterial['standard']
-                    const next = { ...material, standard, mc: material.mc ?? DEFAULT_CONCRETE_DENSITY }
-                    return standard === 'KDS' ? applyKdsConcreteDerived(next) : next
+                    return concreteStandardDefaults(material, standard)
                   })
                 }
               >
-                <option value="KDS">KDS</option>
-                <option value="ACI318">ACI318</option>
-                <option value="EC2">EC2</option>
-                <option value="CUSTOM">CUSTOM</option>
+                {(['KDS', 'ACI318', 'EC2', 'CUSTOM'] as const).map((standard) => (
+                  <option key={standard} value={standard}>
+                    {standardLabel(standard)}
+                  </option>
+                ))}
               </select>
             </label>
             </div>
@@ -368,6 +386,8 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
                       const fck = numberValue(event.target.value, material.fck)
                       const next = { ...material, fck, mc: material.mc ?? DEFAULT_CONCRETE_DENSITY }
                       if (next.standard === 'KDS') return applyKdsConcreteDerived(next)
+                      if (next.standard === 'ACI318') return applyAci318ConcreteDerived(next)
+                      if (next.standard === 'EC2') return applyEn1992ConcreteDerived(next)
                       if (next.stressStrain.type === 'aci-whitney-block') {
                         return {
                           ...next,
@@ -446,23 +466,8 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
 
             <div className="pm-material-stress-box">
               <div className="pm-material-stress-title">Stress-Strain</div>
+              {store.concrete.stressStrain.type !== 'user-curve' && (
               <div className="pm-material-row-3">
-                <label className="pm-field">
-                  <span>Model</span>
-                  <select
-                    value={store.concrete.stressStrain.type}
-                    onChange={(event) =>
-                      updateConcrete((material) =>
-                        withConcreteModelDefaults(material, event.target.value as ConcreteMaterial['stressStrain']['type'])
-                      )
-                    }
-                  >
-                    <option value="kds-parabolic">KDS Parabolic</option>
-                    <option value="aci-whitney-block">ACI Whitney</option>
-                    <option value="ec2-parabolic-rectangular">EC2 Parabolic</option>
-                    <option value="user-curve">User Curve</option>
-                  </select>
-                </label>
                 <label className="pm-field">
                   <span>εc0</span>
                   <input
@@ -525,7 +530,6 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
                           ? Number(store.concrete.stressStrain.n.toFixed(4))
                           : ''
                       }
-                      disabled={store.concrete.stressStrain.type === 'user-curve'}
                       onChange={(event) =>
                         updateConcrete((material) =>
                           material.stressStrain.type === 'kds-parabolic' ||
@@ -544,6 +548,7 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
                   </label>
                 )}
               </div>
+              )}
 
               <label className="pm-material-toggle">
                 <input
@@ -558,6 +563,74 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
                 />
                 <span>Ignore concrete tension</span>
               </label>
+
+              {store.concrete.standard === 'EC2' && (
+                <div className="pm-material-row-3">
+                  <label className="pm-field">
+                    <span>αcc</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min={0.1}
+                      value={store.concrete.factors?.alpha ?? 0.85}
+                      onChange={(event) =>
+                        updateConcrete((material) => {
+                          const alpha = numberValue(event.target.value, material.factors?.alpha ?? 0.85)
+                          const gammaC = material.factors?.gammaC ?? 1.5
+                          const next = {
+                            ...material,
+                            factors: { ...material.factors, alpha, gammaC }
+                          }
+                          return next.stressStrain.type === 'ec2-parabolic-rectangular'
+                            ? {
+                                ...next,
+                                stressStrain: { ...next.stressStrain, alpha: alpha / gammaC }
+                              }
+                            : next
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="pm-field">
+                    <span>γc</span>
+                    <input
+                      type="number"
+                      step="0.05"
+                      min={1}
+                      value={store.concrete.factors?.gammaC ?? 1.5}
+                      onChange={(event) =>
+                        updateConcrete((material) => {
+                          const gammaC = numberValue(event.target.value, material.factors?.gammaC ?? 1.5)
+                          const alpha = material.factors?.alpha ?? 0.85
+                          const next = {
+                            ...material,
+                            factors: { ...material.factors, alpha, gammaC }
+                          }
+                          return next.stressStrain.type === 'ec2-parabolic-rectangular'
+                            ? {
+                                ...next,
+                                stressStrain: { ...next.stressStrain, alpha: alpha / gammaC }
+                              }
+                            : next
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="pm-field">
+                    <span>fcd</span>
+                    <input
+                      type="number"
+                      readOnly
+                      value={Number(
+                        (
+                          ((store.concrete.factors?.alpha ?? 0.85) * store.concrete.fck) /
+                          (store.concrete.factors?.gammaC ?? 1.5)
+                        ).toFixed(3)
+                      )}
+                    />
+                  </label>
+                </div>
+              )}
 
               {store.concrete.stressStrain.type === 'user-curve' && (
                 <UserCurveEditor
@@ -586,8 +659,12 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
 
       {activePage === 'steel' && (
         <section className="pm-panel-section">
-          <div className="pm-section-title">
+          <div className="pm-section-title pm-section-title--with-action">
             <h2>Steel Materials</h2>
+            <button type="button" className="pm-table-add-btn" onClick={addSteel}>
+              <Plus size={14} />
+              Add Steel
+            </button>
           </div>
           <div className="pm-material-list pm-material-list--steel">
             {store.steel.map((material) => (
@@ -610,10 +687,6 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
               </div>
             ))}
           </div>
-          <button type="button" className="pm-material-add-bottom" onClick={addSteel}>
-            <Plus size={14} />
-            Add Steel
-          </button>
 
           {activeSteel && (
             <div className="pm-material-form">
@@ -634,16 +707,16 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
                   <select
                     value={activeSteel.standard}
                     onChange={(event) =>
-                      updateSteel(activeSteel.id, (material) => ({
-                        ...material,
-                        standard: event.target.value as SteelMaterial['standard']
-                      }))
+                      updateSteel(activeSteel.id, (material) =>
+                        steelStandardDefaults(material, event.target.value as SteelMaterial['standard'])
+                      )
                     }
                   >
-                    <option value="KDS">KDS</option>
-                    <option value="ACI318">ACI318</option>
-                    <option value="EC2">EC2</option>
-                    <option value="CUSTOM">CUSTOM</option>
+                    {(['KDS', 'ACI318', 'EC2', 'CUSTOM'] as const).map((standard) => (
+                      <option key={standard} value={standard}>
+                        {standardLabel(standard)}
+                      </option>
+                    ))}
                   </select>
                 </label>
               </div>
@@ -658,7 +731,8 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
                     onChange={(event) =>
                       updateSteel(activeSteel.id, (material) => {
                         const fy = numberValue(event.target.value, material.fy)
-                        return { ...material, fy, limits: { ...material.limits, epsY: fy / material.elasticModulus } }
+                        const next = { ...material, fy, limits: { ...material.limits, epsY: fy / material.elasticModulus } }
+                        return next.standard === 'EC2' ? applyEn1992SteelDerived(next) : next
                       })
                     }
                   />
@@ -672,7 +746,8 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
                     onChange={(event) =>
                       updateSteel(activeSteel.id, (material) => {
                         const elasticModulus = numberValue(event.target.value, material.elasticModulus)
-                        return { ...material, elasticModulus, limits: { ...material.limits, epsY: material.fy / elasticModulus } }
+                        const next = { ...material, elasticModulus, limits: { ...material.limits, epsY: material.fy / elasticModulus } }
+                        return next.standard === 'EC2' ? applyEn1992SteelDerived(next) : next
                       })
                     }
                   />
@@ -702,21 +777,6 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
                 <div className="pm-material-stress-title">Stress-Strain</div>
                 <div className="pm-material-row-3">
                   <label className="pm-field">
-                    <span>Model</span>
-                    <select
-                      value={activeSteel.stressStrain.type}
-                      onChange={(event) =>
-                        updateSteel(activeSteel.id, (material) =>
-                          withSteelModelDefaults(material, event.target.value as SteelMaterial['stressStrain']['type'])
-                        )
-                      }
-                    >
-                      <option value="elastic-perfectly-plastic">Elastic Perfect Plastic</option>
-                      <option value="bilinear">Bilinear</option>
-                      <option value="user-curve">User Curve</option>
-                    </select>
-                  </label>
-                  <label className="pm-field">
                     <span>εy</span>
                     <input
                       type="number"
@@ -731,30 +791,62 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
                       }
                     />
                   </label>
-                  <label className="pm-field">
-                    <span>Hardening</span>
-                    <input
-                      type="number"
-                      step="0.001"
-                      min={0}
-                      disabled={activeSteel.stressStrain.type !== 'bilinear'}
-                      value={activeSteel.stressStrain.type === 'bilinear' ? activeSteel.stressStrain.hardeningRatio : ''}
-                      onChange={(event) =>
-                        updateSteel(activeSteel.id, (material) =>
-                          material.stressStrain.type === 'bilinear'
-                            ? {
-                                ...material,
-                                stressStrain: {
-                                  ...material.stressStrain,
-                                  hardeningRatio: numberValue(event.target.value, material.stressStrain.hardeningRatio)
+                  {activeSteel.stressStrain.type === 'bilinear' && (
+                    <label className="pm-field">
+                      <span>Hardening</span>
+                      <input
+                        type="number"
+                        step="0.001"
+                        min={0}
+                        value={activeSteel.stressStrain.hardeningRatio}
+                        onChange={(event) =>
+                          updateSteel(activeSteel.id, (material) =>
+                            material.stressStrain.type === 'bilinear'
+                              ? {
+                                  ...material,
+                                  stressStrain: {
+                                    ...material.stressStrain,
+                                    hardeningRatio: numberValue(event.target.value, material.stressStrain.hardeningRatio)
+                                  }
                                 }
-                              }
-                            : material
-                        )
-                      }
-                    />
-                  </label>
+                              : material
+                          )
+                        }
+                      />
+                    </label>
+                  )}
                 </div>
+
+                {activeSteel.standard === 'EC2' && (
+                  <div className="pm-material-row-2">
+                    <label className="pm-field">
+                      <span>γs</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min={1}
+                        value={activeSteel.factors?.gammaS ?? 1.15}
+                        onChange={(event) =>
+                          updateSteel(activeSteel.id, (material) => {
+                            const gammaS = numberValue(event.target.value, material.factors?.gammaS ?? 1.15)
+                            return applyEn1992SteelDerived({
+                              ...material,
+                              factors: { ...material.factors, gammaS }
+                            })
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="pm-field">
+                      <span>fyd</span>
+                      <input
+                        type="number"
+                        readOnly
+                        value={Number((activeSteel.fy / (activeSteel.factors?.gammaS ?? 1.15)).toFixed(3))}
+                      />
+                    </label>
+                  </div>
+                )}
 
                 {activeSteel.stressStrain.type === 'user-curve' && (
                   <UserCurveEditor

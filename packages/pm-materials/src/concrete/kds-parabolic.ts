@@ -6,7 +6,9 @@ export const stressKdsParabolicConcrete = (material: ConcreteMaterial, strain: n
   const eps0 = positiveOr(model?.eps0 ?? material.limits.eps0, 0.002)
   const epsCu = positiveOr(model?.epsCu ?? material.limits.epsCu, 0.0033)
   const n = positiveOr(model?.n, 2)
-  const alpha = positiveOr(model?.alpha ?? material.factors?.alpha, 0.85)
+  const alphaSource =
+    material.factors?.gammaC !== undefined ? material.factors?.alpha ?? model?.alpha : model?.alpha ?? material.factors?.alpha
+  const alpha = positiveOr(alphaSource, 0.85) / positiveOr(material.factors?.gammaC, 1)
 
   if (strain <= 0 && material.limits.ignoreTension) return 0
   if (strain <= 0 || strain > epsCu) return 0

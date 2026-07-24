@@ -1,10 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
-  Activity,
-  Atom,
-  Boxes,
+  BrickWall,
+  ChartScatter,
   Circle,
   Eraser,
   Eye,
@@ -13,6 +12,7 @@ import {
   FileUp,
   Lock,
   Maximize2,
+  Minus,
   Moon,
   MousePointer2,
   Plus,
@@ -55,9 +55,10 @@ import {
 } from '@pm/project'
 import {
   type InversePreviewResult,
+  type LoadcaseQuickCheckResult,
   type PreviewSurface
 } from '../../lib/pm-preview-analysis'
-import { buildPreviewSurfaceAsync, checkLoadcaseAsync } from '../../lib/workers/pm-analysis-client'
+import { buildPreviewSurfaceAsync, checkLoadcaseAsync, checkLoadcasesAsync } from '../../lib/workers/pm-analysis-client'
 import { LoadingsPanel } from './LoadingsPanel'
 import { MaterialPanel } from './MaterialPanel'
 import { RebarPanel } from './RebarPanel'
@@ -70,6 +71,26 @@ import {
   worldToScreen,
   zoomSectionCamera2d
 } from '@structures/cad-drawing/section2d'
+
+const RcSectionIcon = ({ size = 16 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect x="4" y="4" width="16" height="16" rx="1.5" />
+    <circle cx="8" cy="8" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="16" cy="8" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="8" cy="16" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="16" cy="16" r="1.4" fill="currentColor" stroke="none" />
+  </svg>
+)
 
 type Camera2d = {
   target: [number, number]
@@ -115,7 +136,13 @@ type BoundaryScreenData = {
   path: string
 }
 
-const GRID_SPACING_MM = 25
+const GRID_SPACING_MM = 100
+const MAJOR_GRID_INTERVAL = 10
+const MAJOR_GRID_SPACING_MM = GRID_SPACING_MM * MAJOR_GRID_INTERVAL
+const DEFAULT_VIEW_MAJOR_COUNT = 4
+const DEFAULT_DRAWING_SIZE = { width: 900, height: 620 }
+const DEFAULT_DRAWING_UNITS_PER_PIXEL =
+  (MAJOR_GRID_SPACING_MM * DEFAULT_VIEW_MAJOR_COUNT) / DEFAULT_DRAWING_SIZE.width
 const DEFAULT_CIRCLE_SEGMENTS = 64
 
 const formatNumber = (value: number, digits = 1) =>
@@ -295,7 +322,7 @@ const buildGridLines = (camera: Camera2d, size: { width: number; height: number 
   for (let x = startX; x <= endX; x += spacing) {
     lines.push({
       key: `x-${x}`,
-      major: Math.abs(x % (spacing * 4)) < 1e-9,
+      major: Math.abs(x % (spacing * MAJOR_GRID_INTERVAL)) < 1e-9,
       a: worldToScreen(camera, { x, y: min.y }, size),
       b: worldToScreen(camera, { x, y: max.y }, size)
     })
@@ -304,7 +331,7 @@ const buildGridLines = (camera: Camera2d, size: { width: number; height: number 
   for (let y = startY; y <= endY; y += spacing) {
     lines.push({
       key: `y-${y}`,
-      major: Math.abs(y % (spacing * 4)) < 1e-9,
+      major: Math.abs(y % (spacing * MAJOR_GRID_INTERVAL)) < 1e-9,
       a: worldToScreen(camera, { x: min.x, y }, size),
       b: worldToScreen(camera, { x: max.x, y }, size)
     })
@@ -313,12 +340,35 @@ const buildGridLines = (camera: Camera2d, size: { width: number; height: number 
   return lines
 }
 
+const createDefaultDrawingCamera = (): Camera2d =>
+  createSectionCamera2d({
+    unitsPerPixel: DEFAULT_DRAWING_UNITS_PER_PIXEL
+  }) as Camera2d
+
+const measuredDrawingSize = (rect: Pick<DOMRectReadOnly, 'width' | 'height'>) => ({
+  width: Math.max(320, Math.round(rect.width)),
+  height: Math.max(280, Math.round(rect.height))
+})
+
+const measureSvgContentSize = (svg: SVGSVGElement) =>
+  measuredDrawingSize({
+    width: svg.clientWidth,
+    height: svg.clientHeight
+  })
+
+const DEFAULT_FIT_INSETS = {
+  top: 74,
+  right: 36,
+  bottom: 96,
+  left: 36
+}
+
 const fitCameraToPointsWithInsets = (
   points: Point2[],
   size: { width: number; height: number },
   insets: { top: number; right: number; bottom: number; left: number }
 ): Camera2d => {
-  if (!points.length || !size.width || !size.height) return createSectionCamera2d() as Camera2d
+  if (!points.length || !size.width || !size.height) return createDefaultDrawingCamera()
 
   const xs = points.map((point) => point.x)
   const ys = points.map((point) => point.y)
@@ -348,6 +398,7 @@ export function SectionDrawingClient() {
   const svgRef = useRef<SVGSVGElement | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const pendingFitAfterImportRef = useRef(false)
+  const pendingFitOnGeometryModuleRef = useRef(false)
   const analysisRevisionRef = useRef(0)
   const dragRef = useRef<
     | { kind: 'pan'; last: ScreenPoint }
@@ -381,6 +432,8 @@ export function SectionDrawingClient() {
   const [surfaceMessage, setSurfaceMessage] = useState('')
   const [inverseResults, setInverseResults] = useState<Record<number, InversePreviewResult>>({})
   const [inverseWorkingById, setInverseWorkingById] = useState<Record<number, boolean>>({})
+  const [quickChecksById, setQuickChecksById] = useState<Record<number, LoadcaseQuickCheckResult>>({})
+  const [quickCheckWorking, setQuickCheckWorking] = useState(false)
   const [projectMeta, setProjectMeta] = useState(() => ({
     id: 1,
     name: 'Column project',
@@ -389,26 +442,32 @@ export function SectionDrawingClient() {
   const [lastBooleanWarning, setLastBooleanWarning] = useState<string>('')
   const [detailTab, setDetailTab] = useState<'basic' | 'points'>('basic')
   const [circleSegmentsDraft, setCircleSegmentsDraft] = useState<string | null>(null)
-  const [size, setSize] = useState({ width: 900, height: 620 })
-  const [camera, setCamera] = useState<Camera2d>(() => createSectionCamera2d({ unitsPerPixel: 1.15 }) as Camera2d)
+  const [size, setSize] = useState(DEFAULT_DRAWING_SIZE)
+  const [isDrawingMeasured, setIsDrawingMeasured] = useState(false)
+  const [camera, setCamera] = useState<Camera2d>(() => createDefaultDrawingCamera())
 
   useEffect(() => {
     document.body.dataset.jscadTheme = theme
   }, [theme])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (activeModule === 'results') return
     const svg = svgRef.current
     if (!svg) return
+
+    setSize(measureSvgContentSize(svg))
+    setIsDrawingMeasured(true)
+
     const observer = new ResizeObserver(([entry]) => {
       if (!entry) return
-      setSize({
-        width: Math.max(320, entry.contentRect.width),
-        height: Math.max(280, entry.contentRect.height)
-      })
+      const nextSize = measuredDrawingSize(entry.contentRect)
+      setSize((current) =>
+        current.width === nextSize.width && current.height === nextSize.height ? current : nextSize
+      )
     })
     observer.observe(svg)
     return () => observer.disconnect()
-  }, [])
+  }, [activeModule])
 
   const activeBoundary = useMemo(
     () => boundaries.find((boundary) => boundary.id === activeBoundaryId) ?? boundaries[0],
@@ -440,6 +499,7 @@ export function SectionDrawingClient() {
     activeBoundary && !(activeBoundary.id === appliedBoundaryId && activeBoundary.locked)
   )
   const activeSummary = useMemo(() => summarizeSection(activeSection), [activeSection])
+
   useEffect(() => {
     let cancelled = false
     setResultSurface(null)
@@ -496,6 +556,15 @@ export function SectionDrawingClient() {
     [boundaries]
   )
 
+  useLayoutEffect(() => {
+    if (activeModule !== 'geometry') return
+    if (!pendingFitOnGeometryModuleRef.current) return
+    if (!isDrawingMeasured) return
+    if (!allVisiblePoints.length) return
+    pendingFitOnGeometryModuleRef.current = false
+    setCamera(fitCameraToPointsWithInsets(allVisiblePoints, size, DEFAULT_FIT_INSETS))
+  }, [activeModule, allVisiblePoints, isDrawingMeasured, size])
+
   const appliedSectionPath = useMemo(() => {
     if (!hasAppliedSection) return ''
     const screenRings = finalSection.solids.flatMap((solid) =>
@@ -542,11 +611,43 @@ export function SectionDrawingClient() {
     analysisRevisionRef.current += 1
     setInverseResults({})
     setInverseWorkingById({})
+    setQuickChecksById({})
   }, [appliedGeometryInput, materialStore])
 
   useEffect(() => {
     setInverseResults({})
   }, [loadingsInput])
+
+  useEffect(() => {
+    let cancelled = false
+    setQuickChecksById({})
+
+    if (!resultSurface || loadingsInput.combinations.length === 0) {
+      setQuickCheckWorking(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setQuickCheckWorking(true)
+    checkLoadcasesAsync({ surface: resultSurface, loadcases: loadingsInput.combinations })
+      .then((results) => {
+        if (cancelled) return
+        setQuickChecksById(Object.fromEntries(results.map((result) => [result.loadcaseId, result])))
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setSurfaceMessage(error instanceof Error ? error.message : String(error))
+      })
+      .finally(() => {
+        if (cancelled) return
+        setQuickCheckWorking(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [loadingsInput.combinations, resultSurface])
 
   useEffect(() => {
     if (!resultSurface) return
@@ -859,18 +960,15 @@ export function SectionDrawingClient() {
   const applyBooleanAction = (action: BooleanAction) => {
     if (selectedBoundaries.length < 2) return
 
-    const rankedByArea = [...selectedBoundaries].sort((a, b) => {
-      const areaA = summarizeSection(boundaryToSectionGeometry(a)).area
-      const areaB = summarizeSection(boundaryToSectionGeometry(b)).area
-      return areaB - areaA
-    })
+    const subtractBaseArea =
+      action === 'subtract' ? summarizeSection(boundaryToSectionGeometry(selectedBoundaries[0])).area : null
 
     const usedPrimitiveIds: number[] = []
     const primitives =
       action === 'union'
         ? selectedBoundaries.flatMap((boundary) => boundaryToPrimitives(boundary, 'add', usedPrimitiveIds))
         : (() => {
-            const [outer, ...inners] = rankedByArea
+            const [outer, ...inners] = selectedBoundaries
             return [
               ...boundaryToPrimitives(outer, 'add', usedPrimitiveIds),
               ...inners.flatMap((boundary) => boundaryToPrimitives(boundary, 'subtract', usedPrimitiveIds))
@@ -883,6 +981,16 @@ export function SectionDrawingClient() {
     })
     setLastBooleanWarning(result.warnings.join(' '))
     if (!result.geometry.solids.some((solid) => solid.outer.length >= 3)) return
+    if (action === 'subtract' && subtractBaseArea !== null) {
+      const resultArea = summarizeSection(result.geometry).area
+      const areaTolerance = Math.max(1e-6, subtractBaseArea * 1e-9)
+      if (Math.abs(resultArea - subtractBaseArea) <= areaTolerance) {
+        setLastBooleanWarning(
+          result.warnings.join(' ') || 'Subtract ignored because the later selections do not overlap the first selected boundary.'
+        )
+        return
+      }
+    }
 
     const resultBoundary = sectionGeometryToBoundary(result.geometry, {
       id: result.geometry.id,
@@ -1029,27 +1137,13 @@ export function SectionDrawingClient() {
   }
 
   const fitView = () => {
-    setCamera(
-      fitCameraToPointsWithInsets(allVisiblePoints, size, {
-        top: 74,
-        right: 36,
-        bottom: 96,
-        left: 36
-      })
-    )
+    setCamera(fitCameraToPointsWithInsets(allVisiblePoints, size, DEFAULT_FIT_INSETS))
   }
 
   useEffect(() => {
     if (!pendingFitAfterImportRef.current) return
     pendingFitAfterImportRef.current = false
-    setCamera(
-      fitCameraToPointsWithInsets(allVisiblePoints, size, {
-        top: 74,
-        right: 36,
-        bottom: 96,
-        left: 36
-      })
-    )
+    setCamera(fitCameraToPointsWithInsets(allVisiblePoints, size, DEFAULT_FIT_INSETS))
   }, [allVisiblePoints, size])
 
   const exportProjectJson = () => {
@@ -1317,6 +1411,17 @@ export function SectionDrawingClient() {
     dragRef.current = null
   }
 
+  const switchModule = (nextModule: WorkspaceModule) => {
+    if (nextModule === activeModule) return
+    if (activeModule !== 'results' && nextModule === 'results') {
+      setIsDrawingMeasured(false)
+    }
+    if (nextModule === 'geometry') {
+      pendingFitOnGeometryModuleRef.current = true
+    }
+    setActiveModule(nextModule)
+  }
+
   return (
     <main className="pm-shell">
       <header className="pm-app-header">
@@ -1329,16 +1434,16 @@ export function SectionDrawingClient() {
         </div>
 
         <nav className="pm-module-tabs" aria-label="Design modules">
-          <button className={activeModule === 'geometry' ? 'is-active' : ''} onClick={() => setActiveModule('geometry')}>
-            <Boxes size={16} />
+          <button className={activeModule === 'geometry' ? 'is-active' : ''} onClick={() => switchModule('geometry')}>
+            <RcSectionIcon size={16} />
             <span>Geometry</span>
           </button>
-          <button className={activeModule === 'materials' ? 'is-active' : ''} onClick={() => setActiveModule('materials')}>
-            <Atom size={16} />
+          <button className={activeModule === 'materials' ? 'is-active' : ''} onClick={() => switchModule('materials')}>
+            <BrickWall size={16} />
             <span>Materials</span>
           </button>
-          <button className={activeModule === 'results' ? 'is-active' : ''} onClick={() => setActiveModule('results')}>
-            <Activity size={16} />
+          <button className={activeModule === 'results' ? 'is-active' : ''} onClick={() => switchModule('results')}>
+            <ChartScatter size={16} />
             <span>Results</span>
           </button>
         </nav>
@@ -1411,6 +1516,8 @@ export function SectionDrawingClient() {
               </section>
             )}
 
+            {boundaries.length > 0 && (
+              <>
             <section className="pm-panel-section pm-boundary-list-section">
               <div className="pm-section-title pm-section-title--with-action">
                 <h2>Boundary List</h2>
@@ -1422,6 +1529,7 @@ export function SectionDrawingClient() {
                     disabled={selectedBoundaries.length < 2}
                     title="Add regions (union)"
                   >
+                    <Plus size={14} />
                     Union
                   </button>
                   <button
@@ -1429,8 +1537,9 @@ export function SectionDrawingClient() {
                     className="pm-table-add-btn"
                     onClick={() => applyBooleanAction('subtract')}
                     disabled={selectedBoundaries.length < 2}
-                    title="Subtract inner regions from the largest outer"
+                    title="Subtract later selections from the first selected boundary"
                   >
+                    <Minus size={14} />
                     Subtract
                   </button>
                 </div>
@@ -1864,6 +1973,8 @@ export function SectionDrawingClient() {
                 </>
               )}
             </section>
+              </>
+            )}
           </>
             )}
 
@@ -1926,6 +2037,12 @@ export function SectionDrawingClient() {
                   <strong>{stationCount}</strong>
                   <span>Loadcases</span>
                   <strong>{loadingsInput.combinations.length}</strong>
+                  <span>Quick UR</span>
+                  <strong>
+                    {quickCheckWorking
+                      ? 'Checking...'
+                      : `${Object.keys(quickChecksById).length}/${loadingsInput.combinations.length}`}
+                  </strong>
                 </div>
                 <span className="pm-result-status-hint">
                   {surfaceMessage || 'Select to view section overview charts'}
@@ -1936,7 +2053,7 @@ export function SectionDrawingClient() {
               input={loadingsInput}
               selectedLoadcaseId={resultsViewMode === 'loadcase' ? selectedLoadcaseId : null}
               utilizationById={Object.fromEntries(
-                Object.entries(inverseResults).map(([id, result]) => [Number(id), result.utilization])
+                Object.entries(quickChecksById).map(([id, result]) => [Number(id), result.utilization])
               )}
               onSelectLoadcase={(id) => {
                 if (id == null) {
@@ -1961,7 +2078,6 @@ export function SectionDrawingClient() {
                   delete next[loadcase.id]
                   return next
                 })
-                calculateInverseForLoadcase(loadcase, true)
               }}
               onChange={setLoadingsInput}
             />
@@ -2039,123 +2155,127 @@ export function SectionDrawingClient() {
           onContextMenu={handleContextMenu}
         >
           <rect className="pm-canvas-bg" x="0" y="0" width="100%" height="100%" />
-          <g className="pm-grid">
-            {gridLines.map((line) => (
-              <line
-                key={line.key}
-                className={line.major ? 'is-major' : ''}
-                x1={line.a.x}
-                y1={line.a.y}
-                x2={line.b.x}
-                y2={line.b.y}
-              />
-            ))}
-          </g>
-          <g className="pm-axes">
-            <line x1={worldToScreen(camera, { x: -100000, y: 0 }, size).x} y1={worldToScreen(camera, { x: 0, y: 0 }, size).y} x2={worldToScreen(camera, { x: 100000, y: 0 }, size).x} y2={worldToScreen(camera, { x: 0, y: 0 }, size).y} />
-            <line x1={worldToScreen(camera, { x: 0, y: 0 }, size).x} y1={worldToScreen(camera, { x: 0, y: -100000 }, size).y} x2={worldToScreen(camera, { x: 0, y: 0 }, size).x} y2={worldToScreen(camera, { x: 0, y: 100000 }, size).y} />
-          </g>
-          <g className="pm-boundary-layer">
-            {showAppliedGhost && (
-              <path className="pm-applied-section" d={appliedSectionPath} fillRule="evenodd" pointerEvents="none" />
-            )}
-            {boundaryScreenData.map(({ boundary, path }) => {
-              const isSelected = selectedBoundaryIds.includes(boundary.id)
-              const isActive = boundary.id === activeBoundaryId
-              const isAppliedSource = boundary.id === appliedBoundaryId
-              const showLiveAsApplied = isAppliedSource && boundary.locked
-              return (
-                <path
-                  key={boundary.id}
-                  data-boundary-id={boundary.id}
-                  className={`pm-workspace-boundary${isSelected ? ' is-selected' : ''}${isActive ? ' is-active' : ''}${boundary.locked ? ' is-locked' : ''}${showLiveAsApplied ? ' is-applied' : ''}`}
-                  d={path}
-                  fillRule="evenodd"
-                />
-              )
-            })}
-            {draftPath && <path className="pm-drawing-preview" d={draftPath} fillRule="evenodd" />}
-          </g>
-          {snapCursorView && (
-            <g className="pm-snap-cursor">
-              <line x1={snapCursorView.screen.x - 10} y1={snapCursorView.screen.y} x2={snapCursorView.screen.x + 10} y2={snapCursorView.screen.y} />
-              <line x1={snapCursorView.screen.x} y1={snapCursorView.screen.y - 10} x2={snapCursorView.screen.x} y2={snapCursorView.screen.y + 10} />
-              <circle cx={snapCursorView.screen.x} cy={snapCursorView.screen.y} r="4" />
-              <text x={snapCursorView.screen.x + 12} y={snapCursorView.screen.y - 12}>
-                {formatNumber(snapCursorView.world.x, 0)}, {formatNumber(snapCursorView.world.y, 0)}
-              </text>
-            </g>
-          )}
-          <g className="pm-centroid" pointerEvents="none">
-            <line
-              x1={activeCentroidScreen.x - 8}
-              y1={activeCentroidScreen.y}
-              x2={activeCentroidScreen.x + 8}
-              y2={activeCentroidScreen.y}
-            />
-            <line
-              x1={activeCentroidScreen.x}
-              y1={activeCentroidScreen.y - 8}
-              x2={activeCentroidScreen.x}
-              y2={activeCentroidScreen.y + 8}
-            />
-          </g>
-          <g className="pm-rebar-layer" pointerEvents="none">
-            {hasAppliedSection &&
-              rebars.map((bar) => {
-                const screen = worldToScreen(camera, { x: bar.x, y: bar.y }, size)
-                const radiusPx = Math.max(2.5, bar.dia / (2 * camera.unitsPerPixel))
-                const selected = bar.id === selectedRebarId
-                return (
-                  <g key={bar.id} className={selected ? 'is-selected' : ''}>
-                    <circle
-                      className="pm-rebar-dot"
-                      cx={screen.x}
-                      cy={screen.y}
-                      r={radiusPx}
-                      data-rebar-id={bar.id}
-                      style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+          {isDrawingMeasured && (
+            <>
+              <g className="pm-grid">
+                {gridLines.map((line) => (
+                  <line
+                    key={line.key}
+                    className={line.major ? 'is-major' : ''}
+                    x1={line.a.x}
+                    y1={line.a.y}
+                    x2={line.b.x}
+                    y2={line.b.y}
+                  />
+                ))}
+              </g>
+              <g className="pm-axes">
+                <line x1={worldToScreen(camera, { x: -100000, y: 0 }, size).x} y1={worldToScreen(camera, { x: 0, y: 0 }, size).y} x2={worldToScreen(camera, { x: 100000, y: 0 }, size).x} y2={worldToScreen(camera, { x: 0, y: 0 }, size).y} />
+                <line x1={worldToScreen(camera, { x: 0, y: 0 }, size).x} y1={worldToScreen(camera, { x: 0, y: -100000 }, size).y} x2={worldToScreen(camera, { x: 0, y: 0 }, size).x} y2={worldToScreen(camera, { x: 0, y: 100000 }, size).y} />
+              </g>
+              <g className="pm-boundary-layer">
+                {showAppliedGhost && (
+                  <path className="pm-applied-section" d={appliedSectionPath} fillRule="evenodd" pointerEvents="none" />
+                )}
+                {boundaryScreenData.map(({ boundary, path }) => {
+                  const isSelected = selectedBoundaryIds.includes(boundary.id)
+                  const isActive = boundary.id === activeBoundaryId
+                  const isAppliedSource = boundary.id === appliedBoundaryId
+                  const showLiveAsApplied = isAppliedSource && boundary.locked
+                  return (
+                    <path
+                      key={boundary.id}
+                      data-boundary-id={boundary.id}
+                      className={`pm-workspace-boundary${isSelected ? ' is-selected' : ''}${isActive ? ' is-active' : ''}${boundary.locked ? ' is-locked' : ''}${showLiveAsApplied ? ' is-applied' : ''}`}
+                      d={path}
+                      fillRule="evenodd"
                     />
-                    {(selected || geometrySubTab === 'rebar') && (
-                      <text className="pm-rebar-label" x={screen.x + radiusPx + 3} y={screen.y - radiusPx - 2}>
-                        {bar.id}
-                      </text>
-                    )}
-                  </g>
-                )
-              })}
-          </g>
-          <g className="pm-handles">
-            {geometrySubTab === 'concrete' &&
-              boundaryScreenData
-              .filter(({ boundary }) => boundary.id === activeBoundaryId)
-              .flatMap(({ boundary, outers }) =>
-                outers.flatMap((outer, outerIndex) =>
-                  outer.flatMap((ring, ringIndex) =>
-                    ring.map((point) => {
-                      const isActiveRing = outerIndex === activeOuterIndex && ringIndex === activeRingIndex
-                      return (
-                        <g key={point.id}>
-                          <circle
-                            className={selectedPointId === point.id ? 'is-selected' : ''}
-                            data-boundary-id={boundary.id}
-                            data-outer-index={outerIndex}
-                            data-ring-index={ringIndex}
-                            data-point-id={point.id}
-                            cx={point.x}
-                            cy={point.y}
-                            r={isActiveRing || selectedPointId === point.id ? 4 : 3.5}
-                          />
-                          <text className="pm-point-label" x={point.x + 5} y={point.y - 5}>
-                            {point.id}
-                          </text>
-                        </g>
-                      )
-                    })
                   )
-                )
+                })}
+                {draftPath && <path className="pm-drawing-preview" d={draftPath} fillRule="evenodd" />}
+              </g>
+              {snapCursorView && (
+                <g className="pm-snap-cursor">
+                  <line x1={snapCursorView.screen.x - 10} y1={snapCursorView.screen.y} x2={snapCursorView.screen.x + 10} y2={snapCursorView.screen.y} />
+                  <line x1={snapCursorView.screen.x} y1={snapCursorView.screen.y - 10} x2={snapCursorView.screen.x} y2={snapCursorView.screen.y + 10} />
+                  <circle cx={snapCursorView.screen.x} cy={snapCursorView.screen.y} r="4" />
+                  <text x={snapCursorView.screen.x + 12} y={snapCursorView.screen.y - 12}>
+                    {formatNumber(snapCursorView.world.x, 0)}, {formatNumber(snapCursorView.world.y, 0)}
+                  </text>
+                </g>
               )}
-          </g>
+              <g className="pm-centroid" pointerEvents="none">
+                <line
+                  x1={activeCentroidScreen.x - 8}
+                  y1={activeCentroidScreen.y}
+                  x2={activeCentroidScreen.x + 8}
+                  y2={activeCentroidScreen.y}
+                />
+                <line
+                  x1={activeCentroidScreen.x}
+                  y1={activeCentroidScreen.y - 8}
+                  x2={activeCentroidScreen.x}
+                  y2={activeCentroidScreen.y + 8}
+                />
+              </g>
+              <g className="pm-rebar-layer" pointerEvents="none">
+                {hasAppliedSection &&
+                  rebars.map((bar) => {
+                    const screen = worldToScreen(camera, { x: bar.x, y: bar.y }, size)
+                    const radiusPx = Math.max(2.5, bar.dia / (2 * camera.unitsPerPixel))
+                    const selected = bar.id === selectedRebarId
+                    return (
+                      <g key={bar.id} className={selected ? 'is-selected' : ''}>
+                        <circle
+                          className="pm-rebar-dot"
+                          cx={screen.x}
+                          cy={screen.y}
+                          r={radiusPx}
+                          data-rebar-id={bar.id}
+                          style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                        />
+                        {(selected || geometrySubTab === 'rebar') && (
+                          <text className="pm-rebar-label" x={screen.x + radiusPx + 3} y={screen.y - radiusPx - 2}>
+                            {bar.id}
+                          </text>
+                        )}
+                      </g>
+                    )
+                  })}
+              </g>
+              <g className="pm-handles">
+                {geometrySubTab === 'concrete' &&
+                  boundaryScreenData
+                  .filter(({ boundary }) => boundary.id === activeBoundaryId)
+                  .flatMap(({ boundary, outers }) =>
+                    outers.flatMap((outer, outerIndex) =>
+                      outer.flatMap((ring, ringIndex) =>
+                        ring.map((point) => {
+                          const isActiveRing = outerIndex === activeOuterIndex && ringIndex === activeRingIndex
+                          return (
+                            <g key={point.id}>
+                              <circle
+                                className={selectedPointId === point.id ? 'is-selected' : ''}
+                                data-boundary-id={boundary.id}
+                                data-outer-index={outerIndex}
+                                data-ring-index={ringIndex}
+                                data-point-id={point.id}
+                                cx={point.x}
+                                cy={point.y}
+                                r={isActiveRing || selectedPointId === point.id ? 4 : 3.5}
+                              />
+                              <text className="pm-point-label" x={point.x + 5} y={point.y - 5}>
+                                {point.id}
+                              </text>
+                            </g>
+                          )
+                        })
+                      )
+                    )
+                  )}
+              </g>
+            </>
+          )}
         </svg>
         <div className="pm-boundary-hud" aria-label="Active boundary summary">
           <div className="pm-boundary-hud-row">
