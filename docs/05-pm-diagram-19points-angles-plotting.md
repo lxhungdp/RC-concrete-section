@@ -25,7 +25,7 @@ export interface UltimateStrainDomain {
   /** Initial state parameters including all code/material breakpoints. */
   seedParameters(): readonly number[]; // strictly increasing, normally [0,1]
 
-  /** Map direction and normalized path parameter to an admissible boundary strain plane. */
+  /** Map strain-plane sample direction and normalized path parameter to a boundary strain plane. */
   stateAt(beta: number, t: number): UltimateStrainState;
 
   /** Explain controlling limits for reporting and traceability. */
@@ -43,6 +43,10 @@ export interface UltimateStrainState {
   clauseRefs: readonly string[];
 }
 ```
+
+`beta` in this interface is a strain-domain sampling parameter. It must not be treated as the
+moment direction of a demand. After the surface has been generated, demand queries use
+`thetaLoad = atan2(Muy, Mux)` and operate on the finished `P-Mx-My` geometry.
 
 The adapter may implement conventional strain domains, pivot rules, or another verified mapping.
 It must prove that the mapping covers the intended resistance boundary for its supported section and
@@ -243,7 +247,39 @@ with plane `P=Pu`:
 
 This contour is used for plots and fixed-P point-in-domain checks.
 
-## 10. Plotting
+For a single load combination, the fixed-`P` moment capacity is a ray query on this contour:
+
+1. compute `thetaLoad = atan2(Muy, Mux)` and `Mu = sqrt(Mux^2 + Muy^2)`;
+2. intersect the `P = Pu` contour with the ray `Mx = t*cos(thetaLoad)`,
+   `My = t*sin(thetaLoad)`;
+3. use the first positive boundary intersection as `Mb`;
+4. report the secondary fixed-axial moment ratio as `Mu/Mb`.
+
+Do not select the contour point whose strain-plane sample angle is nearest `thetaLoad`. The sampled
+strain-plane angle generated the surface; it is not generally the same as the moment angle of the
+resultant at that point.
+
+## 10. Moment-direction vertical slices
+
+A `P-Mtheta` chart for a demand direction is the intersection of the finished `P-Mx-My` surface
+with the vertical plane through the `P` axis:
+
+```text
+Mx*sin(thetaLoad) - My*cos(thetaLoad) = 0
+```
+
+Every intersection point is plotted with:
+
+```text
+Mtheta = Mx*cos(thetaLoad) + My*sin(thetaLoad)
+P      = P
+```
+
+This is a geometric slice of the surface mesh. It is not the strain-domain curve at
+`beta = thetaLoad`, except in special cases where the resultant moment direction happens to match
+the sampled strain-plane angle.
+
+## 11. Plotting
 
 Plotly is a presentation adapter only. Supply the explicit `i,j,k` triangle indices. Plotly's
 `alphahull:0` constructs a convex hull and is prohibited for the resistance surface because it can
@@ -265,9 +301,11 @@ Display:
 - failure mode and controlling strains on hover;
 - demand point and proportional ray;
 - fixed-P contour produced from triangle slicing;
+- vertical `P-Mtheta` slice produced from the moment-direction plane
+  `Mx*sin(thetaLoad) - My*cos(thetaLoad) = 0`;
 - clear warning when a surface is preview-only or non-certified.
 
-## 11. Independent reference method
+## 12. Independent reference method
 
 For verification fixtures, build selected boundary points using a separately implemented constrained
 optimization method that maximizes a chosen resultant direction subject to the adapter's ultimate

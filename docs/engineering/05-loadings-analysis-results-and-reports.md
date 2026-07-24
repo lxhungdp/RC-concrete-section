@@ -53,6 +53,12 @@ proportional 3D loading:
 A fixed-`P` moment ratio may be reported only as a named secondary metric. It is not total
 utilization and does not make a pure-axial demand have zero utilization.
 
+For that secondary fixed-axial metric, compute `thetaLoad = atan2(Muy, Mux)`, slice the completed
+surface by `P = Pu`, and intersect the resulting `Mx-My` contour with the ray
+`Mx = t*cos(thetaLoad), My = t*sin(thetaLoad)`. The boundary value is `Mb = t` and the component
+coordinates are `Mbnx = Mb*cos(thetaLoad)`, `Mbny = Mb*sin(thetaLoad)`. This query is geometric; it
+must not use the strain-plane sampling angle as a proxy for the demand moment direction.
+
 Classification uses a numerical uncertainty interval and approved margin:
 
 - `adequate` only when the entire interval is below the acceptance boundary;
@@ -70,6 +76,8 @@ capacity. It provides:
   boundary point/state, and warnings;
 - nominal/reference and design P-M/P-Mx-My surfaces with explicit mesh connectivity;
 - fixed-`P` contours created by slicing the surface triangles;
+- vertical `P-Mtheta` demand-direction slices created by intersecting the surface with
+  `Mx*sin(thetaLoad) - My*cos(thetaLoad) = 0`;
 - selected load path, governing point, failure classification, and controlling strains;
 - convergence/error evidence and resolution history;
 - diagnostics for invalid, cancelled, non-converged, or preview runs.

@@ -12,13 +12,18 @@ Track at least:
 | floating-point/summation | `efp` | scaling, compensated sums, finite checks |
 | nonlinear algebra | `esolve` | scaled residual/increment and conditioning |
 | concrete integration mesh | `emesh` | `h → h/2` refinement |
-| neutral-axis angle sampling | `ebeta` | midpoint angle refinement |
+| strain-plane angle sampling | `ebeta` | midpoint angle refinement |
 | strain-state sampling | `estate` | midpoint state refinement |
 | triangle/ray/slice geometry | `egeom` | normalized tolerances and topology tests |
 | design-code implementation | not a numerical tolerance | clause review and code-verification tests |
 | model-form uncertainty | not removed by refinement | scope statement and validation evidence |
 
 Do not combine code/model uncertainty with numerical convergence. They require different evidence.
+
+Do not use `ebeta` refinement as evidence that a demand-direction slice is correct. `ebeta` controls
+how completely the surface is sampled in strain-state space. A loadcase direction
+`thetaLoad = atan2(Muy, Mux)` is a geometric query on the finished surface and has its own
+triangle/ray/slice error source `egeom`.
 
 ## 2. Quantities of interest
 
@@ -28,6 +33,8 @@ Convergence is assessed on a vector of engineering quantities, not one global ma
 - selected boundary vertices and midpoint resultants;
 - fixed-P contour radii/coordinates at demanded and sentinel levels;
 - proportional utilization for every requested demand;
+- demand-direction `P-Mtheta` slice coordinates from the plane
+  `Mx*sin(thetaLoad) - My*cos(thetaLoad) = 0`;
 - governing boundary point and failure-mode classification;
 - topology invariants.
 
@@ -96,6 +103,10 @@ export interface SurfaceDiscretizationReport {
 After the surface passes its local chord test, recompute demand utilization with one additional
 targeted refinement around the intersected triangles. The utilization difference must satisfy
 `tolUtilization`.
+
+The intersected triangles are found by the demand ray or demand-direction plane, not by locating the
+nearest strain-plane sample angle. A regression that passes only when `thetaLoad` equals a sampled
+strain angle is under-tested.
 
 ## 6. Error budget hierarchy
 
@@ -185,6 +196,7 @@ Return diagnostics that distinguish:
 - unresolved thin feature;
 - abrupt design-rule transition missing from seed breakpoints;
 - insufficient angle/state resolution;
+- confusion between strain-plane sample angle and demand moment direction;
 - near-tangent ray/surface intersection;
 - resource exhaustion;
 - actual algorithm defect.

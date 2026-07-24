@@ -8,10 +8,14 @@ import type { LoadCombination } from '@pm/project'
 import {
   buildSectionFieldMap,
   sliceFixedP,
+  sliceFixedPContour,
+  sliceMomentPlane,
+  PREVIEW_STATIONS,
   VERTICAL_SLICE_KEY_STATIONS,
   type InversePreviewResult,
   type PreviewSurface,
-  type PreviewSurfacePoint
+  type PreviewSurfacePoint,
+  type PreviewMomentPlanePoint
 } from '../../lib/pm-preview-analysis'
 import { ExcelExportError, exportSectionWorkbook, sectionWorkbookFileName } from '../../lib/pm-excel-export'
 import { PlotlyChart, type PlotlyClickPayload } from './PlotlyChart'
@@ -195,6 +199,11 @@ export function ResultsWorkspace({
   const activeFixedPKn = kn(activeFixedP)
 
   const contour = useMemo(
+    () => (surface ? sliceFixedPContour(surface.points, activeFixedP) : []),
+    [activeFixedP, surface]
+  )
+
+  const strainAngleSamples = useMemo(
     () => (surface ? sliceFixedP(surface.points, activeFixedP) : []),
     [activeFixedP, surface]
   )
@@ -295,7 +304,10 @@ export function ResultsWorkspace({
         }
       : null
 
-    const sliceCurve = pickBetaCurve(surfaceGrid, activeAngle)
+    const momentPlanePoints = sliceMomentPlane(surface.points, theta)
+    const momentScale = Math.max(...momentPlanePoints.map((point) => Math.abs(point.M)), 1)
+    const momentTol = momentScale * 1e-9
+    const sliceCurve = momentPlanePoints.filter((point) => point.M >= -momentTol)
     const sliceTrace = {
       type: 'scatter3d',
       name: 'Vertical slice',
@@ -307,7 +319,7 @@ export function ResultsWorkspace({
       hoverinfo: 'skip'
     }
 
-    const oppositeCurve = includeOppositeMoment ? pickBetaCurve(surfaceGrid, activeAngle + 180) : []
+    const oppositeCurve = includeOppositeMoment ? momentPlanePoints.filter((point) => point.M <= momentTol) : []
     const oppositeTrace =
       oppositeCurve.length > 0
         ? {
@@ -420,20 +432,72 @@ export function ResultsWorkspace({
       closedX.push(knm(contour[0].Mx))
       closedY.push(knm(contour[0].My))
     }
+    const rayRadius = Math.max(...contour.map((point) => knm(Math.hypot(point.Mx, point.My))), 1) * 1.18
+    const radialX = strainAngleSamples.flatMap((point) => [0, rayRadius * Math.cos(point.beta), null])
+    const radialY = strainAngleSamples.flatMap((point) => [0, rayRadius * Math.sin(point.beta), null])
 
     return [
       {
         type: 'scatter',
+        name: 'Moment angle rays',
+        mode: 'lines',
+        x: radialX,
+        y: radialY,
+        line: { color: '#9ca3af', width: 1, dash: 'dot' },
+        hoverinfo: 'skip'
+      },
+      {
+        type: 'scatter',
         name: `P = ${fmt(activeFixedPKn, 1)} kN`,
-        mode: 'lines+markers',
+        mode: 'lines',
         x: closedX,
         y: closedY,
-        line: { color: '#2563eb', width: 2.25, shape: 'spline', smoothing: 1.05 },
-        marker: { size: 5, color: '#0ea5e9' },
+        line: { color: '#2563eb', width: 2.4 },
         hovertemplate: 'Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>Fixed P</extra>'
+      },
+      {
+        type: 'scatter',
+        name: 'Strain-angle samples',
+        mode: 'markers+text',
+        x: strainAngleSamples.map((point) => knm(point.Mx)),
+        y: strainAngleSamples.map((point) => knm(point.My)),
+        text: strainAngleSamples.map((point) => `${fmt((point.beta * 180) / Math.PI, 0)}°`),
+        textposition: 'top center',
+        textfont: { size: 10, color: '#b91c1c', family: 'IBM Plex Sans, system-ui, sans-serif' },
+        marker: {
+          size: 8.5,
+          color: '#ef4444',
+          symbol: 'circle',
+          line: { color: '#ffffff', width: 1 }
+        },
+        customdata: strainAngleSamples.map((point) => [
+          fmt((point.beta * 180) / Math.PI, 0),
+          fmt((Math.atan2(point.My, point.Mx) * 180) / Math.PI, 1)
+        ]),
+        hovertemplate:
+          'N.A. sample α=%{customdata[0]}°<br>Moment angle θ=%{customdata[1]}°<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra></extra>'
       }
     ]
-  }, [activeFixedPKn, contour])
+  }, [activeFixedPKn, contour, strainAngleSamples])
+
+  const contourAxisRange = useMemo(() => {
+    const points = [...contour, ...strainAngleSamples]
+    if (points.length === 0) return null
+    const xs = points.map((point) => knm(point.Mx))
+    const ys = points.map((point) => knm(point.My))
+    const minX = Math.min(...xs, 0)
+    const maxX = Math.max(...xs, 0)
+    const minY = Math.min(...ys, 0)
+    const maxY = Math.max(...ys, 0)
+    const span = Math.max(maxX - minX, maxY - minY, 1)
+    const centerX = (minX + maxX) / 2
+    const centerY = (minY + maxY) / 2
+    const half = (span * 1.08) / 2
+    return {
+      x: [centerX - half, centerX + half] as [number, number],
+      y: [centerY - half, centerY + half] as [number, number]
+    }
+  }, [contour, strainAngleSamples])
 
   const contourLayout = useMemo(
     () => ({
@@ -445,6 +509,7 @@ export function ResultsWorkspace({
         zerolinecolor: '#94a3b8',
         gridcolor: '#e5e7eb',
         automargin: false,
+        range: contourAxisRange?.x,
         tickfont: { size: 10 },
         titlefont: { size: 11 }
       },
@@ -455,29 +520,30 @@ export function ResultsWorkspace({
         gridcolor: '#e5e7eb',
         scaleanchor: 'x',
         automargin: false,
+        range: contourAxisRange?.y,
         tickfont: { size: 10 }
       },
       annotations: [
         {
           xref: 'paper',
-          x: 0,
+          x: 0.02,
           yref: 'paper',
-          y: 1.02,
+          y: 0.98,
           text: 'My (kN.m)',
           showarrow: false,
           xanchor: 'left',
-          yanchor: 'bottom',
+          yanchor: 'top',
           font: { size: 11, color: '#6b7280' }
         },
         {
           xref: 'paper',
-          x: 1.01,
+          x: 0.96,
           yref: 'paper',
-          y: 0,
+          y: 0.04,
           text: 'Mx (kN.m)',
           showarrow: false,
-          xanchor: 'left',
-          yanchor: 'top',
+          xanchor: 'right',
+          yanchor: 'bottom',
           font: { size: 11, color: '#6b7280' }
         }
       ],
@@ -485,7 +551,7 @@ export function ResultsWorkspace({
       clickmode: 'event+select',
       showlegend: false
     }),
-    []
+    [contourAxisRange]
   )
 
   const verticalSlice = useMemo(() => {
@@ -498,28 +564,40 @@ export function ResultsWorkspace({
     if (!surface || surfaceGrid.length === 0) return empty
 
     const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
-    const cx = Math.cos(theta)
-    const sy = Math.sin(theta)
-    const project = (point: PreviewSurfacePoint) => ({
-      m: knm(point.Mx * cx + point.My * sy),
+    const momentPlane = sliceMomentPlane(surface.points, theta)
+    const project = (point: PreviewMomentPlanePoint) => ({
+      m: knm(point.M),
       p: kn(point.P),
-      station: point.station
+      station: point.station ?? -1
     })
 
-    const primaryPath = pickBetaCurve(surfaceGrid, activeAngle).map(project)
-    const oppositePath = includeOppositeMoment
-      ? pickBetaCurve(surfaceGrid, activeAngle + 180).map(project)
-      : []
-
-    const stations = includeOppositeMoment && oppositePath.length > 0 ? [...primaryPath, ...oppositePath] : primaryPath
+    const momentScale = Math.max(...momentPlane.map((point) => Math.abs(point.M)), 1)
+    const momentTol = momentScale * 1e-9
+    const primaryPath = momentPlane.filter((point) => point.M >= -momentTol).map(project)
+    const oppositePath = includeOppositeMoment ? momentPlane.filter((point) => point.M <= momentTol).map(project) : []
 
     const pickKeys = (
       curve: Array<{ m: number; p: number; station: number }>,
       side: 'primary' | 'opposite'
     ) =>
       VERTICAL_SLICE_KEY_STATIONS.flatMap(({ station, label }) => {
-        const point = curve.find((item) => item.station === station)
+        const point = curve.reduce<Array<{ point: { m: number; p: number; station: number }; delta: number }>>(
+          (matches, item) => {
+            const delta = Math.abs(item.station - station)
+            return delta <= 0.25 ? [...matches, { point: item, delta }] : matches
+          },
+          []
+        ).sort((a, b) => a.delta - b.delta)[0]?.point
         return point ? [{ ...point, label, side }] : []
+      })
+
+    const pickStations = (curve: Array<{ m: number; p: number; station: number }>) =>
+      PREVIEW_STATIONS.flatMap((_, station) => {
+        const point = curve
+          .map((item) => ({ point: item, delta: Math.abs(item.station - station) }))
+          .filter((item) => item.delta <= 0.35)
+          .sort((a, b) => a.delta - b.delta)[0]?.point
+        return point ? [{ ...point, station }] : []
       })
 
     const keys = [
@@ -528,6 +606,10 @@ export function ResultsWorkspace({
         ? pickKeys(oppositePath, 'opposite').filter((item) => Math.abs(item.m) > 1e-6)
         : [])
     ]
+    const stations =
+      includeOppositeMoment && oppositePath.length > 0
+        ? [...pickStations(primaryPath), ...pickStations(oppositePath).filter((item) => Math.abs(item.m) > 1e-6)]
+        : pickStations(primaryPath)
 
     return { primaryPath, oppositePath, stations, keys }
   }, [activeAngle, includeOppositeMoment, surface, surfaceGrid])
@@ -535,14 +617,23 @@ export function ResultsWorkspace({
   const verticalData = useMemo(() => {
     const primaryKeys = verticalSlice.keys.filter((point) => point.side === 'primary')
     const oppositeKeys = verticalSlice.keys.filter((point) => point.side === 'opposite')
+    const keyRays = verticalSlice.keys.flatMap((point) => [0, point.m, null])
+    const keyRayP = verticalSlice.keys.flatMap((point) => [0, point.p, null])
     const smoothLine = {
-      color: '#7c3aed',
-      width: 2.25,
-      shape: 'spline' as const,
-      smoothing: 1.05
+      color: '#2563eb',
+      width: 2.4
     }
 
     return [
+      {
+        type: 'scatter',
+        name: 'Key station rays',
+        mode: 'lines',
+        x: keyRays,
+        y: keyRayP,
+        line: { color: '#9ca3af', width: 1, dash: 'dot' },
+        hoverinfo: 'skip'
+      },
       {
         type: 'scatter',
         name: `Angle ${fmt(activeAngle, 0)} deg`,
@@ -550,6 +641,7 @@ export function ResultsWorkspace({
         x: verticalSlice.primaryPath.map((point) => point.m),
         y: verticalSlice.primaryPath.map((point) => point.p),
         line: smoothLine,
+        marker: { size: 0 },
         hoverinfo: 'skip'
       },
       ...(verticalSlice.oppositePath.length > 0
@@ -560,7 +652,8 @@ export function ResultsWorkspace({
               mode: 'lines',
               x: verticalSlice.oppositePath.map((point) => point.m),
               y: verticalSlice.oppositePath.map((point) => point.p),
-              line: { ...smoothLine, color: '#8b5cf6' },
+              line: { ...smoothLine, color: '#60a5fa' },
+              marker: { size: 0 },
               hoverinfo: 'skip'
             }
           ]
@@ -571,9 +664,14 @@ export function ResultsWorkspace({
         mode: 'markers',
         x: verticalSlice.stations.map((point) => point.m),
         y: verticalSlice.stations.map((point) => point.p),
-        marker: { size: 5, color: '#a855f7' },
+        marker: {
+          size: 6,
+          color: '#ef4444',
+          symbol: 'circle',
+          line: { color: '#ffffff', width: 0.8 }
+        },
         customdata: verticalSlice.stations.map((point) => point.station),
-        hovertemplate: 'P%{customdata}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra>Vertical slice</extra>'
+        hovertemplate: 'P%{customdata}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra>Station</extra>'
       },
       {
         type: 'scatter',
@@ -583,11 +681,11 @@ export function ResultsWorkspace({
         y: primaryKeys.map((point) => point.p),
         text: primaryKeys.map((point) => point.label),
         textposition: 'top center',
-        textfont: { size: 10, color: '#5b21b6', family: 'IBM Plex Sans, system-ui, sans-serif' },
+        textfont: { size: 10, color: '#b91c1c', family: 'IBM Plex Sans, system-ui, sans-serif' },
         marker: {
-          size: 8,
-          color: '#5b21b6',
-          symbol: 'diamond',
+          size: 8.5,
+          color: '#ef4444',
+          symbol: 'circle',
           line: { color: '#ffffff', width: 1 }
         },
         hovertemplate: '%{text}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra></extra>'
@@ -602,11 +700,11 @@ export function ResultsWorkspace({
               y: oppositeKeys.map((point) => point.p),
               text: oppositeKeys.map((point) => point.label),
               textposition: 'top center',
-              textfont: { size: 10, color: '#7c3aed', family: 'IBM Plex Sans, system-ui, sans-serif' },
+              textfont: { size: 10, color: '#b91c1c', family: 'IBM Plex Sans, system-ui, sans-serif' },
               marker: {
-                size: 7,
-                color: '#c4b5fd',
-                symbol: 'diamond',
+                size: 8,
+                color: '#ef4444',
+                symbol: 'circle',
                 line: { color: '#ffffff', width: 1 }
               },
               hovertemplate: '%{text}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra></extra>'
@@ -704,15 +802,24 @@ export function ResultsWorkspace({
     setExportState('working')
     setExportMessage('')
     try {
+      // The detail sheets audit a strain plane, so they must use the neutral-axis orientation of
+      // the equilibrium state — not the demand moment direction, which the workbook derives itself.
+      const equilibrium = inverseResult?.state
+      const curvature = equilibrium ? Math.hypot(equilibrium.kx, equilibrium.ky) : 0
+      const betaDeg =
+        equilibrium && curvature > 1e-12
+          ? normalizeAngleDeg((Math.atan2(equilibrium.ky, equilibrium.kx) * 180) / Math.PI)
+          : activeAngle
       const payload = {
         projectName,
         sectionName: section.name,
         section,
         rebars,
         materialStore,
-        angleDeg: activeAngle,
+        betaDeg,
         fixedP: activeFixedP,
-        loadcase: selectedLoadcase
+        loadcase: selectedLoadcase,
+        equilibrium: equilibrium ?? null
       }
       const blob = await exportSectionWorkbook(payload)
       const url = URL.createObjectURL(blob)

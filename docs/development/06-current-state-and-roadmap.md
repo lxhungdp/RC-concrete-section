@@ -26,7 +26,7 @@ certification.
 | Results-sidebar loadcases | add/edit/delete/duplicate/select Pu/Mux/Muy combinations in Results | implemented preview | typed validation, import, stale-state graph, accepted demand checks |
 | analysis core | detailed specifications only | not implemented | packages, mechanics, mesh, surface, checks, V&V |
 | design-code registry | detailed specification only | not implemented | exact profiles, traceability, review/evidence |
-| Results | Plotly 3D preview surface, 2D fixed-P slice, vertical slice, lazy inverse loadcase detail | implemented preview | accepted result contract, DTO-driven plots, checks, convergence evidence |
+| Results | Plotly 3D preview surface, 2D fixed-P slice, vertical slice, lazy inverse loadcase detail | implemented preview | accepted result contract, DTO-driven plots, checks, convergence evidence; preserve the strain-angle vs demand-angle separation |
 | Report | Excel/PDF model/renderers | not implemented | accepted-result-only pipeline and render verification |
 | tests | TypeScript check script and one project round-trip self-test | initial only | geometry/material/unit/property/differential/UI/V&V suites |
 
@@ -151,6 +151,8 @@ Exit: mechanics verification Gate C passes for a standard-neutral reference mode
 - select exact first standard/edition/method and complete clause trace;
 - implement strain domain, nominal/design sequencing, surface refinement, caps, topology, demand
   checks, utilization, and uncertainty;
+- verify that loadcase `P-Mtheta` slices use `thetaLoad = atan2(Muy, Mux)` and surface
+  ray/plane intersections, not nearest strain-plane sample rows;
 - run the full structural/design-code verification matrix and independent review.
 
 Exit: one declared scope can produce an accepted result; all other profiles remain draft/blocked.
@@ -159,7 +161,8 @@ Exit: one declared scope can produce an accepted result; all other profiles rema
 
 - add result schemas/package, history/current/stale states, tables, plots, per-combination details,
   convergence and diagnostics;
-- ensure plots use explicit surface triangles and result DTO values only.
+- ensure plots use explicit surface triangles and result DTO values only;
+- keep strain-domain sampling parameters out of UI demand-direction semantics.
 
 Exit: structural reviewers can audit every accepted combination through the UI.
 

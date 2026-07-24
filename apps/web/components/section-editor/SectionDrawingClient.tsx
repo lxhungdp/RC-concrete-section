@@ -55,7 +55,7 @@ import {
 } from '@pm/project'
 import {
   buildPreviewSurface,
-  sliceFixedP,
+  sliceFixedPContour,
   solveInversePreview,
   type InversePreviewResult
 } from '../../lib/pm-preview-analysis'
@@ -529,7 +529,7 @@ export function SectionDrawingClient() {
     setSelectedLoadcaseId(loadcase.id)
     if (!hasAppliedSection || !resultSurface) return
     if (inverseResults[loadcase.id]) return
-    const contour = sliceFixedP(resultSurface.points, loadcase.P)
+    const contour = sliceFixedPContour(resultSurface.points, loadcase.P)
     const result = solveInversePreview(finalSection, rebars, materialStore, loadcase, contour)
     setInverseResults((current) => ({ ...current, [loadcase.id]: result }))
   }
@@ -1896,7 +1896,7 @@ export function SectionDrawingClient() {
                   })
                   return
                 }
-                const contour = sliceFixedP(resultSurface.points, loadcase.P)
+                const contour = sliceFixedPContour(resultSurface.points, loadcase.P)
                 const result = solveInversePreview(finalSection, rebars, materialStore, loadcase, contour)
                 setInverseResults((current) => ({ ...current, [loadcase.id]: result }))
               }}

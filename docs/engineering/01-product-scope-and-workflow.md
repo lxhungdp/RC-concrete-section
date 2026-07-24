@@ -43,6 +43,11 @@ It must not reuse the production surface interpolation/search logic as its oracl
 - proportional 3D utilization and fixed-axial-load slices for secondary reporting;
 - convergence, uncertainty, diagnostics, provenance, plots, Excel reports, and PDF reports.
 
+Biaxial checks separate strain-domain sampling from demand geometry. Neutral-axis or strain-plane
+angles generate compatible boundary states; they are not loadcase moment directions. Loadcase plots
+and checks derive `thetaLoad = atan2(Muy, Mux)` from the demand and query the completed
+`P-Mx-My` domain by ray/plane intersection.
+
 The first verified analysis release may intentionally restrict the input capability to one connected
 concrete region with holes. The editor and project format can support multiple regions earlier, but
 the analysis must reject unsupported topology with a typed blocking issue.

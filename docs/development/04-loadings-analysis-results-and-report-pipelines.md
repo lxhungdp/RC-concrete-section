@@ -133,10 +133,17 @@ chosen over hand-authored SVG because the result views require built-in pan/zoom
 modebar controls, click events, and filled 3D surfaces. Current preview implementation loads
 `plotly.js-dist-min` only in client components and uses:
 
-- `surface` for the preview `P-Mx-My` interaction surface from the beta/station grid;
+- `surface` for the preview `P-Mx-My` interaction surface from the strain-plane-angle/station grid;
 - `scatter3d` for demand/loadcase points that can be clicked to trigger lazy inverse evaluation;
-- `scatter` for fixed-`P` `Mx-My` contours and vertical `P-M` slices;
+- `scatter` for fixed-`P` `Mx-My` contours and vertical `P-Mtheta` slices;
 - app-level range sliders for quickly changing fixed `P` and the slice rotation angle.
+
+The slice rotation angle is a moment-direction angle. For loadcase mode it is
+`thetaLoad = atan2(Muy, Mux)`. It must be applied as a geometric query on the completed surface:
+fixed-`P` checks intersect the `P = Pu` contour with the ray
+`Mx = t*cos(thetaLoad), My = t*sin(thetaLoad)`, and vertical charts intersect the surface with
+`Mx*sin(thetaLoad) - My*cos(thetaLoad) = 0`. It must not select the strain-plane sample row whose
+angle happens to be nearest `thetaLoad`.
 
 When the accepted engine returns a verified triangulated surface, the 3D chart must switch to an
 explicit `mesh3d` trace with stored `i/j/k` triangle indices. Do not use Plotly `alphahull` for

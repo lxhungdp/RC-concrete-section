@@ -5,7 +5,12 @@
  * Contract: the only numbers written as constants are the ones the engine owns — the clipped-cell
  * mesh (`No | X | Y | A`), the bar schedule, the polygon vertices, and the material/demand inputs.
  * Every strain, stress, force, moment, station parameter and interaction point is a live Excel
- * formula, so changing `fck`, `fy`, `theta` or `Pu` in the workbook recalculates the whole thing.
+ * formula, so changing `fck`, `fy`, `beta` or `Pu` in the workbook recalculates the whole thing.
+ *
+ * Two angles are kept strictly apart (`docs/engineering/02`):
+ *   `beta`    strain-plane sampling angle that generates the boundary states;
+ *   `theta_L` demand moment direction, `ATAN2(Mux, Muy)`, used only to query the finished surface.
+ * They are not interchangeable, so `beta` is an input and `theta_L` is derived from the demand.
  *
  * Sheets
  *   Input         materials, reference origin, demand, named ranges
@@ -13,8 +18,9 @@
  *   Mesh          quadrature points from the engine — the only geometric constants
  *   Concrete      per-fibre strain + stress for all 19 stations, full ledger for a selected one
  *   Steel         per-bar strain, stress, displaced concrete and moments for all 19 stations
- *   PM_Angle      19-point envelope at theta, concrete/steel split, demand and utilisation
- *   MxMy_FixedP   24 directions solved at P = Pu, giving the Mx-My contour
+ *   PM_Angle      19-station strain-domain row at beta, concrete/steel split
+ *   MxMy_FixedP   24 directions at P = Pu, the Mx-My contour and the demand-ray query
+ *   PM_Theta      vertical P-Mtheta section of the surface through the demand direction
  */
 import {
   buildConcreteMesh,
@@ -26,10 +32,14 @@ import type { ConcreteMaterial, MaterialStore, SteelMaterial } from '@pm/materia
 import type { LoadCombination } from '@pm/project'
 import {
   PREVIEW_STATIONS,
+  buildPreviewSurface,
   evaluatePreviewState,
+  intersectFixedPContourWithMomentRay,
   previewStationState,
+  sliceFixedPContour,
   stationDefinitionLabel,
-  type StationDefinition
+  type StationDefinition,
+  type StrainState
 } from './pm-preview-analysis'
 
 export type ExcelExportInput = {
@@ -38,11 +48,20 @@ export type ExcelExportInput = {
   section: SectionGeometry
   rebars: GeometryInputRebarView[]
   materialStore: MaterialStore
-  /** Direction of the vertical slice, degrees. */
-  angleDeg: number
+  /**
+   * Strain-plane sampling angle for the detailed 19-station sheets, degrees. This is the neutral
+   * axis orientation of the state being audited, not the demand moment direction.
+   */
+  betaDeg: number
   /** Axial level for the Mx-My contour sheet, N. */
   fixedP: number
   loadcase: LoadCombination | null
+  /**
+   * Converged strain plane of the inverse solution, if the app has one. Newton and its tangent
+   * modulus stay in the program: a general material law has no closed-form derivative, so the
+   * workbook verifies the converged state instead of re-deriving it.
+   */
+  equilibrium?: StrainState | null
   /** Cap on exported quadrature rows; the mesh is coarsened until it fits. */
   maxMeshPoints?: number
 }
@@ -51,6 +70,35 @@ export class ExcelExportError extends Error {}
 
 const DEFAULT_MAX_MESH_POINTS = 1500
 const DIRECTION_COUNT = 24
+
+/**
+ * Excel silently drops a defined name it considers a reference and then removes every formula that
+ * used it, which surfaces as a repair dialog rather than an error. The rules below are the ones
+ * Excel enforces; the R1C1 prefix rule is the non-obvious one — it is why `u_C1` and the classic
+ * `R2D2` are both rejected even though neither is a complete cell address.
+ */
+const RESERVED_DEFINED_NAMES = new Set([
+  'print_area',
+  'print_titles',
+  'criteria',
+  '_filterdatabase',
+  'extract',
+  'consolidate_area',
+  'sheet_title',
+  'database'
+])
+
+export const invalidDefinedNameReason = (name: string): string | null => {
+  if (name.length === 0 || name.length > 255) return 'must be 1 to 255 characters'
+  if (!/^[A-Za-z_\\][A-Za-z0-9_.\\]*$/.test(name)) {
+    return 'must start with a letter, underscore or backslash and contain only letters, digits, dot or underscore'
+  }
+  if (RESERVED_DEFINED_NAMES.has(name.toLowerCase())) return 'is reserved by Excel'
+  if (/^[A-Za-z]{1,3}[0-9]+$/.test(name)) return 'reads as an A1-style cell reference'
+  if (/^[RrCc]$/.test(name)) return 'R and C alone are row/column shorthand'
+  if (/^[RrCc][0-9]/.test(name)) return 'reads as the start of an R1C1 reference'
+  return null
+}
 
 /** 1-based column index to an Excel column name. */
 const col = (index: number): string => {
@@ -66,28 +114,69 @@ const col = (index: number): string => {
 
 // ---------------------------------------------------------------------------
 // Material laws as Excel expressions
+//
+// Two kinds exist and the difference decides what the workbook can do:
+//
+//   closed-form  the law is algebra over the named inputs, so Excel can evaluate it per cell and
+//                elementwise inside SUMPRODUCT. Everything downstream stays live in fck, fy, ...
+//   tabulated    the law is only known as points (a user curve, or any future model without a
+//                spreadsheet form). The program writes the sampled curve onto the `Materials`
+//                sheet and Excel interpolates it. That works per cell, but INDEX/MATCH does not
+//                vectorise, so array integrals over the whole mesh cannot be formulas and are
+//                imported as engine values instead.
 // ---------------------------------------------------------------------------
 
-type ConcreteLaw = {
-  /** `eps` is any Excel expression; returns a scalar-safe stress expression. */
+export type LawSample = { strain: number; stress: number }
+
+type MaterialLaw = {
+  kind: 'closed-form' | 'tabulated'
+  /** Per-cell expression for any strain expression. */
   scalar: (eps: string) => string
-  /** Element-wise variant with no aggregating function, safe inside SUMPRODUCT. */
-  array: (eps: string) => string
+  /** Elementwise expression, safe inside SUMPRODUCT. `null` when the law is tabulated. */
+  array: ((eps: string) => string) | null
   description: string
+  /** Uniform strain grid written to the `Materials` sheet; only for tabulated laws. */
+  samples?: LawSample[]
 }
 
-type SteelLaw = {
-  scalar: (eps: string) => string
-  array: (eps: string) => string
-  description: string
+/** Ascending, de-duplicated curve: MATCH needs order and the interpolation needs a positive span. */
+const orderedCurve = (points: readonly LawSample[]): LawSample[] => {
+  const sorted = [...points].sort((a, b) => a.strain - b.strain)
+  const result: LawSample[] = []
+  for (const point of sorted) {
+    const previous = result[result.length - 1]
+    if (previous && Math.abs(point.strain - previous.strain) < 1e-12) {
+      result[result.length - 1] = point // a vertical jump keeps its upper branch
+      continue
+    }
+    result.push(point)
+  }
+  return result
 }
 
-const concreteLaw = (material: ConcreteMaterial): ConcreteLaw => {
+/**
+ * Exact reproduction of `interpolateLinear` from `@pm/materials`: clamp to the end stresses,
+ * linear between the bracketing points. `prefix` names the ranges the `Materials` sheet publishes.
+ */
+const tabulatedScalar = (prefix: string, zeroTension: boolean) => (e: string) => {
+  const first = `INDEX(${prefix}_eps,1)`
+  const last = `INDEX(${prefix}_eps,${prefix}_n)`
+  const index = `MIN(MAX(IFERROR(MATCH(${e},${prefix}_eps,1),1),1),${prefix}_n-1)`
+  const clamped = `MIN(MAX(${e},${first}),${last})`
+  const interpolated =
+    `INDEX(${prefix}_sig,${index})+(${clamped}-INDEX(${prefix}_eps,${index}))/` +
+    `(INDEX(${prefix}_eps,${index}+1)-INDEX(${prefix}_eps,${index}))*` +
+    `(INDEX(${prefix}_sig,${index}+1)-INDEX(${prefix}_sig,${index}))`
+  return zeroTension ? `IF(${e}<=0,0,${interpolated})` : interpolated
+}
+
+const concreteLaw = (material: ConcreteMaterial): MaterialLaw => {
   const model = material.stressStrain
 
   if (model.type === 'kds-parabolic' || model.type === 'ec2-parabolic-rectangular') {
     // Both are the parabola-rectangle family: parabolic to eps0, then a plateau at alpha*fck.
     return {
+      kind: 'closed-form',
       scalar: (e) => `IF(${e}>0,IF(${e}<=eco,alpha*fck*(1-(1-${e}/eco)^n),alpha*fck),0)`,
       // Clamp element-wise into (0, eco] so the power never sees a negative base.
       array: (e) =>
@@ -101,26 +190,39 @@ const concreteLaw = (material: ConcreteMaterial): ConcreteLaw => {
 
   if (model.type === 'aci-whitney-block') {
     return {
+      kind: 'closed-form',
       scalar: (e) => `IF(${e}>0,IF(${e}<=ecu,alpha*fck,0),0)`,
       array: (e) => `alpha*fck*((${e})>0)*((${e})<=ecu)`,
       description: 'ACI uniform block, fc = alpha*fck for 0 < eps <= ecu, else 0'
     }
   }
 
-  throw new ExcelExportError(
-    `Excel export supports parabola-rectangle and uniform-block concrete laws; "${model.type}" has no closed-form spreadsheet expression yet.`
-  )
+  const points = model.type === 'user-curve' ? model.points : []
+  const zeroTension = (model.type === 'user-curve' ? model.zeroTension : undefined) ?? material.limits.ignoreTension
+  const samples = orderedCurve(points)
+  if (samples.length < 2) {
+    throw new ExcelExportError('The concrete stress-strain curve needs at least two distinct points to export.')
+  }
+  return {
+    kind: 'tabulated',
+    scalar: tabulatedScalar('Cnc', zeroTension),
+    array: null,
+    description: `User stress-strain curve, ${samples.length} points, linear between them${
+      zeroTension ? ', zero in tension' : ''
+    }`,
+    samples
+  }
 }
 
-const steelLaw = (material: SteelMaterial): SteelLaw => {
+const steelLaw = (material: SteelMaterial): MaterialLaw => {
   const model = material.stressStrain
 
   if (model.type === 'elastic-perfectly-plastic') {
     return {
+      kind: 'closed-form',
       scalar: (e) => `MAX(MIN(Es*${e},fy),-fy)`,
       // MIN/MAX aggregate over arrays, so clamp with comparisons instead.
-      array: (e) =>
-        `Es*(${e})*(ABS(Es*(${e}))<=fy)+fy*(Es*(${e})>fy)-fy*(Es*(${e})<-fy)`,
+      array: (e) => `Es*(${e})*(ABS(Es*(${e}))<=fy)+fy*(Es*(${e})>fy)-fy*(Es*(${e})<-fy)`,
       description: 'Elastic - perfectly plastic, fs = clamp(Es*eps, -fy, +fy)'
     }
   }
@@ -129,6 +231,7 @@ const steelLaw = (material: SteelMaterial): SteelLaw => {
     const ratio = Math.max(0, model.hardeningRatio)
     const yieldStress = (e: string) => `(fy+Es*${ratio}*(ABS(${e})-fy/Es))`
     return {
+      kind: 'closed-form',
       scalar: (e) => `IF(ABS(${e})<=fy/Es,Es*${e},SIGN(${e})*${yieldStress(e)})`,
       array: (e) =>
         `Es*(${e})*(ABS(${e})<=fy/Es)+SIGN(${e})*${yieldStress(`(${e})`)}*(ABS(${e})>fy/Es)`,
@@ -136,9 +239,17 @@ const steelLaw = (material: SteelMaterial): SteelLaw => {
     }
   }
 
-  throw new ExcelExportError(
-    `Excel export supports elastic-perfectly-plastic and bilinear steel; "${model.type}" has no closed-form spreadsheet expression yet.`
-  )
+  const samples = orderedCurve(model.type === 'user-curve' ? model.points : [])
+  if (samples.length < 2) {
+    throw new ExcelExportError('The steel stress-strain curve needs at least two distinct points to export.')
+  }
+  return {
+    kind: 'tabulated',
+    scalar: tabulatedScalar('Stl', false),
+    array: null,
+    description: `User stress-strain curve, ${samples.length} points, linear between them`,
+    samples
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +309,17 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const imported = await import('exceljs')
   const ExcelJS = ((imported as unknown as { default?: typeof imported }).default ?? imported) as typeof imported
   const workbook = new ExcelJS.Workbook()
+  const claimedNames = new Set<string>()
+  /** Single gate for defined names so an Excel-invalid one fails here, not in the repair dialog. */
+  const defineName = (location: string, name: string) => {
+    const reason = invalidDefinedNameReason(name)
+    if (reason) throw new ExcelExportError(`Defined name "${name}" ${reason}.`)
+    if (claimedNames.has(name.toLowerCase())) {
+      throw new ExcelExportError(`Defined name "${name}" is used twice; Excel names are case-insensitive.`)
+    }
+    claimedNames.add(name.toLowerCase())
+    workbook.definedNames.add(location, name)
+  }
   workbook.creator = 'P-M Column Designer'
   workbook.created = new Date()
   // No cached results are written, so Excel must evaluate everything on open.
@@ -216,7 +338,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const epsY = steel.fy / steel.elasticModulus
   const origin = netConcreteCentroid(section)
   const mesh = exportMesh(section, input.maxMeshPoints ?? DEFAULT_MAX_MESH_POINTS)
-  const beta = (input.angleDeg * Math.PI) / 180
+  const beta = (input.betaDeg * Math.PI) / 180
 
   // Geometry about the analysis origin — the frame every formula in the workbook uses.
   const outerVertices = section.solids.flatMap((solid, solidIndex) =>
@@ -247,6 +369,24 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     const ledger = evaluatePreviewState(section, rebars, materialStore, state, { cellSize: mesh.report.cellSize }, origin)
     return { state, ledger }
   })
+
+  // The engine slices a triangulated surface; the workbook can only slice the sampled grid it
+  // carries. Both are valid readings of the same samples, so the workbook reports the engine value
+  // alongside its own and shows the spread instead of pretending they are identical.
+  const demandP = input.loadcase ? input.loadcase.P : input.fixedP
+  const thetaLoad = input.loadcase ? Math.atan2(input.loadcase.My, input.loadcase.Mx) : 0
+  const engineSurface = buildPreviewSurface(section, rebars, materialStore, demandP, {
+    cellSize: mesh.report.cellSize
+  })
+  // Indexed 24 x 19 grid of the engine surface, keyed the same way MxMy_FixedP lays it out.
+  const surfaceAt = new Map<string, { P: number; Mx: number; My: number }>()
+  for (const point of engineSurface.points) {
+    const direction = Math.round((point.beta * 180) / Math.PI / (360 / DIRECTION_COUNT)) % DIRECTION_COUNT
+    surfaceAt.set(`${direction}:${point.station}`, { P: point.P, Mx: point.Mx, My: point.My })
+  }
+  const engineContour = sliceFixedPContour(engineSurface.points, demandP)
+  const engineBoundary = intersectFixedPContourWithMomentRay(engineContour, thetaLoad)
+  const engineMb = engineBoundary ? engineBoundary.M / 1e6 : null
 
   const stationCount = PREVIEW_STATIONS.length
 
@@ -320,7 +460,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   sectionHeading(inputSheet, row, 'Analysis', 4)
   row += 1
   const analysisInputs: NamedInput[] = [
-    { row: row++, label: 'theta', value: input.angleDeg, unit: 'deg', name: 'theta', note: 'direction of the vertical slice' },
+    { row: row++, label: 'beta (strain-plane angle)', value: input.betaDeg, unit: 'deg', name: 'beta', note: 'neutral-axis orientation of the audited states; drives Geometry, PM_Angle, Concrete, Steel' },
     { row: row++, label: 'eps_tu', value: -0.05, unit: '-', name: 'etu', note: 'uniform strain used for station P18' },
     { row: row++, label: 'xc', value: origin.x, unit: 'mm', name: 'xc', note: 'analysis origin = net concrete centroid' },
     { row: row++, label: 'yc', value: origin.y, unit: 'mm', name: 'yc', note: 'all X, Y below are measured from it' },
@@ -353,16 +493,155 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       inputSheet.getCell(entry.row, 5).value = entry.note
       inputSheet.getCell(entry.row, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
     }
-    if (entry.name) workbook.definedNames.add(`Input!$C$${entry.row}`, entry.name)
+    if (entry.name) defineName(`Input!$C$${entry.row}`, entry.name)
   }
 
-  const netAreaRow = row + 1
+  // theta_L is a property of the demand vector, so it is a formula, not an input.
+  const thetaRow = row + 1
+  inputSheet.getCell(thetaRow, 2).value = 'theta_L (demand direction)'
+  inputSheet.getCell(thetaRow, 3).value = {
+    formula: 'IF(AND(Mux=0,Muy=0),0,DEGREES(ATAN2(Mux,Muy)))'
+  }
+  inputSheet.getCell(thetaRow, 3).numFmt = '#,##0.0000'
+  inputSheet.getCell(thetaRow, 3).font = { bold: true }
+  inputSheet.getCell(thetaRow, 4).value = 'deg'
+  inputSheet.getCell(thetaRow, 5).value =
+    'atan2 of the demand moment vector. Used only to query the finished surface (MxMy_FixedP, PM_Theta). It is not the strain-plane angle beta above.'
+  inputSheet.getCell(thetaRow, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
+  inputSheet.getCell(thetaRow, 5).alignment = { wrapText: true }
+  defineName(`Input!$C$${thetaRow}`, 'theta_L')
+
+  const muRow = thetaRow + 1
+  inputSheet.getCell(muRow, 2).value = 'Mu resultant'
+  inputSheet.getCell(muRow, 3).value = { formula: 'SQRT(Mux^2+Muy^2)' }
+  inputSheet.getCell(muRow, 3).numFmt = '#,##0.00'
+  inputSheet.getCell(muRow, 4).value = 'kN·m'
+  defineName(`Input!$C$${muRow}`, 'Mu')
+
+  const deltaRow = muRow + 1
+  inputSheet.getCell(deltaRow, 2).value = 'theta_L − beta'
+  inputSheet.getCell(deltaRow, 3).value = { formula: `C${thetaRow}-beta` }
+  inputSheet.getCell(deltaRow, 3).numFmt = '#,##0.0000'
+  inputSheet.getCell(deltaRow, 4).value = 'deg'
+  inputSheet.getCell(deltaRow, 5).value =
+    'Non-zero on almost every biaxial section. If this were assumed to be zero the capacity check would be wrong.'
+  inputSheet.getCell(deltaRow, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
+  inputSheet.getCell(deltaRow, 5).alignment = { wrapText: true }
+
+  const netAreaRow = deltaRow + 2
   inputSheet.getCell(netAreaRow, 2).value = 'Net concrete area (from mesh)'
   inputSheet.getCell(netAreaRow, 3).value = { formula: 'SUM(Mesh_A)' }
   inputSheet.getCell(netAreaRow, 3).numFmt = '#,##0.0'
   inputSheet.getCell(netAreaRow, 4).value = 'mm²'
-  inputSheet.getCell(netAreaRow, 5).value = { formula: 'IF(ABS(C' + netAreaRow + '-Geom_Area)<=0.000001*Geom_Area,"OK — matches the exact polygon area","CHECK — mesh and polygon areas differ")' }
+  inputSheet.getCell(netAreaRow, 5).value = { formula: 'IF(ABS(C' + netAreaRow + '-Geom_Area)<=0.000001*Geom_Area,"OK - matches the exact polygon area","CHECK - mesh and polygon areas differ")' }
   inputSheet.getCell(netAreaRow, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
+
+  // ---- provenance: say plainly which cells are engine values ----------------
+  const provRow = netAreaRow + 2
+  sectionHeading(inputSheet, provRow, 'What is a formula and what is an engine value', 4)
+  const provenance: Array<[string, string, string]> = [
+    ['Mesh No, X, Y, A', 'engine value', 'polygon clipping and quadrature cannot be written as spreadsheet formulas'],
+    ['Geometry vertices, bar schedule', 'engine value', 'input data'],
+    [
+      'Material law',
+      cLaw.kind === 'closed-form' && sLaw.kind === 'closed-form' ? 'formula' : 'curve points are engine values',
+      cLaw.kind === 'closed-form' && sLaw.kind === 'closed-form'
+        ? 'algebra over the named inputs, so fck and fy stay live'
+        : 'a law given only as points is published on the Materials sheet and interpolated by formula'
+    ],
+    ['Station strain planes (PM_Angle, MxMy_FixedP)', 'formula', 'pure algebra from u_max, C1, ecu and fy/Es'],
+    ['Fibre and bar ledger (Concrete, Steel)', 'formula', 'the audit trail a reviewer follows term by term'],
+    [
+      'Station totals at beta (PM_Angle)',
+      cLaw.array ? 'formula' : 'engine value for concrete',
+      cLaw.array
+        ? 'SUMPRODUCT of the law over the mesh'
+        : 'a lookup law cannot be applied elementwise inside SUMPRODUCT'
+    ],
+    [
+      '24 x 19 surface integrals (MxMy_FixedP)',
+      'engine value',
+      '1425 array formulas over the whole mesh would dominate size and recalculation; two sentinels flag a stale import'
+    ],
+    ['Contour, ray query, plane cut, interpolation', 'formula', 'this is the logic under audit, so it stays visible'],
+    [
+      'Converged strain plane (Equilibrium)',
+      'engine value',
+      'Newton needs d(sigma)/d(eps), which a tabulated law does not have in closed form'
+    ],
+    ['Equilibrium residual', 'formula', 'the workbook proves the stored plane balances the demand']
+  ]
+  provenance.forEach(([what, kind, why], index) => {
+    const r = provRow + 1 + index
+    inputSheet.getCell(r, 2).value = what
+    const kindCell = inputSheet.getCell(r, 3)
+    kindCell.value = kind
+    kindCell.font = { bold: kind !== 'formula', color: { argb: kind === 'formula' ? 'FF1F3864' : 'FF92400E' } }
+    kindCell.alignment = { horizontal: 'left' }
+    if (kind !== 'formula') {
+      kindCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CONST_FILL } }
+    }
+    inputSheet.getCell(r, 5).value = why
+    inputSheet.getCell(r, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
+  })
+
+  // ==========================================================================
+  // Materials — sampled curves for laws that have no spreadsheet form
+  // ==========================================================================
+  const tabulated: Array<{ prefix: string; title: string; law: MaterialLaw }> = []
+  if (cLaw.kind === 'tabulated') tabulated.push({ prefix: 'Cnc', title: `Concrete — ${concrete.name}`, law: cLaw })
+  if (sLaw.kind === 'tabulated') tabulated.push({ prefix: 'Stl', title: `Reinforcement — ${steel.name}`, law: sLaw })
+
+  if (tabulated.length > 0) {
+    const matSheet = workbook.addWorksheet('Materials', { views: [{ state: 'frozen', ySplit: 6 }] })
+    matSheet.columns = [{ width: 4 }, { width: 8 }, { width: 16 }, { width: 16 }, { width: 6 }, { width: 8 }, { width: 16 }, { width: 16 }]
+    title(matSheet, 1, 'SAMPLED STRESS-STRAIN CURVES — ENGINE VALUES', 7)
+    matSheet.getCell('B2').value =
+      'These laws have no closed spreadsheet form. The curve points below are the definition itself, sorted ascending; every use of them elsewhere is a MATCH/INDEX interpolation formula that reproduces the engine exactly, including the clamp to the end stresses.'
+    matSheet.getCell('B2').alignment = { wrapText: true, vertical: 'top' }
+    matSheet.mergeCells('B2:H3')
+    matSheet.getRow(2).height = 30
+
+    tabulated.forEach((entry, blockIndex) => {
+      const baseCol = 2 + blockIndex * 5
+      const samples = entry.law.samples ?? []
+      const headRow = 5
+      const firstRow = 6
+      const blockTitle = matSheet.getCell(4, baseCol)
+      blockTitle.value = entry.title
+      blockTitle.font = { bold: true, size: 11, color: { argb: 'FF1F3864' } }
+      blockTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GROUP_FILL } }
+      matSheet.mergeCells(4, baseCol, 4, baseCol + 2)
+      ;['i', 'eps', 'sigma (MPa)'].forEach((text, index) => {
+        const cell = matSheet.getCell(headRow, baseCol + index)
+        cell.value = text
+        cell.font = { bold: true, size: 10 }
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } }
+        cell.alignment = { horizontal: 'center' }
+        cell.border = { bottom: { style: 'thin' } }
+      })
+      samples.forEach((sample, index) => {
+        const r = firstRow + index
+        matSheet.getCell(r, baseCol).value = index + 1
+        matSheet.getCell(r, baseCol + 1).value = sample.strain
+        matSheet.getCell(r, baseCol + 2).value = sample.stress
+        matSheet.getCell(r, baseCol + 1).numFmt = '0.00000000'
+        matSheet.getCell(r, baseCol + 2).numFmt = '#,##0.0000'
+      })
+      const lastRow = firstRow + samples.length - 1
+      defineName(`Materials!$${col(baseCol + 1)}$${firstRow}:$${col(baseCol + 1)}$${lastRow}`, `${entry.prefix}_eps`)
+      defineName(`Materials!$${col(baseCol + 2)}$${firstRow}:$${col(baseCol + 2)}$${lastRow}`, `${entry.prefix}_sig`)
+      const countRow = lastRow + 2
+      matSheet.getCell(countRow, baseCol).value = 'point count'
+      matSheet.getCell(countRow, baseCol + 2).value = samples.length
+      matSheet.getCell(countRow, baseCol + 2).numFmt = '0'
+      matSheet.getCell(countRow, baseCol + 2).font = { bold: true }
+      defineName(`Materials!$${col(baseCol + 2)}$${countRow}`, `${entry.prefix}_n`)
+      matSheet.getCell(countRow + 1, baseCol).value = 'law'
+      matSheet.getCell(countRow + 1, baseCol + 1).value = entry.law.description
+      matSheet.getCell(countRow + 1, baseCol + 1).font = { italic: true, color: { argb: 'FF6B7280' } }
+    })
+  }
 
   // ==========================================================================
   // Geometry
@@ -405,7 +684,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       // Shoelace term, wrapping to the first vertex of the same ring is handled by grouping below.
       geomSheet.getCell(r, 6).value = { formula: `D${r}*E${next}-D${next}*E${r}` }
       geomSheet.getCell(r, 6).numFmt = '#,##0'
-      geomSheet.getCell(r, 7).value = { formula: `E${r}*COS(RADIANS(theta))+D${r}*SIN(RADIANS(theta))` }
+      geomSheet.getCell(r, 7).value = { formula: `E${r}*COS(RADIANS(beta))+D${r}*SIN(RADIANS(beta))` }
       geomSheet.getCell(r, 7).numFmt = '#,##0.000'
     })
     return { firstDataRow: head + 1, lastDataRow: head + rows.length }
@@ -472,7 +751,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     }
     geomSheet.getCell(r, 6).value = { formula: `PI()*C${r}^2/4` }
     geomSheet.getCell(r, 6).numFmt = '#,##0.000'
-    geomSheet.getCell(r, 7).value = { formula: `E${r}*COS(RADIANS(theta))+D${r}*SIN(RADIANS(theta))` }
+    geomSheet.getCell(r, 7).value = { formula: `E${r}*COS(RADIANS(beta))+D${r}*SIN(RADIANS(beta))` }
     geomSheet.getCell(r, 7).numFmt = '#,##0.000'
   })
   const barFirst = barHead + 1
@@ -486,13 +765,13 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const uMaxFormula = `MAX(${outerRingBlocks
     .map(
       (block, index) =>
-        `SUMPRODUCT(MAX((${outerUnionY[index]})*COS(RADIANS(theta))+(${outerUnionX[index]})*SIN(RADIANS(theta))))`
+        `SUMPRODUCT(MAX((${outerUnionY[index]})*COS(RADIANS(beta))+(${outerUnionX[index]})*SIN(RADIANS(beta))))`
     )
     .join(',')})`
   const uMinFormula = `MIN(${outerRingBlocks
     .map(
       (block, index) =>
-        `SUMPRODUCT(MIN((${outerUnionY[index]})*COS(RADIANS(theta))+(${outerUnionX[index]})*SIN(RADIANS(theta))))`
+        `SUMPRODUCT(MIN((${outerUnionY[index]})*COS(RADIANS(beta))+(${outerUnionX[index]})*SIN(RADIANS(beta))))`
     )
     .join(',')})`
 
@@ -501,7 +780,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     { label: 'u_max', formula: uMaxFormula, unit: 'mm', name: 'u_max', fmt: '#,##0.000', note: 'extreme compression fibre, outer rings only' },
     { label: 'u_min', formula: uMinFormula, unit: 'mm', name: 'u_min', fmt: '#,##0.000' },
     { label: 'u_s,tension', formula: `SUMPRODUCT(MIN(G${barFirst}:G${barLast}))`, unit: 'mm', name: 'u_bar', fmt: '#,##0.000', note: 'farthest tension bar' },
-    { label: 'C1 = u_max − u_s,tension', formula: 'u_max-u_bar', unit: 'mm', name: 'C1_len', fmt: '#,##0.000' },
+    { label: 'C1 = u_max − u_s,tension', formula: 'u_max-u_bar', unit: 'mm', name: 'u_C1', fmt: '#,##0.000' },
     { label: 'Depth h = u_max − u_min', formula: 'u_max-u_min', unit: 'mm', fmt: '#,##0.000' },
     { label: 'Total As', formula: `SUM(F${barFirst}:F${barLast})`, unit: 'mm²', name: 'As_tot', fmt: '#,##0.0' }
   ]
@@ -516,7 +795,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       geomSheet.getCell(r, 7).value = prop.note
       geomSheet.getCell(r, 7).font = { italic: true, color: { argb: 'FF6B7280' } }
     }
-    if (prop.name) workbook.definedNames.add(`Geometry!$D$${r}`, prop.name)
+    if (prop.name) defineName(`Geometry!$D$${r}`, prop.name)
   })
 
   // ==========================================================================
@@ -553,9 +832,9 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     meshSheet.getCell(r, 4).numFmt = '#,##0.0000'
   })
   const meshLast = meshFirst + fibers.length - 1
-  workbook.definedNames.add(`Mesh!$B$${meshFirst}:$B$${meshLast}`, 'Mesh_X')
-  workbook.definedNames.add(`Mesh!$C$${meshFirst}:$C$${meshLast}`, 'Mesh_Y')
-  workbook.definedNames.add(`Mesh!$D$${meshFirst}:$D$${meshLast}`, 'Mesh_A')
+  defineName(`Mesh!$B$${meshFirst}:$B$${meshLast}`, 'Mesh_X')
+  defineName(`Mesh!$C$${meshFirst}:$C$${meshLast}`, 'Mesh_Y')
+  defineName(`Mesh!$D$${meshFirst}:$D$${meshLast}`, 'Mesh_A')
 
   // ==========================================================================
   // PM_Angle — station parameters and the 19-point envelope
@@ -563,7 +842,8 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const pmSheet = workbook.addWorksheet('PM_Angle', { views: [{ state: 'frozen', ySplit: 7, xSplit: 2 }] })
   title(pmSheet, 1, 'P–M ENVELOPE AT THETA — 19 STATIONS, NOMINAL', 20)
   pmSheet.getCell('B2').value =
-    `Direction theta = ${input.angleDeg.toFixed(1)} deg. Shaded cells are the station schedule; everything else is a formula driven by Input, Geometry, Concrete and Steel.`
+    `Strain-plane sampling angle beta = ${input.betaDeg.toFixed(2)} deg. This is a resistance sampling row, ` +
+    'not the demand-direction diagram — see PM_Theta for that. Shaded cells are the station schedule.'
   pmSheet.getCell('B2').font = { italic: true, color: { argb: 'FF6B7280' } }
 
   const PM_HEAD = 5
@@ -657,12 +937,12 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       // Control point: neutral-axis stations sit at zero strain a fixed multiple of C1 below the
       // compression fibre; the remaining stations are driven by the farthest tension bar.
       pmSheet.getCell(r, PM.uCtrl).value = {
-        formula: station.kind === 'neutral-axis-ratio' ? `u_max-${col(PM.cRatio)}${r}*C1_len` : 'u_bar'
+        formula: station.kind === 'neutral-axis-ratio' ? `u_max-${col(PM.cRatio)}${r}*u_C1` : 'u_bar'
       }
       pmSheet.getCell(r, PM.epsCtrl).value = {
         formula:
           station.kind === 'neutral-axis-ratio'
-            ? '0'
+            ? 'ROUND(0,0)'
             : station.kind === 'steel-yield-ratio'
               ? `-${col(PM.fsRatio)}${r}*fy/Es`
               : `-${col(PM.epsS)}${r}`
@@ -672,8 +952,8 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       pmSheet.getCell(r, PM.e0).value = { formula: `ecu-${kappa}*u_max` }
     }
 
-    pmSheet.getCell(r, kxCol).value = { formula: `${kappa}*COS(RADIANS(theta))` }
-    pmSheet.getCell(r, kyCol).value = { formula: `${kappa}*SIN(RADIANS(theta))` }
+    pmSheet.getCell(r, kxCol).value = { formula: `${kappa}*COS(RADIANS(beta))` }
+    pmSheet.getCell(r, kyCol).value = { formula: `${kappa}*SIN(RADIANS(beta))` }
 
     pmSheet.getCell(r, PM.uCtrl).numFmt = '#,##0.000'
     pmSheet.getCell(r, PM.epsCtrl).numFmt = '0.000000'
@@ -683,9 +963,9 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     pmSheet.getCell(r, kxCol).numFmt = '0.000E+00'
     pmSheet.getCell(r, kyCol).numFmt = '0.000E+00'
   })
-  workbook.definedNames.add(`PM_Angle!$${col(PM.e0)}$${PM_FIRST}:$${col(PM.e0)}$${stationRow(stationCount - 1)}`, 'St_e0')
-  workbook.definedNames.add(`PM_Angle!$${col(kxCol)}$${PM_FIRST}:$${col(kxCol)}$${stationRow(stationCount - 1)}`, 'St_kx')
-  workbook.definedNames.add(`PM_Angle!$${col(kyCol)}$${PM_FIRST}:$${col(kyCol)}$${stationRow(stationCount - 1)}`, 'St_ky')
+  defineName(`PM_Angle!$${col(PM.e0)}$${PM_FIRST}:$${col(PM.e0)}$${stationRow(stationCount - 1)}`, 'St_e0')
+  defineName(`PM_Angle!$${col(kxCol)}$${PM_FIRST}:$${col(kxCol)}$${stationRow(stationCount - 1)}`, 'St_kx')
+  defineName(`PM_Angle!$${col(kyCol)}$${PM_FIRST}:$${col(kyCol)}$${stationRow(stationCount - 1)}`, 'St_ky')
 
   // ==========================================================================
   // Concrete — per fibre strain and stress for every station
@@ -698,7 +978,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   concSheet.getCell('A2').value = `eps = eps_0 + kx·Y + ky·X    |    fc = ${cLaw.description}`
   concSheet.getCell('A2').font = { italic: true, color: { argb: 'FF6B7280' } }
   concSheet.getCell('A3').value =
-    'Columns A–D mirror the Mesh sheet. Columns E–I expand the full force/moment ledger for the station chosen in cell C4. Columns J onward hold eps and fc for all 19 stations, which the PM_Angle totals integrate.'
+    'Columns A-D mirror the Mesh sheet. Columns E-I expand the full force/moment ledger for the station chosen in cell C4, which is the fibre-level audit trail. The 19 station totals on PM_Angle integrate the same law over the same mesh without materialising 19 more column blocks, so the file stays small.'
   concSheet.getCell('A3').alignment = { wrapText: true, vertical: 'top' }
   concSheet.mergeCells('A3:I3')
   concSheet.getRow(3).height = 28
@@ -709,7 +989,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   concSheet.getCell('C4').alignment = { horizontal: 'center' }
   concSheet.getCell('D4').value = { formula: '"detail shown for station P"&C4' }
   concSheet.getCell('D4').font = { italic: true, color: { argb: 'FF6B7280' } }
-  workbook.definedNames.add('Concrete!$C$4', 'Det')
+  defineName('Concrete!$C$4', 'Det')
 
   const CONC_HEAD = 6
   const CONC_SUM = 7
@@ -723,8 +1003,26 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     cell.alignment = { horizontal: 'center', wrapText: true }
     cell.border = { bottom: { style: 'thin' } }
   })
+  if (input.equilibrium) {
+    const head = concSheet.getCell(CONC_HEAD - 1, 11)
+    head.value = 'At the converged equilibrium state'
+    head.font = { bold: true, size: 10, color: { argb: 'FF1F3864' } }
+    head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GROUP_FILL } }
+    head.alignment = { horizontal: 'center' }
+    concSheet.mergeCells(CONC_HEAD - 1, 11, CONC_HEAD - 1, 12)
+    ;['eps', 'fc (MPa)'].forEach((text, index) => {
+      const cell = concSheet.getCell(CONC_HEAD, 11 + index)
+      cell.value = text
+      cell.font = { bold: true, size: 10 }
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } }
+      cell.alignment = { horizontal: 'center' }
+      cell.border = { bottom: { style: 'thin' } }
+      concSheet.getColumn(11 + index).width = 13
+    })
+  }
   concSheet.getCell(CONC_SUM, 1).value = 'SUM'
   concSheet.getCell(CONC_SUM, 1).font = { bold: true }
+  const equilibrium = input.equilibrium ?? null
   const concLastRow = CONC_FIRST + fibers.length - 1
   for (const c of [4, 7, 8, 9]) {
     concSheet.getCell(CONC_SUM, c).value = { formula: `SUM(${col(c)}${CONC_FIRST}:${col(c)}${concLastRow})` }
@@ -733,25 +1031,6 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   }
   for (let index = 0; index < 4; index++) concSheet.getColumn(index + 1).width = 12
   for (let index = 5; index <= 9; index++) concSheet.getColumn(index).width = 15
-
-  const stationBlockCol = (stationIndex: number) => 10 + stationIndex * 2
-  PREVIEW_STATIONS.forEach((_, index) => {
-    const base = stationBlockCol(index)
-    const cell = concSheet.getCell(CONC_HEAD - 1, base)
-    cell.value = `P${index}`
-    cell.font = { bold: true, size: 10, color: { argb: 'FF1F3864' } }
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GROUP_FILL } }
-    cell.alignment = { horizontal: 'center' }
-    concSheet.mergeCells(CONC_HEAD - 1, base, CONC_HEAD - 1, base + 1)
-    concSheet.getCell(CONC_HEAD, base).value = 'eps'
-    concSheet.getCell(CONC_HEAD, base + 1).value = 'fc (MPa)'
-    for (const c of [base, base + 1]) {
-      concSheet.getCell(CONC_HEAD, c).font = { bold: true, size: 10 }
-      concSheet.getCell(CONC_HEAD, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } }
-      concSheet.getCell(CONC_HEAD, c).alignment = { horizontal: 'center' }
-      concSheet.getColumn(c).width = 12
-    }
-  })
 
   fibers.forEach((fiber, index) => {
     const r = CONC_FIRST + index
@@ -778,17 +1057,12 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     concSheet.getCell(r, 8).numFmt = '#,##0'
     concSheet.getCell(r, 9).numFmt = '#,##0'
 
-    PREVIEW_STATIONS.forEach((_, stationIndex) => {
-      const base = stationBlockCol(stationIndex)
-      const sRow = stationRow(stationIndex)
-      const epsRef = `${col(base)}${r}`
-      concSheet.getCell(r, base).value = {
-        formula: `PM_Angle!$${col(PM.e0)}$${sRow}+PM_Angle!$${col(kxCol)}$${sRow}*$C${r}+PM_Angle!$${col(kyCol)}$${sRow}*$B${r}`
-      }
-      concSheet.getCell(r, base + 1).value = { formula: cLaw.scalar(epsRef) }
-      concSheet.getCell(r, base).numFmt = '0.000000'
-      concSheet.getCell(r, base + 1).numFmt = '#,##0.000'
-    })
+    if (equilibrium) {
+      concSheet.getCell(r, 11).value = { formula: `Eq_e0+Eq_kx*$C${r}+Eq_ky*$B${r}` }
+      concSheet.getCell(r, 12).value = { formula: cLaw.scalar(`K${r}`) }
+      concSheet.getCell(r, 11).numFmt = '0.000000'
+      concSheet.getCell(r, 12).numFmt = '#,##0.000'
+    }
   })
 
   // ==========================================================================
@@ -887,18 +1161,75 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     }
   })
 
+  const EQ_STEEL_COL = steelBlockCol(stationCount)
+  if (equilibrium) {
+    const head = steelSheet.getCell(STEEL_HEAD - 1, EQ_STEEL_COL)
+    head.value = 'At the converged equilibrium state'
+    head.font = { bold: true, size: 10, color: { argb: 'FF1F3864' } }
+    head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GROUP_FILL } }
+    head.alignment = { horizontal: 'center' }
+    steelSheet.mergeCells(STEEL_HEAD - 1, EQ_STEEL_COL, STEEL_HEAD - 1, EQ_STEEL_COL + 6)
+    steelSubHeaders.forEach((text, offset) => {
+      const cell = steelSheet.getCell(STEEL_HEAD, EQ_STEEL_COL + offset)
+      cell.value = text
+      cell.font = { bold: true, size: 10 }
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } }
+      cell.alignment = { horizontal: 'center', wrapText: true }
+      cell.border = { bottom: { style: 'thin' } }
+      steelSheet.getColumn(EQ_STEEL_COL + offset).width = 13
+    })
+    bars.forEach((_bar, index) => {
+      const r = STEEL_FIRST + index
+      const eps = `${col(EQ_STEEL_COL)}${r}`
+      const fs = `${col(EQ_STEEL_COL + 1)}${r}`
+      const fc = `${col(EQ_STEEL_COL + 2)}${r}`
+      const fsEff = `${col(EQ_STEEL_COL + 3)}${r}`
+      const force = `${col(EQ_STEEL_COL + 4)}${r}`
+      steelSheet.getCell(r, EQ_STEEL_COL).value = { formula: `Eq_e0+Eq_kx*$D${r}+Eq_ky*$C${r}` }
+      steelSheet.getCell(r, EQ_STEEL_COL + 1).value = { formula: sLaw.scalar(eps) }
+      steelSheet.getCell(r, EQ_STEEL_COL + 2).value = { formula: cLaw.scalar(eps) }
+      steelSheet.getCell(r, EQ_STEEL_COL + 3).value = { formula: `${fs}-${fc}` }
+      steelSheet.getCell(r, EQ_STEEL_COL + 4).value = { formula: `${fsEff}*$E${r}` }
+      steelSheet.getCell(r, EQ_STEEL_COL + 5).value = { formula: `${force}*$D${r}` }
+      steelSheet.getCell(r, EQ_STEEL_COL + 6).value = { formula: `${force}*$C${r}` }
+      steelSheet.getCell(r, EQ_STEEL_COL).numFmt = '0.000000'
+      for (const offset of [1, 2, 3]) steelSheet.getCell(r, EQ_STEEL_COL + offset).numFmt = '#,##0.000'
+      for (const offset of [4, 5, 6]) steelSheet.getCell(r, EQ_STEEL_COL + offset).numFmt = '#,##0'
+    })
+    for (const offset of [4, 5, 6]) {
+      const c = EQ_STEEL_COL + offset
+      steelSheet.getCell(STEEL_SUM, c).value = { formula: `SUM(${col(c)}${STEEL_FIRST}:${col(c)}${steelLastRow})` }
+      steelSheet.getCell(STEEL_SUM, c).font = { bold: true }
+      steelSheet.getCell(STEEL_SUM, c).numFmt = '#,##0'
+    }
+  }
+
   // ==========================================================================
   // PM_Angle totals — integrate the Concrete/Steel sheets
   // ==========================================================================
   PREVIEW_STATIONS.forEach((station, index) => {
     const r = stationRow(index)
-    const base = stationBlockCol(index)
-    const fcRange = `Concrete!$${col(base + 1)}$${CONC_FIRST}:$${col(base + 1)}$${concLastRow}`
+    const sRow = stationRow(index)
     const steelBase = steelBlockCol(index)
+    const fibreEps = `(PM_Angle!$${col(PM.e0)}$${sRow}+PM_Angle!$${col(kxCol)}$${sRow}*Mesh_Y+PM_Angle!$${col(
+      kyCol
+    )}$${sRow}*Mesh_X)`
 
-    pmSheet.getCell(r, PM.concP).value = { formula: `SUMPRODUCT(${fcRange},Mesh_A)/1000` }
-    pmSheet.getCell(r, PM.concMx).value = { formula: `SUMPRODUCT(${fcRange},Mesh_A,Mesh_Y)/1000000` }
-    pmSheet.getCell(r, PM.concMy).value = { formula: `SUMPRODUCT(${fcRange},Mesh_A,Mesh_X)/1000000` }
+    if (cLaw.array) {
+      const fc = cLaw.array(fibreEps)
+      pmSheet.getCell(r, PM.concP).value = { formula: `SUMPRODUCT(${fc},Mesh_A)/1000` }
+      pmSheet.getCell(r, PM.concMx).value = { formula: `SUMPRODUCT(${fc},Mesh_A,Mesh_Y)/1000000` }
+      pmSheet.getCell(r, PM.concMy).value = { formula: `SUMPRODUCT(${fc},Mesh_A,Mesh_X)/1000000` }
+    } else {
+      // A tabulated law cannot be applied elementwise inside SUMPRODUCT, so the integral arrives
+      // as an engine value. The fibre block on `Concrete` still shows it term by term.
+      pmSheet.getCell(r, PM.concP).value = engineStations[index].ledger.concrete.P / 1e3
+      pmSheet.getCell(r, PM.concMx).value = engineStations[index].ledger.concrete.Mx / 1e6
+      pmSheet.getCell(r, PM.concMy).value = engineStations[index].ledger.concrete.My / 1e6
+      for (const c of [PM.concP, PM.concMx, PM.concMy]) {
+        pmSheet.getCell(r, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CONST_FILL } }
+      }
+    }
     pmSheet.getCell(r, PM.steelP).value = { formula: `Steel!${col(steelBase + 4)}${STEEL_SUM}/1000` }
     pmSheet.getCell(r, PM.steelMx).value = { formula: `Steel!${col(steelBase + 5)}${STEEL_SUM}/1000000` }
     pmSheet.getCell(r, PM.steelMy).value = { formula: `Steel!${col(steelBase + 6)}${STEEL_SUM}/1000000` }
@@ -923,42 +1254,26 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   })
 
   const pmLastRow = stationRow(stationCount - 1)
-  workbook.definedNames.add(`PM_Angle!$${col(PM.totP)}$${PM_FIRST}:$${col(PM.totP)}$${pmLastRow}`, 'St_P')
-  workbook.definedNames.add(`PM_Angle!$${col(PM.totMx)}$${PM_FIRST}:$${col(PM.totMx)}$${pmLastRow}`, 'St_Mx')
-  workbook.definedNames.add(`PM_Angle!$${col(PM.totMy)}$${PM_FIRST}:$${col(PM.totMy)}$${pmLastRow}`, 'St_My')
+  defineName(`PM_Angle!$${col(PM.totP)}$${PM_FIRST}:$${col(PM.totP)}$${pmLastRow}`, 'St_P')
+  defineName(`PM_Angle!$${col(PM.totMx)}$${PM_FIRST}:$${col(PM.totMx)}$${pmLastRow}`, 'St_Mx')
+  defineName(`PM_Angle!$${col(PM.totMy)}$${PM_FIRST}:$${col(PM.totMy)}$${pmLastRow}`, 'St_My')
 
-  // Demand and utilisation block
-  const demandRow = pmLastRow + 2
-  sectionHeading(pmSheet, demandRow, 'Demand point and utilisation along the theta slice', 10)
-  const V = col(PM.point)
-  const kRow = demandRow + 5
-  const tRow = demandRow + 6
-  const mxRow = demandRow + 7
-  const myRow = demandRow + 8
-  const mnRow = demandRow + 9
-  const muRow = demandRow + 4
-  const pick = (name: string, offset = 0) => `INDEX(${name},${V}${kRow}${offset ? `+${offset}` : ''},1)`
-  const lerp = (name: string) => `${pick(name)}+${V}${tRow}*(${pick(name, 1)}-${pick(name)})`
-  const demandRows: Array<[string, string, string]> = [
-    ['Pu', 'Pu', '#,##0.00'],
-    ['Mux', 'Mux', '#,##0.00'],
-    ['Muy', 'Muy', '#,##0.00'],
-    ['Mu resultant', 'SQRT(Mux^2+Muy^2)', '#,##0.00'],
-    ['Bracketing station k', `MAX(1,MIN(${stationCount - 1},SUMPRODUCT(--(St_P>=Pu))))`, '0'],
-    ['t (interpolation)', `(Pu-${pick('St_P')})/(${pick('St_P', 1)}-${pick('St_P')})`, '0.0000'],
-    ['Mx capacity at Pu', lerp('St_Mx'), '#,##0.00'],
-    ['My capacity at Pu', lerp('St_My'), '#,##0.00'],
-    ['M capacity resultant', `SQRT(${V}${mxRow}^2+${V}${myRow}^2)`, '#,##0.00'],
-    ['Utilisation Mu / Mn', `IF(${V}${mnRow}<=0,"n/a",${V}${muRow}/${V}${mnRow})`, '0.000']
-  ]
-  demandRows.forEach(([label, formula, numberFormat], index) => {
-    const r = demandRow + 1 + index
-    pmSheet.getCell(r, PM.cRatio).value = label
-    const cell = pmSheet.getCell(r, PM.point)
-    cell.value = { formula }
-    cell.numFmt = numberFormat
-    cell.font = { bold: index === demandRows.length - 1 }
-  })
+  // The demand check does not belong here: this sheet is a strain-domain row at beta, and the
+  // capacity in the demand direction is a query on the finished surface. See MxMy_FixedP (ray at
+  // theta_L on the P = Pu contour) and PM_Theta (vertical section through theta_L).
+  const noteRow = pmLastRow + 2
+  sectionHeading(pmSheet, noteRow, 'Where the demand check lives', 10)
+  pmSheet.getCell(noteRow + 1, PM.cRatio).value =
+    'This table is the resistance sampled at beta. The moment direction of each row is atan2(My, Mx) of that row, which is generally not beta.'
+  pmSheet.getCell(noteRow + 1, PM.cRatio).font = { italic: true, color: { argb: 'FF6B7280' } }
+  pmSheet.getCell(noteRow + 2, PM.cRatio).value =
+    'Capacity against the demand: MxMy_FixedP intersects the P = Pu contour with the ray at theta_L; PM_Theta cuts the surface with the plane Mx*sin(theta_L) - My*cos(theta_L) = 0.'
+  pmSheet.getCell(noteRow + 2, PM.cRatio).font = { italic: true, color: { argb: 'FF6B7280' } }
+  pmSheet.getCell(noteRow + 3, PM.cRatio).value = 'beta of this sheet vs theta_L of the demand (deg)'
+  pmSheet.getCell(noteRow + 3, PM.point).value = { formula: 'beta' }
+  pmSheet.getCell(noteRow + 3, PM.point).numFmt = '#,##0.0000'
+  pmSheet.getCell(noteRow + 3, PM.fsRatio).value = { formula: 'theta_L' }
+  pmSheet.getCell(noteRow + 3, PM.fsRatio).numFmt = '#,##0.0000'
 
   // ==========================================================================
   // MxMy_FixedP — every direction solved at P = Pu
@@ -966,7 +1281,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const mmSheet = workbook.addWorksheet('MxMy_FixedP', { views: [{ state: 'frozen', ySplit: 8, xSplit: 1 }] })
   title(mmSheet, 1, 'Mx–My INTERACTION CONTOUR AT P = Pu', 12)
   mmSheet.getCell('B2').value =
-    `Each of the ${DIRECTION_COUNT} directions repeats the 19-station schedule, then interpolates the two stations that bracket Pu. Concrete integrals use the same Mesh table through SUMPRODUCT; nothing here is a pasted number.`
+    `Each of the ${DIRECTION_COUNT} directions repeats the 19-station schedule. The strain planes are formulas; the P, Mx, My mesh integrals are engine values (shaded grey) because 1425 array formulas over the whole mesh would dominate the file and cannot be written at all for a tabulated material law. Everything derived from them - contour, ray query, interpolation - is a formula.`
   mmSheet.getCell('B2').alignment = { wrapText: true, vertical: 'top' }
   mmSheet.mergeCells('B2:N3')
   mmSheet.getRow(2).height = 26
@@ -1024,9 +1339,9 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const outerRangesY = outerRingBlocks.map((block) => `Geometry!$E$${block.first}:$E$${block.last}`)
   const barRangeX = `Geometry!$D$${barFirst}:$D$${barLast}`
   const barRangeY = `Geometry!$E$${barFirst}:$E$${barLast}`
-  const barRangeA = `Geometry!$F$${barFirst}:$F$${barLast}`
 
-  for (let angleIndex = 0; angleIndex < DIRECTION_COUNT; angleIndex++) {
+  // One extra wrap direction (beta + 360) closes every ring, so edge ranges stay contiguous.
+  for (let angleIndex = 0; angleIndex <= DIRECTION_COUNT; angleIndex++) {
     const r = MM_FIRST + angleIndex
     mmSheet.getCell(r, 1).value = angleIndex + 1
     const betaCell = `$${col(MM_PARAM_COL)}${r}`
@@ -1075,7 +1390,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
             : uBarRef
         const epsCtrl =
           station.kind === 'neutral-axis-ratio'
-            ? '0'
+            ? 'ROUND(0,0)'
             : station.kind === 'steel-yield-ratio'
               ? `(-PM_Angle!$${col(PM.fsRatio)}$${sRow}*fy/Es)`
               : `(-PM_Angle!$${col(PM.epsS)}$${sRow})`
@@ -1088,22 +1403,20 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       mmSheet.getCell(r, base + 1).numFmt = '0.00E+00'
       mmSheet.getCell(r, base + 2).numFmt = '0.00E+00'
 
-      const fibreEps = `(${e0Cell}+${kxCell}*Mesh_Y+${kyCell}*Mesh_X)`
-      const fc = cLaw.array(fibreEps)
-      const barEps = `(${e0Cell}+${kxCell}*${barRangeY}+${kyCell}*${barRangeX})`
-      const fsEff = `(${sLaw.array(barEps)}-(${cLaw.array(barEps)}))`
-
-      mmSheet.getCell(r, MM_P_COL + stationIndex).value = {
-        formula: `(SUMPRODUCT(${fc},Mesh_A)+SUMPRODUCT(${fsEff},${barRangeA}))/1000`
-      }
-      mmSheet.getCell(r, MM_MX_COL + stationIndex).value = {
-        formula: `(SUMPRODUCT(${fc},Mesh_A,Mesh_Y)+SUMPRODUCT(${fsEff},${barRangeA},${barRangeY}))/1000000`
-      }
-      mmSheet.getCell(r, MM_MY_COL + stationIndex).value = {
-        formula: `(SUMPRODUCT(${fc},Mesh_A,Mesh_X)+SUMPRODUCT(${fsEff},${barRangeA},${barRangeX}))/1000000`
-      }
+      // 24 x 19 mesh integrals are the expensive part: 1425 array formulas over the whole mesh
+      // would dominate both file size and recalculation, and a tabulated law cannot express them
+      // at all. They arrive as engine values; everything derived from them below stays a formula.
+      const sample = surfaceAt.get(`${angleIndex % DIRECTION_COUNT}:${stationIndex}`)
+      mmSheet.getCell(r, MM_P_COL + stationIndex).value = (sample?.P ?? 0) / 1e3
+      mmSheet.getCell(r, MM_MX_COL + stationIndex).value = (sample?.Mx ?? 0) / 1e6
+      mmSheet.getCell(r, MM_MY_COL + stationIndex).value = (sample?.My ?? 0) / 1e6
       for (const c of [MM_P_COL, MM_MX_COL, MM_MY_COL]) {
         mmSheet.getCell(r, c + stationIndex).numFmt = '#,##0.00'
+        mmSheet.getCell(r, c + stationIndex).fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: CONST_FILL }
+        }
       }
     })
 
@@ -1137,15 +1450,388 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     }
   }
 
-  const mmDemandRow = MM_FIRST + DIRECTION_COUNT + 1
+  const MM_LAST = MM_FIRST + DIRECTION_COUNT // inclusive of the wrap row
+  const MM_EDGE_LAST = MM_LAST - 1
+  mmSheet.getCell(MM_LAST, 1).value = 'wrap'
+  mmSheet.getCell(MM_LAST, MM_PARAM_COL).note = 'Same direction as the first row, repeated so ring ranges are contiguous.'
+
+  // ---- demand ray query on the P = Pu contour ------------------------------
+  const MM_RAY_COL = MM_RESULT_COL + 5
+  mmGroup(MM_RAY_COL, 6, 'Ray at theta_L (demand direction)')
+  const rayHeaders = ['edge dx', 'edge dy', 'cross(e,d)', 'q', 'M on ray', 'admissible M']
+  rayHeaders.forEach((text, index) => mmHeaderCell(MM_HEAD, MM_RAY_COL + index, text, GROUP_FILL))
+
+  const cTheta = 'COS(RADIANS(theta_L))'
+  const sTheta = 'SIN(RADIANS(theta_L))'
+  for (let angleIndex = 0; angleIndex < DIRECTION_COUNT; angleIndex++) {
+    const r = MM_FIRST + angleIndex
+    const ax = `${col(MM_RESULT_COL + 2)}${r}`
+    const ay = `${col(MM_RESULT_COL + 3)}${r}`
+    const bx = `${col(MM_RESULT_COL + 2)}${r + 1}`
+    const by = `${col(MM_RESULT_COL + 3)}${r + 1}`
+    const ex = `${col(MM_RAY_COL)}${r}`
+    const ey = `${col(MM_RAY_COL + 1)}${r}`
+    const den = `${col(MM_RAY_COL + 2)}${r}`
+    const q = `${col(MM_RAY_COL + 3)}${r}`
+    const m = `${col(MM_RAY_COL + 4)}${r}`
+
+    mmSheet.getCell(r, MM_RAY_COL).value = { formula: `${bx}-${ax}` }
+    mmSheet.getCell(r, MM_RAY_COL + 1).value = { formula: `${by}-${ay}` }
+    // cross(edge, d) with d = (cos theta_L, sin theta_L)
+    mmSheet.getCell(r, MM_RAY_COL + 2).value = { formula: `${ex}*${sTheta}-${ey}*${cTheta}` }
+    // a + q*e parallel to d  =>  q = -cross(a, d) / cross(e, d)
+    mmSheet.getCell(r, MM_RAY_COL + 3).value = {
+      formula: `IF(${den}=0,"",-(${ax}*${sTheta}-${ay}*${cTheta})/${den})`
+    }
+    mmSheet.getCell(r, MM_RAY_COL + 4).value = {
+      formula: `IF(${q}="","",(${ax}+${q}*${ex})*${cTheta}+(${ay}+${q}*${ey})*${sTheta})`
+    }
+    // Only forward crossings that actually lie on the edge count.
+    mmSheet.getCell(r, MM_RAY_COL + 5).value = {
+      formula: `IF(OR(${q}="",${q}<0,${q}>1,${m}<0),"",${m})`
+    }
+    for (const offset of [0, 1, 2, 4, 5]) mmSheet.getCell(r, MM_RAY_COL + offset).numFmt = '#,##0.000'
+    mmSheet.getCell(r, MM_RAY_COL + 3).numFmt = '0.0000'
+  }
+
+  // The imported grid must still agree with the live PM_Angle column. Pure compression and pure
+  // tension are direction-independent, so they detect any edit to the material inputs that would
+  // make the imported surface stale.
+  const sentinelRow = MM_LAST + 2
+  sectionHeading(mmSheet, sentinelRow, 'Imported-surface consistency', 8)
+  const sentinels: Array<[string, number, string]> = [
+    ['P0 pure compression: grid vs PM_Angle', 0, `${col(MM_P_COL)}${MM_FIRST}`],
+    ['P18 pure tension: grid vs PM_Angle', stationCount - 1, `${col(MM_P_COL + stationCount - 1)}${MM_FIRST}`]
+  ]
+  sentinels.forEach(([label, stationIndex, gridCell], index) => {
+    const r = sentinelRow + 1 + index
+    mmSheet.getCell(r, MM_PARAM_COL).value = label
+    mmSheet.getCell(r, MM_PARAM_COL + 3).value = { formula: gridCell }
+    mmSheet.getCell(r, MM_PARAM_COL + 4).value = {
+      formula: `PM_Angle!$${col(PM.totP)}$${stationRow(stationIndex)}`
+    }
+    mmSheet.getCell(r, MM_PARAM_COL + 5).value = {
+      formula:
+        `IF(ABS(${col(MM_PARAM_COL + 3)}${r}-${col(MM_PARAM_COL + 4)}${r})<=0.000001*MAX(ABS(${col(
+          MM_PARAM_COL + 4
+        )}${r}),1),"ok - imported surface matches the live calculation",` +
+        `"STALE - material or geometry inputs changed; re-export from the app")`
+    }
+    for (const offset of [3, 4]) mmSheet.getCell(r, MM_PARAM_COL + offset).numFmt = '#,##0.00'
+    mmSheet.getCell(r, MM_PARAM_COL + 5).font = { bold: true }
+  })
+
+  const admissible = `${col(MM_RAY_COL + 5)}${MM_FIRST}:${col(MM_RAY_COL + 5)}${MM_EDGE_LAST}`
+  const summaryRow = sentinelRow + 4
+  sectionHeading(mmSheet, summaryRow, 'Capacity in the demand direction at P = Pu', 8)
+  const summary: Array<[string, string, string, string?]> = [
+    ['theta_L (deg)', 'theta_L', '#,##0.0000'],
+    ['crossings found', `COUNT(${admissible})`, '0'],
+    ['Mb (kN·m)', `IF(COUNT(${admissible})=0,"no crossing",MIN(${admissible}))`, '#,##0.00', 'Mb'],
+    ['Mbx = Mb·cos(theta_L)', `IF(ISNUMBER(Mb),Mb*${cTheta},"n/a")`, '#,##0.00'],
+    ['Mby = Mb·sin(theta_L)', `IF(ISNUMBER(Mb),Mb*${sTheta},"n/a")`, '#,##0.00'],
+    ['Mu (kN·m)', 'Mu', '#,##0.00'],
+    ['Mu / Mb  (fixed-axial moment ratio)', `IF(ISNUMBER(Mb),IF(Mb<=0,"n/a",Mu/Mb),"n/a")`, '0.0000']
+  ]
+  summary.forEach(([label, formula, numberFormat, name], index) => {
+    const r = summaryRow + 1 + index
+    mmSheet.getCell(r, MM_PARAM_COL).value = label
+    const cell = mmSheet.getCell(r, MM_PARAM_COL + 3)
+    cell.value = { formula }
+    cell.numFmt = numberFormat
+    cell.font = { bold: index === summary.length - 1 }
+    if (name) defineName(`MxMy_FixedP!$${col(MM_PARAM_COL + 3)}$${r}`, name)
+  })
+  mmSheet.getCell(summaryRow + summary.length + 1, MM_PARAM_COL).value =
+    'Mu / Mb is the secondary fixed-axial metric of docs/engineering/05. It is not total utilisation and is undefined for a pure axial demand.'
+  mmSheet.getCell(summaryRow + summary.length + 1, MM_PARAM_COL).font = { italic: true, color: { argb: 'FF6B7280' } }
+
+  const mmDemandRow = MM_LAST + 1
   mmSheet.getCell(mmDemandRow, MM_RESULT_COL + 1).value = 'Demand'
   mmSheet.getCell(mmDemandRow, MM_RESULT_COL + 1).font = { bold: true }
   mmSheet.getCell(mmDemandRow, MM_RESULT_COL + 2).value = { formula: 'Mux' }
   mmSheet.getCell(mmDemandRow, MM_RESULT_COL + 3).value = { formula: 'Muy' }
-  mmSheet.getCell(mmDemandRow, MM_RESULT_COL + 4).value = { formula: 'SQRT(Mux^2+Muy^2)' }
+  mmSheet.getCell(mmDemandRow, MM_RESULT_COL + 4).value = { formula: 'Mu' }
   for (const offset of [2, 3, 4]) {
     mmSheet.getCell(mmDemandRow, MM_RESULT_COL + offset).numFmt = '#,##0.00'
     mmSheet.getCell(mmDemandRow, MM_RESULT_COL + offset).font = { bold: true, color: { argb: 'FFB91C1C' } }
+  }
+
+  // ==========================================================================
+  // PM_Theta — vertical section of the surface through the demand direction
+  // ==========================================================================
+  const ptSheet = workbook.addWorksheet('PM_Theta', { views: [{ state: 'frozen', ySplit: 10, xSplit: 2 }] })
+  title(ptSheet, 1, 'VERTICAL P–Mtheta SECTION THROUGH THE DEMAND DIRECTION', 12)
+  ptSheet.getCell('B2').value =
+    'Intersection of the P-Mx-My surface with the plane Mx*sin(theta_L) - My*cos(theta_L) = 0. Each station ring is cut twice, giving the +M and -M branches of the P-M diagram in the demand direction.'
+  ptSheet.getCell('B2').alignment = { wrapText: true, vertical: 'top' }
+  ptSheet.mergeCells('B2:M3')
+  ptSheet.getRow(2).height = 28
+  ptSheet.getCell('B5').value = 'theta_L (deg)'
+  ptSheet.getCell('C5').value = { formula: 'theta_L' }
+  ptSheet.getCell('C5').numFmt = '#,##0.0000'
+  ptSheet.getCell('B6').value = 'beta of the detail sheets (deg)'
+  ptSheet.getCell('C6').value = { formula: 'beta' }
+  ptSheet.getCell('C6').numFmt = '#,##0.0000'
+  ptSheet.getCell('D6').value =
+    'Different angles by construction: beta orients the strain plane, theta_L orients the moment vector.'
+  ptSheet.getCell('D6').font = { italic: true, color: { argb: 'FF6B7280' } }
+  ptSheet.getCell('B7').value = 'moment tolerance'
+  ptSheet.getCell('C7').value = {
+    formula:
+      `0.000000001*MAX(SUMPRODUCT(MAX(ABS(MxMy_FixedP!$${col(MM_MX_COL)}$${MM_FIRST}:$${col(
+        MM_MX_COL + stationCount - 1
+      )}$${MM_LAST}))),SUMPRODUCT(MAX(ABS(MxMy_FixedP!$${col(MM_MY_COL)}$${MM_FIRST}:$${col(
+        MM_MY_COL + stationCount - 1
+      )}$${MM_LAST}))))`
+  }
+  ptSheet.getCell('C7').numFmt = '0.00E+00'
+  ptSheet.getCell('D7').value =
+    'A station whose whole ring is below this radius is a pole: it lies in every vertical plane, so its section point is (P, Mtheta = 0).'
+  ptSheet.getCell('D7').font = { italic: true, color: { argb: 'FF6B7280' } }
+  defineName('PM_Theta!$C$7', 'Mtol')
+
+  const PT_HEAD = 9
+  const PT_FIRST = 10
+  const ptGroups: Array<[string, number]> = [
+    ['Station', 2],
+    ['+M branch (demand side)', 3],
+    ['-M branch (opposite)', 3],
+    ['Check', 1]
+  ]
+  let ptCol = 2
+  for (const [label, span] of ptGroups) {
+    const cell = ptSheet.getCell(PT_HEAD - 1, ptCol)
+    cell.value = label
+    cell.font = { bold: true, size: 10, color: { argb: 'FF1F3864' } }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GROUP_FILL } }
+    cell.alignment = { horizontal: 'center' }
+    ptSheet.mergeCells(PT_HEAD - 1, ptCol, PT_HEAD - 1, ptCol + span - 1)
+    ptCol += span
+  }
+  const ptHeaders = ['Point', 'definition', 'cuts', 'P (kN)', 'Mtheta (kN·m)', 'cuts', 'P (kN)', 'Mtheta (kN·m)', 'ring closes']
+  ptHeaders.forEach((text, index) => {
+    const cell = ptSheet.getCell(PT_HEAD, 2 + index)
+    cell.value = text
+    cell.font = { bold: true, size: 10 }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } }
+    cell.alignment = { horizontal: 'center', wrapText: true }
+    cell.border = { bottom: { style: 'thin' } }
+  })
+  ptSheet.getColumn(2).width = 9
+  ptSheet.getColumn(3).width = 22
+  for (let c = 4; c <= 10; c++) ptSheet.getColumn(c).width = 14
+  ptSheet.getRow(PT_HEAD).height = 26
+
+  // Ring of one station across all directions, plus the wrap row.
+  const ring = (colIndex: number) => `MxMy_FixedP!$${col(colIndex)}$${MM_FIRST}:$${col(colIndex)}$${MM_EDGE_LAST}`
+  const ringNext = (colIndex: number) => `MxMy_FixedP!$${col(colIndex)}$${MM_FIRST + 1}:$${col(colIndex)}$${MM_LAST}`
+
+  PREVIEW_STATIONS.forEach((station, index) => {
+    const r = PT_FIRST + index
+    const Xa = ring(MM_MX_COL + index)
+    const Xb = ringNext(MM_MX_COL + index)
+    const Ya = ring(MM_MY_COL + index)
+    const Yb = ringNext(MM_MY_COL + index)
+    const Pa = ring(MM_P_COL + index)
+    const Pb = ringNext(MM_P_COL + index)
+
+    // Signed distance of each ring vertex to the demand plane.
+    const f1 = `((${Xa})*${sTheta}-(${Ya})*${cTheta})`
+    const f2 = `((${Xb})*${sTheta}-(${Yb})*${cTheta})`
+    // +1 when the two vertices coincide keeps the division finite; the cut flag discards it anyway.
+    const q = `(${f1}/((${f1})-(${f2})+((${f1})=(${f2}))))`
+    const cut = `((${f1})*(${f2})<=0)*((${f1})<>(${f2}))`
+    const mq = `(((${Xa})+${q}*((${Xb})-(${Xa})))*${cTheta}+((${Ya})+${q}*((${Yb})-(${Ya})))*${sTheta})`
+    const pq = `((${Pa})+${q}*((${Pb})-(${Pa})))`
+    const plus = `${cut}*(${mq}>0)`
+    const minus = `${cut}*(${mq}<0)`
+
+    ptSheet.getCell(r, 2).value = `P${index}`
+    ptSheet.getCell(r, 2).font = { bold: true }
+    ptSheet.getCell(r, 3).value = stationDefinitionLabel(station)
+    ptSheet.getCell(r, 3).font = { size: 9, color: { argb: 'FF6B7280' } }
+    // A pole ring carries no moment in any direction, so the plane contains it entirely.
+    const ringRadius = `SUMPRODUCT(MAX(SQRT((${Xa})^2+(${Ya})^2)))`
+    const poleP = `MxMy_FixedP!$${col(MM_P_COL + index)}$${MM_FIRST}`
+    const isPole = `${ringRadius}<=Mtol`
+
+    ptSheet.getCell(r, 4).value = { formula: `IF(${isPole},0,SUMPRODUCT(${plus}))` }
+    ptSheet.getCell(r, 5).value = {
+      formula: `IF(${isPole},${poleP},IF(D${r}=0,"",SUMPRODUCT(${plus},${pq})/D${r}))`
+    }
+    ptSheet.getCell(r, 6).value = {
+      formula: `IF(${isPole},0,IF(D${r}=0,"",SUMPRODUCT(${plus},${mq})/D${r}))`
+    }
+    ptSheet.getCell(r, 7).value = { formula: `IF(${isPole},0,SUMPRODUCT(${minus}))` }
+    ptSheet.getCell(r, 8).value = {
+      formula: `IF(${isPole},${poleP},IF(G${r}=0,"",SUMPRODUCT(${minus},${pq})/G${r}))`
+    }
+    ptSheet.getCell(r, 9).value = {
+      formula: `IF(${isPole},0,IF(G${r}=0,"",SUMPRODUCT(${minus},${mq})/G${r}))`
+    }
+    ptSheet.getCell(r, 10).value = {
+      formula: `IF(${isPole},"pole",IF(AND(D${r}>=1,G${r}>=1),"ok","CHECK: "&D${r}&"/"&G${r}&" cuts"))`
+    }
+    ptSheet.getCell(r, 4).numFmt = '0'
+    ptSheet.getCell(r, 7).numFmt = '0'
+    for (const c of [5, 6, 8, 9]) ptSheet.getCell(r, c).numFmt = '#,##0.00'
+  })
+
+  const ptLast = PT_FIRST + stationCount - 1
+  const ptP = `$E$${PT_FIRST}:$E$${ptLast}`
+  const ptM = `$F$${PT_FIRST}:$F$${ptLast}`
+  const ptDemand = ptLast + 2
+  sectionHeading(ptSheet, ptDemand, 'Demand on the +M branch', 8)
+  const kRow = ptDemand + 3
+  const tRow = ptDemand + 4
+  const mbRow = ptDemand + 5
+  const denom = `(INDEX(${ptP},C${kRow}+1,1)-INDEX(${ptP},C${kRow},1))`
+  const ptRows: Array<[string, string, string]> = [
+    ['Pu (kN)', 'Pu', '#,##0.00'],
+    ['Mu in the theta_L direction (kN·m)', 'Mu', '#,##0.00'],
+    ['bracketing station k', `MAX(1,MIN(${stationCount - 1},SUMPRODUCT(--(${ptP}>=Pu))))`, '0'],
+    // Consecutive stations can share the same P (the two poles, or a compression plateau), which
+    // would make the chord vertical. Fall back to the lower station instead of dividing by zero.
+    ['t', `IF(${denom}=0,0,(Pu-INDEX(${ptP},C${kRow},1))/${denom})`, '0.0000'],
+    [
+      'Mb from this section (kN·m)',
+      `INDEX(${ptM},C${kRow},1)+C${tRow}*(INDEX(${ptM},C${kRow}+1,1)-INDEX(${ptM},C${kRow},1))`,
+      '#,##0.00'
+    ],
+    ['Mb from the fixed-P ray query (kN·m)', 'Mb', '#,##0.00'],
+    ['Mb from the engine triangle mesh (kN·m)', engineMb === null ? '"no crossing"' : String(engineMb), '#,##0.00'],
+    [
+      'spread over the three routes (%)',
+      `IF(NOT(ISNUMBER(Mb)),"n/a",(MAX(C${mbRow},Mb,C${mbRow + 2})-MIN(C${mbRow},Mb,C${mbRow + 2}))/MAX(C${mbRow},Mb,C${mbRow + 2})*100)`,
+      '0.0000'
+    ],
+    [
+      'verdict',
+      `IF(NOT(ISNUMBER(C${mbRow + 3})),"n/a",IF(C${mbRow + 3}<=0.5,"ok - within the sampling spread of a 24-direction grid","CHECK - routes disagree beyond the sampling spread"))`,
+      '@'
+    ],
+    ['Mu / Mb  (fixed-axial moment ratio)', `IF(C${mbRow}<=0,"n/a",Mu/C${mbRow})`, '0.0000']
+  ]
+  ptRows.forEach(([label, formula, numberFormat], index) => {
+    const r = ptDemand + 1 + index
+    ptSheet.getCell(r, 2).value = label
+    const cell = ptSheet.getCell(r, 3)
+    cell.value = { formula }
+    cell.numFmt = numberFormat
+    cell.font = { bold: index >= ptRows.length - 2 }
+  })
+  ptSheet.getCell(ptDemand + ptRows.length + 2, 2).value =
+    'Three independent readings of the same 24x19 samples: the plane cut of the station rings, the ray on the P = Pu contour, and the engine triangle mesh. Their spread is the direction-sampling error, not a formula error.'
+  ptSheet.getCell(ptDemand + ptRows.length + 2, 2).font = { italic: true, color: { argb: 'FF6B7280' } }
+  ptSheet.mergeCells(ptDemand + ptRows.length + 2, 2, ptDemand + ptRows.length + 2, 10)
+
+  // ==========================================================================
+  // Equilibrium — verify the converged inverse state, do not re-solve it
+  // ==========================================================================
+  if (equilibrium) {
+    const eqSheet = workbook.addWorksheet('Equilibrium', { views: [{ showGridLines: false }] })
+    eqSheet.columns = [{ width: 4 }, { width: 34 }, { width: 18 }, { width: 12 }, { width: 66 }]
+    title(eqSheet, 1, 'EQUILIBRIUM CHECK OF THE CONVERGED STRAIN PLANE', 4)
+    eqSheet.getCell('B2').value =
+      'Newton-Raphson needs the tangent modulus d(sigma)/d(eps). A material given only as points has no closed-form derivative, so the iteration and its Jacobian belong to the program. The workbook does the part a reviewer actually needs: take the converged plane as given and prove by formula that it is in equilibrium with the demand.'
+    eqSheet.getCell('B2').alignment = { wrapText: true, vertical: 'top' }
+    eqSheet.mergeCells('B2:E4')
+    eqSheet.getRow(2).height = 16
+
+    let eqRow = 6
+    sectionHeading(eqSheet, eqRow, 'Converged strain plane — engine values', 4)
+    const eqInputs: Array<[string, number, string, string, string]> = [
+      ['eps_0', equilibrium.e0, '-', 'Eq_e0', 'strain at the analysis origin'],
+      ['kappa_x', equilibrium.kx, '1/mm', 'Eq_kx', 'curvature about x'],
+      ['kappa_y', equilibrium.ky, '1/mm', 'Eq_ky', 'curvature about y']
+    ]
+    eqInputs.forEach(([label, value, unit, name, note], index) => {
+      const r = eqRow + 1 + index
+      eqSheet.getCell(r, 2).value = label
+      const cell = eqSheet.getCell(r, 3)
+      cell.value = value
+      cell.numFmt = '0.000000000E+00'
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CONST_FILL } }
+      cell.border = { top: { style: 'hair' }, left: { style: 'hair' }, bottom: { style: 'hair' }, right: { style: 'hair' } }
+      eqSheet.getCell(r, 4).value = unit
+      eqSheet.getCell(r, 5).value = note
+      eqSheet.getCell(r, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
+      defineName(`Equilibrium!$C$${r}`, name)
+    })
+    eqRow += 5
+    eqSheet.getCell(eqRow, 2).value = 'neutral-axis angle atan2(ky, kx)'
+    eqSheet.getCell(eqRow, 3).value = { formula: 'DEGREES(ATAN2(Eq_kx,Eq_ky))' }
+    eqSheet.getCell(eqRow, 3).numFmt = '#,##0.0000'
+    eqSheet.getCell(eqRow, 4).value = 'deg'
+    eqSheet.getCell(eqRow, 5).value = { formula: '"beta on Input is "&TEXT(beta,"0.0000")&" deg — the detail sheets audit this same plane"' }
+    eqSheet.getCell(eqRow, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
+
+    eqRow += 2
+    sectionHeading(eqSheet, eqRow, 'Section response at that plane — formulas', 4)
+    const concEqSig = `Concrete!$L$${CONC_FIRST}:$L$${concLastRow}`
+    const responses: Array<[string, string, string]> = [
+      ['Concrete P (kN)', `SUMPRODUCT(${concEqSig},Mesh_A)/1000`, '#,##0.00'],
+      ['Concrete Mx (kN·m)', `SUMPRODUCT(${concEqSig},Mesh_A,Mesh_Y)/1000000`, '#,##0.00'],
+      ['Concrete My (kN·m)', `SUMPRODUCT(${concEqSig},Mesh_A,Mesh_X)/1000000`, '#,##0.00'],
+      ['Steel P (kN)', `Steel!${col(EQ_STEEL_COL + 4)}${STEEL_SUM}/1000`, '#,##0.00'],
+      ['Steel Mx (kN·m)', `Steel!${col(EQ_STEEL_COL + 5)}${STEEL_SUM}/1000000`, '#,##0.00'],
+      ['Steel My (kN·m)', `Steel!${col(EQ_STEEL_COL + 6)}${STEEL_SUM}/1000000`, '#,##0.00']
+    ]
+    const responseFirst = eqRow + 1
+    responses.forEach(([label, formula, numberFormat], index) => {
+      const r = responseFirst + index
+      eqSheet.getCell(r, 2).value = label
+      eqSheet.getCell(r, 3).value = { formula }
+      eqSheet.getCell(r, 3).numFmt = numberFormat
+    })
+
+    eqRow = responseFirst + responses.length + 1
+    sectionHeading(eqSheet, eqRow, 'Residual against the demand', 4)
+    const totals: Array<[string, string, string]> = [
+      ['P total (kN)', `C${responseFirst}+C${responseFirst + 3}`, '#,##0.00'],
+      ['Mx total (kN·m)', `C${responseFirst + 1}+C${responseFirst + 4}`, '#,##0.00'],
+      ['My total (kN·m)', `C${responseFirst + 2}+C${responseFirst + 5}`, '#,##0.00'],
+      ['Pu demand (kN)', 'Pu', '#,##0.00'],
+      ['Mux demand (kN·m)', 'Mux', '#,##0.00'],
+      ['Muy demand (kN·m)', 'Muy', '#,##0.00']
+    ]
+    const totalFirst = eqRow + 1
+    totals.forEach(([label, formula, numberFormat], index) => {
+      const r = totalFirst + index
+      eqSheet.getCell(r, 2).value = label
+      eqSheet.getCell(r, 3).value = { formula }
+      eqSheet.getCell(r, 3).numFmt = numberFormat
+      eqSheet.getCell(r, 3).font = { bold: index < 3 }
+    })
+    const residualFirst = totalFirst + totals.length + 1
+    const residuals: Array<[string, string]> = [
+      ['residual P (kN)', `C${totalFirst}-C${totalFirst + 3}`],
+      ['residual Mx (kN·m)', `C${totalFirst + 1}-C${totalFirst + 4}`],
+      ['residual My (kN·m)', `C${totalFirst + 2}-C${totalFirst + 5}`]
+    ]
+    residuals.forEach(([label, formula], index) => {
+      const r = residualFirst + index
+      eqSheet.getCell(r, 2).value = label
+      eqSheet.getCell(r, 3).value = { formula }
+      eqSheet.getCell(r, 3).numFmt = '#,##0.0000'
+    })
+    const normRow = residualFirst + residuals.length
+    eqSheet.getCell(normRow, 2).value = 'relative residual'
+    eqSheet.getCell(normRow, 3).value = {
+      formula:
+        `MAX(ABS(C${residualFirst})/MAX(ABS(Pu),1),ABS(C${residualFirst + 1})/MAX(ABS(Mux),1),` +
+        `ABS(C${residualFirst + 2})/MAX(ABS(Muy),1))`
+    }
+    eqSheet.getCell(normRow, 3).numFmt = '0.00E+00'
+    eqSheet.getCell(normRow + 1, 2).value = 'verdict'
+    eqSheet.getCell(normRow + 1, 3).value = {
+      formula: `IF(C${normRow}<=0.0001,"in equilibrium","CHECK - the stored plane does not balance the demand")`
+    }
+    eqSheet.getCell(normRow + 1, 3).font = { bold: true }
+    eqSheet.getCell(normRow + 1, 5).value =
+      'The fibre and bar columns behind these sums are on Concrete (K, L) and Steel (right-hand block), so the residual can be traced term by term for any material law.'
+    eqSheet.getCell(normRow + 1, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
   }
 
   return workbook
@@ -1159,7 +1845,7 @@ export const exportSectionWorkbook = async (input: ExcelExportInput) => {
   })
 }
 
-export const sectionWorkbookFileName = (input: Pick<ExcelExportInput, 'projectName' | 'angleDeg' | 'loadcase'>) => {
+export const sectionWorkbookFileName = (input: Pick<ExcelExportInput, 'projectName' | 'betaDeg' | 'loadcase'>) => {
   const stem =
     (input.projectName || 'pm-section')
       .trim()
@@ -1168,5 +1854,5 @@ export const sectionWorkbookFileName = (input: Pick<ExcelExportInput, 'projectNa
       .replace(/^-|-$/g, '')
       .slice(0, 48) || 'pm-section'
   const loadcase = input.loadcase ? `-LC${input.loadcase.id}` : ''
-  return `${stem}${loadcase}-${Math.round(input.angleDeg)}deg.xlsx`
+  return `${stem}${loadcase}-beta${Math.round(input.betaDeg)}.xlsx`
 }

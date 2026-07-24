@@ -70,6 +70,11 @@ the projected coordinate is
 
 `u = sinβ·x + cosβ·y`.
 
+Here the direction is a support/strain-plane direction used to locate extreme fibers for a
+candidate strain state. It is not the moment direction of a load combination. Demand-moment
+directions are computed later from resultants as `thetaLoad = atan2(Muy, Mux)` and are used to query
+the completed `P-Mx-My` surface.
+
 Compute:
 
 ```ts

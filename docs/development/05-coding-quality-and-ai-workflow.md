@@ -32,6 +32,9 @@ records the gap and stops that branch. It does not select a common-looking value
 3. Map the request to requirement IDs and name any conflict/gap.
 4. Define the smallest end-to-end package pipeline slice and its tests.
 5. Identify whether the change is preview-only or result-affecting and assign a change class.
+6. For biaxial result/check work, explicitly name which angle is a strain-plane sampling angle and
+   which angle is a demand moment direction. If the task cannot answer that distinction, stop before
+   editing calculation or plotting code.
 
 ### During implementation
 
@@ -42,6 +45,11 @@ records the gap and stops that branch. It does not select a common-looking value
 5. Add tests at the same time as the code, including failure boundaries and invariants.
 6. Wire the app as a consumer; do not duplicate package logic in components.
 7. Update schema/version/provenance/docs when contracts or results change.
+
+For `P-Mx-My` charts and checks, never let an implementation shortcut replace a demand-direction
+surface query with "pick the nearest beta row." This is a common vibe-coding failure because both
+numbers look like angles. The correct loadcase angle is `thetaLoad = atan2(Muy, Mux)`; it cuts the
+completed surface by ray/plane geometry.
 
 ### Before handoff
 
@@ -133,6 +141,9 @@ Reviewers ask:
 - Are errors typed and tied to an entity/path?
 - Are exact geometry and integration approximation kept separate?
 - Are units/origin/sign/action basis explicit at every boundary?
+- Are strain-plane/neutral-axis sample angles kept separate from demand moment-direction angles?
+- Do `P-Mtheta` and fixed-P loadcase checks use geometric ray/plane intersections instead of
+  nearest sampled angle rows?
 - Are preview/current/stale/accepted/released states impossible to confuse?
 - Do tests cover both sides of every changed branch and an independent oracle where required?
 - Does provenance/versioning make old and new results distinguishable?

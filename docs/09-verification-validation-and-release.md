@@ -62,6 +62,8 @@ No orphan code rule or untested requirement is allowed in a release candidate.
 - single- and two-fiber exact cases;
 - piecewise material interpolation, slopes, kinks, rupture, extrapolation;
 - origin transformation and axis rotation;
+- demand moment-plane slicing where `thetaLoad` intentionally differs from neighboring
+  strain-plane sample angles;
 - ray–triangle and plane–triangle intersections;
 - known closed tetrahedron/cube point-in-domain and utilization.
 
@@ -117,6 +119,7 @@ Cover the Cartesian combination of representative categories, not one sample sec
 
 - principal and nonprincipal axes;
 - angles midway between initial beta samples;
+- load moment directions that do not coincide with sampled strain-plane/neutral-axis angles;
 - demand rays through vertices, edges, faces, and near-tangent directions;
 - axial-cap intersection and fixed-P contours near extrema.
 
@@ -153,6 +156,8 @@ Every design result package stores:
 
 - mesh levels, fiber counts, successive differences, and observed-order validity;
 - beta/state refinement history and worst interpolation cell;
+- evidence that demand-direction queries used ray/plane geometry rather than nearest sampled
+  strain-plane rows;
 - final topology/orientation/star-shaped reports;
 - targeted utilization refinement and uncertainty interval;
 - conditioning/floating-point diagnostics;
@@ -194,6 +199,8 @@ but it must not claim to predict physical failure beyond that model's scope.
 
 - adaptive convergence and closed-mesh topology pass across the structural matrix;
 - pure axial utilization, cap faces, asymmetry, and non-monotone `P` cases pass;
+- demand-direction slices and fixed-P moment rays pass cases where `thetaLoad` falls between
+  sampled strain-plane angles;
 - production results agree with independent reference solver within approved tolerance.
 
 ### Gate D — Design-code resistance profile and adapter

@@ -31,6 +31,9 @@ changes shall not rerun or alter resistance calculations.
   allowed only when stored with the transformation;
 - internally, angles are radians and positive counter-clockwise unless a named adapter states its
   input mapping.
+- a sampled strain-plane angle is not a demand-moment angle. Strain-domain angles parameterize the
+  boundary states used to generate the surface; demand angles are computed from the action vector as
+  `thetaLoad = atan2(My, Mx)` and are used only for geometric queries of the finished surface.
 
 The generalized strain plane is:
 
@@ -58,6 +61,8 @@ record the mapping rather than changing the kernel convention.
 | `compiled material` | runtime evaluator derived from one validated definition; never persisted |
 | `design basis` | exact standard identity, method, jurisdiction choices, classifications, and options |
 | `demand` | action vector to compare or equilibrate, with explicit action basis |
+| `strainPlaneAngle` | parameter used by a strain-domain adapter to generate a compatible boundary state |
+| `momentDirectionAngle` | angle of a demand or resistance vector in the `Mx-My` plane, measured from `Mx` |
 | `nominalReference` | auditable reference resultant at a stored ULS strain state |
 | `designResistance` | resultant permitted for comparison with factored ULS demand |
 | `utilization` | named comparison metric; the default is proportional 3D load scaling |

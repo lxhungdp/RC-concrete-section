@@ -80,6 +80,12 @@ export type PreviewContourPoint = {
   P: number
   Mx: number
   My: number
+  station?: number
+}
+
+export type PreviewMomentPlanePoint = PreviewContourPoint & {
+  /** Moment coordinate on the checked load direction. */
+  M: number
 }
 
 export type InversePreviewResult = {
@@ -105,6 +111,7 @@ type Fiber = {
 }
 
 const PREVIEW_BETAS = Array.from({ length: 24 }, (_, index) => (index * Math.PI) / 12)
+const PREVIEW_GEOMETRY_TOL = 1e-9
 export type StationDefinition =
   | { kind: 'pure-compression' }
   | { kind: 'neutral-axis-ratio'; cOverC1: number }
@@ -308,8 +315,97 @@ const interpolate = (a: PreviewSurfacePoint, b: PreviewSurfacePoint, P: number):
     beta: a.beta,
     P,
     Mx: a.Mx + (b.Mx - a.Mx) * t,
-    My: a.My + (b.My - a.My) * t
+    My: a.My + (b.My - a.My) * t,
+    station: a.station + (b.station - a.station) * t
   }
+}
+
+const groupSurfaceRows = (points: PreviewSurfacePoint[]) => {
+  const byBeta = new Map<number, PreviewSurfacePoint[]>()
+  for (const point of points) byBeta.set(point.beta, [...(byBeta.get(point.beta) ?? []), point])
+  return [...byBeta.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([beta, curve]) => ({
+      beta,
+      curve: curve.sort((a, b) => a.station - b.station)
+    }))
+}
+
+const previewSurfaceTriangles = (points: PreviewSurfacePoint[]) => {
+  const rows = groupSurfaceRows(points)
+  const triangles: Array<[PreviewSurfacePoint, PreviewSurfacePoint, PreviewSurfacePoint]> = []
+  if (rows.length < 2) return triangles
+
+  for (let i = 0; i < rows.length; i++) {
+    const current = rows[i].curve
+    const next = rows[(i + 1) % rows.length].curve
+    const stationCount = Math.min(current.length, next.length)
+    for (let station = 0; station < stationCount - 1; station++) {
+      const a = current[station]
+      const b = next[station]
+      const c = next[station + 1]
+      const d = current[station + 1]
+      triangles.push([a, b, c], [a, c, d])
+    }
+  }
+
+  return triangles
+}
+
+const lerpPoint = (
+  a: Pick<PreviewSurfacePoint, 'P' | 'Mx' | 'My' | 'beta' | 'station'>,
+  b: Pick<PreviewSurfacePoint, 'P' | 'Mx' | 'My' | 'beta' | 'station'>,
+  t: number
+): PreviewContourPoint => ({
+  beta: a.beta + (b.beta - a.beta) * t,
+  P: a.P + (b.P - a.P) * t,
+  Mx: a.Mx + (b.Mx - a.Mx) * t,
+  My: a.My + (b.My - a.My) * t,
+  station: a.station + (b.station - a.station) * t
+})
+
+const appendUniquePoint = <T extends Pick<Resultant, 'P' | 'Mx' | 'My'>>(
+  target: T[],
+  point: T,
+  momentTol: number,
+  forceTol: number
+) => {
+  const duplicate = target.some(
+    (item) =>
+      Math.abs(item.P - point.P) <= forceTol &&
+      Math.abs(item.Mx - point.Mx) <= momentTol &&
+      Math.abs(item.My - point.My) <= momentTol
+  )
+  if (!duplicate) target.push(point)
+}
+
+const trianglePlaneIntersections = (
+  triangle: [PreviewSurfacePoint, PreviewSurfacePoint, PreviewSurfacePoint],
+  distance: (point: PreviewSurfacePoint) => number,
+  tol: number
+) => {
+  const intersections: PreviewContourPoint[] = []
+  const edges: Array<[PreviewSurfacePoint, PreviewSurfacePoint]> = [
+    [triangle[0], triangle[1]],
+    [triangle[1], triangle[2]],
+    [triangle[2], triangle[0]]
+  ]
+
+  for (const [a, b] of edges) {
+    const da = distance(a)
+    const db = distance(b)
+    const aOn = Math.abs(da) <= tol
+    const bOn = Math.abs(db) <= tol
+
+    if (aOn) appendUniquePoint(intersections, a, tol, tol)
+    if (bOn) appendUniquePoint(intersections, b, tol, tol)
+    if (aOn || bOn || da * db > 0) continue
+
+    const t = da / (da - db)
+    appendUniquePoint(intersections, lerpPoint(a, b, t), tol, tol)
+  }
+
+  return intersections
 }
 
 /**
@@ -396,16 +492,13 @@ export const buildPreviewSurface = (
 }
 
 export const sliceFixedP = (points: PreviewSurfacePoint[], fixedP: number): PreviewContourPoint[] => {
-  const byBeta = new Map<number, PreviewSurfacePoint[]>()
-  for (const point of points) byBeta.set(point.beta, [...(byBeta.get(point.beta) ?? []), point])
   const contour: PreviewContourPoint[] = []
 
-  for (const [beta, curve] of byBeta) {
-    const ordered = curve.sort((a, b) => a.station - b.station)
+  for (const { beta, curve } of groupSurfaceRows(points)) {
     let best: PreviewContourPoint | null = null
-    for (let i = 0; i < ordered.length - 1; i++) {
-      const a = ordered[i]
-      const b = ordered[i + 1]
+    for (let i = 0; i < curve.length - 1; i++) {
+      const a = curve[i]
+      const b = curve[i + 1]
       if ((fixedP - a.P) * (fixedP - b.P) <= 0) {
         best = interpolate(a, b, fixedP)
         if (best) break
@@ -415,6 +508,107 @@ export const sliceFixedP = (points: PreviewSurfacePoint[], fixedP: number): Prev
   }
 
   return contour.sort((a, b) => a.beta - b.beta)
+}
+
+export const sliceFixedPContour = (points: PreviewSurfacePoint[], fixedP: number): PreviewContourPoint[] => {
+  const momentScale = Math.max(...points.map((point) => Math.hypot(point.Mx, point.My)), 1)
+  const forceScale = Math.max(...points.map((point) => Math.abs(point.P)), 1)
+  const momentTol = momentScale * PREVIEW_GEOMETRY_TOL
+  const forceTol = forceScale * PREVIEW_GEOMETRY_TOL
+  const contour: PreviewContourPoint[] = []
+
+  for (const triangle of previewSurfaceTriangles(points)) {
+    const intersections = trianglePlaneIntersections(triangle, (point) => point.P - fixedP, forceTol)
+    for (const point of intersections) {
+      appendUniquePoint(contour, { ...point, P: fixedP }, momentTol, forceTol)
+    }
+  }
+
+  return contour.sort((a, b) => Math.atan2(a.My, a.Mx) - Math.atan2(b.My, b.Mx))
+}
+
+/**
+ * Intersect the preview surface with the vertical demand plane
+ * `Mx*sin(theta) - My*cos(theta) = 0`, then project each intersection point to `P-Mtheta`.
+ *
+ * The preview surface is still the coarse beta/station grid, but this is a geometric section of
+ * that surface. It does not assume the sampled strain-plane angle equals the moment direction.
+ */
+export const sliceMomentPlane = (points: PreviewSurfacePoint[], theta: number): PreviewMomentPlanePoint[] => {
+  const c = Math.cos(theta)
+  const s = Math.sin(theta)
+  const momentScale = Math.max(...points.map((point) => Math.hypot(point.Mx, point.My)), 1)
+  const forceScale = Math.max(...points.map((point) => Math.abs(point.P)), 1)
+  const momentTol = momentScale * PREVIEW_GEOMETRY_TOL
+  const forceTol = forceScale * PREVIEW_GEOMETRY_TOL
+  const planeDistance = (point: PreviewSurfacePoint) => point.Mx * s - point.My * c
+  const path: PreviewMomentPlanePoint[] = []
+
+  for (const triangle of previewSurfaceTriangles(points)) {
+    const intersections = trianglePlaneIntersections(triangle, planeDistance, momentTol)
+    for (const point of intersections) {
+      appendUniquePoint(
+        path,
+        {
+          ...point,
+          beta: theta,
+          M: point.Mx * c + point.My * s
+        },
+        momentTol,
+        forceTol
+      )
+    }
+  }
+
+  return path.sort((a, b) => b.P - a.P || a.M - b.M)
+}
+
+const cross2 = (a: Pick<Resultant, 'Mx' | 'My'>, b: Pick<Resultant, 'Mx' | 'My'>) => a.Mx * b.My - a.My * b.Mx
+
+export const intersectFixedPContourWithMomentRay = (
+  contour: PreviewContourPoint[],
+  theta: number
+): PreviewMomentPlanePoint | null => {
+  if (contour.length < 2) return null
+  const c = Math.cos(theta)
+  const s = Math.sin(theta)
+  const direction = { Mx: c, My: s }
+  const momentScale = Math.max(...contour.map((point) => Math.hypot(point.Mx, point.My)), 1)
+  const tol = momentScale * PREVIEW_GEOMETRY_TOL
+  let best: PreviewMomentPlanePoint | null = null
+
+  for (let i = 0; i < contour.length; i++) {
+    const a = contour[i]
+    const b = contour[(i + 1) % contour.length]
+    const edge = { Mx: b.Mx - a.Mx, My: b.My - a.My }
+    const denom = cross2(edge, direction)
+
+    if (Math.abs(denom) <= tol) {
+      for (const candidate of [a, b]) {
+        const offRay = Math.abs(cross2(candidate, direction))
+        const m = candidate.Mx * c + candidate.My * s
+        if (offRay <= tol && m >= -tol && (!best || m < best.M)) {
+          best = { ...candidate, beta: theta, M: Math.max(0, m) }
+        }
+      }
+      continue
+    }
+
+    const q = -cross2(a, direction) / denom
+    if (q < -1e-9 || q > 1 + 1e-9) continue
+    const point = {
+      beta: theta,
+      P: a.P + (b.P - a.P) * q,
+      Mx: a.Mx + edge.Mx * q,
+      My: a.My + edge.My * q
+    }
+    const m = point.Mx * c + point.My * s
+    if (m < -tol) continue
+    const candidate = { ...point, M: Math.max(0, m) }
+    if (!best || candidate.M < best.M) best = candidate
+  }
+
+  return best
 }
 
 const solve3 = (matrix: number[][], rhs: number[]) => {
@@ -450,15 +644,8 @@ const estimateUtilization = (demand: LoadCombination, contour: PreviewContourPoi
   const demandRadius = demandMomentRadius(demand)
   if (demandRadius < 1e-9 || contour.length === 0) return { utilization: null, point: null }
   const demandAngle = Math.atan2(demand.My, demand.Mx)
-  const best = contour.reduce(
-    (current, point) => {
-      const angle = Math.atan2(point.My, point.Mx)
-      const delta = Math.abs(Math.atan2(Math.sin(angle - demandAngle), Math.cos(angle - demandAngle)))
-      return delta < current.delta ? { delta, point } : current
-    },
-    { delta: Number.POSITIVE_INFINITY, point: contour[0] }
-  ).point
-  const capacityRadius = Math.hypot(best.Mx, best.My)
+  const best = intersectFixedPContourWithMomentRay(contour, demandAngle)
+  const capacityRadius = best?.M ?? 0
   return {
     utilization: capacityRadius > 1e-9 ? demandRadius / capacityRadius : null,
     point: best

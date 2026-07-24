@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Biaxial P-M Interaction: Neutral Axis Angle vs Moment Direction</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f4ef;
+      --paper: #fffdf8;
+      --ink: #202124;
+      --muted: #5d646d;
+      --line: #d7d0c5;
+      --steel: #1f6feb;
+      --concrete: #c7b299;
+      --compression: #ef8a62;
+      --tension: #67a9cf;
+      --moment: #7a4cc2;
+      --load: #d94801;
+      --ok: #218a5a;
+      --warn: #b45f06;
+      --shadow: rgba(64, 48, 32, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", "Noto Sans KR", Arial, sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 48px;
+    }
+
+    header {
+      padding: 32px;
+      border: 1px solid var(--line);
+      background: linear-gradient(135deg, #fffdf8, #f1ece3);
+      box-shadow: 0 12px 32px var(--shadow);
+    }
+
+    h1, h2, h3 { line-height: 1.18; margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 52px); letter-spacing: -0.02em; }
+    h2 { font-size: clamp(22px, 2.7vw, 34px); margin-bottom: 14px; }
+    h3 { font-size: 19px; margin-bottom: 8px; }
+
+    .sub {
+      max-width: 920px;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .kr {
+      color: #2d3748;
+      word-break: keep-all;
+    }
+
+    .tagline {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 16px;
+      color: var(--warn);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 12px;
+    }
+
+    section {
+      margin-top: 24px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+      box-shadow: 0 10px 26px var(--shadow);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
+      gap: 24px;
+      align-items: start;
+    }
+
+    .two {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .note {
+      padding: 14px 16px;
+      border-left: 5px solid var(--load);
+      background: #fff4e8;
+      color: #4d2e12;
+      margin: 18px 0;
+      font-weight: 600;
+    }
+
+    .principle {
+      border-left-color: var(--ok);
+      background: #eaf7f0;
+      color: #183f2d;
+    }
+
+    .callout {
+      padding: 18px;
+      border: 1px solid var(--line);
+      background: #fbf7ee;
+    }
+
+    ul, ol { padding-left: 22px; }
+    li { margin: 7px 0; }
+
+    code {
+      background: #eee7dc;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 0.95em;
+    }
+
+    .formula {
+      display: grid;
+      gap: 8px;
+      margin: 16px 0;
+      padding: 16px;
+      background: #f5efe5;
+      border: 1px solid var(--line);
+      font-family: Consolas, "SFMono-Regular", monospace;
+      overflow-x: auto;
+    }
+
+    figure {
+      margin: 0;
+      padding: 14px;
+      border: 1px solid var(--line);
+      background: #fffaf1;
+    }
+
+    figcaption {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    svg {
+      width: 100%;
+      height: auto;
+      display: block;
+      background: #fffdf8;
+      border: 1px solid #e4dacf;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .swatch {
+      width: 14px;
+      height: 14px;
+      display: inline-block;
+      border-radius: 2px;
+      margin-right: 6px;
+      vertical-align: -2px;
+    }
+
+    .steps {
+      counter-reset: step;
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .step {
+      position: relative;
+      padding: 14px 14px 14px 48px;
+      border: 1px solid var(--line);
+      background: #fffaf1;
+    }
+
+    .step::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 14px;
+      top: 14px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .demo-panel {
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      background: #fbf7ee;
+      margin-top: 16px;
+    }
+
+    label {
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    input[type="range"] { width: 100%; }
+
+    .status {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .status div {
+      padding: 10px;
+      background: #fffdf8;
+      border: 1px solid var(--line);
+    }
+
+    .status strong { display: block; font-size: 18px; }
+
+    .matrix {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 15px;
+    }
+
+    .matrix th, .matrix td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .matrix th {
+      background: #f1eadf;
+    }
+
+    .footer-note {
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (max-width: 860px) {
+      main { width: min(100% - 20px, 760px); }
+      header, section { padding: 20px; }
+      .grid, .two, .status { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="tagline">Classic biaxial column check mistake</div>
+    <h1>Neutral Axis Angle Is Not Moment Direction</h1>
+    <p class="sub">A structural engineer's guide to reading a 3D <code>P-Mx-My</code> interaction surface correctly.</p>
+    <p class="sub kr">중립축 각도와 모멘트 방향은 같은 값이 아닙니다. 이 문서는 3D <code>P-Mx-My</code> 상호작용면을 어떻게 해석하고, 하나의 하중 조합을 어떻게 검토해야 하는지 처음부터 설명합니다.</p>
+  </header>
+
+  <section>
+    <div class="grid">
+      <div>
+        <h2>0. The One Sentence Rule</h2>
+        <p><strong>English.</strong> A sampled neutral-axis or strain-plane angle generates capacity points. A load moment angle queries the capacity surface after it has already been generated.</p>
+        <p class="kr"><strong>한국어.</strong> 중립축 또는 변형률 평면의 샘플 각도는 내력점을 생성하기 위한 매개변수입니다. 하중 모멘트 각도는 이미 생성된 내력면을 조회하기 위한 기하학적 방향입니다.</p>
+        <div class="formula">
+          <div>strain-plane angle: alpha -> creates one compatible strain state</div>
+          <div>load moment angle: thetaLoad = atan2(Muy, Mux) -> slices/checks the finished surface</div>
+        </div>
+        <div class="note">Never check a loadcase by choosing the sampled angle row closest to <code>thetaLoad</code>.</div>
+        <div class="note kr">하중 방향 <code>thetaLoad</code>와 가장 가까운 샘플 각도 행을 선택해서 검토하면 안 됩니다.</div>
+      </div>
+      <figure>
+        <svg viewBox="0 0 560 360" role="img" aria-labelledby="fig0-title fig0-desc">
+          <title id="fig0-title">Two angles are different concepts</title>
+          <desc id="fig0-desc">A strain plane creates response; a load moment direction cuts the finished surface.</desc>
+          <defs>
+            <marker id="arrow-load" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+              <path d="M0,0 L8,3 L0,6 Z" fill="#d94801"></path>
+            </marker>
+            <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+              <path d="M0,0 L8,3 L0,6 Z" fill="#7a4cc2"></path>
+            </marker>
+          </defs>
+          <rect x="60" y="55" width="210" height="210" fill="#eee0cf" stroke="#7f7468" stroke-width="2"></rect>
+          <path d="M72 218 L260 102" stroke="#7a4cc2" stroke-width="4"></path>
+          <text x="85" y="98" font-size="15" fill="#7a4cc2">strain / N.A. angle alpha</text>
+          <circle cx="92" cy="82" r="7" fill="#1f6feb"></circle>
+          <circle cx="238" cy="82" r="7" fill="#1f6feb"></circle>
+          <circle cx="92" cy="238" r="7" fill="#1f6feb"></circle>
+          <circle cx="238" cy="238" r="7" fill="#1f6feb"></circle>
+          <path d="M365 245 L492 140" stroke="#d94801" stroke-width="5" marker-end="url(#arrow-load)"></path>
+          <path d="M365 245 L500 245" stroke="#333" stroke-width="2" marker-end="url(#arrow-purple)"></path>
+          <path d="M365 245 L365 112" stroke="#333" stroke-width="2" marker-end="url(#arrow-purple)"></path>
+          <text x="505" y="250" font-size="15">Mx</text>
+          <text x="346" y="108" font-size="15">My</text>
+          <text x="420" y="128" font-size="15" fill="#d94801">thetaLoad</text>
+          <text x="322" y="306" font-size="15">Moment plane after surface exists</text>
+          <text x="78" y="306" font-size="15">Strain state before integration</text>
+        </svg>
+        <figcaption>Two angles may both be drawn on a section diagram, but they belong to different problems.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>1. Why The Angles Are Not The Same</h2>
+    <div class="two">
+      <div>
+        <h3>English</h3>
+        <p>The neutral axis is part of the <strong>strain field</strong>. It is where the longitudinal strain is zero. It is controlled by the assumed plane-section deformation:</p>
+        <div class="formula">
+          <div>epsilon(x,y) = epsilon0 + kx*y + ky*x</div>
+          <div>neutral axis: epsilon(x,y) = 0</div>
+        </div>
+        <p>The moment vector is part of the <strong>resultant force system</strong>. It appears only after concrete and steel stresses are integrated over the section:</p>
+        <div class="formula">
+          <div>P = integral sigma dA</div>
+          <div>Mx = integral sigma y dA</div>
+          <div>My = integral sigma x dA</div>
+        </div>
+      </div>
+      <div class="kr">
+        <h3>한국어</h3>
+        <p>중립축은 <strong>변형률장</strong>의 일부입니다. 중립축은 축방향 변형률이 0이 되는 선입니다. 이는 평면 유지 가정에 따른 변형률 평면으로부터 정해집니다.</p>
+        <div class="formula">
+          <div>epsilon(x,y) = epsilon0 + kx*y + ky*x</div>
+          <div>중립축: epsilon(x,y) = 0</div>
+        </div>
+        <p>반면 모멘트 벡터는 <strong>응력 적분 결과</strong>입니다. 콘크리트와 철근 응력을 단면 전체에 적분한 뒤에야 나타납니다.</p>
+        <div class="formula">
+          <div>P = integral sigma dA</div>
+          <div>Mx = integral sigma y dA</div>
+          <div>My = integral sigma x dA</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid" style="margin-top:18px;">
+      <figure>
+        <svg viewBox="0 0 620 390" role="img" aria-labelledby="fig1-title fig1-desc">
+          <title id="fig1-title">Nonlinear section response breaks perpendicular intuition</title>
+          <desc id="fig1-desc">A concrete section with compression stress block and reinforcement produces a resultant moment not normal to the neutral axis.</desc>
+          <defs>
+            <linearGradient id="strainGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#ef8a62" stop-opacity="0.75"></stop>
+              <stop offset="0.48" stop-color="#f8f0e6" stop-opacity="0.95"></stop>
+              <stop offset="1" stop-color="#67a9cf" stop-opacity="0.55"></stop>
+            </linearGradient>
+            <marker id="arrow-orange" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+              <path d="M0,0 L8,3 L0,6 Z" fill="#d94801"></path>
+            </marker>
+          </defs>
+          <rect x="60" y="58" width="250" height="250" fill="url(#strainGrad)" stroke="#7f7468" stroke-width="2"></rect>
+          <polygon points="60,58 310,58 310,128 120,215 60,222" fill="#ef8a62" opacity="0.45"></polygon>
+          <line x1="78" y1="230" x2="300" y2="105" stroke="#7a4cc2" stroke-width="4"></line>
+          <text x="96" y="248" font-size="15" fill="#7a4cc2">neutral axis, epsilon = 0</text>
+          <circle cx="92" cy="90" r="7" fill="#1f6feb"></circle>
+          <circle cx="182" cy="82" r="7" fill="#1f6feb"></circle>
+          <circle cx="278" cy="96" r="7" fill="#1f6feb"></circle>
+          <circle cx="96" cy="274" r="7" fill="#1f6feb"></circle>
+          <circle cx="282" cy="278" r="7" fill="#1f6feb"></circle>
+          <path d="M410 285 L545 172" stroke="#d94801" stroke-width="5" marker-end="url(#arrow-orange)"></path>
+          <line x1="410" y1="285" x2="550" y2="285" stroke="#333" stroke-width="2"></line>
+          <line x1="410" y1="285" x2="410" y2="145" stroke="#333" stroke-width="2"></line>
+          <text x="553" y="290" font-size="15">Mx</text>
+          <text x="390" y="142" font-size="15">My</text>
+          <text x="482" y="160" font-size="15" fill="#d94801">resultant M</text>
+          <path d="M415 284 A50 50 0 0 1 452 248" fill="none" stroke="#d94801" stroke-width="2"></path>
+          <text x="452" y="264" font-size="14" fill="#d94801">theta</text>
+          <text x="68" y="338" font-size="14">Concrete in tension is weak or ignored; steel may yield.</text>
+          <text x="68" y="360" font-size="14">Stress centroid shifts nonlinearly with P and strain state.</text>
+        </svg>
+        <figcaption>Even if the strain plane is simple, the stress resultants are not generally aligned with it.</figcaption>
+      </figure>
+      <div>
+        <h3>What makes them different?</h3>
+        <ul>
+          <li>Concrete is nonlinear and mostly compression-only in ULS section analysis.</li>
+          <li>Steel bars are discrete; each bar may be elastic, yielded, compressed, or tensioned.</li>
+          <li>Section geometry may be rectangular, hollow, asymmetric, or have unequal stiffness in two directions.</li>
+          <li>The axial force level changes the compression block size and its centroid.</li>
+          <li>Strength factors or design-material rules may scale contributions in ways that change the design surface.</li>
+        </ul>
+        <h3 class="kr">왜 달라지는가?</h3>
+        <ul class="kr">
+          <li>콘크리트는 비선형이며 극한상태에서는 주로 압축 영역만 유효합니다.</li>
+          <li>철근은 이산적으로 배치되어 있고 각 철근의 항복 상태가 서로 다를 수 있습니다.</li>
+          <li>단면 형상과 철근 배치가 두 방향에 대해 대칭이 아닐 수 있습니다.</li>
+          <li>축력 수준이 바뀌면 압축 블록의 크기와 중심이 바뀝니다.</li>
+          <li>강도감소계수나 설계재료강도 방식도 결과면의 형상을 바꿀 수 있습니다.</li>
+        </ul>
+        <div class="principle note">Only in special symmetric, linear cases can a simple perpendicular intuition work. Reinforced concrete biaxial ULS is not that case.</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>2. What A Point On The 3D Surface Means</h2>
+    <div class="grid">
+      <div>
+        <p><strong>English.</strong> During surface generation, you choose a strain-plane sample angle <code>alpha</code> and a strain-state parameter such as neutral-axis depth or station index. That gives one compatible strain field. After stress integration, that one state becomes one point:</p>
+        <div class="formula">
+          <div>(alpha, state parameter) -> epsilon(x,y)</div>
+          <div>epsilon(x,y) -> stresses -> (Pn, Mnx, Mny)</div>
+        </div>
+        <p>Once the point exists in <code>P-Mx-My</code> space, <code>alpha</code> is only provenance. It is not the angle used to check the demand.</p>
+        <p class="kr"><strong>한국어.</strong> 상호작용면을 만들 때는 변형률 평면의 샘플 각도 <code>alpha</code>와 중립축 깊이 또는 station 같은 상태 변수를 선택합니다. 이 조합은 하나의 변형률장을 만들고, 응력 적분을 거쳐 하나의 점이 됩니다.</p>
+        <p class="kr">점이 <code>P-Mx-My</code> 공간에 생성된 후에는 <code>alpha</code>는 생성 이력일 뿐입니다. 하중 검토 방향으로 사용하면 안 됩니다.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 640 420" role="img" aria-labelledby="fig2-title fig2-desc">
+          <title id="fig2-title">A sampled strain state becomes a point on the 3D surface</title>
+          <desc id="fig2-desc">A grid of alpha and state samples produces points in P Mx My space.</desc>
+          <defs>
+            <marker id="arrow-black" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+              <path d="M0,0 L8,3 L0,6 Z" fill="#202124"></path>
+            </marker>
+          </defs>
+          <line x1="110" y1="330" x2="530" y2="330" stroke="#202124" stroke-width="2" marker-end="url(#arrow-black)"></line>
+          <line x1="110" y1="330" x2="110" y2="70" stroke="#202124" stroke-width="2" marker-end="url(#arrow-black)"></line>
+          <line x1="110" y1="330" x2="245" y2="235" stroke="#202124" stroke-width="2" marker-end="url(#arrow-black)"></line>
+          <text x="536" y="335" font-size="15">Mx</text>
+          <text x="86" y="66" font-size="15">P</text>
+          <text x="250" y="235" font-size="15">My</text>
+          <path d="M170 300 C230 210, 390 155, 505 215 C485 285, 345 330, 170 300 Z" fill="#c7b299" opacity="0.42" stroke="#7f7468" stroke-width="2"></path>
+          <path d="M180 292 C250 242, 390 220, 486 240" fill="none" stroke="#7a4cc2" stroke-width="3"></path>
+          <path d="M190 270 C280 200, 415 170, 505 214" fill="none" stroke="#7a4cc2" stroke-width="3" opacity="0.65"></path>
+          <path d="M210 246 C305 175, 424 155, 505 197" fill="none" stroke="#7a4cc2" stroke-width="3" opacity="0.35"></path>
+          <circle cx="350" cy="222" r="6" fill="#d94801"></circle>
+          <line x1="350" y1="222" x2="455" y2="118" stroke="#d94801" stroke-width="2"></line>
+          <text x="465" y="119" font-size="15" fill="#d94801">one generated point</text>
+          <text x="158" y="372" font-size="14">Curves may be grouped by strain-plane sample angle.</text>
+          <text x="158" y="394" font-size="14">The finished surface is checked geometrically.</text>
+        </svg>
+        <figcaption>A row/curve on the generated grid is a sampling trace, not automatically a demand-direction section.</figcaption>
+      </figure>
+    </div>
+
+    <table class="matrix">
+      <thead>
+      <tr>
+        <th>Object</th>
+        <th>Meaning</th>
+        <th>Korean</th>
+        <th>Do not confuse with</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td><code>alpha</code></td>
+        <td>Strain-plane or neutral-axis sampling angle used to create capacity points.</td>
+        <td class="kr">내력점을 만들기 위한 변형률 평면 또는 중립축 샘플 각도.</td>
+        <td><code>thetaLoad</code></td>
+      </tr>
+      <tr>
+        <td><code>(Pn, Mnx, Mny)</code></td>
+        <td>Result of integrating stresses for one compatible strain state.</td>
+        <td class="kr">하나의 적합 변형률 상태에 대해 응력을 적분한 결과.</td>
+        <td>External demand</td>
+      </tr>
+      <tr>
+        <td><code>thetaLoad</code></td>
+        <td>Moment direction of the load combination: <code>atan2(Muy, Mux)</code>.</td>
+        <td class="kr">하중 조합의 모멘트 방향.</td>
+        <td>Neutral-axis angle</td>
+      </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>3. The Correct Check For One Loadcase</h2>
+    <div class="steps">
+      <div class="step">
+        <strong>Start from demand.</strong> Given <code>Pu, Mux, Muy</code>, compute <code>thetaLoad = atan2(Muy, Mux)</code> and <code>Mu = sqrt(Mux^2 + Muy^2)</code>.<br>
+        <span class="kr">하중 <code>Pu, Mux, Muy</code>에서 시작하여 <code>thetaLoad</code>와 <code>Mu</code>를 계산합니다.</span>
+      </div>
+      <div class="step">
+        <strong>Cut the 3D surface horizontally.</strong> Intersect the finished interaction surface with <code>P = Pu</code>. This gives a contour in the <code>Mx-My</code> plane.<br>
+        <span class="kr">완성된 상호작용면을 <code>P = Pu</code>로 절단하면 <code>Mx-My</code> 평면의 폐곡선이 됩니다.</span>
+      </div>
+      <div class="step">
+        <strong>Draw the demand moment ray.</strong> Use <code>Mx = t*cos(thetaLoad)</code> and <code>My = t*sin(thetaLoad)</code>.<br>
+        <span class="kr">하중 모멘트 방향의 반직선을 그립니다.</span>
+      </div>
+      <div class="step">
+        <strong>Find the boundary point.</strong> The first positive intersection gives <code>Mb</code>, with <code>Mbnx = Mb*cos(thetaLoad)</code> and <code>Mbny = Mb*sin(thetaLoad)</code>.<br>
+        <span class="kr">반직선과 폐곡선의 첫 번째 양의 교점이 해당 축력에서의 모멘트 내력 <code>Mb</code>입니다.</span>
+      </div>
+      <div class="step">
+        <strong>Compare.</strong> If the surface is already a design surface, check <code>Mu <= Mb</code>. If it is nominal, apply the correct design resistance process before comparison.<br>
+        <span class="kr">설계 내력면이면 <code>Mu <= Mb</code>를 확인합니다. 공칭 내력면이면 설계 내력 변환 후 비교합니다.</span>
+      </div>
+    </div>
+
+    <div class="demo-panel">
+      <label for="angleRange">
+        <span>Interactive load moment direction / 하중 모멘트 방향</span>
+        <span><output id="angleOut">35</output> deg</span>
+      </label>
+      <input id="angleRange" type="range" min="0" max="180" value="35" step="1">
+      <div class="status">
+        <div><span>thetaLoad</span><strong id="thetaText">35 deg</strong></div>
+        <div><span>Mb</span><strong id="mbText">--</strong></div>
+        <div><span>(Mbnx, Mbny)</span><strong id="componentsText">--</strong></div>
+      </div>
+      <svg id="rayDemo" viewBox="0 0 720 430" role="img" aria-labelledby="demo-title demo-desc">
+        <title id="demo-title">Fixed P contour and moment ray</title>
+        <desc id="demo-desc">The load ray intersects the fixed-P capacity contour at Mb.</desc>
+        <defs>
+          <marker id="arrow-ray" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#d94801"></path>
+          </marker>
+        </defs>
+        <line x1="360" y1="360" x2="650" y2="360" stroke="#202124" stroke-width="2"></line>
+        <line x1="360" y1="360" x2="360" y2="70" stroke="#202124" stroke-width="2"></line>
+        <text x="655" y="365" font-size="15">Mnx</text>
+        <text x="332" y="68" font-size="15">Mny</text>
+        <path id="capacityPath" d="" fill="#c7b299" opacity="0.28" stroke="#7f7468" stroke-width="3"></path>
+        <line id="rayLine" x1="360" y1="360" x2="520" y2="230" stroke="#d94801" stroke-width="4" marker-end="url(#arrow-ray)"></line>
+        <circle id="boundaryDot" cx="520" cy="230" r="8" fill="#d94801"></circle>
+        <line id="xComp" x1="360" y1="360" x2="520" y2="360" stroke="#7a4cc2" stroke-width="3" stroke-dasharray="7 5"></line>
+        <line id="yComp" x1="520" y1="360" x2="520" y2="230" stroke="#7a4cc2" stroke-width="3" stroke-dasharray="7 5"></line>
+        <text id="mbLabel" x="528" y="224" font-size="15" fill="#d94801">Mb</text>
+        <text x="58" y="70" font-size="17" font-weight="700">P = Pu slice</text>
+        <text x="58" y="96" font-size="14">The contour is usually not a circle.</text>
+        <text x="58" y="118" font-size="14" class="kr">이 폐곡선은 일반적으로 원이 아닙니다.</text>
+        <text x="58" y="155" font-size="14">Ray angle comes from demand, not N.A.</text>
+        <text x="58" y="177" font-size="14" class="kr">반직선 각도는 중립축이 아니라 하중에서 옵니다.</text>
+      </svg>
+    </div>
+  </section>
+
+  <section>
+    <h2>4. The Correct 2D P-Mtheta Chart</h2>
+    <div class="grid">
+      <div>
+        <p><strong>English.</strong> A vertical <code>P-Mtheta</code> chart is not the generated curve at <code>alpha = thetaLoad</code>. It is the intersection between the finished 3D surface and a vertical plane through the <code>P</code> axis.</p>
+        <p class="kr"><strong>한국어.</strong> <code>P-Mtheta</code> 도표는 <code>alpha = thetaLoad</code>에서 생성된 곡선이 아닙니다. 완성된 3D 상호작용면과 <code>P</code>축을 지나는 수직 평면의 교선입니다.</p>
+        <div class="formula">
+          <div>plane: Mx*sin(thetaLoad) - My*cos(thetaLoad) = 0</div>
+          <div>Mtheta = Mx*cos(thetaLoad) + My*sin(thetaLoad)</div>
+        </div>
+        <div class="note principle">This is a pure geometry problem after the surface has been generated.</div>
+        <div class="note principle kr">상호작용면이 생성된 뒤에는 순수한 기하학 문제입니다.</div>
+      </div>
+      <figure>
+        <svg viewBox="0 0 620 420" role="img" aria-labelledby="fig4-title fig4-desc">
+          <title id="fig4-title">Vertical moment-direction plane cuts the interaction surface</title>
+          <desc id="fig4-desc">A plane through the P axis intersects the P Mx My surface to form a P Mtheta curve.</desc>
+          <defs>
+            <marker id="arrow-axis" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+              <path d="M0,0 L8,3 L0,6 Z" fill="#202124"></path>
+            </marker>
+          </defs>
+          <line x1="140" y1="345" x2="530" y2="345" stroke="#202124" stroke-width="2" marker-end="url(#arrow-axis)"></line>
+          <line x1="140" y1="345" x2="140" y2="70" stroke="#202124" stroke-width="2" marker-end="url(#arrow-axis)"></line>
+          <line x1="140" y1="345" x2="270" y2="260" stroke="#202124" stroke-width="2" marker-end="url(#arrow-axis)"></line>
+          <text x="536" y="350" font-size="15">Mx</text>
+          <text x="116" y="66" font-size="15">P</text>
+          <text x="278" y="260" font-size="15">My</text>
+          <path d="M190 315 C245 190, 410 145, 520 222 C490 302, 355 350, 190 315 Z" fill="#c7b299" opacity="0.36" stroke="#7f7468" stroke-width="2"></path>
+          <polygon points="140,345 490,180 490,70 140,70" fill="#d94801" opacity="0.18" stroke="#d94801" stroke-width="2"></polygon>
+          <path d="M205 312 C255 235, 340 185, 488 175" fill="none" stroke="#d94801" stroke-width="5"></path>
+          <text x="418" y="105" font-size="15" fill="#d94801">moment-direction plane</text>
+          <text x="305" y="220" font-size="15" fill="#d94801">P-Mtheta curve</text>
+          <text x="205" y="380" font-size="14">Plane equation: Mx sin(theta) - My cos(theta) = 0</text>
+        </svg>
+        <figcaption>The 2D chart is a geometric section of the surface, not a strain-sampling row.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>5. Practical Review Checklist</h2>
+    <div class="two">
+      <div class="callout">
+        <h3>Correct</h3>
+        <ul>
+          <li>Use <code>alpha</code> or strain-plane angle to generate compatible capacity states.</li>
+          <li>Store each state as a point <code>(P, Mx, My)</code> on the 3D surface.</li>
+          <li>For a loadcase, compute <code>thetaLoad = atan2(Muy, Mux)</code>.</li>
+          <li>Use <code>P = Pu</code> contour plus a moment ray for fixed-axial check.</li>
+          <li>Use <code>Mx*sin(thetaLoad) - My*cos(thetaLoad) = 0</code> for the vertical <code>P-Mtheta</code> chart.</li>
+        </ul>
+      </div>
+      <div class="callout">
+        <h3 class="kr">올바른 방법</h3>
+        <ul class="kr">
+          <li><code>alpha</code> 또는 변형률 평면 각도는 내력 상태를 생성하는 데 사용합니다.</li>
+          <li>각 상태는 3D 상호작용면의 <code>(P, Mx, My)</code> 점으로 저장합니다.</li>
+          <li>하중 조합은 <code>thetaLoad = atan2(Muy, Mux)</code>로 방향을 계산합니다.</li>
+          <li>고정 축력 검토는 <code>P = Pu</code> 폐곡선과 모멘트 반직선을 사용합니다.</li>
+          <li><code>P-Mtheta</code> 도표는 <code>Mx*sin(thetaLoad) - My*cos(thetaLoad) = 0</code> 평면으로 절단합니다.</li>
+        </ul>
+      </div>
+      <div class="callout">
+        <h3>Wrong</h3>
+        <ul>
+          <li>Choosing the generated curve where <code>alpha</code> is closest to <code>thetaLoad</code>.</li>
+          <li>Assuming the neutral axis is perpendicular to the resultant moment vector.</li>
+          <li>Using <code>sqrt(Mx^2 + My^2)</code> for arbitrary surface points not on the demand ray.</li>
+          <li>Calling a fixed-P moment ratio the full 3D utilization unless the project explicitly defines it that way.</li>
+        </ul>
+      </div>
+      <div class="callout">
+        <h3 class="kr">잘못된 방법</h3>
+        <ul class="kr">
+          <li><code>alpha</code>가 <code>thetaLoad</code>와 가장 가까운 생성 곡선을 선택하는 것.</li>
+          <li>중립축이 합성 모멘트 벡터와 항상 직교한다고 가정하는 것.</li>
+          <li>하중 반직선 위에 있지 않은 임의의 점에 <code>sqrt(Mx^2 + My^2)</code>를 그대로 사용하는 것.</li>
+          <li>고정 축력 모멘트 비를 전체 3D utilization으로 부르는 것.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <p class="footer-note">Prepared as a teaching note for reinforced concrete biaxial compression-bending checks. Keep the distinction between strain generation and demand query visible in code, reports, and reviews.</p>
+</main>
+
+<script>
+  (function () {
+    const cx = 360;
+    const cy = 360;
+    const contour = [
+      [185, -6],
+      [165, -82],
+      [88, -152],
+      [-22, -132],
+      [-112, -86],
+      [-145, 12],
+      [-92, 118],
+      [36, 148],
+      [142, 98]
+    ];
+
+    const path = document.getElementById("capacityPath");
+    const ray = document.getElementById("rayLine");
+    const dot = document.getElementById("boundaryDot");
+    const xComp = document.getElementById("xComp");
+    const yComp = document.getElementById("yComp");
+    const label = document.getElementById("mbLabel");
+    const input = document.getElementById("angleRange");
+    const out = document.getElementById("angleOut");
+    const thetaText = document.getElementById("thetaText");
+    const mbText = document.getElementById("mbText");
+    const componentsText = document.getElementById("componentsText");
+
+    function screen(p) {
+      return [cx + p[0], cy - p[1]];
+    }
+
+    function drawContour() {
+      const first = screen(contour[0]);
+      let d = "M " + first[0].toFixed(1) + " " + first[1].toFixed(1);
+      for (let i = 1; i < contour.length; i++) {
+        const p = screen(contour[i]);
+        d += " L " + p[0].toFixed(1) + " " + p[1].toFixed(1);
+      }
+      d += " Z";
+      path.setAttribute("d", d);
+    }
+
+    function cross(a, b) {
+      return a[0] * b[1] - a[1] * b[0];
+    }
+
+    function intersectRayPolygon(theta) {
+      const dir = [Math.cos(theta), Math.sin(theta)];
+      let best = null;
+      for (let i = 0; i < contour.length; i++) {
+        const a = contour[i];
+        const b = contour[(i + 1) % contour.length];
+        const edge = [b[0] - a[0], b[1] - a[1]];
+        const denom = cross(edge, dir);
+        if (Math.abs(denom) < 1e-9) continue;
+        const q = -cross(a, dir) / denom;
+        if (q < -1e-9 || q > 1 + 1e-9) continue;
+        const pt = [a[0] + edge[0] * q, a[1] + edge[1] * q];
+        const t = pt[0] * dir[0] + pt[1] * dir[1];
+        if (t >= -1e-9 && (best === null || t < best.t)) best = { point: pt, t: t };
+      }
+      return best;
+    }
+
+    function update() {
+      const deg = Number(input.value);
+      const theta = deg * Math.PI / 180;
+      const hit = intersectRayPolygon(theta);
+      if (!hit) return;
+      const p = screen(hit.point);
+      const end = screen([hit.point[0] * 1.12, hit.point[1] * 1.12]);
+      ray.setAttribute("x1", cx);
+      ray.setAttribute("y1", cy);
+      ray.setAttribute("x2", end[0]);
+      ray.setAttribute("y2", end[1]);
+      dot.setAttribute("cx", p[0]);
+      dot.setAttribute("cy", p[1]);
+      xComp.setAttribute("x1", cx);
+      xComp.setAttribute("y1", cy);
+      xComp.setAttribute("x2", p[0]);
+      xComp.setAttribute("y2", cy);
+      yComp.setAttribute("x1", p[0]);
+      yComp.setAttribute("y1", cy);
+      yComp.setAttribute("x2", p[0]);
+      yComp.setAttribute("y2", p[1]);
+      label.setAttribute("x", p[0] + 10);
+      label.setAttribute("y", p[1] - 10);
+      out.textContent = String(deg);
+      thetaText.textContent = deg + " deg";
+      mbText.textContent = hit.t.toFixed(1);
+      componentsText.textContent = "(" + hit.point[0].toFixed(1) + ", " + hit.point[1].toFixed(1) + ")";
+    }
+
+    drawContour();
+    input.addEventListener("input", update);
+    update();
+  }());
+</script>
+</body>
+</html>

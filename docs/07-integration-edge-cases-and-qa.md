@@ -3,6 +3,12 @@
 This file defines the authoritative ULS check. It replaces v1's axial screen plus fixed-P radial
 moment ratio.
 
+Classic biaxial-bending pitfall: the strain-plane or neutral-axis sampling angle used to generate
+the `P-Mx-My` surface is not the moment direction of a demand. Demand checks use the demand vector
+itself, with `thetaLoad = atan2(Muy, Mux)`, and intersect the completed surface geometry. Any
+implementation that chooses a sampled beta/neutral-axis row because it is closest to `thetaLoad`
+is a mechanics bug.
+
 ## 1. Demand contract
 
 ```ts
@@ -91,6 +97,10 @@ until the adapter/surface is reviewed.
 
 For visualization or a specifically requested constant-axial-load study, slice all triangles as
 defined in file `05` and perform a point-in-multiple-polygons test for `(Mux,Muy)`.
+
+The radial moment ray for that study is `Mx = t*cos(thetaLoad)`,
+`My = t*sin(thetaLoad)`. It is not the row of the surface generated at a matching strain-plane
+angle.
 
 A fixed-P radial moment ratio may be reported only when:
 
@@ -205,6 +215,7 @@ but adapter-permitted cases. A warning never overrides a fatal gate.
 | Axial cap plane | cap face closed and ray intersection correct |
 | Asymmetric bars and nonzero uniform-strain moments | handled in full 3D; no assumption that poles lie on moment origin |
 | Multiple fixed-P loops | preserve loops and hole parity |
+| Demand angle between sampled strain angles | geometric ray/plane intersection, not nearest sampled beta row |
 | Near-tangent demand ray | targeted refinement or `indeterminate` |
 | Non-star-shaped design domain | point location available; proportional UR blocked/indeterminate |
 | Mesh/surface limit reached | typed failure, never accepted with console warning |
