@@ -1266,6 +1266,29 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.pm-material-blocked {
+  margin: 2px 0 0;
+  padding: 8px 10px;
+  border: 1px solid #f0a5a5;
+  border-left-width: 3px;
+  border-radius: 4px;
+  background: #fdf1f1;
+  color: #8a1c1c;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.pm-material-blocked strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+[data-jscad-theme='dark'] .pm-material-blocked {
+  border-color: #7f3535;
+  background: #2a1717;
+  color: #f2b8b8;
+}
+
 .pm-material-stress-box {
   display: grid;
   gap: 8px;
@@ -2507,6 +2530,10 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
 
 .pm-field-metric-rows strong.is-warn {
   color: #c2410c;
+}
+
+.pm-field-metric-rows strong.is-bad {
+  color: #b91c1c;
 }
 
 .pm-field-metric-grid {

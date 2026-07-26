@@ -7,7 +7,7 @@
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { parseProjectDocument, serializeProjectDocument } from '@pm/project'
-import { referenceProjectDocument } from './pm-reference-case'
+import { referenceProjectDocument } from './reference-case'
 
 const target = resolve(process.cwd(), 'docs/example case/PM-advanced (7) 2D.pm-project.json')
 const document = referenceProjectDocument()

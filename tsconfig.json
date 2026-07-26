@@ -20,7 +20,11 @@
       "@pm/materials": ["./packages/pm-materials/src"],
       "@pm/materials/*": ["./packages/pm-materials/src/*"],
       "@pm/project": ["./packages/pm-project/src"],
-      "@pm/project/*": ["./packages/pm-project/src/*"]
+      "@pm/project/*": ["./packages/pm-project/src/*"],
+      "@pm/analysis": ["./packages/pm-analysis/src"],
+      "@pm/analysis/*": ["./packages/pm-analysis/src/*"],
+      "@pm/report": ["./packages/pm-report/src"],
+      "@pm/report/*": ["./packages/pm-report/src/*"]
     },
     "plugins": [
       {

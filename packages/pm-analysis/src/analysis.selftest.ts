@@ -36,8 +36,8 @@ import {
   previewStationState,
   type ResultantLedger,
   type StrainState
-} from './pm-preview-analysis'
-import { REFERENCE_NET_AREA, referenceProjectDocument } from './pm-reference-case'
+} from './index'
+import { REFERENCE_NET_AREA, referenceProjectDocument } from './reference-case'
 
 const N_TO_KN = 1e-3
 const NMM_TO_KNM = 1e-6

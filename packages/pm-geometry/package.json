@@ -9,6 +9,6 @@
   },
   "dependencies": {
     "@pm/ids": "0.1.0",
-    "polygon-clipping": "^0.15.7"
+    "polygon-clipping": "0.15.7"
   }
 }

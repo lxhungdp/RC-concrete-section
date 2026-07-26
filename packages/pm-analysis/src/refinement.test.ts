@@ -1,0 +1,89 @@
+/**
+ * Direction sampling is measured, and refinement reduces what it measures (`docs/05` §5, `docs/06`
+ * §5). The fixed 24-direction grid stays the default, so nothing drifts unless refinement is asked
+ * for — but the surface always says how much that grid is costing.
+ */
+import { strict as assert } from 'node:assert'
+import test from 'node:test'
+import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
+import {
+  buildPreviewSurfaceFromPrepared,
+  intersectFixedPContourWithMomentRay,
+  prepareAnalysis,
+  sliceFixedPContour
+} from './index'
+import { referenceProjectDocument } from './reference-case'
+
+const document = referenceProjectDocument()
+const prepared = prepareAnalysis(
+  sectionGeometryFromGeometryInput(document.inputs.geometry),
+  geometryInputRebars(document.inputs.geometry),
+  document.inputs.materials
+)
+
+test('the default grid is 24 directions and reports a finite error estimate', () => {
+  const surface = buildPreviewSurfaceFromPrepared(prepared)
+  assert.equal(surface.directionError.directions, 24)
+  assert.equal(surface.directionError.refinementPasses, 0)
+  assert.ok(surface.directionError.maxRelativeMoment > 0)
+  assert.ok(Number.isFinite(surface.directionError.maxRelativeMoment))
+  assert.equal(surface.points.length, 24 * 19)
+})
+
+test('switching the probe off costs nothing and reports unknown, never zero', () => {
+  const surface = buildPreviewSurfaceFromPrepared(prepared, { probeStations: [] })
+  assert.equal(surface.directionError.directions, 24)
+  assert.ok(Number.isNaN(surface.directionError.maxRelativeMoment), 'an untaken estimate must not read as 0')
+  assert.ok(Number.isNaN(surface.directionError.maxRelativeP))
+  // The capacity itself is unaffected by whether the estimate was taken.
+  const withProbe = buildPreviewSurfaceFromPrepared(prepared)
+  assert.deepEqual(
+    surface.points.map((point) => point.P),
+    withProbe.points.map((point) => point.P)
+  )
+})
+
+test('refinement adds directions and lowers the measured error', () => {
+  const coarse = buildPreviewSurfaceFromPrepared(prepared)
+  const fine = buildPreviewSurfaceFromPrepared(prepared, { tolerance: 5e-3, maxPasses: 3 })
+
+  assert.ok(fine.directionError.directions > coarse.directionError.directions)
+  assert.ok(fine.directionError.refinementPasses > 0)
+  assert.ok(
+    fine.directionError.maxRelativeMoment < coarse.directionError.maxRelativeMoment,
+    `${fine.directionError.maxRelativeMoment} should be below ${coarse.directionError.maxRelativeMoment}`
+  )
+  // Every direction still carries the full station schedule.
+  assert.equal(fine.points.length, fine.directionError.directions * 19)
+  const perDirection = new Map<number, number>()
+  for (const point of fine.points) perDirection.set(point.beta, (perDirection.get(point.beta) ?? 0) + 1)
+  assert.ok([...perDirection.values()].every((count) => count === 19))
+})
+
+test('the direction cap is respected and reported as not converged', () => {
+  const capped = buildPreviewSurfaceFromPrepared(prepared, {
+    tolerance: 1e-9,
+    maxPasses: 10,
+    maxDirections: 60
+  })
+  assert.ok(capped.directionError.directions <= 60)
+  assert.equal(capped.directionError.withinTolerance, false)
+  assert.ok(
+    capped.warnings.some((warning) => warning.startsWith('Direction sampling did not reach')),
+    'a surface that missed its tolerance must say so'
+  )
+})
+
+test('the coarse grid under-estimates capacity, so refinement may only raise it', () => {
+  const P = 24942.922102452183e3
+  const theta = Math.atan2(1431.7807276950741e6, 3714.165943842699e6)
+  const capacity = (surface: ReturnType<typeof buildPreviewSurfaceFromPrepared>) =>
+    intersectFixedPContourWithMomentRay(sliceFixedPContour(surface.points, P), theta)?.M ?? Number.NaN
+
+  const coarse = capacity(buildPreviewSurfaceFromPrepared(prepared))
+  const fine = capacity(buildPreviewSurfaceFromPrepared(prepared, { tolerance: 2e-3, maxPasses: 3 }))
+
+  assert.ok(Number.isFinite(coarse) && Number.isFinite(fine))
+  // Chord interpolation across a convex contour cuts the corner, so the 24-gon is conservative.
+  assert.ok(fine >= coarse * (1 - 1e-9), `refined capacity ${fine} fell below coarse ${coarse}`)
+})

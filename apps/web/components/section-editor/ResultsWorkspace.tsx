@@ -6,7 +6,7 @@ import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
 import type { LoadCombination } from '@pm/project'
 import {
-  sliceFixedP,
+  contourStrainAngleSamples,
   sliceFixedPContour,
   sliceMomentPlane,
   PREVIEW_STATIONS,
@@ -16,9 +16,13 @@ import {
   type PreviewSurfacePoint,
   type PreviewMomentPlanePoint,
   type SectionFieldMap
-} from '../../lib/pm-preview-analysis'
-import { ExcelExportError, sectionWorkbookFileName } from '../../lib/pm-excel-export'
-import { buildSectionFieldMapAsync, exportSectionWorkbookAsync } from '../../lib/workers/pm-analysis-client'
+} from '@pm/analysis'
+import { ExcelExportError, sectionWorkbookFileName } from '@pm/report'
+import {
+  buildSectionFieldMapAsync,
+  exportSectionWorkbookAsync,
+  isAnalysisAbort
+} from '../../lib/workers/pm-analysis-client'
 import { PlotlyChart, type PlotlyClickPayload } from './PlotlyChart'
 import { momentAngleDeg, neutralAxisAngleDeg, SectionFieldChart } from './SectionFieldChart'
 
@@ -88,6 +92,16 @@ const groupByBeta = (points: PreviewSurfacePoint[]) => {
 const normalizeAngleDeg = (degrees: number) => {
   const wrapped = ((degrees % 360) + 360) % 360
   return wrapped
+}
+
+/**
+ * Three outcomes, not two. A residual that converged onto a strain plane outside the material
+ * domain is not an equilibrium state, and must not read the same as a valid solve.
+ */
+const solverStatus = (result: InversePreviewResult) => {
+  if (!result.converged) return { label: 'Approx', tone: 'is-warn' }
+  if (!result.admissibility.ok) return { label: 'Inadmissible', tone: 'is-bad' }
+  return { label: 'Converged', tone: 'is-ok' }
 }
 
 const loadcaseAngleDeg = (loadcase: LoadCombination) =>
@@ -194,34 +208,27 @@ export function ResultsWorkspace({
   const isLoadcaseMode = viewMode === 'loadcase' && selectedLoadcase != null
 
   useEffect(() => {
-    let cancelled = false
     setFieldMap(null)
 
     if (!isLoadcaseMode || !inverseResult) {
       setFieldMapWorking(false)
-      return () => {
-        cancelled = true
-      }
+      return
     }
 
+    const controller = new AbortController()
     setFieldMapWorking(true)
-    buildSectionFieldMapAsync({ section, rebars, materialStore, state: inverseResult.state })
+    buildSectionFieldMapAsync({ section, rebars, materialStore, state: inverseResult.state }, controller.signal)
       .then((map) => {
-        if (cancelled) return
         setFieldMap(map)
+        setFieldMapWorking(false)
       })
-      .catch(() => {
-        if (cancelled) return
+      .catch((error) => {
+        if (isAnalysisAbort(error)) return
         setFieldMap(null)
-      })
-      .finally(() => {
-        if (cancelled) return
         setFieldMapWorking(false)
       })
 
-    return () => {
-      cancelled = true
-    }
+    return () => controller.abort()
   }, [inverseResult, isLoadcaseMode, materialStore, rebars, section])
 
   const activeFixedP = isLoadcaseMode ? selectedLoadcase.P : fixedP
@@ -248,10 +255,8 @@ export function ResultsWorkspace({
     [activeFixedP, surface]
   )
 
-  const strainAngleSamples = useMemo(
-    () => (surface ? sliceFixedP(surface.points, activeFixedP) : []),
-    [activeFixedP, surface]
-  )
+  // Diagnostic markers, taken from the contour that is actually drawn — not from a second slice.
+  const strainAngleSamples = useMemo(() => contourStrainAngleSamples(contour), [contour])
 
   const surfaceGrid = useMemo(() => (surface ? groupByBeta(surface.points) : []), [surface])
 
@@ -1117,7 +1122,7 @@ export function ResultsWorkspace({
           {renderChartShell({
             id: 'heatmap',
             title: 'Section field',
-            meta: inverseResult ? (inverseResult.ok ? 'Converged' : 'Approx') : 'Solving…',
+            meta: inverseResult ? solverStatus(inverseResult).label : 'Solving…',
             primary: loadcasePrimary === 'heatmap',
             visible: loadcaseVisible.heatmap,
             onMakePrimary: () => setLoadcasePrimary('heatmap'),
@@ -1173,8 +1178,11 @@ export function ResultsWorkspace({
                   <div className="pm-field-metric-rows">
                     <div>
                       <span>Status</span>
-                      <strong className={inverseResult.ok ? 'is-ok' : 'is-warn'}>
-                        {inverseResult.ok ? 'Converged' : 'Approx'}
+                      <strong
+                        className={solverStatus(inverseResult).tone}
+                        title={inverseResult.message}
+                      >
+                        {solverStatus(inverseResult).label}
                       </strong>
                     </div>
                     <div>

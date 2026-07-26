@@ -82,6 +82,11 @@ export type ConcreteMeshOptions = {
   maxCells?: number
   /** Times a cell may be quartered when its clip result still contains a hole. */
   maxSubdivision?: number
+  /**
+   * Disable the boundary-cell spatial fast path. Intended for differential verification against
+   * the original all-cells boolean algorithm, not for production analysis.
+   */
+  spatialAcceleration?: boolean
 }
 
 const DEFAULT_SEED_DIVISIONS = 32
@@ -161,6 +166,33 @@ const ringArea = (pairs: Pair[]) => {
     sum += ax * by - bx * ay
   }
   return sum / 2
+}
+
+/** Even-odd point classification. Callers use it only away from a boundary edge. */
+const pointInRing = (x: number, y: number, ring: Ring) => {
+  const pairs = ringToPairs(ring)
+  let inside = false
+  for (let i = 0, j = pairs.length - 1; i < pairs.length; j = i++) {
+    const [xi, yi] = pairs[i]
+    const [xj, yj] = pairs[j]
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+
+const pointInMultiPolygon = (x: number, y: number, multi: MultiPolygon) => {
+  for (const polygon of multi) {
+    if (!polygon[0] || !pointInRing(x, y, polygon[0])) continue
+    let inHole = false
+    for (let i = 1; i < polygon.length; i++) {
+      if (pointInRing(x, y, polygon[i])) {
+        inHole = true
+        break
+      }
+    }
+    if (!inHole) return true
+  }
+  return false
 }
 
 const convexHull = (points: Array<{ x: number; y: number }>) => {
@@ -326,6 +358,63 @@ export const buildConcreteMesh = (
   const maxSubdivision = options.maxSubdivision ?? DEFAULT_MAX_SUBDIVISION
   const tolArea = Math.max(1e-12 * lRef * lRef, 64 * Number.EPSILON * lRef * lRef)
 
+  /**
+   * Base-grid cells touched by any exact boundary segment.
+   *
+   * A segment is split at every vertical/horizontal grid crossing, so marking is O(perimeter / h)
+   * rather than O(grid cells × boundary edges). At a crossing we mark all cells reached by a tiny
+   * coordinate perturbation; therefore an edge exactly on a grid line cannot incorrectly classify
+   * either neighbour as a boundary-free cell.
+   */
+  const boundaryCells = new Set<number>()
+  const boundaryTol = Math.max(1e-10 * lRef, 128 * Number.EPSILON * lRef)
+  const markBoundaryPoint = (x: number, y: number) => {
+    for (const dx of [-boundaryTol, boundaryTol]) {
+      for (const dy of [-boundaryTol, boundaryTol]) {
+        const i = Math.floor((x + dx - minX) / cellSize)
+        const j = Math.floor((y + dy - minY) / cellSize)
+        if (i >= 0 && i < gridX && j >= 0 && j < gridY) boundaryCells.add(i * gridY + j)
+      }
+    }
+  }
+  const markBoundarySegment = (a: Pair, b: Pair) => {
+    const [ax, ay] = a
+    const dx = b[0] - ax
+    const dy = b[1] - ay
+    const cuts = [0, 1]
+
+    if (Math.abs(dx) > boundaryTol) {
+      const first = Math.max(1, Math.ceil((Math.min(ax, b[0]) - minX) / cellSize))
+      const last = Math.min(gridX - 1, Math.floor((Math.max(ax, b[0]) - minX) / cellSize))
+      for (let i = first; i <= last; i++) {
+        const t = (minX + i * cellSize - ax) / dx
+        if (t > 0 && t < 1) cuts.push(t)
+      }
+    }
+    if (Math.abs(dy) > boundaryTol) {
+      const first = Math.max(1, Math.ceil((Math.min(ay, b[1]) - minY) / cellSize))
+      const last = Math.min(gridY - 1, Math.floor((Math.max(ay, b[1]) - minY) / cellSize))
+      for (let j = first; j <= last; j++) {
+        const t = (minY + j * cellSize - ay) / dy
+        if (t > 0 && t < 1) cuts.push(t)
+      }
+    }
+
+    cuts.sort((u, v) => u - v)
+    const uniqueCuts = cuts.filter((t, index) => index === 0 || Math.abs(t - cuts[index - 1]) > 1e-14)
+    for (const t of uniqueCuts) markBoundaryPoint(ax + dx * t, ay + dy * t)
+    for (let i = 0; i < uniqueCuts.length - 1; i++) {
+      const t = (uniqueCuts[i] + uniqueCuts[i + 1]) / 2
+      markBoundaryPoint(ax + dx * t, ay + dy * t)
+    }
+  }
+  for (const polygon of net) {
+    for (const ring of polygon) {
+      const pairs = ringToPairs(ring)
+      for (let i = 0; i < pairs.length; i++) markBoundarySegment(pairs[i], pairs[(i + 1) % pairs.length])
+    }
+  }
+
   const points: MeshQuadraturePoint[] = []
   const trianglesList: MeshTriangle[] = []
   let components = 0
@@ -345,11 +434,18 @@ export const buildConcreteMesh = (
     ]
 
     let pieces: MultiPolygon
-    try {
-      pieces = polygonClipping.intersection(net, cellPolygon)
-    } catch {
-      warnings.push(`Clipping failed for cell (${cellI},${cellJ}) at depth ${depth}.`)
-      return
+    if (options.spatialAcceleration !== false && depth === 0 && !boundaryCells.has(cellI * gridY + cellJ)) {
+      // No boundary enters this cell. Its centre therefore classifies the whole square: a hole or
+      // island wholly contained in the cell would have marked the cell through its own boundary.
+      if (!pointInMultiPolygon(x0 + size / 2, y0 + size / 2, net)) return
+      pieces = [cellPolygon]
+    } else {
+      try {
+        pieces = polygonClipping.intersection(net, cellPolygon)
+      } catch {
+        warnings.push(`Clipping failed for cell (${cellI},${cellJ}) at depth ${depth}.`)
+        return
+      }
     }
     if (pieces.length === 0) return
 

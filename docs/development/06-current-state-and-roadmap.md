@@ -20,7 +20,7 @@ certification.
 | material definitions | one concrete, multiple steels, several model discriminants | implemented preview | exact source/profile separation, ranges, extrapolation, versions |
 | material compilation | stress/tangent/limit helpers | implemented preview | silent fallback, admissibility/breakpoints/components, analytical tangents |
 | KDS helpers | derived concrete parameters/modulus and default definitions | implemented preview | exact normative profile trace and independent verification |
-| ACI Whitney model | helper/type/UI option | implemented but blocked | `beta1` is unused in current local stress evaluation; redesign required |
+| ACI Whitney model | helper/type/UI option | **blocked in code** | `beta1` is unused in local stress evaluation. `@pm/materials/support` now declares the model unsupported; the selector disables it and `@pm/analysis` throws `UNSUPPORTED_CONCRETE_MODEL`. Redesign as a resistance-level adapter is still required. |
 | project JSON | schema/version/meta, geometry/material/loadings, import/export, round-trip self-test | implemented | migrations, strict semantic issues, no invisible repair, result/design-basis artifacts |
 | Loadings data | empty/combination definitions and clone/create helpers | implemented seed | action basis/frame, validator, future owning package when complexity warrants |
 | Results-sidebar loadcases | add/edit/delete/duplicate/select Pu/Mux/Muy combinations in Results | implemented preview | typed validation, import, stale-state graph, accepted demand checks |
@@ -28,7 +28,14 @@ certification.
 | design-code registry | detailed specification only | not implemented | exact profiles, traceability, review/evidence |
 | Results | Plotly 3D preview surface, 2D fixed-P slice, vertical slice, lazy inverse loadcase detail | implemented preview | accepted result contract, DTO-driven plots, checks, convergence evidence; preserve the strain-angle vs demand-angle separation |
 | Report | Excel/PDF model/renderers | not implemented | accepted-result-only pipeline and render verification |
-| tests | TypeScript check script and one project round-trip self-test | initial only | geometry/material/unit/property/differential/UI/V&V suites |
+| analysis kernel package | `@pm/analysis` — fibres, stations, surface, slicing, inverse solve, field map | implemented preview | moved out of `apps/web/lib`; still one module, still preview mechanics |
+| report package | `@pm/report` — Excel workbook export | implemented preview | moved out of `apps/web/lib`; accepted-result-only pipeline still missing |
+| worker protocol | versioned job/cancel messages, queue-drop on cancel, `AbortSignal` on every client call, 250 ms debounce, prepared-analysis cache keyed by canonical input | implemented | progress stages, time/memory budgets, deterministic parallel batches |
+| kernel performance | hoisted constitutive parameters, boundary-cell spatial classifier, one prepared mesh per input revision, analytic consistent tangent | implemented | batched surface states, parallel batches ([`../08`](../08-software-architecture-and-api.md) §8.1) |
+| mesh admission | `RESOURCE_LIMIT`, empty region and failed self-check are typed fatal errors | implemented | automatic mesh refinement to a declared `tolMesh` |
+| numerical uncertainty | measured mesh error and per-surface direction-sampling estimate; opt-in β refinement | implemented preview | state-direction refinement, per-utilization uncertainty ([`../06`](../06-mesh-sizing-and-convergence.md) §7) |
+| benchmark fixtures | 8 sections, process-isolated timing, committed capacity fingerprint gated in CI | implemented | 100-demand batch fixture, memory and UI-blocking budgets |
+| tests | typecheck, 51 `node --test` unit assertions, `cad-drawing` suite, three verification fixtures, bit-identity capacity gate, GitHub Actions CI, exact dependency pins | baseline in place | geometry/material property/UI suites; per-package test scripts |
 
 ## 2. Strengths to preserve
 
@@ -48,29 +55,44 @@ certification.
 1. **No production geometry gateway.** `summarizeSection` warnings are too weak for topology and bar
    acceptance.
 2. **Material compilation fails open.** Unknown/default branches and fallback values can produce a
-   plausible curve from invalid definitions.
+   plausible curve from invalid definitions. *Partly closed:* a rebar whose `steelMaterialId` does
+   not exist is now a typed `MISSING_STEEL_MATERIAL` fatal error rather than a bar that contributes
+   zero. The remaining unknown/default compile branches still fall back silently.
 3. **ACI Whitney is modeled at the wrong abstraction.** `beta1` is displayed/stored but not used in
-   the evaluator, so it cannot enter analysis.
+   the evaluator. *Closed as a hazard, open as a capability:* the model is now rejected by
+   `@pm/materials/support` and by the kernel, so it cannot reach a result; the correct
+   resistance-level adapter is still to be written.
 4. **No exact design basis/profile in project or engine.** Family labels (`KDS`, `ACI318`, `EC2`)
-   cannot select a verified resistance method.
+   cannot select a verified resistance method. *Narrowed:* the implemented ultimate strain domain is
+   now named (`concrete-pivot-ultimate`), returned on every surface, and an EC2 material selection
+   is flagged as paired with a non-EC2 domain. The registry itself remains Phase 5.
 5. **No analysis/result acceptance types.** Preview and engineering output are not yet separated in
    code because the engine does not exist.
 6. **Insufficient verification.** Geometry/material behavior currently lacks the required test
    matrix and independent oracles.
+7. ~~**Mesh admission fails open.**~~ **Closed** — a mesh over its cell budget used to return empty
+   and the surface build carried on with the reinforcement alone, plotting a complete interaction
+   diagram whose `P0` was 6.3× too low. `MESH_RESOURCE_LIMIT`, `EMPTY_CONCRETE_SECTION` and
+   `MESH_NOT_VERIFIED` are now typed fatal errors.
+8. **The direction grid is the governing numerical error.** Measured at 1–16% in moment against
+   0.1% from the integration mesh, and always conservative
+   ([`../06`](../06-mesh-sizing-and-convergence.md) §5.1). The estimate is reported per surface and
+   refinement exists, but the default 24-direction grid is unchanged and no accepted result may be
+   issued without recording which grid produced it.
 
 ### P1 - architecture and data-integrity risks
 
 1. `SectionDrawingClient.tsx` combines many use cases and UI concerns, increasing accidental
-   coupling as Results/Report grow.
-2. Removing a steel material can leave bars referring to a missing ID; parsing later warns and
-   selects a default, which is unsuitable for accepted analysis.
+   coupling as Results/Report grow. **Still open** — 2 300 lines, 34 `useState`.
+2. ~~Removing a steel material can leave bars referring to a missing ID.~~ **Closed** — the kernel
+   rejects it; parse-time still only warns, so the UI should block the edit as well.
 3. Project parsing currently repairs an invalid default steel ID after parsing rather than returning
    an explicit repair decision.
 4. Schema v2 has no migration path or exact design-basis/result artifact.
-5. Package manifests use floating ranges/`latest` for major UI dependencies; result-relevant builds
-   need an intentional pin/update policy.
-6. The root test command invokes `npx --yes tsx` although `tsx` is not declared as a project
-   development dependency, making the test path potentially network-dependent.
+5. ~~Package manifests use floating ranges/`latest`.~~ **Closed** — every dependency is pinned to an
+   exact version and CI installs with `npm ci`.
+6. ~~The root test command invokes `npx --yes tsx`.~~ **Closed** — `tsx` is a pinned devDependency
+   and the scripts call it directly.
 7. Current editor coordinate rounding/fixed tolerances are not separated from engineering topology
    and convergence tolerances.
 
@@ -79,8 +101,10 @@ certification.
 1. Current v2 stores one concrete material while geometry can store multiple regions.
 2. Current loadings support combinations but not source load-case provenance.
 3. No content hash/stale-state graph exists for downstream Results/Report.
-4. No worker protocol, cancellation, resource preflight, or deterministic cache exists for future
-   surface calculations.
+4. ~~No worker protocol or cancellation.~~ **Partly closed** — the protocol is typed and versionable,
+   every client call takes an `AbortSignal`, a cancelled job is dropped from the worker queue, and
+   edits are debounced by 250 ms. A job already running still completes: interrupting it needs
+   cooperative checkpoints in the kernel. Resource preflight and a deterministic cache remain open.
 5. Report content and integrity schema are not yet defined in code.
 
 ## 4. Documentation decisions closed by this baseline

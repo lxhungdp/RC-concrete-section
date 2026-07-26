@@ -57,8 +57,13 @@ import {
   type InversePreviewResult,
   type LoadcaseQuickCheckResult,
   type PreviewSurface
-} from '../../lib/pm-preview-analysis'
-import { buildPreviewSurfaceAsync, checkLoadcaseAsync, checkLoadcasesAsync } from '../../lib/workers/pm-analysis-client'
+} from '@pm/analysis'
+import {
+  buildPreviewSurfaceAsync,
+  checkLoadcaseAsync,
+  checkLoadcasesAsync,
+  isAnalysisAbort
+} from '../../lib/workers/pm-analysis-client'
 import { LoadingsPanel } from './LoadingsPanel'
 import { MaterialPanel } from './MaterialPanel'
 import { RebarPanel } from './RebarPanel'
@@ -144,6 +149,8 @@ const DEFAULT_DRAWING_SIZE = { width: 900, height: 620 }
 const DEFAULT_DRAWING_UNITS_PER_PIXEL =
   (MAJOR_GRID_SPACING_MM * DEFAULT_VIEW_MAJOR_COUNT) / DEFAULT_DRAWING_SIZE.width
 const DEFAULT_CIRCLE_SEGMENTS = 64
+/** Quiet period before an edit is allowed to start a surface build. */
+const ANALYSIS_DEBOUNCE_MS = 250
 
 const formatNumber = (value: number, digits = 1) =>
   Math.abs(value) < 1e-9 ? '0' : value.toLocaleString('en-US', { maximumFractionDigits: digits })
@@ -400,6 +407,7 @@ export function SectionDrawingClient() {
   const pendingFitAfterImportRef = useRef(false)
   const pendingFitOnGeometryModuleRef = useRef(false)
   const analysisRevisionRef = useRef(0)
+  const inverseAbortRef = useRef(new Map<number, AbortController>())
   const dragRef = useRef<
     | { kind: 'pan'; last: ScreenPoint }
     | { kind: 'vertex'; boundaryId: number; outerIndex: number; ringIndex: number; pointId: number; last: ScreenPoint }
@@ -501,33 +509,35 @@ export function SectionDrawingClient() {
   const activeSummary = useMemo(() => summarizeSection(activeSection), [activeSection])
 
   useEffect(() => {
-    let cancelled = false
     setResultSurface(null)
     setSurfaceMessage('')
 
     if (!hasAppliedSection) {
       setSurfaceStatus('idle')
-      return () => {
-        cancelled = true
-      }
+      return
     }
 
+    // Coalesce a burst of edits — dragging a vertex used to enqueue one full surface build per
+    // pointer move, and the worker had no way to drop the ones already overtaken.
+    const controller = new AbortController()
     setSurfaceStatus('working')
-    buildPreviewSurfaceAsync({ section: finalSection, rebars, materialStore, fixedP: 0 })
-      .then((surface) => {
-        if (cancelled) return
-        setResultSurface(surface)
-        setSurfaceStatus('idle')
-      })
-      .catch((error) => {
-        if (cancelled) return
-        setResultSurface(null)
-        setSurfaceStatus('error')
-        setSurfaceMessage(error instanceof Error ? error.message : String(error))
-      })
+    const timer = window.setTimeout(() => {
+      buildPreviewSurfaceAsync({ section: finalSection, rebars, materialStore }, controller.signal)
+        .then((surface) => {
+          setResultSurface(surface)
+          setSurfaceStatus('idle')
+        })
+        .catch((error) => {
+          if (isAnalysisAbort(error)) return
+          setResultSurface(null)
+          setSurfaceStatus('error')
+          setSurfaceMessage(error instanceof Error ? error.message : String(error))
+        })
+    }, ANALYSIS_DEBOUNCE_MS)
 
     return () => {
-      cancelled = true
+      window.clearTimeout(timer)
+      controller.abort()
     }
   }, [finalSection, hasAppliedSection, materialStore, rebars])
   const appliedSummary = useMemo(() => summarizeSection(finalSection), [finalSection])
@@ -609,43 +619,52 @@ export function SectionDrawingClient() {
 
   useEffect(() => {
     analysisRevisionRef.current += 1
+    // Withdraw every loadcase solve still queued against the previous input revision.
+    for (const controller of inverseAbortRef.current.values()) controller.abort()
+    inverseAbortRef.current.clear()
     setInverseResults({})
     setInverseWorkingById({})
     setQuickChecksById({})
   }, [appliedGeometryInput, materialStore])
 
   useEffect(() => {
+    const controllers = inverseAbortRef.current
+    return () => {
+      for (const controller of controllers.values()) controller.abort()
+      controllers.clear()
+    }
+  }, [])
+
+  useEffect(() => {
     setInverseResults({})
   }, [loadingsInput])
 
   useEffect(() => {
-    let cancelled = false
     setQuickChecksById({})
 
     if (!resultSurface || loadingsInput.combinations.length === 0) {
       setQuickCheckWorking(false)
-      return () => {
-        cancelled = true
-      }
+      return
     }
 
+    const controller = new AbortController()
     setQuickCheckWorking(true)
-    checkLoadcasesAsync({ surface: resultSurface, loadcases: loadingsInput.combinations })
-      .then((results) => {
-        if (cancelled) return
-        setQuickChecksById(Object.fromEntries(results.map((result) => [result.loadcaseId, result])))
-      })
-      .catch((error) => {
-        if (cancelled) return
-        setSurfaceMessage(error instanceof Error ? error.message : String(error))
-      })
-      .finally(() => {
-        if (cancelled) return
-        setQuickCheckWorking(false)
-      })
+    const timer = window.setTimeout(() => {
+      checkLoadcasesAsync({ surface: resultSurface, loadcases: loadingsInput.combinations }, controller.signal)
+        .then((results) => {
+          setQuickChecksById(Object.fromEntries(results.map((result) => [result.loadcaseId, result])))
+          setQuickCheckWorking(false)
+        })
+        .catch((error) => {
+          if (isAnalysisAbort(error)) return
+          setSurfaceMessage(error instanceof Error ? error.message : String(error))
+          setQuickCheckWorking(false)
+        })
+    }, ANALYSIS_DEBOUNCE_MS)
 
     return () => {
-      cancelled = true
+      window.clearTimeout(timer)
+      controller.abort()
     }
   }, [loadingsInput.combinations, resultSurface])
 
@@ -668,17 +687,24 @@ export function SectionDrawingClient() {
     if (!force && inverseResults[loadcase.id]) return
     if (inverseWorkingById[loadcase.id]) return
     const revision = analysisRevisionRef.current
+    inverseAbortRef.current.get(loadcase.id)?.abort()
+    const controller = new AbortController()
+    inverseAbortRef.current.set(loadcase.id, controller)
     setInverseWorkingById((current) => ({ ...current, [loadcase.id]: true }))
-    checkLoadcaseAsync({ section: finalSection, rebars, materialStore, loadcase, surface: resultSurface })
+    checkLoadcaseAsync(
+      { section: finalSection, rebars, materialStore, loadcase, surface: resultSurface },
+      controller.signal
+    )
       .then((result) => {
         if (analysisRevisionRef.current !== revision) return
         setInverseResults((current) => ({ ...current, [loadcase.id]: result }))
       })
       .catch((error) => {
-        if (analysisRevisionRef.current !== revision) return
+        if (isAnalysisAbort(error) || analysisRevisionRef.current !== revision) return
         setSurfaceMessage(error instanceof Error ? error.message : String(error))
       })
       .finally(() => {
+        if (inverseAbortRef.current.get(loadcase.id) === controller) inverseAbortRef.current.delete(loadcase.id)
         if (analysisRevisionRef.current !== revision) return
         setInverseWorkingById((current) => {
           const next = { ...current }

@@ -1,5 +1,5 @@
 import type { CompiledMaterial, ConcreteMaterial, SteelMaterial, StressStrainPoint } from './types'
-import { interpolateLinear, numericalTangent } from './math'
+import { interpolateSorted, interpolateSortedTangent, sortCurvePoints } from './math'
 
 const compileUserCurve = (
   id: number,
@@ -8,16 +8,17 @@ const compileUserCurve = (
   limits: CompiledMaterial['limits'],
   zeroTension = false
 ): CompiledMaterial => {
+  const sorted = sortCurvePoints(points)
   const stress = (strain: number) => {
     if (zeroTension && strain <= 0) return 0
-    return interpolateLinear(points, strain)
+    return interpolateSorted(sorted, strain)
   }
 
   return {
     id,
     family,
     stress,
-    tangent: (strain) => numericalTangent(stress, strain),
+    tangent: (strain) => (zeroTension && strain <= 0 ? 0 : interpolateSortedTangent(sorted, strain)),
     limits
   }
 }

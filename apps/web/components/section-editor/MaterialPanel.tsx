@@ -9,7 +9,9 @@ import {
   applyEn1992ConcreteDerived,
   applyEn1992SteelDerived,
   applyKdsConcreteDerived,
+  BLOCKED_CONCRETE_STANDARDS,
   compileConcreteMaterial,
+  concreteModelSupportIssue,
   compileSteelMaterial,
   createKdsRebarSteel,
   DEFAULT_CONCRETE_DENSITY,
@@ -273,6 +275,7 @@ function UserCurveEditor({
 }
 
 export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChange }: Props) {
+  const concreteSupportIssue = concreteModelSupportIssue(store.concrete)
   const [activePage, setActivePage] = useState<MaterialPage>('concrete')
   const activeSteel = store.steel.find((material) => material.id === store.defaults.steelMaterialId) ?? store.steel[0]
 
@@ -365,14 +368,29 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
                   })
                 }
               >
-                {(['KDS', 'ACI318', 'EC2', 'CUSTOM'] as const).map((standard) => (
-                  <option key={standard} value={standard}>
-                    {standardLabel(standard)}
-                  </option>
-                ))}
+                {(['KDS', 'ACI318', 'EC2', 'CUSTOM'] as const).map((standard) => {
+                  const blocked = BLOCKED_CONCRETE_STANDARDS[standard]
+                  return (
+                    <option
+                      key={standard}
+                      value={standard}
+                      disabled={Boolean(blocked) && store.concrete.standard !== standard}
+                    >
+                      {standardLabel(standard)}
+                      {blocked ? ' — blocked' : ''}
+                    </option>
+                  )
+                })}
               </select>
             </label>
             </div>
+
+            {concreteSupportIssue ? (
+              <p className="pm-material-blocked" role="alert">
+                <strong>This concrete model is blocked for analysis.</strong> {concreteSupportIssue.reason} Results
+                cannot be computed until another model is selected. See {concreteSupportIssue.reference}.
+              </p>
+            ) : null}
 
             <div className="pm-material-row-2">
               <label className="pm-field">

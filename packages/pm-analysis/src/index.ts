@@ -1,0 +1,1649 @@
+import {
+  buildConcreteMesh,
+  netConcreteCentroid,
+  type ConcreteMesh,
+  type ConcreteMeshOptions,
+  type ConcreteMeshReport,
+  type GeometryInputRebarView,
+  type SectionGeometry
+} from '@pm/geometry'
+import {
+  compileMaterialStore,
+  concreteModelSupportIssue,
+  IMPLEMENTED_STRAIN_DOMAIN,
+  strainDomainMismatch,
+  type CompiledMaterial,
+  type MaterialStore,
+  type StrainDomainId
+} from '@pm/materials'
+import type { LoadCombination } from '@pm/project'
+
+/**
+ * Typed fatal input errors (`docs/08` §5 fail-closed). The kernel must never substitute a plausible
+ * value for a missing definition: a silent fallback produces a number that looks like a capacity but
+ * is not one.
+ */
+export type AnalysisErrorCode =
+  | 'MISSING_STEEL_MATERIAL'
+  | 'UNSUPPORTED_CONCRETE_MODEL'
+  | 'EMPTY_CONCRETE_SECTION'
+  | 'MESH_RESOURCE_LIMIT'
+  | 'MESH_NOT_VERIFIED'
+
+export class AnalysisInputError extends Error {
+  readonly code: AnalysisErrorCode
+  readonly detail: Readonly<Record<string, unknown>>
+
+  constructor(code: AnalysisErrorCode, message: string, detail: Readonly<Record<string, unknown>> = {}) {
+    super(message)
+    this.name = 'AnalysisInputError'
+    this.code = code
+    this.detail = detail
+  }
+}
+
+export type Resultant = {
+  P: number
+  Mx: number
+  My: number
+}
+
+/**
+ * Strain plane `eps(x,y) = e0 + kx*y + ky*x`.
+ *
+ * `x, y` are measured from the analysis reference origin, i.e. the exact centroid of the net
+ * concrete region (`docs/02` §1 step 9). `e0` is therefore the strain at that centroidal axis and
+ * `Mx, My` are moments about it, which is what the reference workbook's `xc`/`yc` cells establish.
+ */
+export type StrainState = {
+  e0: number
+  kx: number
+  ky: number
+}
+
+/** Analysis reference origin (net-concrete centroid) that all preview results are reported about. */
+export type AnalysisOrigin = { x: number; y: number }
+
+/**
+ * Contribution ledger for one strain state.
+ *
+ * `docs/11` §3.3 requires the embedded-bar contribution `steel - displaced concrete` to keep the
+ * full-steel and displaced-concrete terms separately, so a contribution-factor transform can be
+ * applied (or rejected) per independently factorable group.
+ */
+export type ResultantLedger = {
+  /** Concrete integrated over the concrete fibers only. */
+  concrete: Resultant
+  /** fs·As at every bar, before the displaced-concrete deduction. */
+  steelGross: Resultant
+  /** −fc·As at every bar (concrete replaced by the bar). */
+  displacedConcrete: Resultant
+  /** steelGross + displacedConcrete — the reference-workbook "Steel" column. */
+  steel: Resultant
+  /** concrete + steel. */
+  total: Resultant
+}
+
+export type PreviewSurfacePoint = Resultant & {
+  id: string
+  beta: number
+  station: number
+  state: StrainState
+  ledger: ResultantLedger
+}
+
+/**
+ * How much the surface still depends on how coarsely the strain-plane directions were sampled
+ * (`docs/06` §5). Measured, not assumed: the engine evaluates the true state halfway between two
+ * sampled directions and compares it with the chord the surface actually uses there.
+ *
+ * This is a sampled estimate over `probedStations`, not a bound over the whole surface
+ * (`docs/06` §11 — no universal error claim from one benchmark).
+ */
+export type SurfaceDirectionError = {
+  /** Strain-plane directions in the finished surface. */
+  directions: number
+  /** Station indices used as probes. */
+  probedStations: number[]
+  /** Worst chord error in `P`, relative to the surface `P` span. */
+  maxRelativeP: number
+  /** Worst chord error in the moment vector, relative to the surface moment span. */
+  maxRelativeMoment: number
+  /** Direction (rad) of the worst moment error. */
+  worstBeta: number
+  /** Bisection passes actually performed; 0 when refinement is off. */
+  refinementPasses: number
+  /** True when the estimate is at or below the requested tolerance. */
+  withinTolerance: boolean
+  tolerance: number
+}
+
+export type SurfaceRefinementOptions = {
+  /**
+   * Relative chord error at which a direction interval stops being bisected. Refinement only runs
+   * when this is supplied; otherwise the fixed 24-direction grid is kept and only measured.
+   */
+  tolerance?: number
+  /** Maximum bisection passes over the direction grid. */
+  maxPasses?: number
+  /** Hard cap on sampled directions, so a tight tolerance cannot run away. */
+  maxDirections?: number
+  /** Stations probed by the midpoint test. Defaults to a spread across the schedule. */
+  probeStations?: number[]
+}
+
+export type PreviewSurface = {
+  points: PreviewSurfacePoint[]
+  bounds: {
+    P: [number, number]
+    Mx: [number, number]
+    My: [number, number]
+  }
+  comparison: {
+    workbook: string
+    notes: string[]
+  }
+  mesh: ConcreteMeshReport
+  directionError: SurfaceDirectionError
+  /** Which ultimate strain domain produced these states — never inferred from the material label. */
+  strainDomain: StrainDomainId
+  warnings: string[]
+}
+
+export type PreviewContourPoint = {
+  beta: number
+  P: number
+  Mx: number
+  My: number
+  station?: number
+  /**
+   * True when the point lies on one of the sampled strain-plane directions — either a surface
+   * vertex, or a crossing of the station edge inside a single `beta` row. These are the diagnostic
+   * "one point per sampled beta" markers; they are a labelled subset of this contour, never a
+   * separately computed curve.
+   */
+  onSampledDirection?: boolean
+}
+
+/** The sampled-direction subset of a fixed-P contour, in ascending `beta`. */
+export const contourStrainAngleSamples = (contour: PreviewContourPoint[]): PreviewContourPoint[] =>
+  contour.filter((point) => point.onSampledDirection).sort((a, b) => a.beta - b.beta)
+
+export type PreviewMomentPlanePoint = PreviewContourPoint & {
+  /** Moment coordinate on the checked load direction. */
+  M: number
+}
+
+export type AdmissibilityViolation =
+  | { code: 'CONCRETE_STRAIN_EXCEEDS_ULTIMATE'; value: number; limit: number }
+  | { code: 'STEEL_STRAIN_EXCEEDS_ULTIMATE'; rebarId: number; value: number; limit: number }
+
+/**
+ * Whether a strain plane lies inside the material domain — `docs/04` §6 requires "all material
+ * strains admissible" for acceptance, and defines `MATERIAL_DOMAIN_EXCEEDED` as a failure. A plane
+ * that balances the demand outside this domain is not an equilibrium state the section can reach.
+ */
+export type StrainAdmissibility = {
+  ok: boolean
+  /** Peak compressive strain anywhere in the concrete region (compression positive). */
+  maxConcreteCompression: number
+  concreteLimit: number
+  /** Largest tensile strain magnitude at any bar; 0 when every bar is in compression. */
+  maxSteelTension: number
+  /** Rupture limit taken from the steel definitions, or null when none declares `limits.epsU`. */
+  steelTensionLimit: number | null
+  violations: AdmissibilityViolation[]
+}
+
+export type InversePreviewResult = {
+  /** Converged **and** admissible. Only this may be presented as an equilibrium state. */
+  ok: boolean
+  /** Residual test alone; true even when the plane leaves the material domain. */
+  converged: boolean
+  admissibility: StrainAdmissibility
+  loadcaseId: number
+  demand: LoadCombination
+  state: StrainState
+  response: Resultant
+  residual: Resultant
+  residualNorm: number
+  iterations: number
+  utilization: number | null
+  contourPoint: PreviewContourPoint | null
+  message: string
+}
+
+export type LoadcaseQuickCheckResult = {
+  loadcaseId: number
+  demand: LoadCombination
+  utilization: number | null
+  contourPoint: PreviewMomentPlanePoint | null
+  message: string
+}
+
+/**
+ * A fiber carries its already-resolved constitutive law. Resolution happens once, up front, so the
+ * integration loop cannot encounter a missing material and cannot silently substitute one.
+ */
+type Fiber =
+  | { x: number; y: number; area: number; kind: 'concrete' }
+  | { x: number; y: number; area: number; kind: 'rebar'; rebarId: number; steel: CompiledMaterial }
+
+type AnalysisMaterials = {
+  concrete: CompiledMaterial
+  steel: Map<number, CompiledMaterial>
+}
+
+/**
+ * Immutable, realm-local analysis data prepared from one exact input revision.
+ *
+ * This object intentionally contains compiled functions and is therefore not transferable through
+ * postMessage. A worker keeps its own prepared instance and invalidates it using analysisInputKey.
+ */
+export type PreparedAnalysis = {
+  readonly section: SectionGeometry
+  readonly rebars: GeometryInputRebarView[]
+  readonly materialStore: MaterialStore
+  readonly origin: AnalysisOrigin
+  readonly mesh: ConcreteMesh
+  readonly concreteFibers: Fiber[]
+  readonly rebarFibers: Fiber[]
+  readonly fibers: Fiber[]
+  readonly materials: AnalysisMaterials
+  /** Exact outer-boundary vertices in the centroidal analysis frame. */
+  readonly concreteBoundary: Array<{ x: number; y: number }>
+  readonly lengthScale: number
+  readonly forceScale: number
+  readonly strainScale: number
+}
+
+/** Collision-free cache identity: callers compare the full canonical payload, not only a hash. */
+export const analysisInputKey = (
+  section: SectionGeometry,
+  rebars: GeometryInputRebarView[],
+  materialStore: MaterialStore,
+  meshOptions: ConcreteMeshOptions = {}
+) => JSON.stringify([section, rebars, materialStore, meshOptions])
+
+const PREVIEW_BETAS = Array.from({ length: 24 }, (_, index) => (index * Math.PI) / 12)
+const PREVIEW_GEOMETRY_TOL = 1e-9
+const NEWTON_RESIDUAL_TOL = 1e-8
+const NEWTON_MAX_ITERATIONS = 30
+/**
+ * Relative slack on strain limits. The capacity stations sit exactly on `epsCu`, so an exact
+ * comparison would reject them on rounding alone.
+ */
+const STRAIN_LIMIT_TOL = 1e-9
+export type StationDefinition =
+  | { kind: 'pure-compression' }
+  | { kind: 'neutral-axis-ratio'; cOverC1: number }
+  | { kind: 'steel-strain'; strain: number }
+  | { kind: 'steel-yield-ratio'; ratio: number }
+  | { kind: 'pure-tension' }
+
+/**
+ * `P0…P18` reporting stations, taken from the `PM-advanced (7) 2D.xlsx` Summary sheet station
+ * schedule (see `docs/05` §2 "Compatibility with P0–P18 reports"). Tension strains are negative
+ * under the compression-positive convention.
+ */
+export const PREVIEW_STATIONS: StationDefinition[] = [
+  { kind: 'pure-compression' },
+  { kind: 'neutral-axis-ratio', cOverC1: 3 },
+  { kind: 'neutral-axis-ratio', cOverC1: 2 },
+  { kind: 'neutral-axis-ratio', cOverC1: 1.5 },
+  { kind: 'neutral-axis-ratio', cOverC1: 1.2 },
+  { kind: 'steel-strain', strain: 0 },
+  { kind: 'steel-yield-ratio', ratio: 0.25 },
+  { kind: 'steel-yield-ratio', ratio: 0.5 },
+  { kind: 'steel-yield-ratio', ratio: 0.75 },
+  { kind: 'steel-yield-ratio', ratio: 1 },
+  { kind: 'steel-strain', strain: -0.003 },
+  { kind: 'steel-strain', strain: -0.005 },
+  { kind: 'steel-strain', strain: -0.0075 },
+  { kind: 'steel-strain', strain: -0.01 },
+  { kind: 'steel-strain', strain: -0.015 },
+  { kind: 'steel-strain', strain: -0.025 },
+  { kind: 'steel-strain', strain: -0.03 },
+  { kind: 'steel-strain', strain: -0.05 },
+  { kind: 'pure-tension' }
+]
+
+/** Labels drawn on the vertical P–M slice (steel limit stations only). */
+export const VERTICAL_SLICE_KEY_STATIONS: Array<{ station: number; label: string }> = [
+  { station: 5, label: 'fs = 0' },
+  { station: 9, label: 'fs = fy' }
+]
+
+export const stationDefinitionLabel = (station: StationDefinition): string => {
+  if (station.kind === 'pure-compression') return 'Pure compression'
+  if (station.kind === 'pure-tension') return 'Pure tension'
+  if (station.kind === 'neutral-axis-ratio') return `c = ${station.cOverC1.toFixed(1)}·c₁`
+  if (station.kind === 'steel-yield-ratio') {
+    if (station.ratio === 0) return 'fs = 0'
+    if (Math.abs(station.ratio - 1) < 1e-9) return 'fs = fy'
+    return `fs = ${station.ratio}·fy`
+  }
+  if (station.kind === 'steel-strain') {
+    if (Math.abs(station.strain) < 1e-12) return 'fs = 0'
+    return `εs = ${station.strain}`
+  }
+  return 'Station'
+}
+
+/**
+ * Concrete fibers from the exact clipped-cell mesh (`docs/02` §5). Every weight is the area of a
+ * real clipped triangle, so meshed area and first moments reproduce the exact polygon properties
+ * instead of rasterising the boundary.
+ */
+const concreteFibersFromMesh = (mesh: ConcreteMesh, origin: AnalysisOrigin): Fiber[] =>
+  mesh.points.map((point) => ({
+    x: point.x - origin.x,
+    y: point.y - origin.y,
+    area: point.area,
+    kind: 'concrete'
+  }))
+
+/**
+ * Compile the material store and bind every bar to its steel law.
+ *
+ * A bar whose `steelMaterialId` no longer exists is a fatal input error. The previous behaviour —
+ * falling back to the concrete stress — cancelled exactly against the displaced-concrete term, so
+ * the bar contributed zero and the reinforcement disappeared from the capacity without a trace.
+ */
+const resolveAnalysisMaterials = (
+  materialStore: MaterialStore,
+  rebars: GeometryInputRebarView[]
+): AnalysisMaterials => {
+  // Blocking here, not only in the material selector: an imported project can carry a model the
+  // selector no longer offers, and it would otherwise reach the evaluator unchallenged.
+  const unsupported = concreteModelSupportIssue(materialStore.concrete)
+  if (unsupported) {
+    throw new AnalysisInputError(
+      'UNSUPPORTED_CONCRETE_MODEL',
+      `Concrete model "${unsupported.modelType}" cannot be analysed. ${unsupported.reason}`,
+      { modelType: unsupported.modelType, reference: unsupported.reference }
+    )
+  }
+
+  const compiled = compileMaterialStore(materialStore)
+  const defaultId = materialStore.defaults.steelMaterialId
+  const missing = new Map<number, number[]>()
+
+  for (const bar of rebars) {
+    const steelMaterialId = bar.steelMaterialId ?? defaultId
+    if (compiled.steel.has(steelMaterialId)) continue
+    missing.set(steelMaterialId, [...(missing.get(steelMaterialId) ?? []), bar.id])
+  }
+
+  if (missing.size > 0) {
+    const known = [...compiled.steel.keys()].join(', ') || 'none'
+    const summary = [...missing.entries()]
+      .map(([steelMaterialId, rebarIds]) => `steel material ${steelMaterialId} (rebar ${rebarIds.join(', ')})`)
+      .join('; ')
+    throw new AnalysisInputError(
+      'MISSING_STEEL_MATERIAL',
+      `Reinforcement references a steel material that does not exist: ${summary}. Defined steel materials: ${known}.`,
+      {
+        defaultSteelMaterialId: defaultId,
+        definedSteelMaterialIds: [...compiled.steel.keys()],
+        missing: [...missing.entries()].map(([steelMaterialId, rebarIds]) => ({ steelMaterialId, rebarIds }))
+      }
+    )
+  }
+
+  return compiled
+}
+
+const buildRebarFibers = (
+  rebars: GeometryInputRebarView[],
+  origin: AnalysisOrigin,
+  materials: AnalysisMaterials,
+  defaultSteelMaterialId: number
+): Fiber[] =>
+  rebars.map((bar) => {
+    const steelMaterialId = bar.steelMaterialId ?? defaultSteelMaterialId
+    const steel = materials.steel.get(steelMaterialId)
+    // resolveAnalysisMaterials has already rejected this case; the guard keeps the type honest.
+    if (!steel) {
+      throw new AnalysisInputError(
+        'MISSING_STEEL_MATERIAL',
+        `Rebar ${bar.id} references steel material ${steelMaterialId}, which does not exist.`,
+        { rebarId: bar.id, steelMaterialId }
+      )
+    }
+    return {
+      x: bar.x - origin.x,
+      y: bar.y - origin.y,
+      area: (Math.PI * bar.dia * bar.dia) / 4,
+      kind: 'rebar' as const,
+      rebarId: bar.id,
+      steel
+    }
+  })
+
+const originFromMesh = (mesh: ConcreteMesh): AnalysisOrigin => {
+  const { area, firstMomentX, firstMomentY } = mesh.report.exact
+  if (Math.abs(area) < 1e-9) return { x: 0, y: 0 }
+  return { x: firstMomentY / area, y: firstMomentX / area }
+}
+
+/**
+ * Prepare from an existing mesh. Report generation uses this entry point so its audited export mesh
+ * is also the engine mesh; no hidden second discretization is built.
+ */
+/**
+ * A mesh that failed its own sanity checks cannot enter analysis.
+ *
+ * `buildConcreteMesh` reports a resource limit or a failed clip by returning an empty mesh with a
+ * warning. Integrating that mesh does not fail — it silently yields a capacity surface built from
+ * the reinforcement alone, which for the reference section understates `P0` by a factor of 6.3 while
+ * still plotting as a complete, plausible interaction diagram.
+ */
+const assertUsableMesh = (mesh: ConcreteMesh) => {
+  const limit = mesh.report.warnings.find((warning) => warning.startsWith('RESOURCE_LIMIT:'))
+  if (limit) {
+    throw new AnalysisInputError(
+      'MESH_RESOURCE_LIMIT',
+      `The integration mesh exceeds its cell budget: ${limit.replace('RESOURCE_LIMIT: ', '')} Increase the cell size, or raise the limit deliberately.`,
+      { warnings: mesh.report.warnings, cellSize: mesh.report.cellSize }
+    )
+  }
+  if (mesh.points.length === 0 || Math.abs(mesh.report.exact.area) < 1e-9) {
+    throw new AnalysisInputError(
+      'EMPTY_CONCRETE_SECTION',
+      'The net concrete region is empty, so there is nothing to integrate. Apply a valid concrete section first.',
+      { warnings: mesh.report.warnings }
+    )
+  }
+  if (!mesh.report.ok) {
+    throw new AnalysisInputError(
+      'MESH_NOT_VERIFIED',
+      `The integration mesh did not pass its own area and first-moment checks: ${mesh.report.warnings.join('; ')}`,
+      { warnings: mesh.report.warnings }
+    )
+  }
+}
+
+export const prepareAnalysisFromMesh = (
+  section: SectionGeometry,
+  rebars: GeometryInputRebarView[],
+  materialStore: MaterialStore,
+  mesh: ConcreteMesh,
+  origin: AnalysisOrigin = originFromMesh(mesh)
+): PreparedAnalysis => {
+  assertUsableMesh(mesh)
+  const materials = resolveAnalysisMaterials(materialStore, rebars)
+  const concreteFibers = concreteFibersFromMesh(mesh, origin)
+  const rebarFibers = buildRebarFibers(rebars, origin, materials, materialStore.defaults.steelMaterialId)
+  const concreteBoundary = section.solids.flatMap((solid) =>
+    solid.outer.map((point) => ({ x: point.x - origin.x, y: point.y - origin.y }))
+  )
+  const xs = concreteBoundary.map((point) => point.x)
+  const ys = concreteBoundary.map((point) => point.y)
+  const lengthScale = Math.max(
+    xs.length > 0 ? Math.max(...xs) - Math.min(...xs) : 0,
+    ys.length > 0 ? Math.max(...ys) - Math.min(...ys) : 0,
+    1
+  )
+  const concreteForce = Math.abs(materialStore.concrete.fck * mesh.report.exact.area)
+  const steelForce = rebars.reduce((sum, bar) => {
+    const materialId = bar.steelMaterialId ?? materialStore.defaults.steelMaterialId
+    const steel = materialStore.steel.find((item) => item.id === materialId)
+    const fyd = steel ? Math.abs(steel.fy / (steel.factors?.gammaS ?? 1)) : 0
+    return sum + fyd * (Math.PI * bar.dia * bar.dia) / 4
+  }, 0)
+
+  return {
+    section,
+    rebars,
+    materialStore,
+    origin,
+    mesh,
+    concreteFibers,
+    rebarFibers,
+    fibers: [...concreteFibers, ...rebarFibers],
+    materials,
+    concreteBoundary,
+    lengthScale,
+    forceScale: Math.max(1, concreteForce + steelForce),
+    strainScale: Math.max(1e-6, materialStore.concrete.limits.epsCu)
+  }
+}
+
+export const prepareAnalysis = (
+  section: SectionGeometry,
+  rebars: GeometryInputRebarView[],
+  materialStore: MaterialStore,
+  meshOptions: ConcreteMeshOptions = {},
+  origin?: AnalysisOrigin
+): PreparedAnalysis =>
+  prepareAnalysisFromMesh(section, rebars, materialStore, buildConcreteMesh(section, meshOptions), origin)
+
+const strainAt = (state: StrainState, fiber: Pick<Fiber, 'x' | 'y'>) =>
+  state.e0 + state.kx * fiber.y + state.ky * fiber.x
+
+const zeroResultant = (): Resultant => ({ P: 0, Mx: 0, My: 0 })
+
+const accumulate = (target: Resultant, force: number, fiber: Pick<Fiber, 'x' | 'y'>) => {
+  target.P += force
+  target.Mx += force * fiber.y
+  target.My += force * fiber.x
+}
+
+const addResultant = (a: Resultant, b: Resultant): Resultant => ({
+  P: a.P + b.P,
+  Mx: a.Mx + b.Mx,
+  My: a.My + b.My
+})
+
+const evaluate = (fibers: Fiber[], materials: AnalysisMaterials, state: StrainState): ResultantLedger => {
+  const concrete = zeroResultant()
+  const steelGross = zeroResultant()
+  const displacedConcrete = zeroResultant()
+
+  for (const fiber of fibers) {
+    const strain = strainAt(state, fiber)
+    const concreteStress = materials.concrete.stress(strain)
+
+    if (fiber.kind !== 'rebar') {
+      accumulate(concrete, concreteStress * fiber.area, fiber)
+      continue
+    }
+
+    accumulate(steelGross, fiber.steel.stress(strain) * fiber.area, fiber)
+    accumulate(displacedConcrete, -concreteStress * fiber.area, fiber)
+  }
+
+  const steel = addResultant(steelGross, displacedConcrete)
+  return { concrete, steelGross, displacedConcrete, steel, total: addResultant(concrete, steel) }
+}
+
+export type ResultantTangent = [
+  [number, number, number],
+  [number, number, number],
+  [number, number, number]
+]
+
+const evaluateWithTangent = (
+  fibers: Fiber[],
+  materials: AnalysisMaterials,
+  state: StrainState
+): { ledger: ResultantLedger; tangent: ResultantTangent } => {
+  const concrete = zeroResultant()
+  const steelGross = zeroResultant()
+  const displacedConcrete = zeroResultant()
+  let j00 = 0
+  let j01 = 0
+  let j02 = 0
+  let j11 = 0
+  let j12 = 0
+  let j22 = 0
+
+  for (const fiber of fibers) {
+    const strain = strainAt(state, fiber)
+    const concreteStress = materials.concrete.stress(strain)
+    let tangent = materials.concrete.tangent(strain)
+
+    if (fiber.kind !== 'rebar') {
+      accumulate(concrete, concreteStress * fiber.area, fiber)
+    } else {
+      accumulate(steelGross, fiber.steel.stress(strain) * fiber.area, fiber)
+      accumulate(displacedConcrete, -concreteStress * fiber.area, fiber)
+      // Embedded-bar contribution is fs*As - fc*As, so its consistent tangent is Es_t - Ec_t.
+      tangent = fiber.steel.tangent(strain) - tangent
+    }
+
+    const ta = tangent * fiber.area
+    j00 += ta
+    j01 += ta * fiber.y
+    j02 += ta * fiber.x
+    j11 += ta * fiber.y * fiber.y
+    j12 += ta * fiber.x * fiber.y
+    j22 += ta * fiber.x * fiber.x
+  }
+
+  const steel = addResultant(steelGross, displacedConcrete)
+  return {
+    ledger: { concrete, steelGross, displacedConcrete, steel, total: addResultant(concrete, steel) },
+    tangent: [
+      [j00, j01, j02],
+      [j01, j11, j12],
+      [j02, j12, j22]
+    ]
+  }
+}
+
+/** Integrate a state against an already prepared mesh and compiled material set. */
+export const evaluatePreparedState = (prepared: PreparedAnalysis, state: StrainState): ResultantLedger =>
+  evaluate(prepared.fibers, prepared.materials, state)
+
+/** Resultants and their exact consistent material tangent for one prepared strain state. */
+export const evaluatePreparedStateWithTangent = (
+  prepared: PreparedAnalysis,
+  state: StrainState
+): { ledger: ResultantLedger; tangent: ResultantTangent } =>
+  evaluateWithTangent(prepared.fibers, prepared.materials, state)
+
+/**
+ * Peak strains of one plane against the declared material limits. `epsCu` always applies; the steel
+ * rupture limit only exists when a definition declares `limits.epsU`, and its absence is reported as
+ * `steelTensionLimit: null` rather than treated as "admissible".
+ */
+const evaluateAdmissibility = (
+  fibers: Fiber[],
+  concreteBoundary: Array<{ x: number; y: number }>,
+  concreteLimit: number,
+  state: StrainState
+): StrainAdmissibility => {
+  const violations: AdmissibilityViolation[] = []
+  const maxConcreteCompression = concreteBoundary.reduce(
+    (maximum, point) => Math.max(maximum, strainAt(state, point)),
+    0
+  )
+  let maxSteelTension = 0
+  let steelTensionLimit: number | null = null
+
+  for (const fiber of fibers) {
+    if (fiber.kind !== 'rebar') continue
+    const strain = strainAt(state, fiber)
+    if (strain < 0) maxSteelTension = Math.max(maxSteelTension, -strain)
+    const tensionLimit = fiber.steel.limits.epsTensionUltimate
+    if (tensionLimit !== undefined) {
+      steelTensionLimit = steelTensionLimit === null ? tensionLimit : Math.min(steelTensionLimit, tensionLimit)
+    }
+    const limit =
+      strain < 0 ? fiber.steel.limits.epsTensionUltimate : fiber.steel.limits.epsCompressionUltimate
+    if (limit === undefined) continue
+    if (Math.abs(strain) > limit * (1 + STRAIN_LIMIT_TOL)) {
+      violations.push({ code: 'STEEL_STRAIN_EXCEEDS_ULTIMATE', rebarId: fiber.rebarId, value: strain, limit })
+    }
+  }
+
+  if (maxConcreteCompression > concreteLimit * (1 + STRAIN_LIMIT_TOL)) {
+    violations.unshift({
+      code: 'CONCRETE_STRAIN_EXCEEDS_ULTIMATE',
+      value: maxConcreteCompression,
+      limit: concreteLimit
+    })
+  }
+
+  return {
+    ok: violations.length === 0,
+    maxConcreteCompression,
+    concreteLimit,
+    maxSteelTension,
+    steelTensionLimit,
+    violations
+  }
+}
+
+export const describeAdmissibility = (admissibility: StrainAdmissibility): string => {
+  if (admissibility.ok) return 'Strain plane is inside the declared material domain.'
+  return admissibility.violations
+    .map((violation) =>
+      violation.code === 'CONCRETE_STRAIN_EXCEEDS_ULTIMATE'
+        ? `concrete strain ${violation.value.toExponential(3)} exceeds εcu = ${violation.limit.toExponential(3)}`
+        : `rebar ${violation.rebarId} strain ${violation.value.toExponential(3)} exceeds εsu = ${violation.limit.toExponential(3)}`
+    )
+    .join('; ')
+}
+
+/**
+ * Support coordinates for one direction, measured from the analysis origin (`docs/02` §3).
+ * Only outer rings define the exterior compression support; holes never do.
+ */
+const projectedExtents = (
+  section: SectionGeometry,
+  beta: number,
+  origin: AnalysisOrigin,
+  rebars: GeometryInputRebarView[] = []
+) => {
+  const c = Math.cos(beta)
+  const s = Math.sin(beta)
+  const project = (point: { x: number; y: number }) => (point.y - origin.y) * c + (point.x - origin.x) * s
+  const sectionValues = section.solids.flatMap((solid) => solid.outer).map(project)
+  let min = Number.POSITIVE_INFINITY
+  let max = Number.NEGATIVE_INFINITY
+  for (const value of sectionValues) {
+    if (value < min) min = value
+    if (value > max) max = value
+  }
+
+  // Which bar controls this direction, not merely how far it sits: the station schedule is written
+  // in terms of that bar's own yield and rupture strains (`docs/05` §2 seed-schedule policy).
+  let tensionControl = min
+  let controllingRebarIndex = -1
+  for (let index = 0; index < rebars.length; index++) {
+    const value = project(rebars[index])
+    if (controllingRebarIndex < 0 || value < tensionControl) {
+      tensionControl = value
+      controllingRebarIndex = index
+    }
+  }
+
+  return { min, max, tensionControl, controllingRebarIndex }
+}
+
+type ProjectedExtents = ReturnType<typeof projectedExtents>
+
+/**
+ * Fallback pure-tension strain when no steel definition declares a rupture limit.
+ *
+ * `docs/05` §2 forbids seeding a schedule from bare constants that can contradict `fy/Es`. The
+ * schedule still needs a finite tension pole, so this is expressed as a multiple of the controlling
+ * bar's own yield strain: far enough onto the plateau that an elastic-perfectly-plastic law is fully
+ * yielded, and reported as an assumption rather than presented as a code value.
+ */
+const PURE_TENSION_YIELD_MULTIPLE = 25
+
+/**
+ * Strain limits of the bar that controls one direction, taken from its compiled law.
+ *
+ * `epsYield` already carries the material partial factor: an EC2 bar with `gammaS = 1.15` yields at
+ * `fy / 1.15 / Es`, so a station labelled `fs = fy` must sit there and not at `fy / Es`.
+ */
+export type StationSteelLimits = {
+  epsY: number
+  /** Declared rupture strain of the controlling bar, or null when the definition omits it. */
+  epsU: number | null
+}
+
+const DEFAULT_STATION_STEEL_LIMITS: StationSteelLimits = { epsY: 0.002, epsU: null }
+
+const stationSteelLimits = (
+  materials: AnalysisMaterials,
+  rebars: GeometryInputRebarView[],
+  defaultSteelMaterialId: number,
+  controllingRebarIndex: number
+): StationSteelLimits => {
+  const bar = controllingRebarIndex >= 0 ? rebars[controllingRebarIndex] : undefined
+  const steel = materials.steel.get(bar?.steelMaterialId ?? defaultSteelMaterialId)
+  if (!steel) return DEFAULT_STATION_STEEL_LIMITS
+  return {
+    epsY: steel.limits.epsYield ?? DEFAULT_STATION_STEEL_LIMITS.epsY,
+    epsU: steel.limits.epsTensionUltimate ?? null
+  }
+}
+
+const farTensionSteelStrain = (station: StationDefinition, limits: StationSteelLimits) => {
+  if (station.kind === 'steel-strain') return station.strain
+  if (station.kind === 'steel-yield-ratio') return -Math.abs(station.ratio * limits.epsY)
+  return 0
+}
+
+const pureTensionStrain = (limits: StationSteelLimits) =>
+  -(limits.epsU ?? PURE_TENSION_YIELD_MULTIPLE * limits.epsY)
+
+const previewStationStateFromExtents = (
+  beta: number,
+  stationIndex: number,
+  epsCu: number,
+  limits: StationSteelLimits,
+  extents: ProjectedExtents
+): StrainState => {
+  const station = PREVIEW_STATIONS[stationIndex]
+  if (!station || station.kind === 'pure-compression') return { e0: epsCu, kx: 0, ky: 0 }
+  if (station.kind === 'pure-tension') return { e0: pureTensionStrain(limits), kx: 0, ky: 0 }
+
+  const compressionProjection = extents.max
+  const c1 = Math.max(1e-9, compressionProjection - extents.tensionControl)
+  const controlProjection =
+    station.kind === 'neutral-axis-ratio'
+      ? compressionProjection - station.cOverC1 * c1
+      : extents.tensionControl
+  // A schedule strain past the controlling bar's declared rupture strain is not a reachable state.
+  const requestedStrain =
+    station.kind === 'neutral-axis-ratio' ? 0 : farTensionSteelStrain(station, limits)
+  const controlStrain = limits.epsU === null ? requestedStrain : Math.max(requestedStrain, -limits.epsU)
+  const curvature = (epsCu - controlStrain) / Math.max(1e-9, compressionProjection - controlProjection)
+  const c = Math.cos(beta)
+  const s = Math.sin(beta)
+  return {
+    e0: epsCu - curvature * compressionProjection,
+    kx: curvature * c,
+    ky: curvature * s
+  }
+}
+
+/**
+ * Strain plane for reporting station `P{stationIndex}` in direction `beta`.
+ *
+ * `steel` may be a bare yield strain for callers that only have one grade, or the controlling bar's
+ * full limits so the rupture strain can cap the schedule.
+ */
+export const previewStationState = (
+  section: SectionGeometry,
+  rebars: GeometryInputRebarView[],
+  beta: number,
+  stationIndex: number,
+  epsCu: number,
+  steel: number | StationSteelLimits,
+  origin: AnalysisOrigin = netConcreteCentroid(section)
+): StrainState =>
+  previewStationStateFromExtents(
+    beta,
+    stationIndex,
+    epsCu,
+    typeof steel === 'number' ? { epsY: steel, epsU: null } : steel,
+    projectedExtents(section, beta, origin, rebars)
+  )
+
+const groupSurfaceRows = (points: PreviewSurfacePoint[]) => {
+  const byBeta = new Map<number, PreviewSurfacePoint[]>()
+  for (const point of points) {
+    const row = byBeta.get(point.beta)
+    if (row) row.push(point)
+    else byBeta.set(point.beta, [point])
+  }
+  return [...byBeta.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([beta, curve]) => ({
+      beta,
+      curve: curve.sort((a, b) => a.station - b.station)
+    }))
+}
+
+type SurfaceTriangle = {
+  vertices: [PreviewSurfacePoint, PreviewSurfacePoint, PreviewSurfacePoint]
+  /** Per edge `(0,1) (1,2) (2,0)`: true when both ends belong to the same sampled `beta` row. */
+  sameDirectionEdge: [boolean, boolean, boolean]
+}
+
+const surfaceTrianglesCache = new WeakMap<PreviewSurfacePoint[], SurfaceTriangle[]>()
+
+const previewSurfaceTriangles = (points: PreviewSurfacePoint[]): SurfaceTriangle[] => {
+  const cached = surfaceTrianglesCache.get(points)
+  if (cached) return cached
+  const rows = groupSurfaceRows(points)
+  const triangles: SurfaceTriangle[] = []
+  if (rows.length < 2) {
+    surfaceTrianglesCache.set(points, triangles)
+    return triangles
+  }
+
+  for (let i = 0; i < rows.length; i++) {
+    const current = rows[i].curve
+    const next = rows[(i + 1) % rows.length].curve
+    const stationCount = Math.min(current.length, next.length)
+    for (let station = 0; station < stationCount - 1; station++) {
+      const a = current[station]
+      const b = next[station]
+      const c = next[station + 1]
+      const d = current[station + 1]
+      // (b,c) walks the station axis inside `next`; (d,a) does the same inside `current`.
+      triangles.push(
+        { vertices: [a, b, c], sameDirectionEdge: [false, true, false] },
+        { vertices: [a, c, d], sameDirectionEdge: [false, false, true] }
+      )
+    }
+  }
+
+  surfaceTrianglesCache.set(points, triangles)
+  return triangles
+}
+
+const lerpPoint = (
+  a: Pick<PreviewSurfacePoint, 'P' | 'Mx' | 'My' | 'beta' | 'station'>,
+  b: Pick<PreviewSurfacePoint, 'P' | 'Mx' | 'My' | 'beta' | 'station'>,
+  t: number
+): PreviewContourPoint => ({
+  beta: a.beta + (b.beta - a.beta) * t,
+  P: a.P + (b.P - a.P) * t,
+  Mx: a.Mx + (b.Mx - a.Mx) * t,
+  My: a.My + (b.My - a.My) * t,
+  station: a.station + (b.station - a.station) * t
+})
+
+type UniquePointIndex = {
+  momentTol: number
+  forceTol: number
+  buckets: Map<string, number[]>
+}
+
+const uniquePointIndexes = new WeakMap<object[], UniquePointIndex>()
+
+const uniqueBucket = (p: Pick<Resultant, 'P' | 'Mx' | 'My'>, momentTol: number, forceTol: number) => [
+  Math.floor(p.P / forceTol),
+  Math.floor(p.Mx / momentTol),
+  Math.floor(p.My / momentTol)
+]
+
+const appendUniquePoint = <T extends Pick<Resultant, 'P' | 'Mx' | 'My'> & { onSampledDirection?: boolean }>(
+  target: T[],
+  point: T,
+  momentTol: number,
+  forceTol: number
+) => {
+  let index = uniquePointIndexes.get(target)
+  // The contour normally has only a few dozen points; a linear scan wins there by avoiding 27
+  // string-key probes. Switch to the spatial index only when the asymptotic O(n²) cost can matter.
+  if (!index && target.length < 64) {
+    const duplicate = target.find(
+      (item) =>
+        Math.abs(item.P - point.P) <= forceTol &&
+        Math.abs(item.Mx - point.Mx) <= momentTol &&
+        Math.abs(item.My - point.My) <= momentTol
+    )
+    if (!duplicate) target.push(point)
+    else if (point.onSampledDirection) duplicate.onSampledDirection = true
+    return
+  }
+  if (!index || index.momentTol !== momentTol || index.forceTol !== forceTol) {
+    index = { momentTol, forceTol, buckets: new Map() }
+    target.forEach((item, itemIndex) => {
+      const [p, mx, my] = uniqueBucket(item, momentTol, forceTol)
+      const key = `${p}:${mx}:${my}`
+      const bucket = index!.buckets.get(key)
+      if (bucket) bucket.push(itemIndex)
+      else index!.buckets.set(key, [itemIndex])
+    })
+    uniquePointIndexes.set(target, index)
+  }
+
+  const [p, mx, my] = uniqueBucket(point, momentTol, forceTol)
+  let duplicate: T | undefined
+  // Points within one tolerance can straddle a bin boundary, so inspect the 3³ neighbouring bins.
+  for (let dp = -1; dp <= 1 && !duplicate; dp++) {
+    for (let dmx = -1; dmx <= 1 && !duplicate; dmx++) {
+      for (let dmy = -1; dmy <= 1 && !duplicate; dmy++) {
+        const candidates = index.buckets.get(`${p + dp}:${mx + dmx}:${my + dmy}`) ?? []
+        duplicate = candidates
+          .map((candidate) => target[candidate])
+          .find(
+            (item) =>
+              Math.abs(item.P - point.P) <= forceTol &&
+              Math.abs(item.Mx - point.Mx) <= momentTol &&
+              Math.abs(item.My - point.My) <= momentTol
+          )
+      }
+    }
+  }
+  if (!duplicate) {
+    const bucketKey = `${p}:${mx}:${my}`
+    const bucket = index.buckets.get(bucketKey)
+    if (bucket) bucket.push(target.length)
+    else index.buckets.set(bucketKey, [target.length])
+    target.push(point)
+    return
+  }
+  // Keep the label: at a surface pole many edges collapse onto one point, and dropping the
+  // duplicate must not drop the fact that a sampled direction passes through it.
+  if (point.onSampledDirection) duplicate.onSampledDirection = true
+}
+
+const trianglePlaneIntersections = (
+  triangle: SurfaceTriangle,
+  distance: (point: PreviewSurfacePoint) => number,
+  tol: number
+) => {
+  const [v0, v1, v2] = triangle.vertices
+  const intersections: PreviewContourPoint[] = []
+  const edges: Array<[PreviewSurfacePoint, PreviewSurfacePoint, boolean]> = [
+    [v0, v1, triangle.sameDirectionEdge[0]],
+    [v1, v2, triangle.sameDirectionEdge[1]],
+    [v2, v0, triangle.sameDirectionEdge[2]]
+  ]
+
+  for (const [a, b, sameDirection] of edges) {
+    const da = distance(a)
+    const db = distance(b)
+    const aOn = Math.abs(da) <= tol
+    const bOn = Math.abs(db) <= tol
+
+    // A vertex of the surface always sits on a sampled direction, whichever edge reaches it.
+    if (aOn) appendUniquePoint(intersections, { ...a, onSampledDirection: true }, tol, tol)
+    if (bOn) appendUniquePoint(intersections, { ...b, onSampledDirection: true }, tol, tol)
+    if (aOn || bOn || da * db > 0) continue
+
+    const t = da / (da - db)
+    appendUniquePoint(intersections, { ...lerpPoint(a, b, t), onSampledDirection: sameDirection }, tol, tol)
+  }
+
+  return intersections
+}
+
+/**
+ * Integrate one explicit strain plane and return the full contribution ledger. Exported so
+ * verification fixtures can replay a reference strain state instead of only the station schedule.
+ */
+export const evaluatePreviewState = (
+  section: SectionGeometry,
+  rebars: GeometryInputRebarView[],
+  materialStore: MaterialStore,
+  state: StrainState,
+  meshOptions: ConcreteMeshOptions = {},
+  origin: AnalysisOrigin = netConcreteCentroid(section)
+): ResultantLedger => evaluatePreparedState(prepareAnalysis(section, rebars, materialStore, meshOptions, origin), state)
+
+/**
+ * Stations probed by the midpoint test.
+ *
+ * Chosen from measurement, not intuition. Sweeping all 19 stations across the benchmark set shows
+ * the chord error rising with station index: the poles `P0`/`P18` are direction independent and
+ * score exactly zero, while the deep-tension stations peak near 16%. Of the candidate sets tried,
+ * this one recovered at worst 92% and on average 97% of the full 19-station sweep, for about 21% of
+ * a surface build. It is therefore a good estimate but a mild under-estimate; treat it as an
+ * indication of magnitude, and sweep every station when a number has to be defended.
+ *
+ * Pass `probeStations: []` to switch the estimate off when a caller only needs raw capacity.
+ */
+const DEFAULT_PROBE_STATIONS = [5, 10, 14, 16]
+const DEFAULT_MAX_REFINEMENT_PASSES = 6
+const DEFAULT_MAX_DIRECTIONS = 192
+
+export const buildPreviewSurfaceFromPrepared = (
+  prepared: PreparedAnalysis,
+  refinement: SurfaceRefinementOptions = {}
+): PreviewSurface => {
+  const { section, rebars, materialStore, origin, fibers, materials } = prepared
+  const meshReport = prepared.mesh.report
+  const epsCu = materialStore.concrete.limits.epsCu
+  const warnings: string[] = []
+
+  // An unusable mesh is rejected in prepareAnalysisFromMesh, so anything left here is advisory.
+  if (section.solids.length !== 1) warnings.push('Preview engine supports one concrete region best; multi-region output is approximate.')
+  for (const issue of meshReport.warnings) warnings.push(`Concrete mesh: ${issue}`)
+  if (rebars.length === 0) warnings.push('No rebars are present; steel contribution is zero.')
+  const domainMismatch = strainDomainMismatch(materialStore.concrete)
+  if (domainMismatch) warnings.push(`Strain domain: ${domainMismatch.message} See ${domainMismatch.reference}.`)
+
+  const ALL_STATIONS = PREVIEW_STATIONS.map((_, station) => station)
+
+  /**
+   * Stations of one direction. `stations` narrows the work for the midpoint probe, which only needs
+   * a handful of stations and would otherwise double the cost of every surface build.
+   */
+  const buildRow = (beta: number, stations: number[] = ALL_STATIONS): PreviewSurfacePoint[] => {
+    const extents = projectedExtents(section, beta, origin, rebars)
+    // The controlling bar changes with direction, so its yield and rupture strains do too.
+    const limits = stationSteelLimits(
+      materials,
+      rebars,
+      materialStore.defaults.steelMaterialId,
+      extents.controllingRebarIndex
+    )
+    const degrees = Number(((beta * 180) / Math.PI).toFixed(3))
+    return stations.map((station) => {
+      const state = previewStationStateFromExtents(beta, station, epsCu, limits, extents)
+      const ledger = evaluate(fibers, materials, state)
+      return { id: `${degrees}-${station}`, beta, station, state, ledger, ...ledger.total }
+    })
+  }
+
+  const rows = new Map<number, PreviewSurfacePoint[]>()
+  for (const beta of PREVIEW_BETAS) rows.set(beta, buildRow(beta))
+
+  const sortedBetas = () => [...rows.keys()].sort((a, b) => a - b)
+  const allPoints = () => sortedBetas().flatMap((beta) => rows.get(beta)!)
+
+  const spans = () => {
+    let pSpan = 1
+    let mSpan = 1
+    for (const point of allPoints()) {
+      pSpan = Math.max(pSpan, Math.abs(point.P))
+      mSpan = Math.max(mSpan, Math.hypot(point.Mx, point.My))
+    }
+    return { pSpan, mSpan }
+  }
+
+  const probeStations = (refinement.probeStations ?? DEFAULT_PROBE_STATIONS).filter(
+    (station) => station >= 0 && station < PREVIEW_STATIONS.length
+  )
+
+  /**
+   * Chord error of one direction interval: evaluate the true state halfway between two sampled
+   * directions and compare it with the straight line the triangulated surface uses there.
+   */
+  const intervalError = (betaA: number, betaB: number, pSpan: number, mSpan: number) => {
+    const rowA = rows.get(betaA)!
+    // betaB may be unwrapped past 2π on the closing interval; the row is keyed on its wrapped value.
+    const rowB = rows.get(betaB % (2 * Math.PI))!
+    const midBeta = (betaA + betaB) / 2
+    const probe = buildRow(midBeta, probeStations)
+    let relativeP = 0
+    let relativeMoment = 0
+    probe.forEach((midPoint, probeIndex) => {
+      const station = probeStations[probeIndex]
+      const chordP = (rowA[station].P + rowB[station].P) / 2
+      const chordMx = (rowA[station].Mx + rowB[station].Mx) / 2
+      const chordMy = (rowA[station].My + rowB[station].My) / 2
+      relativeP = Math.max(relativeP, Math.abs(midPoint.P - chordP) / pSpan)
+      relativeMoment = Math.max(
+        relativeMoment,
+        Math.hypot(midPoint.Mx - chordMx, midPoint.My - chordMy) / mSpan
+      )
+    })
+    return { midBeta, relativeP, relativeMoment }
+  }
+
+  const tolerance = refinement.tolerance ?? Number.POSITIVE_INFINITY
+  const maxPasses = refinement.tolerance === undefined ? 0 : refinement.maxPasses ?? DEFAULT_MAX_REFINEMENT_PASSES
+  const maxDirections = refinement.maxDirections ?? DEFAULT_MAX_DIRECTIONS
+
+  // NaN, not 0: an estimate that was never taken must not read as "no error found".
+  let maxRelativeP = Number.NaN
+  let maxRelativeMoment = Number.NaN
+  let worstBeta = Number.NaN
+  let passes = 0
+
+  // Pass 0 measures the fixed grid. Further passes bisect only the intervals that failed, so the
+  // reported error always describes the grid that was actually returned (`docs/05` §5).
+  for (let pass = 0; probeStations.length > 0; pass++) {
+    const betas = sortedBetas()
+    const { pSpan, mSpan } = spans()
+    const insertions: number[] = []
+    maxRelativeP = 0
+    maxRelativeMoment = 0
+    worstBeta = betas[0] ?? 0
+
+    for (let index = 0; index < betas.length; index++) {
+      const betaA = betas[index]
+      // The closing interval wraps to the first direction at 2π.
+      const betaB = index === betas.length - 1 ? betas[0] + 2 * Math.PI : betas[index + 1]
+      const { midBeta, relativeP, relativeMoment } = intervalError(betaA, betaB, pSpan, mSpan)
+      if (relativeP > maxRelativeP) maxRelativeP = relativeP
+      if (relativeMoment > maxRelativeMoment) {
+        maxRelativeMoment = relativeMoment
+        worstBeta = midBeta % (2 * Math.PI)
+      }
+      if (pass < maxPasses && Math.max(relativeP, relativeMoment) > tolerance) insertions.push(midBeta)
+    }
+
+    if (insertions.length === 0 || pass >= maxPasses || rows.size + insertions.length > maxDirections) break
+    for (const midBeta of insertions) {
+      const beta = midBeta % (2 * Math.PI)
+      rows.set(beta, buildRow(beta))
+    }
+    passes = pass + 1
+  }
+
+  const points = allPoints()
+  const P = points.map((point) => point.P)
+  const Mx = points.map((point) => point.Mx)
+  const My = points.map((point) => point.My)
+  const withinTolerance = Math.max(maxRelativeP, maxRelativeMoment) <= tolerance
+
+  if (refinement.tolerance !== undefined && !withinTolerance) {
+    warnings.push(
+      `Direction sampling did not reach the requested tolerance ${tolerance.toExponential(2)}; ` +
+        `the estimate is ${Math.max(maxRelativeP, maxRelativeMoment).toExponential(2)} over ${rows.size} directions.`
+    )
+  }
+
+  return {
+    points,
+    bounds: {
+      P: [Math.min(...P), Math.max(...P)],
+      Mx: [Math.min(...Mx), Math.max(...Mx)],
+      My: [Math.min(...My), Math.max(...My)]
+    },
+    mesh: meshReport,
+    strainDomain: IMPLEMENTED_STRAIN_DOMAIN,
+    directionError: {
+      directions: rows.size,
+      probedStations: probeStations,
+      maxRelativeP,
+      maxRelativeMoment,
+      worstBeta,
+      refinementPasses: passes,
+      withinTolerance,
+      tolerance
+    },
+    comparison: {
+      workbook: 'docs/example case/PM-advanced (7) 2D.xlsx',
+      notes: [
+        'Reference workbook uses fck=30 MPa, ecu=0.0033, KDS parabolic concrete, Es=200000 MPa, fy=400 MPa.',
+        'Reference Summary P0 at 0 degrees: nominal P=33981.43 kN, factored P=23443.29 kN.',
+        'Reference Summary P18 pure tension: nominal P=-5790.58 kN, factored P=-5211.53 kN.'
+      ]
+    },
+    warnings
+  }
+}
+
+export const buildPreviewSurface = (
+  section: SectionGeometry,
+  rebars: GeometryInputRebarView[],
+  materialStore: MaterialStore,
+  meshOptions: ConcreteMeshOptions = {},
+  refinement: SurfaceRefinementOptions = {}
+): PreviewSurface =>
+  buildPreviewSurfaceFromPrepared(prepareAnalysis(section, rebars, materialStore, meshOptions), refinement)
+
+export const sliceFixedPContour = (points: PreviewSurfacePoint[], fixedP: number): PreviewContourPoint[] => {
+  const momentScale = Math.max(...points.map((point) => Math.hypot(point.Mx, point.My)), 1)
+  const forceScale = Math.max(...points.map((point) => Math.abs(point.P)), 1)
+  const momentTol = momentScale * PREVIEW_GEOMETRY_TOL
+  const forceTol = forceScale * PREVIEW_GEOMETRY_TOL
+  const contour: PreviewContourPoint[] = []
+
+  for (const triangle of previewSurfaceTriangles(points)) {
+    const intersections = trianglePlaneIntersections(triangle, (point) => point.P - fixedP, forceTol)
+    for (const point of intersections) {
+      appendUniquePoint(contour, { ...point, P: fixedP }, momentTol, forceTol)
+    }
+  }
+
+  return contour.sort((a, b) => Math.atan2(a.My, a.Mx) - Math.atan2(b.My, b.Mx))
+}
+
+/**
+ * Intersect the preview surface with the vertical demand plane
+ * `Mx*sin(theta) - My*cos(theta) = 0`, then project each intersection point to `P-Mtheta`.
+ *
+ * The preview surface is still the coarse beta/station grid, but this is a geometric section of
+ * that surface. It does not assume the sampled strain-plane angle equals the moment direction.
+ */
+export const sliceMomentPlane = (points: PreviewSurfacePoint[], theta: number): PreviewMomentPlanePoint[] => {
+  const c = Math.cos(theta)
+  const s = Math.sin(theta)
+  const momentScale = Math.max(...points.map((point) => Math.hypot(point.Mx, point.My)), 1)
+  const forceScale = Math.max(...points.map((point) => Math.abs(point.P)), 1)
+  const momentTol = momentScale * PREVIEW_GEOMETRY_TOL
+  const forceTol = forceScale * PREVIEW_GEOMETRY_TOL
+  const planeDistance = (point: PreviewSurfacePoint) => point.Mx * s - point.My * c
+  const path: PreviewMomentPlanePoint[] = []
+
+  for (const triangle of previewSurfaceTriangles(points)) {
+    const intersections = trianglePlaneIntersections(triangle, planeDistance, momentTol)
+    for (const point of intersections) {
+      appendUniquePoint(
+        path,
+        {
+          ...point,
+          beta: theta,
+          M: point.Mx * c + point.My * s
+        },
+        momentTol,
+        forceTol
+      )
+    }
+  }
+
+  return path.sort((a, b) => b.P - a.P || a.M - b.M)
+}
+
+const cross2 = (a: Pick<Resultant, 'Mx' | 'My'>, b: Pick<Resultant, 'Mx' | 'My'>) => a.Mx * b.My - a.My * b.Mx
+
+export const intersectFixedPContourWithMomentRay = (
+  contour: PreviewContourPoint[],
+  theta: number
+): PreviewMomentPlanePoint | null => {
+  if (contour.length < 2) return null
+  const c = Math.cos(theta)
+  const s = Math.sin(theta)
+  const direction = { Mx: c, My: s }
+  const momentScale = Math.max(...contour.map((point) => Math.hypot(point.Mx, point.My)), 1)
+  const tol = momentScale * PREVIEW_GEOMETRY_TOL
+  let best: PreviewMomentPlanePoint | null = null
+
+  for (let i = 0; i < contour.length; i++) {
+    const a = contour[i]
+    const b = contour[(i + 1) % contour.length]
+    const edge = { Mx: b.Mx - a.Mx, My: b.My - a.My }
+    const denom = cross2(edge, direction)
+
+    if (Math.abs(denom) <= tol) {
+      for (const candidate of [a, b]) {
+        const offRay = Math.abs(cross2(candidate, direction))
+        const m = candidate.Mx * c + candidate.My * s
+        if (offRay <= tol && m >= -tol && (!best || m < best.M)) {
+          best = { ...candidate, beta: theta, M: Math.max(0, m) }
+        }
+      }
+      continue
+    }
+
+    const q = -cross2(a, direction) / denom
+    if (q < -1e-9 || q > 1 + 1e-9) continue
+    const point = {
+      beta: theta,
+      P: a.P + (b.P - a.P) * q,
+      Mx: a.Mx + edge.Mx * q,
+      My: a.My + edge.My * q
+    }
+    const m = point.Mx * c + point.My * s
+    if (m < -tol) continue
+    const candidate = { ...point, M: Math.max(0, m) }
+    if (!best || candidate.M < best.M) best = candidate
+  }
+
+  return best
+}
+
+const solve3 = (matrix: number[][], rhs: number[]) => {
+  const a = matrix.map((row, index) => [...row, rhs[index]])
+  const matrixScale = Math.max(...matrix.flat().map(Math.abs))
+  if (!(matrixScale > 0) || !Number.isFinite(matrixScale) || rhs.some((value) => !Number.isFinite(value))) return null
+  const pivotTolerance = 1e-12 * matrixScale
+  for (let i = 0; i < 3; i++) {
+    let pivot = i
+    for (let r = i + 1; r < 3; r++) {
+      if (Math.abs(a[r][i]) > Math.abs(a[pivot][i])) pivot = r
+    }
+    if (Math.abs(a[pivot][i]) < pivotTolerance) return null
+    if (pivot !== i) [a[i], a[pivot]] = [a[pivot], a[i]]
+    const div = a[i][i]
+    for (let c = i; c < 4; c++) a[i][c] /= div
+    for (let r = 0; r < 3; r++) {
+      if (r === i) continue
+      const factor = a[r][i]
+      for (let c = i; c < 4; c++) a[r][c] -= factor * a[i][c]
+    }
+  }
+  return [a[0][3], a[1][3], a[2][3]] as const
+}
+
+const residualNorm = (residual: Resultant, forceScale: number, momentScale: number) =>
+  Math.max(
+    Math.abs(residual.P) / forceScale,
+    Math.abs(residual.Mx) / momentScale,
+    Math.abs(residual.My) / momentScale
+  )
+
+const demandMomentRadius = (demand: Resultant) => Math.hypot(demand.Mx, demand.My)
+
+const estimateUtilization = (demand: LoadCombination, contour: PreviewContourPoint[]) => {
+  const demandRadius = demandMomentRadius(demand)
+  if (demandRadius < 1e-9 || contour.length === 0) return { utilization: null, point: null }
+  const demandAngle = Math.atan2(demand.My, demand.Mx)
+  const best = intersectFixedPContourWithMomentRay(contour, demandAngle)
+  const capacityRadius = best?.M ?? 0
+  return {
+    utilization: capacityRadius > 1e-9 ? demandRadius / capacityRadius : null,
+    point: best
+  }
+}
+
+export const checkLoadcaseUtilizationFromSurface = (
+  surface: PreviewSurface,
+  loadcase: LoadCombination
+): LoadcaseQuickCheckResult => {
+  const contour = sliceFixedPContour(surface.points, loadcase.P)
+  const utilization = estimateUtilization(loadcase, contour)
+  return {
+    loadcaseId: loadcase.id,
+    demand: loadcase,
+    utilization: utilization.utilization,
+    contourPoint: utilization.point,
+    message:
+      utilization.utilization == null
+        ? 'No demand-ray crossing was found on the fixed-P contour.'
+        : 'Checked from fixed-P contour and demand moment ray.'
+  }
+}
+
+export const checkLoadcasesUtilizationFromSurface = (
+  surface: PreviewSurface,
+  loadcases: LoadCombination[]
+): LoadcaseQuickCheckResult[] => loadcases.map((loadcase) => checkLoadcaseUtilizationFromSurface(surface, loadcase))
+
+export const solveInversePreviewFromPrepared = (
+  prepared: PreparedAnalysis,
+  loadcase: LoadCombination,
+  contour: PreviewContourPoint[]
+): InversePreviewResult => {
+  const demand = { P: loadcase.P, Mx: loadcase.Mx, My: loadcase.My }
+  const forceScale = prepared.forceScale
+  const momentScale = forceScale * prepared.lengthScale
+  const unknownScale = [
+    prepared.strainScale,
+    prepared.strainScale / prepared.lengthScale,
+    prepared.strainScale / prepared.lengthScale
+  ] as const
+  let state: StrainState = { e0: 0.0002, kx: 0, ky: 0 }
+  let evaluated = evaluateWithTangent(prepared.fibers, prepared.materials, state)
+  let response = evaluated.ledger.total
+  let residual = { P: response.P - demand.P, Mx: response.Mx - demand.Mx, My: response.My - demand.My }
+  let norm = residualNorm(residual, forceScale, momentScale)
+  let iterations = 0
+
+  for (; iterations < NEWTON_MAX_ITERATIONS && norm > NEWTON_RESIDUAL_TOL; iterations++) {
+    // docs/03 §5: solve the dimensionless system. Raw entries mix N, N·mm and N·mm²,
+    // so a fixed pivot threshold on the unscaled matrix is physically meaningless.
+    const resultScale = [forceScale, momentScale, momentScale] as const
+    const matrix = [
+      evaluated.tangent[0].map((value, column) => (value * unknownScale[column]) / resultScale[0]),
+      evaluated.tangent[1].map((value, column) => (value * unknownScale[column]) / resultScale[1]),
+      evaluated.tangent[2].map((value, column) => (value * unknownScale[column]) / resultScale[2])
+    ]
+    const scaledDelta = solve3(matrix, [
+      -residual.P / forceScale,
+      -residual.Mx / momentScale,
+      -residual.My / momentScale
+    ])
+    if (!scaledDelta) break
+    const delta = scaledDelta.map((value, index) => value * unknownScale[index]) as [
+      number,
+      number,
+      number
+    ]
+
+    let accepted = false
+    for (let backtrack = 0; backtrack <= 12; backtrack++) {
+      const factor = 2 ** -backtrack
+      const trial = {
+        e0: state.e0 + delta[0] * factor,
+        kx: state.kx + delta[1] * factor,
+        ky: state.ky + delta[2] * factor
+      }
+      const trialEvaluated = evaluateWithTangent(prepared.fibers, prepared.materials, trial)
+      const trialResponse = trialEvaluated.ledger.total
+      const trialResidual = {
+        P: trialResponse.P - demand.P,
+        Mx: trialResponse.Mx - demand.Mx,
+        My: trialResponse.My - demand.My
+      }
+      const trialNorm = residualNorm(trialResidual, forceScale, momentScale)
+      if (Number.isFinite(trialNorm) && trialNorm < norm) {
+        state = trial
+        evaluated = trialEvaluated
+        response = trialResponse
+        residual = trialResidual
+        norm = trialNorm
+        accepted = true
+        break
+      }
+    }
+    if (!accepted) break
+  }
+
+  const utilization = estimateUtilization(loadcase, contour)
+  const converged = norm <= NEWTON_RESIDUAL_TOL
+  // docs/04 §6: acceptance requires the residual test *and* admissible material strains. A plane
+  // that balances the demand outside the material domain is not a state the section can reach.
+  const admissibility = evaluateAdmissibility(
+    prepared.fibers,
+    prepared.concreteBoundary,
+    prepared.materialStore.concrete.limits.epsCu,
+    state
+  )
+  const message = !converged
+    ? 'Preview solver stopped before strict convergence.'
+    : admissibility.ok
+      ? 'Converged preview equilibrium inside the material domain.'
+      : `Residual converged but the strain plane leaves the material domain — ${describeAdmissibility(admissibility)}. The demand is outside the section capacity.`
+
+  return {
+    ok: converged && admissibility.ok,
+    converged,
+    admissibility,
+    loadcaseId: loadcase.id,
+    demand: loadcase,
+    state,
+    response,
+    residual,
+    residualNorm: norm,
+    iterations,
+    utilization: utilization.utilization,
+    contourPoint: utilization.point,
+    message
+  }
+}
+
+export const solveInversePreview = (
+  section: SectionGeometry,
+  rebars: GeometryInputRebarView[],
+  materialStore: MaterialStore,
+  loadcase: LoadCombination,
+  contour: PreviewContourPoint[],
+  meshOptions: ConcreteMeshOptions = {}
+): InversePreviewResult =>
+  solveInversePreviewFromPrepared(prepareAnalysis(section, rebars, materialStore, meshOptions), loadcase, contour)
+
+export type SectionFieldSample = {
+  x: number
+  y: number
+  area: number
+  strain: number
+  stress: number
+  kind: 'concrete' | 'rebar'
+}
+
+export type SectionFieldRebar = {
+  id: number
+  x: number
+  y: number
+  dia: number
+  area: number
+  strain: number
+  stress: number
+  /** Axial force in the bar, N (compression positive with the strain convention). */
+  force: number
+}
+
+/** One mesh triangle with vertex field values for continuous canvas shading. */
+export type SectionFieldTriangle = {
+  ax: number
+  ay: number
+  bx: number
+  by: number
+  cx: number
+  cy: number
+  strainA: number
+  strainB: number
+  strainC: number
+  stressA: number
+  stressB: number
+  stressC: number
+}
+
+export type SectionFieldMap = {
+  origin: AnalysisOrigin
+  /** Legacy quadrature samples (debug / hover). */
+  samples: SectionFieldSample[]
+  /** Clipped-cell triangles in world coordinates — primary field visualization. */
+  triangles: SectionFieldTriangle[]
+  rebars: SectionFieldRebar[]
+  bounds: { minX: number; maxX: number; minY: number; maxY: number }
+  mesh: ConcreteMeshReport
+}
+
+/** Mesh samples colored by strain/stress for a known strain plane (loadcase inverse state). */
+export const buildSectionFieldMapFromPrepared = (
+  prepared: PreparedAnalysis,
+  state: StrainState
+): SectionFieldMap => {
+  const { section, rebars, materialStore, origin, mesh, materials } = prepared
+
+  const valueAt = (xWorld: number, yWorld: number) => {
+    const local = { x: xWorld - origin.x, y: yWorld - origin.y }
+    const strain = strainAt(state, local)
+    return { strain, stress: materials.concrete.stress(strain) }
+  }
+
+  const triangles: SectionFieldTriangle[] = mesh.triangles.map((tri) => {
+    const a = valueAt(tri.ax, tri.ay)
+    const b = valueAt(tri.bx, tri.by)
+    const c = valueAt(tri.cx, tri.cy)
+    return {
+      ax: tri.ax,
+      ay: tri.ay,
+      bx: tri.bx,
+      by: tri.by,
+      cx: tri.cx,
+      cy: tri.cy,
+      strainA: a.strain,
+      strainB: b.strain,
+      strainC: c.strain,
+      stressA: a.stress,
+      stressB: b.stress,
+      stressC: c.stress
+    }
+  })
+
+  const samples: SectionFieldSample[] = mesh.points.map((point) => {
+    const { strain, stress } = valueAt(point.x, point.y)
+    return {
+      x: point.x,
+      y: point.y,
+      area: point.area,
+      strain,
+      stress,
+      kind: 'concrete' as const
+    }
+  })
+
+  const rebarSamples: SectionFieldRebar[] = rebars.map((bar) => {
+    const local = { x: bar.x - origin.x, y: bar.y - origin.y }
+    const strain = strainAt(state, local)
+    const steelMaterialId = bar.steelMaterialId ?? materialStore.defaults.steelMaterialId
+    const steel = materials.steel.get(steelMaterialId)
+    if (!steel) {
+      throw new AnalysisInputError(
+        'MISSING_STEEL_MATERIAL',
+        `Rebar ${bar.id} references steel material ${steelMaterialId}, which does not exist.`,
+        { rebarId: bar.id, steelMaterialId }
+      )
+    }
+    const stress = steel.stress(strain)
+    const area = (Math.PI * bar.dia * bar.dia) / 4
+    return {
+      id: bar.id,
+      x: bar.x,
+      y: bar.y,
+      dia: bar.dia,
+      area,
+      strain,
+      stress,
+      force: stress * area
+    }
+  })
+
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  for (const solid of section.solids) {
+    for (const point of solid.outer) {
+      minX = Math.min(minX, point.x)
+      maxX = Math.max(maxX, point.x)
+      minY = Math.min(minY, point.y)
+      maxY = Math.max(maxY, point.y)
+    }
+  }
+  if (!Number.isFinite(minX)) {
+    minX = 0
+    maxX = 1
+    minY = 0
+    maxY = 1
+  }
+
+  return {
+    origin,
+    samples,
+    triangles,
+    rebars: rebarSamples,
+    bounds: { minX, maxX, minY, maxY },
+    mesh: mesh.report
+  }
+}
+
+export const buildSectionFieldMap = (
+  section: SectionGeometry,
+  rebars: GeometryInputRebarView[],
+  materialStore: MaterialStore,
+  state: StrainState,
+  meshOptions: ConcreteMeshOptions = {}
+): SectionFieldMap =>
+  buildSectionFieldMapFromPrepared(prepareAnalysis(section, rebars, materialStore, meshOptions), state)

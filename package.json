@@ -6,34 +6,42 @@
   "scripts": {
     "dev": "npm run dev -w @pm/web",
     "build": "npm run build -w @pm/web",
-    "lint": "npm run typecheck -w @pm/web",
+    "lint": "npm run typecheck",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npm run test:roundtrip && npm run test:pm-stations && npm run test:excel-export",
-    "test:roundtrip": "npx --yes tsx packages/pm-project/src/roundtrip.selftest.ts",
-    "test:pm-stations": "npx --yes tsx apps/web/lib/pm-preview-analysis.selftest.ts",
-    "test:excel-export": "npx --yes tsx apps/web/lib/pm-excel-export.selftest.ts",
-    "fixture:reference-json": "npx --yes tsx apps/web/lib/pm-reference-case.write.ts"
+    "test": "npm run typecheck && npm run test:unit && npm run test:cad && npm run test:roundtrip && npm run test:pm-stations && npm run test:excel-export",
+    "test:unit": "node --import tsx --test packages/pm-analysis/src/admissibility.test.ts packages/pm-analysis/src/surface.test.ts packages/pm-analysis/src/materials-integrity.test.ts packages/pm-analysis/src/mesh-spatial.test.ts packages/pm-analysis/src/mesh-gate.test.ts packages/pm-analysis/src/stations.test.ts packages/pm-analysis/src/refinement.test.ts packages/pm-analysis/src/tangent.test.ts",
+    "test:cad": "npm run test -w @structures/cad-drawing",
+    "test:roundtrip": "tsx packages/pm-project/src/roundtrip.selftest.ts",
+    "test:pm-stations": "tsx packages/pm-analysis/src/analysis.selftest.ts",
+    "test:excel-export": "tsx packages/pm-report/src/excel.selftest.ts",
+    "fixture:reference-json": "tsx packages/pm-analysis/src/reference-case.write.ts",
+    "bench": "tsx packages/pm-analysis/src/bench/run.ts",
+    "bench:materials": "tsx packages/pm-analysis/src/bench/material.ts",
+    "bench:mesh": "tsx packages/pm-analysis/src/bench/mesh.ts",
+    "bench:record": "tsx packages/pm-analysis/src/bench/run.ts --repeats 1 --fingerprint-out packages/pm-analysis/src/bench/capacity-baseline.json",
+    "bench:verify": "tsx packages/pm-analysis/src/bench/run.ts --repeats 1 --baseline packages/pm-analysis/src/bench/capacity-baseline.json"
   },
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "dependencies": {
-    "@jscad/regl-renderer": "^2.6.15",
-    "exceljs": "^4.4.0",
-    "gl-mat4": "^1.2.0",
-    "gl-vec3": "^1.1.3",
-    "lucide-react": "latest",
-    "next": "latest",
-    "react": "latest",
-    "react-dom": "latest"
+    "@jscad/regl-renderer": "2.6.15",
+    "exceljs": "4.4.0",
+    "gl-mat4": "1.2.0",
+    "gl-vec3": "1.2.0",
+    "lucide-react": "1.25.0",
+    "next": "16.2.10",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
   },
   "devDependencies": {
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "hyperformula": "^3.3.0",
-    "typescript": "^5.9.3"
+    "@types/node": "26.1.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "hyperformula": "3.3.0",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
   },
   "packageManager": "npm@11.5.0"
 }

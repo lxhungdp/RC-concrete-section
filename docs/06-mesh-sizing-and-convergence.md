@@ -80,6 +80,31 @@ do not call it Richardson extrapolation.
 Refinement stops successfully only when all required quantities meet `tolMesh`. Hitting `maxLevels`,
 `maxFibers`, time, or memory limits returns `MESH_NOT_CONVERGED`/`RESOURCE_LIMIT`.
 
+### 4.1 Measured discretization error of the current seed rule
+
+Mesh refinement is not yet automatic; the seed rule `h0 = Dmin/32` from file `02` is used as is. Its
+error has, however, been measured — surface states at `h0`, `h0/2` and `h0/4` against an `h0/12`
+reference, over the benchmark fixtures:
+
+| Section | `h0` | `max |ΔP|/Pspan` at `h0` | `max |ΔM|/Mspan` at `h0` |
+|---|---:|---:|---:|
+| reference (1500×1200, two voids) | 37.5 mm | 4.9e-4 | 1.2e-3 |
+| compact 600×600 | 18.75 mm | 3.2e-4 | 8.6e-4 |
+| hollow circular D1800/D1200 | 56.2 mm | 3.4e-4 | 8.4e-4 |
+| thin-walled box, 250 mm walls | 62.5 mm | 8.2e-4 | 1.3e-3 |
+
+Two consequences worth recording.
+
+First, the seed rule survives the thin-walled case even though `Dmin` is taken from the **outer**
+convex hull, so a 250 mm wall is covered by only four cells. That is not the accident it looks like:
+the clipped-cell mesh is geometrically exact at any `h`, so wall thickness does not drive the error.
+The only error source is a cell straddling a material breakpoint (`ε = 0`, `ε0`, `εcu`), which scales
+with `h` against the strain gradient, not against a geometric feature.
+
+Second, integration-mesh error is **not** the governing numerical error in this engine. Direction
+sampling (§5) is roughly thirty times larger. Refining the mesh before the direction grid would buy
+nothing.
+
 ## 5. Surface refinement
 
 Angle and state refinements are separate from mesh refinement. File `05` controls them with actual
@@ -107,6 +132,38 @@ targeted refinement around the intersected triangles. The utilization difference
 The intersected triangles are found by the demand ray or demand-direction plane, not by locating the
 nearest strain-plane sample angle. A regression that passes only when `thetaLoad` equals a sampled
 strain angle is under-tested.
+
+### 5.1 Measured direction-sampling error, and what it costs
+
+`PreviewSurface.directionError` now reports the β chord error of the grid it actually returned. The
+engine evaluates the true state halfway between two sampled directions and compares it with the
+chord the triangulation uses there. It is a sampled estimate over four probe stations, not a bound
+(§11); measured against a full 19-station sweep it recovered at worst 92% and on average 97% of the
+true worst, for about 21% of a surface build. Pass `probeStations: []` to switch it off.
+
+At the default fixed grid of 24 directions:
+
+| Section | `max |ΔP|/Pspan` | `max |ΔM|/Mspan` | Capacity change when refined to 192 directions |
+|---|---:|---:|---:|
+| reference | 1.2e-2 | 3.6e-2 | +0.003 % |
+| compact 600×600 | 1.0e-2 | 3.3e-2 | +0.67 % |
+| circular D900 | 3.3e-3 | 1.0e-2 | +0.81 % |
+| hollow circular | 3.6e-3 | 1.1e-2 | +0.82 % |
+| L-shaped core | 4.7e-2 | 8.8e-2 | +0.90 % |
+| thin-walled box | 4.2e-2 | 1.1e-1 | **+3.81 %** |
+
+The direction grid, not the integration mesh, is the governing numerical error: one to sixteen
+percent in moment, against one tenth of a percent from the mesh.
+
+The capacity change is **always positive**. Chord interpolation across a convex fixed-P contour cuts
+the corner, so the 24-direction grid systematically under-reports capacity — conservative, but by an
+amount nobody had measured. Per-station sweeps show the error rising with station index: the poles
+`P0` and `P18` are direction independent and score exactly zero, while the deep-tension stations peak
+near 16%.
+
+Refinement is available through `SurfaceRefinementOptions` and is **off by default**, so no result
+moves unless it is asked for. Turning it on is an engineering decision — it makes the reported
+capacity less conservative — and it must be recorded with the result, not enabled globally.
 
 ## 6. Error budget hierarchy
 

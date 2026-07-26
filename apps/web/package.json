@@ -9,20 +9,22 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@pm/analysis": "0.1.0",
     "@pm/geometry": "0.1.0",
     "@pm/materials": "0.1.0",
     "@pm/project": "0.1.0",
+    "@pm/report": "0.1.0",
     "@structures/cad-drawing": "0.1.0",
-    "lucide-react": "latest",
-    "next": "latest",
-    "plotly.js-dist-min": "^3.7.0",
-    "react": "latest",
-    "react-dom": "latest"
+    "lucide-react": "1.25.0",
+    "next": "16.2.10",
+    "plotly.js-dist-min": "3.7.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
   },
   "devDependencies": {
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "typescript": "^5.9.3"
+    "@types/node": "26.1.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "typescript": "5.9.3"
   }
 }

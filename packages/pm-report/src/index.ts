@@ -33,15 +33,16 @@ import type { ConcreteMaterial, MaterialStore, SteelMaterial } from '@pm/materia
 import type { LoadCombination } from '@pm/project'
 import {
   PREVIEW_STATIONS,
-  buildPreviewSurface,
-  evaluatePreviewState,
+  buildPreviewSurfaceFromPrepared,
+  evaluatePreparedState,
   intersectFixedPContourWithMomentRay,
+  prepareAnalysisFromMesh,
   previewStationState,
   sliceFixedPContour,
   stationDefinitionLabel,
   type StationDefinition,
   type StrainState
-} from './pm-preview-analysis'
+} from '@pm/analysis'
 
 export type ExcelExportInput = {
   projectName: string
@@ -356,6 +357,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const epsY = steel.limits?.epsY ?? fyModel / steel.elasticModulus
   const origin = netConcreteCentroid(section)
   const mesh = exportMesh(section, input.maxMeshPoints ?? DEFAULT_MAX_MESH_POINTS)
+  const prepared = prepareAnalysisFromMesh(section, rebars, materialStore, mesh, origin)
   const beta = (input.betaDeg * Math.PI) / 180
 
   // Geometry about the analysis origin — the frame every formula in the workbook uses.
@@ -384,7 +386,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   // Engine values for the verification columns, on the very mesh being exported.
   const engineStations = PREVIEW_STATIONS.map((_, stationIndex) => {
     const state = previewStationState(section, rebars, beta, stationIndex, params.epsCu, epsY, origin)
-    const ledger = evaluatePreviewState(section, rebars, materialStore, state, { cellSize: mesh.report.cellSize }, origin)
+    const ledger = evaluatePreparedState(prepared, state)
     return { state, ledger }
   })
 
@@ -393,9 +395,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   // alongside its own and shows the spread instead of pretending they are identical.
   const demandP = input.loadcase ? input.loadcase.P : input.fixedP
   const thetaLoad = input.loadcase ? Math.atan2(input.loadcase.My, input.loadcase.Mx) : 0
-  const engineSurface = buildPreviewSurface(section, rebars, materialStore, demandP, {
-    cellSize: mesh.report.cellSize
-  })
+  const engineSurface = buildPreviewSurfaceFromPrepared(prepared)
   // Indexed 24 x 19 grid of the engine surface, keyed the same way MxMy_FixedP lays it out.
   const surfaceAt = new Map<string, { P: number; Mx: number; My: number; e0: number; kx: number; ky: number }>()
   for (const point of engineSurface.points) {

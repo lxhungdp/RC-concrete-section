@@ -144,6 +144,30 @@ Optimization order:
 
 Never loosen engineering tolerances as a hidden performance optimization.
 
+### 8.1 Implemented fixtures and measured baseline
+
+`packages/pm-analysis/src/bench/sections.ts` holds the fixture set required above: a compact square,
+an asymmetric 60-bar wall, a circular and a hollow-circular pier, a thin-walled box, a concave
+L-shaped core, the verified reference case, and the same geometry driven by a tabulated material law.
+`npm run bench` runs each in its own process and reports min-of-N per stage.
+
+Steps 2 and 4 are done. Measured with same-process A/B on the reference fixtures, every pair
+producing a bit-identical result:
+
+| Change | Effect |
+|---|---|
+| Constitutive parameters hoisted out of the fibre loop, closed-form law | ×1.95 |
+| Same, tabulated 13-point law (per-call sort removed) | ×10.64 |
+| Boundary-cell spatial classifier, `h` = 50 / 25 / 12.5 / 6.25 mm | ×2.10 / ×3.98 / ×6.17 / ×9.09 |
+| One prepared mesh shared by surface, loadcases and field map | ×1.58 on a realistic UI flow |
+
+The clipping win grows as the mesh refines, because the share of cells that touch the boundary
+falls; this is what makes surface refinement affordable at all.
+
+Steps 3, 5 and 6 remain open. Measurement note: these figures come from process-isolated min-of-N
+runs. On a loaded workstation, identical code measured back to back varied by up to a factor of two,
+so a single timed run is not evidence of anything.
+
 ## 9. Dependency governance
 
 For each third-party package record:

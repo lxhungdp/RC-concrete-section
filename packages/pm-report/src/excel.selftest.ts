@@ -19,14 +19,14 @@ import {
   PREVIEW_STATIONS,
   buildPreviewSurface,
   intersectFixedPContourWithMomentRay,
-  sliceFixedP,
+  contourStrainAngleSamples,
   sliceFixedPContour,
   sliceMomentPlane,
   solveInversePreview,
   evaluatePreviewState,
   previewStationState
-} from './pm-preview-analysis'
-import { buildSectionWorkbook, invalidDefinedNameReason, sectionWorkbookFileName } from './pm-excel-export'
+} from '@pm/analysis'
+import { buildSectionWorkbook, invalidDefinedNameReason, sectionWorkbookFileName } from './index'
 import {
   compileConcreteMaterial,
   compileSteelMaterial,
@@ -77,7 +77,7 @@ const run = async () => {
   const loadcase = parsed.document.inputs.loadings.combinations[0]
 
   console.log('== 1. Build the workbook ==')
-  const seedSurface = buildPreviewSurface(section, rebars, materialStore, loadcase.P)
+  const seedSurface = buildPreviewSurface(section, rebars, materialStore)
   const inverse = solveInversePreview(
     section,
     rebars,
@@ -391,8 +391,8 @@ const run = async () => {
   console.log('== 8. MxMy_FixedP: 24 directions vs the engine contour ==')
   const inputSheet = readBack.getWorksheet('Input')!
   const cellSize = Number(inputSheet.getCell(`C${findLabelRow(inputSheet, 'mesh cell size')}`).value)
-  const surface = buildPreviewSurface(section, rebars, materialStore, loadcase.P, { cellSize })
-  const engineContour = sliceFixedP(surface.points, loadcase.P)
+  const surface = buildPreviewSurface(section, rebars, materialStore, { cellSize })
+  const engineContour = contourStrainAngleSamples(sliceFixedPContour(surface.points, loadcase.P))
   const stationCount = PREVIEW_STATIONS.length
   const MM_FIRST = 8
   const MM_P_COL = 2 + 4 + stationCount * 3
@@ -445,7 +445,7 @@ const run = async () => {
   }
 
   console.log('== 10. Demand-ray capacity: workbook vs engine ==')
-  const surfaceForDemand = buildPreviewSurface(section, rebars, materialStore, loadcase.P, { cellSize })
+  const surfaceForDemand = buildPreviewSurface(section, rebars, materialStore, { cellSize })
   const demandContour = sliceFixedPContour(surfaceForDemand.points, loadcase.P)
   const thetaLoad = Math.atan2(loadcase.My, loadcase.Mx)
   const engineHit = intersectFixedPContourWithMomentRay(demandContour, thetaLoad)
@@ -586,7 +586,7 @@ const run = async () => {
     rebars,
     tabulatedStore,
     loadcase,
-    sliceFixedPContour(buildPreviewSurface(section, rebars, tabulatedStore, loadcase.P).points, loadcase.P)
+    sliceFixedPContour(buildPreviewSurface(section, rebars, tabulatedStore).points, loadcase.P)
   )
   const tabWorkbook = await buildSectionWorkbook({
     projectName: `${parsed.document.meta.name} (tabulated law)`,

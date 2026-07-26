@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A result-relevant change must not merge on a green typecheck alone: the verification fixtures in
+# `npm test` are the regression oracles (docs/09), so they run on every pull request.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.2'
+          cache: npm
+
+      # `npm ci` fails on a lockfile that does not match package.json — dependency pinning is only
+      # real if it is enforced (docs/08 §9).
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: CAD drawing tests
+        run: npm run test:cad
+
+      - name: Project round trip
+        run: npm run test:roundtrip
+
+      - name: P-M station verification vs reference workbook
+        run: npm run test:pm-stations
+
+      - name: Excel export verification
+        run: npm run test:excel-export
+
+      - name: Reference fixture is current
+        run: |
+          npm run fixture:reference-json
+          git diff --exit-code -- "docs/example case/PM-advanced (7) 2D.pm-project.json"
+
+      # Bit-identity gate over 8 sections x 24 capacity quantities. An optimisation, a refactor or a
+      # dependency bump that moves a single bit of capacity fails here rather than in a report.
+      # A deliberate engineering change is landed by regenerating the baseline in the same commit,
+      # so the diff shows exactly which numbers moved and why.
+      - name: Capacity fingerprint is unchanged
+        run: npm run bench:verify
+
+      - name: Build
+        run: npm run build

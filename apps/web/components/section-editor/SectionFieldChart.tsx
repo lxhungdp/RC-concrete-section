@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SectionGeometry } from '@pm/geometry'
-import type { SectionFieldMap, SectionFieldRebar, SectionFieldTriangle } from '../../lib/pm-preview-analysis'
+import type { SectionFieldMap, SectionFieldRebar, SectionFieldTriangle } from '@pm/analysis'
 
 type FieldMode = 'strain' | 'stress'
 

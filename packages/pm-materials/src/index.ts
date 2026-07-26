@@ -1,6 +1,7 @@
 export * from './types'
 export * from './ids'
 export * from './compile'
+export * from './support'
 export * from './store'
 export * from './standards/aci318'
 export * from './standards/en1992'
