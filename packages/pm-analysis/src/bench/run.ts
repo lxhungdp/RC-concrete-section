@@ -126,6 +126,12 @@ const runCase = (benchCase: BenchCase): CaseReport => {
   const origin = netConcreteCentroid(section)
   const points = surface.value.points
   const inverseResult = inverse.value
+  // Path order and the repeated closing vertex are topology, not new capacity values. Normalize
+  // the connected paths to the legacy point-set order so this fingerprint still catches any
+  // numerical movement of an intersection without flagging the corrected traversal itself.
+  const momentPlanePoints = momentPlane.value
+    .flatMap((path) => (path.closed ? path.points.slice(0, -1) : path.points))
+    .sort((a, b) => b.P - a.P || a.M - b.M)
 
   const fingerprint: CaseReport['fingerprint'] = {
     origin: [origin.x, origin.y],
@@ -154,8 +160,8 @@ const runCase = (benchCase: BenchCase): CaseReport => {
     contourMx: contour.value.flatMap((level) => level.map((point) => point.Mx)),
     contourMy: contour.value.flatMap((level) => level.map((point) => point.My)),
     contourSampleCount: contour.value.map((level) => contourStrainAngleSamples(level).length),
-    momentPlaneP: momentPlane.value.map((point) => point.P),
-    momentPlaneM: momentPlane.value.map((point) => point.M),
+    momentPlaneP: momentPlanePoints.map((point) => point.P),
+    momentPlaneM: momentPlanePoints.map((point) => point.M),
     inverseState: [inverseResult.state.e0, inverseResult.state.kx, inverseResult.state.ky],
     inverseResponse: [inverseResult.response.P, inverseResult.response.Mx, inverseResult.response.My],
     inverseResidualNorm: [inverseResult.residualNorm],

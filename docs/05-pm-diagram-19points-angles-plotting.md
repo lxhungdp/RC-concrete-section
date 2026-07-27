@@ -1,7 +1,8 @@
 # 05 — Adaptive ULS P–Mx–My Resistance Surface
 
-Filename retained for compatibility with v1. In v2, `24 directions × 19 points` is an optional
-initial sampling grid, not the accepted engineering surface.
+Filename retained for navigation compatibility. The canonical default remains
+`24 directions × 19 points`; both axes are now persisted analysis inputs rather than constants in
+the kernel or UI.
 
 ## 1. Structural meaning
 
@@ -67,23 +68,49 @@ Seed strains are derived from the authoritative adapter/material definitions, no
 such as `0.003` that may conflict with `fy/Es`. After sorting, duplicate parameters within tolerance
 are merged and the physical control variable must remain monotone.
 
-### Compatibility with P0–P18 reports
+### Configurable reporting stations
 
-If an existing workbook/report contract requires 19 labeled stations `P0…P18`, the adapter may
-define those stations as named reporting samples and the engine evaluates them exactly. They are
-included in provenance and plots, but they do not limit adaptive refinement and do not by themselves
-define the accepted resistance boundary. Any station criterion still requires code/workbook
-traceability and monotone-strain validation.
+The two poles are mandatory and are not editable:
+
+- pure compression uses uniform `epsCu`;
+- pure tension uses the smallest declared tensile rupture strain among the steel grades present;
+  grades without a declared limit contribute the documented preview fallback `25 ×` the largest
+  compiled yield strain in that undeclared group. The smallest applicable candidate governs. When
+  no grade declares rupture, the fallback is also extended to the deepest configured steel-strain
+  station so the path cannot reverse before reaching the pole.
+
+Between those poles, a project persists an ordered list of zero or more stations. Every item has a
+stable positive integer ID, a user label, and exactly one criterion:
+
+| Criterion | Meaning at the controlling far-tension bar |
+|---|---|
+| `c-over-c1` | neutral-axis depth `c = ratio × c1`; ratio must be positive |
+| `steel-stress-ratio` | tensile stress `fs = ratio × fyd`, where `fyd = fy/gammaS`; ratio is in `[0,1]` |
+| `steel-strain` | signed tensile strain under the compression-positive convention; value is non-positive |
+
+The engine resolves `steel-stress-ratio` by inverting the compiled stress-strain law on its tensile
+pre-yield branch. It does not replace a nonlinear/user curve with `fs/Es`. If the requested stress
+is not reachable on that branch, analysis fails with `INVALID_ANALYSIS_OPTIONS`.
+
+The array order is the engineering compression-to-tension path and controls display indices
+`P0…Pn`. Stable station IDs are used for persisted references such as refinement probes; array
+indices are not identifiers. For every direction, the controlling-bar strain must be monotone from
+compression to tension. Reversed schedules fail before a surface is returned. Stations that collapse
+onto the same material-limit state remain traceable; a custom schedule produces a warning so the
+user can decide whether the duplicate is intentional.
+
+The default profile reproduces the former P0–P18 schedule exactly:
 
 The current web preview follows the `PM-advanced (7) 2D.xlsx` station intent for plotting shape:
 
 - `P0`: pure compression, `eps0 = epscu`, curvature zero;
 - `P1..P4`: neutral-axis depth ratios `C/C1 = 3, 2, 1.5, 1.2`;
-- `P5`: far tension reinforcement strain equals zero;
-- `P6..P9`: far tension reinforcement stress ratios `fs/fy = 0.25, 0.5, 0.75, 1.0`;
+- `P5`: far tension reinforcement stress equals zero;
+- `P6..P9`: far tension reinforcement stress ratios `fs/fyd = 0.25, 0.5, 0.75, 1.0`;
 - `P10..P17`: far tension reinforcement strains `0.003, 0.005, 0.0075, 0.01, 0.015, 0.025, 0.03, 0.05`
   in tension;
-- `P18`: pure tension, `eps0 = -0.05`, curvature zero.
+- `P18`: pure tension; for the default SD400 without declared rupture this resolves to
+  `eps0 = -0.05`, curvature zero.
 
 For a vertical slice this sequence should plot with moment near zero at `P0`, increasing to a peak,
 then decreasing back toward zero at `P18`. If this visual order is reversed or crosses to the
@@ -106,6 +133,22 @@ For the common two-point interpolation case:
 
 The sign/orientation mapping belongs to one tested helper. Reject zero control distance, bars outside
 the validated concrete region, or a mapped state that violates its declared ultimate strain domain.
+
+### Direction seed contract
+
+A project chooses one of two periodic seed grids:
+
+- `uniform`: integer count `4…360` plus `startDeg` in `[0,360)`;
+- `explicit`: `4…360` distinct angles, strictly increasing in `[0,360)`.
+
+Angles are persisted in degrees for human audit and converted once to radians in the kernel. An
+explicit grid may be nonuniform. The closing interval always runs from the last angle to the first
+angle plus 360°, so no direction is duplicated merely to close the topology.
+
+Refinement is either `fixed` or deterministic midpoint `adaptive`. Adaptive options persist
+relative tolerance, maximum passes, maximum directions (`≤720`), and probes by stable station ID or
+`all`. Every seed direction is retained. The result stores both the requested options and the actual
+post-refinement direction array.
 
 ## 4. Surface vertex
 
@@ -135,7 +178,7 @@ error accounting deterministic.
 ### Initial grid
 
 ```text
-β = 0°,15°,...,345°       // seed only
+β = configured uniform or explicit periodic directions
 t = adapter.seedParameters()
 ```
 
@@ -278,6 +321,29 @@ P      = P
 This is a geometric slice of the surface mesh. It is not the strain-domain curve at
 `beta = thetaLoad`, except in special cases where the resultant moment direction happens to match
 the sampled strain-plane angle.
+
+The intersection is a set of **triangle segments**, not an unordered set of points. Build a graph
+whose nodes are shared surface-edge/surface-vertex intersections and whose edges are the segments
+contributed by individual triangles. Traverse that graph to emit one or more connected paths:
+
+- a closed path repeats its first point only after graph traversal proves that the last segment
+  returns to that node;
+- an open path remains open and is reported as a topology defect; the plotting adapter must never
+  force-close it;
+- multiple loops remain separate Plotly traces;
+- sorting all intersections by `P` is prohibited because it invents chords whenever a branch is
+  non-monotone or the section is asymmetric.
+
+`P0` and the pure-tension pole are identical in every strain-plane direction because their
+curvature is zero. They are not necessarily on every vertical moment plane: reinforcement that is
+eccentric about the net-concrete centroid can give a uniform-strain pole a nonzero moment vector.
+In that case the closed plane section connects through the adjacent cap triangles rather than
+through the pole itself.
+
+When the UI option **Opposite** is enabled, render the complete ordered path. The negative branch is
+not obtained by negating the positive branch. When **Opposite** is disabled, clip each connected
+path against `Mtheta >= 0` and explicitly interpolate every `Mtheta = 0` crossing; filtering a point
+cloud by sign is not a valid clipping algorithm.
 
 ## 11. Plotting
 

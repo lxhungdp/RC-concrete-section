@@ -73,7 +73,7 @@ const run = () => {
 
   const raw = serializeProjectDocument(original)
   const json = JSON.parse(raw) as Record<string, unknown>
-  assert.equal(json.version, 2)
+  assert.equal(json.version, 3)
   assert.equal((json.inputs as { geometry: { unit?: unknown } }).geometry.unit, undefined)
   assert.equal((json.inputs as { materials: { unit?: unknown } }).materials.unit, undefined)
   assert.equal((json.inputs as { loadings: { forceUnit?: unknown } }).loadings.forceUnit, undefined)
@@ -97,6 +97,12 @@ const run = () => {
   assert.equal(parsed.document.inputs.materials.steel[1]?.id, 2)
   assert.equal(parsed.document.inputs.geometry.outers[0]?.rebars[1]?.steelMaterialId, 2)
   assert.equal(parsed.document.inputs.loadings.combinations[0]?.P, 1_000_000)
+  assert.equal(parsed.document.inputs.analysis.stations.intermediate.length, 17)
+  assert.deepEqual(parsed.document.inputs.analysis.directions.seed, {
+    type: 'uniform',
+    count: 24,
+    startDeg: 0
+  })
 
   const empty = createEmptyProjectDocument({ id: 1, name: 'Empty' })
   const emptyParsed = parseProjectDocument(serializeProjectDocument(empty))

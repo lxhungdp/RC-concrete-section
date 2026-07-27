@@ -7,6 +7,7 @@ import {
   prepareAnalysis,
   sliceFixedPContour,
   solveInversePreviewFromPrepared,
+  surfaceInputKey,
   type AnalysisErrorCode,
   type InversePreviewResult,
   type LoadcaseQuickCheckResult,
@@ -17,12 +18,13 @@ import {
 import { exportSectionWorkbook, type ExcelExportInput } from '@pm/report'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
-import type { LoadCombination } from '@pm/project'
+import type { AnalysisOptions, LoadCombination } from '@pm/project'
 
 export type BuildSurfacePayload = {
   section: SectionGeometry
   rebars: GeometryInputRebarView[]
   materialStore: MaterialStore
+  analysisOptions: AnalysisOptions
 }
 
 export type CheckLoadcasePayload = {
@@ -123,12 +125,13 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
 
   try {
     if (request.type === 'buildSurface') {
-      const key = analysisInputKey(
+      const key = surfaceInputKey(
         request.payload.section,
         request.payload.rebars,
-        request.payload.materialStore
+        request.payload.materialStore,
+        request.payload.analysisOptions
       )
-      const result = buildPreviewSurfaceFromPrepared(preparedFor(request.payload))
+      const result = buildPreviewSurfaceFromPrepared(preparedFor(request.payload), request.payload.analysisOptions)
       // Keep the worker-owned points array. A surface sent to and then back from the UI is cloned,
       // which would otherwise defeat the WeakMap topology cache on every inverse loadcase.
       surfaceCache = { key, value: result }
@@ -145,7 +148,7 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
 
     if (request.type === 'checkLoadcase') {
       const { section, rebars, materialStore, loadcase, surface } = request.payload
-      const key = analysisInputKey(section, rebars, materialStore)
+      const key = surfaceInputKey(section, rebars, materialStore, surface.analysisOptions)
       const contour = sliceFixedPContour(
         (surfaceCache?.key === key ? surfaceCache.value : surface).points,
         loadcase.P

@@ -84,6 +84,30 @@ interface PmEngine {
 `checkDemands` may reuse an accepted design domain only when the geometry/material/profile/options
 hash matches and the new demands use the same reference frame/action basis.
 
+### Implemented sampling-options pipeline
+
+```text
+AnalysisOptions editor
+  -> immutable canonical DTO in React state
+  -> project v3 JSON / worker message
+  -> structural validation in @pm/project
+  -> material- and geometry-aware resolution in @pm/analysis
+  -> prepared mesh/material evaluators reused
+  -> custom station rows + uniform/explicit direction seeds
+  -> optional deterministic midpoint refinement
+  -> PreviewSurface { requested options, resolved stations, actual directions, error evidence }
+  -> plots / inverse queries / Excel
+```
+
+There is one authoritative options object. The UI, worker, fallback execution, export/import, cache
+identity, plots, and Excel renderer do not maintain parallel station or angle constants. Geometry
+and material changes invalidate prepared analysis; station/direction changes invalidate the surface
+and every derived inverse/field result but reuse the prepared geometry/material work.
+
+Labels and stable station IDs belong to persistence and audit. Surface point order is a transient
+resolved index. Refinement probes therefore reference IDs, while numerical arrays use the resolved
+index only after validation.
+
 ## 3. Design-code registry
 
 The application requests a profile by full identity, never by organization label alone. Registry
@@ -159,6 +183,18 @@ stored in the result DTO and must not perform mechanics, resistance reduction, o
 | running | progress stages and cancel; input editing either locks or clearly cancels/stales job |
 | failed/cancelled | diagnostics and optional branded preview; no acceptance/report action |
 | accepted/current | tables, plots, evidence, and report action enabled |
+
+Results exposes a calculation **Options** dialog backed by the same canonical `AnalysisOptions`
+contract as the Analysis module. The dialog edits an isolated draft:
+
+- Cancel, Escape, backdrop click, and the close button discard the draft without invalidating the
+  current result;
+- Apply replaces the canonical options once, aborts/stales every surface, inverse solve, field map,
+  and quick check from the prior revision, then rebuilds the surface in the worker;
+- overview plots and loadcase quick checks update from the new surface automatically;
+- if a loadcase detail is open, its inverse solve is rerun automatically after the new surface
+  arrives;
+- the dialog never owns a second persisted options object.
 | accepted/stale | view/compare allowed; report release disabled for current project |
 
 Results are keyed by input hash and result ID, not by the currently selected row name.
@@ -205,7 +241,8 @@ Use content-addressed caches with typed keys:
 
 Changing report units or layout invalidates only report output. Changing load combinations can reuse
 a compatible accepted resistance domain but creates new demand checks and a new result hash.
-Changing geometry, materials, design method, or accuracy options invalidates the analysis domain.
+Changing geometry, materials, station schedule, direction seed, design method, or accuracy options
+invalidates the analysis domain.
 
 Cache entries never upgrade preview data to accepted data and include numerically relevant
 dependency versions.

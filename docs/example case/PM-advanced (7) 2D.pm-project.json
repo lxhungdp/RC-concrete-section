@@ -1,6 +1,6 @@
 {
   "schema": "pm-column-project",
-  "version": 2,
+  "version": 3,
   "meta": {
     "id": 1,
     "name": "PM-advanced (7) 2D reference case",
@@ -347,6 +347,169 @@
           "My": 1500000000
         }
       ]
+    },
+    "analysis": {
+      "optionsVersion": 1,
+      "methodId": "strain-domain-surface-v1",
+      "stations": {
+        "basedOn": "legacy-p0-p18-v1",
+        "intermediate": [
+          {
+            "id": 1,
+            "label": "c = 3·c₁",
+            "criterion": {
+              "type": "c-over-c1",
+              "ratio": 3
+            }
+          },
+          {
+            "id": 2,
+            "label": "c = 2·c₁",
+            "criterion": {
+              "type": "c-over-c1",
+              "ratio": 2
+            }
+          },
+          {
+            "id": 3,
+            "label": "c = 1.5·c₁",
+            "criterion": {
+              "type": "c-over-c1",
+              "ratio": 1.5
+            }
+          },
+          {
+            "id": 4,
+            "label": "c = 1.2·c₁",
+            "criterion": {
+              "type": "c-over-c1",
+              "ratio": 1.2
+            }
+          },
+          {
+            "id": 5,
+            "label": "fₛ = 0",
+            "criterion": {
+              "type": "steel-stress-ratio",
+              "ratio": 0
+            }
+          },
+          {
+            "id": 6,
+            "label": "fₛ = 0.25·fyd",
+            "criterion": {
+              "type": "steel-stress-ratio",
+              "ratio": 0.25
+            }
+          },
+          {
+            "id": 7,
+            "label": "fₛ = 0.5·fyd",
+            "criterion": {
+              "type": "steel-stress-ratio",
+              "ratio": 0.5
+            }
+          },
+          {
+            "id": 8,
+            "label": "fₛ = 0.75·fyd",
+            "criterion": {
+              "type": "steel-stress-ratio",
+              "ratio": 0.75
+            }
+          },
+          {
+            "id": 9,
+            "label": "fₛ = fyd",
+            "criterion": {
+              "type": "steel-stress-ratio",
+              "ratio": 1
+            }
+          },
+          {
+            "id": 10,
+            "label": "εₛ = -0.003",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.003
+            }
+          },
+          {
+            "id": 11,
+            "label": "εₛ = -0.005",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.005
+            }
+          },
+          {
+            "id": 12,
+            "label": "εₛ = -0.0075",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.0075
+            }
+          },
+          {
+            "id": 13,
+            "label": "εₛ = -0.01",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.01
+            }
+          },
+          {
+            "id": 14,
+            "label": "εₛ = -0.015",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.015
+            }
+          },
+          {
+            "id": 15,
+            "label": "εₛ = -0.025",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.025
+            }
+          },
+          {
+            "id": 16,
+            "label": "εₛ = -0.03",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.03
+            }
+          },
+          {
+            "id": 17,
+            "label": "εₛ = -0.05",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.05
+            }
+          }
+        ]
+      },
+      "directions": {
+        "seed": {
+          "type": "uniform",
+          "count": 24,
+          "startDeg": 0
+        },
+        "refinement": {
+          "type": "fixed",
+          "probe": {
+            "stationIds": [
+              5,
+              10,
+              14,
+              16
+            ]
+          }
+        }
+      }
     }
   }
 }

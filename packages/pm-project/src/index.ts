@@ -1,4 +1,5 @@
 export * from './types'
+export * from './analysis-options'
 export * from './ids'
 export * from './loadings'
 export * from './document'

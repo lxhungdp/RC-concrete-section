@@ -2,7 +2,7 @@
 
 ## 1. Canonical units
 
-The current `pm-column-project` schema version 2 uses one fixed canonical system:
+The current `pm-column-project` schema version 3 uses one fixed canonical system:
 
 | Quantity | Canonical unit |
 |---|---|

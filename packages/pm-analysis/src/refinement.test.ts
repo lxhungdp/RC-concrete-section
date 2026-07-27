@@ -6,6 +6,7 @@
 import { strict as assert } from 'node:assert'
 import test from 'node:test'
 import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
+import { createDefaultAnalysisOptions, type AnalysisOptions } from '@pm/project'
 import {
   buildPreviewSurfaceFromPrepared,
   intersectFixedPContourWithMomentRay,
@@ -21,6 +22,14 @@ const prepared = prepareAnalysis(
   document.inputs.materials
 )
 
+const optionsWithRefinement = (
+  refinement: AnalysisOptions['directions']['refinement']
+): AnalysisOptions => {
+  const options = createDefaultAnalysisOptions()
+  options.directions.refinement = refinement
+  return options
+}
+
 test('the default grid is 24 directions and reports a finite error estimate', () => {
   const surface = buildPreviewSurfaceFromPrepared(prepared)
   assert.equal(surface.directionError.directions, 24)
@@ -31,7 +40,10 @@ test('the default grid is 24 directions and reports a finite error estimate', ()
 })
 
 test('switching the probe off costs nothing and reports unknown, never zero', () => {
-  const surface = buildPreviewSurfaceFromPrepared(prepared, { probeStations: [] })
+  const surface = buildPreviewSurfaceFromPrepared(
+    prepared,
+    optionsWithRefinement({ type: 'fixed', probe: { stationIds: [] } })
+  )
   assert.equal(surface.directionError.directions, 24)
   assert.ok(Number.isNaN(surface.directionError.maxRelativeMoment), 'an untaken estimate must not read as 0')
   assert.ok(Number.isNaN(surface.directionError.maxRelativeP))
@@ -45,7 +57,16 @@ test('switching the probe off costs nothing and reports unknown, never zero', ()
 
 test('refinement adds directions and lowers the measured error', () => {
   const coarse = buildPreviewSurfaceFromPrepared(prepared)
-  const fine = buildPreviewSurfaceFromPrepared(prepared, { tolerance: 5e-3, maxPasses: 3 })
+  const fine = buildPreviewSurfaceFromPrepared(
+    prepared,
+    optionsWithRefinement({
+      type: 'adaptive',
+      tolerance: 5e-3,
+      maxPasses: 3,
+      maxDirections: 192,
+      probe: { stationIds: [5, 10, 14, 16] }
+    })
+  )
 
   assert.ok(fine.directionError.directions > coarse.directionError.directions)
   assert.ok(fine.directionError.refinementPasses > 0)
@@ -61,11 +82,16 @@ test('refinement adds directions and lowers the measured error', () => {
 })
 
 test('the direction cap is respected and reported as not converged', () => {
-  const capped = buildPreviewSurfaceFromPrepared(prepared, {
-    tolerance: 1e-9,
-    maxPasses: 10,
-    maxDirections: 60
-  })
+  const capped = buildPreviewSurfaceFromPrepared(
+    prepared,
+    optionsWithRefinement({
+      type: 'adaptive',
+      tolerance: 1e-9,
+      maxPasses: 10,
+      maxDirections: 60,
+      probe: { stationIds: [5, 10, 14, 16] }
+    })
+  )
   assert.ok(capped.directionError.directions <= 60)
   assert.equal(capped.directionError.withinTolerance, false)
   assert.ok(
@@ -81,7 +107,18 @@ test('the coarse grid under-estimates capacity, so refinement may only raise it'
     intersectFixedPContourWithMomentRay(sliceFixedPContour(surface.points, P), theta)?.M ?? Number.NaN
 
   const coarse = capacity(buildPreviewSurfaceFromPrepared(prepared))
-  const fine = capacity(buildPreviewSurfaceFromPrepared(prepared, { tolerance: 2e-3, maxPasses: 3 }))
+  const fine = capacity(
+    buildPreviewSurfaceFromPrepared(
+      prepared,
+      optionsWithRefinement({
+        type: 'adaptive',
+        tolerance: 2e-3,
+        maxPasses: 3,
+        maxDirections: 192,
+        probe: { stationIds: [5, 10, 14, 16] }
+      })
+    )
+  )
 
   assert.ok(Number.isFinite(coarse) && Number.isFinite(fine))
   // Chord interpolation across a convex contour cuts the corner, so the 24-gon is conservative.

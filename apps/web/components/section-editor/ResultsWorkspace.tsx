@@ -9,12 +9,11 @@ import {
   contourStrainAngleSamples,
   sliceFixedPContour,
   sliceMomentPlane,
-  PREVIEW_STATIONS,
-  VERTICAL_SLICE_KEY_STATIONS,
   type InversePreviewResult,
   type PreviewSurface,
   type PreviewSurfacePoint,
   type PreviewMomentPlanePoint,
+  type PreviewMomentPlanePath,
   type SectionFieldMap
 } from '@pm/analysis'
 import { ExcelExportError, sectionWorkbookFileName } from '@pm/report'
@@ -92,6 +91,70 @@ const groupByBeta = (points: PreviewSurfacePoint[]) => {
 const normalizeAngleDeg = (degrees: number) => {
   const wrapped = ((degrees % 360) + 360) % 360
   return wrapped
+}
+
+/**
+ * Clip connected moment-plane paths without turning the retained points back into a point cloud.
+ * Crossing points at M=0 are interpolated explicitly, so hiding the opposite branch cannot leave a
+ * gap or draw a chord between disconnected pieces.
+ */
+const clipMomentPlanePaths = (
+  paths: PreviewMomentPlanePath[],
+  side: 'positive' | 'negative'
+): PreviewMomentPlanePoint[][] => {
+  const scale = Math.max(...paths.flatMap((path) => path.points.map((point) => Math.abs(point.M))), 1)
+  const tol = scale * 1e-12
+  const inside = (point: PreviewMomentPlanePoint) =>
+    side === 'positive' ? point.M >= -tol : point.M <= tol
+  const crossing = (a: PreviewMomentPlanePoint, b: PreviewMomentPlanePoint): PreviewMomentPlanePoint => {
+    const t = a.M / (a.M - b.M)
+    return {
+      beta: a.beta + (b.beta - a.beta) * t,
+      P: a.P + (b.P - a.P) * t,
+      Mx: a.Mx + (b.Mx - a.Mx) * t,
+      My: a.My + (b.My - a.My) * t,
+      station:
+        a.station === undefined || b.station === undefined
+          ? undefined
+          : a.station + (b.station - a.station) * t,
+      M: 0
+    }
+  }
+
+  return paths.flatMap((path) => {
+    if (path.points.length < 2) return []
+    const unique = path.closed ? path.points.slice(0, -1) : [...path.points]
+    if (unique.every(inside)) return [[...unique, ...(path.closed ? [unique[0]] : [])]]
+    if (unique.every((point) => !inside(point))) return []
+
+    // Start a mixed closed loop outside the retained half-plane. This prevents one clipped branch
+    // from being split across the array wrap.
+    if (path.closed) {
+      const outsideIndex = unique.findIndex((point) => !inside(point))
+      unique.push(...unique.splice(0, outsideIndex), unique[0])
+    }
+
+    const pieces: PreviewMomentPlanePoint[][] = []
+    let piece: PreviewMomentPlanePoint[] = []
+    for (let index = 0; index < unique.length - 1; index++) {
+      const a = unique[index]
+      const b = unique[index + 1]
+      const aInside = inside(a)
+      const bInside = inside(b)
+      if (aInside && piece.length === 0) piece.push(a)
+      if (aInside && bInside) {
+        piece.push(b)
+      } else if (aInside && !bInside) {
+        piece.push(crossing(a, b))
+        if (piece.length >= 2) pieces.push(piece)
+        piece = []
+      } else if (!aInside && bInside) {
+        piece = [crossing(a, b), b]
+      }
+    }
+    if (piece.length >= 2) pieces.push(piece)
+    return pieces
+  })
 }
 
 /**
@@ -354,35 +417,20 @@ export function ResultsWorkspace({
         }
       : null
 
-    const momentPlanePoints = sliceMomentPlane(surface.points, theta)
-    const momentScale = Math.max(...momentPlanePoints.map((point) => Math.abs(point.M)), 1)
-    const momentTol = momentScale * 1e-9
-    const sliceCurve = momentPlanePoints.filter((point) => point.M >= -momentTol)
-    const sliceTrace = {
+    const momentPlanePaths = sliceMomentPlane(surface.points, theta)
+    const visibleMomentPaths = includeOppositeMoment
+      ? momentPlanePaths.map((path) => path.points)
+      : clipMomentPlanePaths(momentPlanePaths, 'positive')
+    const sliceTraces = visibleMomentPaths.map((path, index) => ({
       type: 'scatter3d',
-      name: 'Vertical slice',
+      name: index === 0 ? 'Vertical slice' : `Vertical slice ${index + 1}`,
       mode: 'lines',
-      x: sliceCurve.map((point) => knm(point.Mx)),
-      y: sliceCurve.map((point) => knm(point.My)),
-      z: sliceCurve.map((point) => kn(point.P)),
+      x: path.map((point) => knm(point.Mx)),
+      y: path.map((point) => knm(point.My)),
+      z: path.map((point) => kn(point.P)),
       line: { color: '#7c3aed', width: 6 },
       hoverinfo: 'skip'
-    }
-
-    const oppositeCurve = includeOppositeMoment ? momentPlanePoints.filter((point) => point.M <= momentTol) : []
-    const oppositeTrace =
-      oppositeCurve.length > 0
-        ? {
-            type: 'scatter3d',
-            name: 'Opposite slice',
-            mode: 'lines',
-            x: oppositeCurve.map((point) => knm(point.Mx)),
-            y: oppositeCurve.map((point) => knm(point.My)),
-            z: oppositeCurve.map((point) => kn(point.P)),
-            line: { color: '#c4b5fd', width: 5 },
-            hoverinfo: 'skip'
-          }
-        : null
+    }))
 
     return [
       {
@@ -406,8 +454,7 @@ export function ResultsWorkspace({
       },
       verticalPlane,
       fixedPPlane,
-      sliceTrace,
-      ...(oppositeTrace ? [oppositeTrace] : []),
+      ...sliceTraces,
       ...(ring ? [ring] : []),
       {
         type: 'scatter3d',
@@ -651,6 +698,8 @@ export function ResultsWorkspace({
     const empty = {
       primaryPath: [] as Array<{ m: number; p: number; station: number }>,
       oppositePath: [] as Array<{ m: number; p: number; station: number }>,
+      displayPaths: [] as Array<Array<{ m: number; p: number; station: number }>>,
+      closed: true,
       stations: [] as Array<{ m: number; p: number; station: number }>,
       keys: [] as Array<{ m: number; p: number; station: number; label: string; side: 'primary' | 'opposite' }>
     }
@@ -664,16 +713,27 @@ export function ResultsWorkspace({
       station: point.station ?? -1
     })
 
-    const momentScale = Math.max(...momentPlane.map((point) => Math.abs(point.M)), 1)
-    const momentTol = momentScale * 1e-9
-    const primaryPath = momentPlane.filter((point) => point.M >= -momentTol).map(project)
-    const oppositePath = includeOppositeMoment ? momentPlane.filter((point) => point.M <= momentTol).map(project) : []
+    const primaryPaths = clipMomentPlanePaths(momentPlane, 'positive')
+    const oppositePaths = includeOppositeMoment ? clipMomentPlanePaths(momentPlane, 'negative') : []
+    const primaryPath = primaryPaths.flat().map(project)
+    const oppositePath = oppositePaths.flat().map(project)
+    const displayPaths = (
+      includeOppositeMoment ? momentPlane.map((path) => path.points) : primaryPaths
+    ).map((path) => path.map(project))
 
     const pickKeys = (
       curve: Array<{ m: number; p: number; station: number }>,
       side: 'primary' | 'opposite'
     ) =>
-      VERTICAL_SLICE_KEY_STATIONS.flatMap(({ station, label }) => {
+      (surface?.stations ?? []).flatMap((descriptor, station) => {
+        const definition = descriptor.definition
+        if (
+          definition.kind !== 'steel-stress-ratio' ||
+          (Math.abs(definition.ratio) > 1e-12 && Math.abs(definition.ratio - 1) > 1e-12)
+        ) {
+          return []
+        }
+        const label = descriptor.label
         const point = curve.reduce<Array<{ point: { m: number; p: number; station: number }; delta: number }>>(
           (matches, item) => {
             const delta = Math.abs(item.station - station)
@@ -685,7 +745,7 @@ export function ResultsWorkspace({
       })
 
     const pickStations = (curve: Array<{ m: number; p: number; station: number }>) =>
-      PREVIEW_STATIONS.flatMap((_, station) => {
+      (surface?.stations ?? []).flatMap((_, station) => {
         const point = curve
           .map((item) => ({ point: item, delta: Math.abs(item.station - station) }))
           .filter((item) => item.delta <= 0.35)
@@ -704,7 +764,7 @@ export function ResultsWorkspace({
         ? [...pickStations(primaryPath), ...pickStations(oppositePath).filter((item) => Math.abs(item.m) > 1e-6)]
         : pickStations(primaryPath)
 
-    return { primaryPath, oppositePath, stations, keys }
+    return { primaryPath, oppositePath, displayPaths, closed: momentPlane.every((path) => path.closed), stations, keys }
   }, [activeAngle, includeOppositeMoment, surface, surfaceGrid])
 
   const verticalData = useMemo(() => {
@@ -742,30 +802,21 @@ export function ResultsWorkspace({
             }
           ]
         : []),
-      {
+      ...verticalSlice.displayPaths.map((path, index) => ({
         type: 'scatter',
-        name: `Angle ${fmt(activeAngle, 0)} deg`,
+        name:
+          index === 0
+            ? includeOppositeMoment
+              ? `Plane ${fmt(activeAngle, 0)} / ${fmt(normalizeAngleDeg(activeAngle + 180), 0)} deg`
+              : `Angle ${fmt(activeAngle, 0)} deg`
+            : `Section loop ${index + 1}`,
         mode: 'lines',
-        x: verticalSlice.primaryPath.map((point) => point.m),
-        y: verticalSlice.primaryPath.map((point) => point.p),
+        x: path.map((point) => point.m),
+        y: path.map((point) => point.p),
         line: smoothLine,
         marker: { size: 0 },
         hoverinfo: 'skip'
-      },
-      ...(verticalSlice.oppositePath.length > 0
-        ? [
-            {
-              type: 'scatter',
-              name: `Angle ${fmt(normalizeAngleDeg(activeAngle + 180), 0)} deg`,
-              mode: 'lines',
-              x: verticalSlice.oppositePath.map((point) => point.m),
-              y: verticalSlice.oppositePath.map((point) => point.p),
-              line: { ...smoothLine, color: '#60a5fa' },
-              marker: { size: 0 },
-              hoverinfo: 'skip'
-            }
-          ]
-        : []),
+      })),
       {
         type: 'scatter',
         name: 'Stations',
@@ -921,7 +972,7 @@ export function ResultsWorkspace({
   }, [fieldMap])
 
   const handleExcelExport = async () => {
-    if (!selectedLoadcase) return
+    if (!selectedLoadcase || !surface) return
     setExportState('working')
     setExportMessage('')
     try {
@@ -939,6 +990,7 @@ export function ResultsWorkspace({
         section,
         rebars,
         materialStore,
+        analysisOptions: surface.analysisOptions,
         betaDeg,
         fixedP: activeFixedP,
         loadcase: selectedLoadcase,
@@ -1330,7 +1382,7 @@ export function ResultsWorkspace({
           {renderChartShell({
             id: 'vertical',
             title: 'Vertical slice',
-            meta: `${fmt(activeAngle, 0)}°`,
+            meta: `${fmt(activeAngle, 0)}°${verticalSlice.closed ? '' : ' · OPEN'}`,
             primary: loadcasePrimary === 'vertical',
             visible: loadcaseVisible.vertical,
             onMakePrimary: () => setLoadcasePrimary('vertical'),
@@ -1382,7 +1434,7 @@ export function ResultsWorkspace({
         {renderChartShell({
           id: 'vertical',
           title: 'Vertical slice',
-          meta: `${fmt(sliceAngle, 0)}°`,
+          meta: `${fmt(sliceAngle, 0)}°${verticalSlice.closed ? '' : ' · OPEN'}`,
           primary: overviewPrimary === 'vertical',
           visible: overviewVisible.vertical,
           onMakePrimary: () => setOverviewPrimary('vertical'),

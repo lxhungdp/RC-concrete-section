@@ -153,7 +153,7 @@ const runWorkerOrFallback = async <T>(
 export const buildPreviewSurfaceAsync = (payload: BuildSurfacePayload, signal?: AbortSignal): Promise<PreviewSurface> =>
   runWorkerOrFallback<PreviewSurface>(
     { type: 'buildSurface', payload },
-    () => buildPreviewSurfaceFromPrepared(fallbackPreparedFor(payload)),
+    () => buildPreviewSurfaceFromPrepared(fallbackPreparedFor(payload), payload.analysisOptions),
     signal
   )
 

@@ -18,7 +18,7 @@ const materials = document.inputs.materials
 
 const PURE_TENSION = PREVIEW_STATIONS.findIndex((station) => station.kind === 'pure-tension')
 const YIELD_STATION = PREVIEW_STATIONS.findIndex(
-  (station) => station.kind === 'steel-yield-ratio' && station.ratio === 1
+  (station) => station.kind === 'steel-stress-ratio' && station.ratio === 1
 )
 
 const stationRow = (store: MaterialStore, stationIndex: number) => {
@@ -69,7 +69,7 @@ test('no scheduled station may drive a bar past its declared rupture strain', ()
   assert.ok(Math.min(...unlimited.points.map((point) => minBarStrain(point.state))) < -epsU)
 })
 
-test('the "fs = fy" station honours the steel partial factor', () => {
+test('the "fs = fyd" station honours the steel partial factor', () => {
   const gammaS = 1.15
   const withFactor: MaterialStore = {
     ...materials,

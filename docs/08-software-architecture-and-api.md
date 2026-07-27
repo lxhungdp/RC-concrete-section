@@ -156,17 +156,19 @@ producing a bit-identical result:
 
 | Change | Effect |
 |---|---|
-| Constitutive parameters hoisted out of the fibre loop, closed-form law | ×1.95 |
-| Same, tabulated 13-point law (per-call sort removed) | ×10.64 |
-| Boundary-cell spatial classifier, `h` = 50 / 25 / 12.5 / 6.25 mm | ×2.10 / ×3.98 / ×6.17 / ×9.09 |
+| Constitutive parameters hoisted out of the fibre loop, KDS `n=2` closed-form law | ×1.94 |
+| Same, tabulated 13-point law (per-call sort removed) | ×10.61 |
+| Boundary-cell spatial classifier, `h` = 50 / 25 / 12.5 / 6.25 mm | ×2.06 / ×3.99 / ×6.06 / ×8.99 |
 | One prepared mesh shared by surface, loadcases and field map | ×1.58 on a realistic UI flow |
 
 The clipping win grows as the mesh refines, because the share of cells that touch the boundary
 falls; this is what makes surface refinement affordable at all.
 
-Steps 3, 5 and 6 remain open. Measurement note: these figures come from process-isolated min-of-N
-runs. On a loaded workstation, identical code measured back to back varied by up to a factor of two,
-so a single timed run is not evidence of anything.
+The material and mesh A/B figures above were remeasured on 2026-07-27 with Node 20.19.2; every
+checksum/quadrature invariant had zero delta. The full eight-section fingerprint then reported
+`IDENTICAL` over 24 capacity quantities per section. Steps 3, 5 and 6 remain open. Measurement note:
+these figures use min-of-N same-process A/B runs. On a loaded workstation, identical code measured
+back to back varied by up to a factor of two, so a single timed run is not evidence of anything.
 
 ## 9. Dependency governance
 

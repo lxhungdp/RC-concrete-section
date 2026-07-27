@@ -4,6 +4,7 @@ import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geome
 import {
   compileConcreteMaterial,
   compileSteelMaterial,
+  stressKdsParabolicConcrete,
   type CompiledMaterial,
   type ConcreteMaterial,
   type SteelMaterial
@@ -29,6 +30,16 @@ const checkMaterialTangent = (name: string, material: CompiledMaterial, strains:
 const document = referenceProjectDocument()
 const baseConcrete = document.inputs.materials.concrete
 const baseSteel = document.inputs.materials.steel[0]
+
+test('compiled KDS n=2 stress is bit-identical to the public material law', () => {
+  const compiled = compileConcreteMaterial(baseConcrete)
+  for (const strain of [-0.001, 0, 1e-12, 0.0003, 0.0011, 0.002, 0.0025, 0.0033, 0.0033000001]) {
+    assert.ok(
+      Object.is(compiled.stress(strain), stressKdsParabolicConcrete(baseConcrete, strain)),
+      `stress changed at strain ${strain}`
+    )
+  }
+})
 
 checkMaterialTangent('KDS n=2 concrete', compileConcreteMaterial(baseConcrete), [0.0003, 0.0011, 0.0025])
 checkMaterialTangent(

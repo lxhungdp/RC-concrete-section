@@ -201,6 +201,8 @@ but it must not claim to predict physical failure beyond that model's scope.
 - pure axial utilization, cap faces, asymmetry, and non-monotone `P` cases pass;
 - demand-direction slices and fixed-P moment rays pass cases where `thetaLoad` falls between
   sampled strain-plane angles;
+- vertical moment-plane slices preserve triangle-segment adjacency and close by topology across
+  symmetric, asymmetric, concave, hollow, thin-wall, and user-curve fixtures;
 - production results agree with independent reference solver within approved tolerance.
 
 ### Gate D — Design-code resistance profile and adapter

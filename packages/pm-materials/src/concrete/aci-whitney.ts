@@ -14,11 +14,17 @@ export const stressAciWhitneyConcrete = (material: ConcreteMaterial, strain: num
 }
 
 export const compileAciWhitneyConcrete = (material: ConcreteMaterial): CompiledMaterial => {
-  const stress = (strain: number) => stressAciWhitneyConcrete(material, strain)
+  const model = material.stressStrain.type === 'aci-whitney-block' ? material.stressStrain : null
+  const epsCu = model?.epsCu ?? material.limits.epsCu
+  const alphaSource =
+    material.factors?.gammaC !== undefined
+      ? material.factors?.alpha ?? model?.alpha
+      : model?.alpha ?? material.factors?.alpha
+  const peak = ((alphaSource ?? 0.85) / (material.factors?.gammaC ?? 1)) * material.fck
   return {
     id: material.id,
     family: 'concrete',
-    stress,
+    stress: (strain) => (strain <= 0 || strain > epsCu ? 0 : peak),
     tangent: () => 0,
     limits: {
       epsCompressionUltimate: material.limits.epsCu

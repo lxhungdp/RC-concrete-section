@@ -154,11 +154,11 @@ const run = () => {
     'neutral-axis-ratio:2',
     'neutral-axis-ratio:1.5',
     'neutral-axis-ratio:1.2',
-    'steel-strain:0',
-    'steel-yield-ratio:0.25',
-    'steel-yield-ratio:0.5',
-    'steel-yield-ratio:0.75',
-    'steel-yield-ratio:1',
+    'steel-stress-ratio:0',
+    'steel-stress-ratio:0.25',
+    'steel-stress-ratio:0.5',
+    'steel-stress-ratio:0.75',
+    'steel-stress-ratio:1',
     'steel-strain:-0.003',
     'steel-strain:-0.005',
     'steel-strain:-0.0075',
@@ -174,13 +174,13 @@ const run = () => {
       ? `${station.kind}:${station.cOverC1}`
       : station.kind === 'steel-strain'
         ? `${station.kind}:${station.strain}`
-        : station.kind === 'steel-yield-ratio'
+        : station.kind === 'steel-stress-ratio'
           ? `${station.kind}:${station.ratio}`
           : station.kind
   )
   assert.equal(actualSchedule.length, 19, 'P0..P18 requires exactly 19 stations')
   assert.deepEqual(actualSchedule, expectedSchedule)
-  assert.equal(epsY, 0.002) // workbook P9 is `fs/fy = 1`, tabulated as eps_s = 0.002 = fy/Es
+  assert.equal(epsY, 0.002) // workbook P9 is `fs/fyd = 1`; with gammaS=1, eps_s = 0.002 = fyd/Es
   console.log(`PASS  19 stations P0..P18 match the workbook schedule (eps_y = ${epsY})\n`)
 
   console.log('== 2. Clipped-cell concrete mesh (docs/02 §5, §8) ==')

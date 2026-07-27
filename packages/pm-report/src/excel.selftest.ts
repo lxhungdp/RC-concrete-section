@@ -14,7 +14,7 @@ import { resolve } from 'node:path'
 import { HyperFormula } from 'hyperformula'
 import ExcelJS from 'exceljs'
 import { geometryInputRebars, netConcreteCentroid, sectionGeometryFromGeometryInput } from '@pm/geometry'
-import { parseProjectDocument } from '@pm/project'
+import { cloneAnalysisOptions, parseProjectDocument } from '@pm/project'
 import {
   PREVIEW_STATIONS,
   buildPreviewSurface,
@@ -74,10 +74,11 @@ const run = async () => {
   const section = sectionGeometryFromGeometryInput(geometry)
   const rebars = geometryInputRebars(geometry)
   const materialStore = parsed.document.inputs.materials
+  const analysisOptions = parsed.document.inputs.analysis
   const loadcase = parsed.document.inputs.loadings.combinations[0]
 
   console.log('== 1. Build the workbook ==')
-  const seedSurface = buildPreviewSurface(section, rebars, materialStore)
+  const seedSurface = buildPreviewSurface(section, rebars, materialStore, undefined, analysisOptions)
   const inverse = solveInversePreview(
     section,
     rebars,
@@ -93,6 +94,7 @@ const run = async () => {
     section,
     rebars,
     materialStore,
+    analysisOptions,
     betaDeg: BETA_DEG,
     fixedP: loadcase.P,
     loadcase,
@@ -472,7 +474,7 @@ const run = async () => {
   console.log()
 
   console.log('== 11. PM_Theta section is a true plane cut ==')
-  const enginePlane = sliceMomentPlane(surfaceForDemand.points, thetaLoad)
+  const enginePlane = sliceMomentPlane(surfaceForDemand.points, thetaLoad).flatMap((path) => path.points)
   const enginePlus = enginePlane.filter((point) => point.M > 0)
   const PT_FIRST = 10
   let worstM = 0
@@ -586,7 +588,7 @@ const run = async () => {
     rebars,
     tabulatedStore,
     loadcase,
-    sliceFixedPContour(buildPreviewSurface(section, rebars, tabulatedStore).points, loadcase.P)
+    sliceFixedPContour(buildPreviewSurface(section, rebars, tabulatedStore, undefined, analysisOptions).points, loadcase.P)
   )
   const tabWorkbook = await buildSectionWorkbook({
     projectName: `${parsed.document.meta.name} (tabulated law)`,
@@ -594,6 +596,7 @@ const run = async () => {
     section,
     rebars,
     materialStore: tabulatedStore,
+    analysisOptions,
     betaDeg: BETA_DEG,
     fixedP: loadcase.P,
     loadcase,
@@ -668,6 +671,50 @@ const run = async () => {
   console.log(`      tabulated equilibrium residual: ${tabResidual.toExponential(3)}`)
   check('tabulated equilibrium residual', tabResidual, 0, 1, 1e-3)
   console.log()
+
+  console.log('== 15. Custom station count and nonuniform directions are exported exactly ==')
+  const customOptions = cloneAnalysisOptions(analysisOptions)
+  customOptions.stations = {
+    basedOn: 'custom',
+    intermediate: [
+      { id: 101, label: 'c = 2c1', criterion: { type: 'c-over-c1', ratio: 2 } },
+      { id: 205, label: 'half fyd', criterion: { type: 'steel-stress-ratio', ratio: 0.5 } },
+      { id: 309, label: 'eps = -0.01', criterion: { type: 'steel-strain', strain: -0.01 } }
+    ]
+  }
+  customOptions.directions = {
+    seed: { type: 'explicit', anglesDeg: [5, 37, 101, 190, 278] },
+    refinement: { type: 'fixed', probe: 'all' }
+  }
+  const customWorkbook = await buildSectionWorkbook({
+    projectName: `${parsed.document.meta.name} (custom sampling)`,
+    sectionName: geometry.name,
+    section,
+    rebars,
+    materialStore: tabulatedStore,
+    analysisOptions: customOptions,
+    betaDeg: BETA_DEG,
+    fixedP: loadcase.P,
+    loadcase
+  })
+  const customBuffer = await customWorkbook.xlsx.writeBuffer()
+  const customRead = new ExcelJS.Workbook()
+  await customRead.xlsx.load(customBuffer as ArrayBuffer)
+  const customPm = customRead.getWorksheet('PM_Angle')!
+  const customMm = customRead.getWorksheet('MxMy_FixedP')!
+  assert.match(String(customPm.getCell('B1').value), /5 STATIONS/)
+  assert.deepEqual(
+    Array.from({ length: 6 }, (_, index) => Number(customMm.getCell(8 + index, 2).value)),
+    [5, 37, 101, 190, 278, 365]
+  )
+  const customEpsControlColumn = headerColumn(customPm, 5, 'ε_ctrl')
+  assert.equal(
+    typeof customPm.getCell(9, customEpsControlColumn).value,
+    'number',
+    'a nonlinear fₛ/fyd station must store the engine-resolved inverse strain'
+  )
+  assert.equal(customPm.getCell(12, 2).value, null, 'the station block must stop after the configured five rows')
+  console.log('PASS  5 custom stations, 5 nonuniform directions, wrap angle and nonlinear inverse\n')
 
   if (failures.length > 0) {
     console.log(`${failures.length} check(s) failed:`)

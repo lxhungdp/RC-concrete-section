@@ -17,6 +17,7 @@ import {
   MousePointer2,
   Plus,
   RectangleHorizontal,
+  SlidersHorizontal,
   Sun,
   Unlock,
   X
@@ -46,11 +47,13 @@ import {
 import { createDefaultMaterialStore, type MaterialStore } from '@pm/materials'
 import {
   createEmptyLoadingsInput,
+  createDefaultAnalysisOptions,
   createProjectDocument,
   parseProjectDocument,
   projectDocumentFileName,
   serializeProjectDocument,
   type LoadCombination,
+  type AnalysisOptions,
   type LoadingsInput
 } from '@pm/project'
 import {
@@ -65,6 +68,7 @@ import {
   isAnalysisAbort
 } from '../../lib/workers/pm-analysis-client'
 import { LoadingsPanel } from './LoadingsPanel'
+import { AnalysisOptionsPanel } from './AnalysisOptionsPanel'
 import { MaterialPanel } from './MaterialPanel'
 import { RebarPanel } from './RebarPanel'
 import { ResultsWorkspace } from './ResultsWorkspace'
@@ -109,7 +113,7 @@ type ScreenPoint = {
 
 type Tool = 'select' | 'draw-rectangle' | 'draw-circle' | 'draw-polygon'
 type Theme = 'light' | 'dark'
-type WorkspaceModule = 'geometry' | 'materials' | 'results'
+type WorkspaceModule = 'geometry' | 'materials' | 'analysis' | 'results'
 type GeometrySubTab = 'concrete' | 'rebar'
 type BuilderShape = 'rectangle' | 'circle' | 'capsule'
 type BooleanAction = 'union' | 'subtract'
@@ -432,6 +436,8 @@ export function SectionDrawingClient() {
   )
   const [materialStore, setMaterialStore] = useState<MaterialStore>(() => createDefaultMaterialStore())
   const [loadingsInput, setLoadingsInput] = useState<LoadingsInput>(() => createEmptyLoadingsInput())
+  const [analysisOptions, setAnalysisOptions] = useState<AnalysisOptions>(() => createDefaultAnalysisOptions())
+  const [analysisOptionsDraft, setAnalysisOptionsDraft] = useState<AnalysisOptions | null>(null)
   const [selectedLoadcaseId, setSelectedLoadcaseId] = useState<number | null>(null)
   const [resultsViewMode, setResultsViewMode] = useState<'overview' | 'loadcase'>('overview')
   const [fixedResultP, setFixedResultP] = useState(0)
@@ -457,6 +463,15 @@ export function SectionDrawingClient() {
   useEffect(() => {
     document.body.dataset.jscadTheme = theme
   }, [theme])
+
+  useEffect(() => {
+    if (!analysisOptionsDraft) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAnalysisOptionsDraft(null)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [analysisOptionsDraft])
 
   useLayoutEffect(() => {
     if (activeModule === 'results') return
@@ -522,7 +537,7 @@ export function SectionDrawingClient() {
     const controller = new AbortController()
     setSurfaceStatus('working')
     const timer = window.setTimeout(() => {
-      buildPreviewSurfaceAsync({ section: finalSection, rebars, materialStore }, controller.signal)
+      buildPreviewSurfaceAsync({ section: finalSection, rebars, materialStore, analysisOptions }, controller.signal)
         .then((surface) => {
           setResultSurface(surface)
           setSurfaceStatus('idle')
@@ -539,7 +554,7 @@ export function SectionDrawingClient() {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [finalSection, hasAppliedSection, materialStore, rebars])
+  }, [analysisOptions, finalSection, hasAppliedSection, materialStore, rebars])
   const appliedSummary = useMemo(() => summarizeSection(finalSection), [finalSection])
   const steelArea = useMemo(
     () => rebars.reduce((sum, bar) => sum + (Math.PI * bar.dia * bar.dia) / 4, 0),
@@ -625,7 +640,7 @@ export function SectionDrawingClient() {
     setInverseResults({})
     setInverseWorkingById({})
     setQuickChecksById({})
-  }, [appliedGeometryInput, materialStore])
+  }, [analysisOptions, appliedGeometryInput, materialStore])
 
   useEffect(() => {
     const controllers = inverseAbortRef.current
@@ -723,6 +738,24 @@ export function SectionDrawingClient() {
     }
     calculateInverseForLoadcase(loadcase)
   }
+
+  // A new surface invalidates every inverse result. If the user is inspecting one loadcase, rebuild
+  // that detail automatically when an Options change finishes instead of leaving the chart empty
+  // until the row is clicked again.
+  useEffect(() => {
+    if (!resultSurface || resultsViewMode !== 'loadcase' || selectedLoadcaseId == null) return
+    const loadcase = loadingsInput.combinations.find((item) => item.id === selectedLoadcaseId)
+    if (loadcase) calculateInverseForLoadcase(loadcase, true)
+  }, [resultSurface])
+
+  const openAnalysisOptions = () => setAnalysisOptionsDraft(structuredClone(analysisOptions))
+  const applyAnalysisOptions = () => {
+    if (!analysisOptionsDraft) return
+    setAnalysisOptions(structuredClone(analysisOptionsDraft))
+    setAnalysisOptionsDraft(null)
+  }
+  const analysisOptionsChanged =
+    analysisOptionsDraft !== null && JSON.stringify(analysisOptionsDraft) !== JSON.stringify(analysisOptions)
 
   const draftRing = useMemo(() => {
     if (!drawingDraft) return []
@@ -1190,6 +1223,7 @@ export function SectionDrawingClient() {
       geometry: appliedGeometryInput,
       materials: materialStore,
       loadings: loadingsInput,
+      analysis: analysisOptions,
       meta: {
         id: projectMeta.id,
         name: projectMeta.name || appliedGeometryInput.name || 'Column project',
@@ -1225,6 +1259,7 @@ export function SectionDrawingClient() {
     setAppliedGeometryInput(geometry)
     setMaterialStore(document.inputs.materials)
     setLoadingsInput(document.inputs.loadings)
+    setAnalysisOptions(document.inputs.analysis)
     setSelectedLoadcaseId(document.inputs.loadings.combinations[0]?.id ?? null)
     setInverseResults({})
     setProjectMeta({
@@ -1467,6 +1502,10 @@ export function SectionDrawingClient() {
           <button className={activeModule === 'materials' ? 'is-active' : ''} onClick={() => switchModule('materials')}>
             <BrickWall size={16} />
             <span>Materials</span>
+          </button>
+          <button className={activeModule === 'analysis' ? 'is-active' : ''} onClick={() => switchModule('analysis')}>
+            <SlidersHorizontal size={16} />
+            <span>Analysis</span>
           </button>
           <button className={activeModule === 'results' ? 'is-active' : ''} onClick={() => switchModule('results')}>
             <ChartScatter size={16} />
@@ -2027,11 +2066,24 @@ export function SectionDrawingClient() {
           />
         )}
 
+        {activeModule === 'analysis' && (
+          <AnalysisOptionsPanel options={analysisOptions} onChange={setAnalysisOptions} />
+        )}
+
         {activeModule === 'results' && (
           <>
             <section className="pm-panel-section">
-              <div className="pm-section-title">
+              <div className="pm-section-title pm-section-title--with-action">
                 <h2>Result Status</h2>
+                <button
+                  type="button"
+                  className="pm-result-options-btn"
+                  onClick={openAnalysisOptions}
+                  aria-haspopup="dialog"
+                >
+                  <SlidersHorizontal size={14} />
+                  Options
+                </button>
               </div>
               <button
                 type="button"
@@ -2320,6 +2372,65 @@ export function SectionDrawingClient() {
         </>
         )}
       </section>
+
+      {analysisOptionsDraft && (
+        <div
+          className="pm-analysis-options-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setAnalysisOptionsDraft(null)
+          }}
+        >
+          <section
+            className="pm-analysis-options-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="analysis-options-dialog-title"
+          >
+            <header className="pm-analysis-options-dialog-header">
+              <div>
+                <h2 id="analysis-options-dialog-title">Calculation options</h2>
+                <p>Changes are applied together and recalculate every result.</p>
+              </div>
+              <button
+                type="button"
+                className="pm-chart-tool"
+                title="Close calculation options"
+                aria-label="Close calculation options"
+                onClick={() => setAnalysisOptionsDraft(null)}
+              >
+                <X size={16} />
+              </button>
+            </header>
+            <div className="pm-analysis-options-dialog-body">
+              <AnalysisOptionsPanel options={analysisOptionsDraft} onChange={setAnalysisOptionsDraft} />
+            </div>
+            <footer className="pm-analysis-options-dialog-footer">
+              <span>
+                {analysisOptionsChanged
+                  ? 'Pending changes will replace the current result surface.'
+                  : 'No pending changes.'}
+              </span>
+              <div>
+                <button
+                  type="button"
+                  className="pm-secondary-action"
+                  onClick={() => setAnalysisOptionsDraft(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="pm-primary-action"
+                  disabled={!analysisOptionsChanged}
+                  onClick={applyAnalysisOptions}
+                >
+                  Apply & recalculate
+                </button>
+              </div>
+            </footer>
+          </section>
+        </div>
+      )}
     </main>
   )
 }

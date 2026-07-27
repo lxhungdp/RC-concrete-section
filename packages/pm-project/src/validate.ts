@@ -3,6 +3,17 @@ import { CONCRETE_MATERIAL_ID, DEFAULT_CONCRETE_DENSITY } from '@pm/materials'
 import type { ConcreteMaterial, MaterialStore, SteelMaterial, StressStrainPoint } from '@pm/materials'
 import { isValidEntityId } from './ids'
 import {
+  ANALYSIS_OPTIONS_VERSION,
+  MAX_INTERMEDIATE_STATIONS,
+  MAX_REFINED_DIRECTIONS,
+  MAX_SEED_DIRECTIONS,
+  MAX_STATION_LABEL_LENGTH,
+  STRAIN_DOMAIN_SURFACE_METHOD,
+  type AnalysisOptions,
+  type AnalysisStation,
+  type DirectionProbe
+} from './analysis-options'
+import {
   PM_PROJECT_SCHEMA,
   PM_PROJECT_VERSION,
   type LoadCombination,
@@ -303,6 +314,173 @@ const parseLoadings = (value: unknown | undefined): LoadingsInput => {
   }
 }
 
+const parseAnalysisStation = (value: unknown, path: string): AnalysisStation => {
+  assertRecord(value, `${path} must be an object`)
+  assertEntityId(value.id, `${path}.id`)
+  assert(
+    isString(value.label) &&
+      value.label.trim().length > 0 &&
+      value.label.length <= MAX_STATION_LABEL_LENGTH,
+    `${path}.label must contain 1…${MAX_STATION_LABEL_LENGTH} characters`
+  )
+  assertRecord(value.criterion, `${path}.criterion must be an object`)
+
+  if (value.criterion.type === 'c-over-c1') {
+    assert(
+      isFiniteNumber(value.criterion.ratio) && value.criterion.ratio > 0,
+      `${path}.criterion.ratio must be positive`
+    )
+    return { id: value.id, label: value.label, criterion: { type: 'c-over-c1', ratio: value.criterion.ratio } }
+  }
+  if (value.criterion.type === 'steel-stress-ratio') {
+    assert(
+      isFiniteNumber(value.criterion.ratio) && value.criterion.ratio >= 0 && value.criterion.ratio <= 1,
+      `${path}.criterion.ratio must be between 0 and 1`
+    )
+    return {
+      id: value.id,
+      label: value.label,
+      criterion: { type: 'steel-stress-ratio', ratio: value.criterion.ratio }
+    }
+  }
+  if (value.criterion.type === 'steel-strain') {
+    assert(
+      isFiniteNumber(value.criterion.strain) && value.criterion.strain <= 0,
+      `${path}.criterion.strain must be finite and non-positive`
+    )
+    return { id: value.id, label: value.label, criterion: { type: 'steel-strain', strain: value.criterion.strain } }
+  }
+  throw new Error(`${path}.criterion.type is unsupported`)
+}
+
+const parseDirectionProbe = (
+  value: unknown,
+  path: string,
+  stationIds: ReadonlySet<number>
+): DirectionProbe => {
+  if (value === 'all') return 'all'
+  assertRecord(value, `${path} must be "all" or an object`)
+  assertArray(value.stationIds, `${path}.stationIds must be an array`)
+  const ids = value.stationIds.map((id, index) => {
+    assertEntityId(id, `${path}.stationIds[${index}]`)
+    assert(stationIds.has(id), `${path}.stationIds[${index}] does not reference an intermediate station`)
+    return id
+  })
+  assert(new Set(ids).size === ids.length, `${path}.stationIds must not contain duplicates`)
+  return { stationIds: ids }
+}
+
+const parseAnalysis = (value: unknown): AnalysisOptions => {
+  const path = 'inputs.analysis'
+  assertRecord(value, `${path} must be an object`)
+  assert(value.optionsVersion === ANALYSIS_OPTIONS_VERSION, `${path}.optionsVersion is unsupported`)
+  assert(value.methodId === STRAIN_DOMAIN_SURFACE_METHOD, `${path}.methodId is unsupported`)
+  assertRecord(value.stations, `${path}.stations must be an object`)
+  assert(
+    value.stations.basedOn === 'legacy-p0-p18-v1' || value.stations.basedOn === 'custom',
+    `${path}.stations.basedOn is invalid`
+  )
+  assertArray(value.stations.intermediate, `${path}.stations.intermediate must be an array`)
+  assert(
+    value.stations.intermediate.length <= MAX_INTERMEDIATE_STATIONS,
+    `${path}.stations.intermediate exceeds ${MAX_INTERMEDIATE_STATIONS}`
+  )
+  const intermediate = value.stations.intermediate.map((item, index) =>
+    parseAnalysisStation(item, `${path}.stations.intermediate[${index}]`)
+  )
+  const stationIds = new Set(intermediate.map((item) => item.id))
+  assert(stationIds.size === intermediate.length, `${path}.stations.intermediate ids must be unique`)
+
+  assertRecord(value.directions, `${path}.directions must be an object`)
+  assertRecord(value.directions.seed, `${path}.directions.seed must be an object`)
+  let seed: AnalysisOptions['directions']['seed']
+  if (value.directions.seed.type === 'uniform') {
+    assert(
+      Number.isInteger(value.directions.seed.count) &&
+        (value.directions.seed.count as number) >= 4 &&
+        (value.directions.seed.count as number) <= MAX_SEED_DIRECTIONS,
+      `${path}.directions.seed.count must be an integer between 4 and ${MAX_SEED_DIRECTIONS}`
+    )
+    assert(
+      isFiniteNumber(value.directions.seed.startDeg) &&
+        value.directions.seed.startDeg >= 0 &&
+        value.directions.seed.startDeg < 360,
+      `${path}.directions.seed.startDeg must be in [0, 360)`
+    )
+    seed = {
+      type: 'uniform',
+      count: value.directions.seed.count as number,
+      startDeg: value.directions.seed.startDeg
+    }
+  } else if (value.directions.seed.type === 'explicit') {
+    assertArray(value.directions.seed.anglesDeg, `${path}.directions.seed.anglesDeg must be an array`)
+    assert(
+      value.directions.seed.anglesDeg.length >= 4 &&
+        value.directions.seed.anglesDeg.length <= MAX_SEED_DIRECTIONS,
+      `${path}.directions.seed.anglesDeg must contain 4…${MAX_SEED_DIRECTIONS} angles`
+    )
+    const anglesDeg = value.directions.seed.anglesDeg.map((angle, index) => {
+      assert(
+        isFiniteNumber(angle) && angle >= 0 && angle < 360,
+        `${path}.directions.seed.anglesDeg[${index}] must be in [0, 360)`
+      )
+      return angle
+    })
+    assert(
+      anglesDeg.every((angle, index) => index === 0 || angle > anglesDeg[index - 1]),
+      `${path}.directions.seed.anglesDeg must be strictly increasing`
+    )
+    seed = { type: 'explicit', anglesDeg }
+  } else {
+    throw new Error(`${path}.directions.seed.type is unsupported`)
+  }
+
+  assertRecord(value.directions.refinement, `${path}.directions.refinement must be an object`)
+  const probe = parseDirectionProbe(value.directions.refinement.probe, `${path}.directions.refinement.probe`, stationIds)
+  let refinement: AnalysisOptions['directions']['refinement']
+  if (value.directions.refinement.type === 'fixed') {
+    refinement = { type: 'fixed', probe }
+  } else if (value.directions.refinement.type === 'adaptive') {
+    const maxPasses = value.directions.refinement.maxPasses
+    const maxDirections = value.directions.refinement.maxDirections
+    assert(
+      isFiniteNumber(value.directions.refinement.tolerance) &&
+        value.directions.refinement.tolerance > 0 &&
+        value.directions.refinement.tolerance <= 0.25,
+      `${path}.directions.refinement.tolerance must be in (0, 0.25]`
+    )
+    assert(
+      Number.isInteger(maxPasses) &&
+        (maxPasses as number) >= 0 &&
+        (maxPasses as number) <= 12,
+      `${path}.directions.refinement.maxPasses must be an integer between 0 and 12`
+    )
+    const seedCount = seed.type === 'uniform' ? seed.count : seed.anglesDeg.length
+    assert(
+      Number.isInteger(maxDirections) &&
+        (maxDirections as number) >= seedCount &&
+        (maxDirections as number) <= MAX_REFINED_DIRECTIONS,
+      `${path}.directions.refinement.maxDirections must be between seed count and ${MAX_REFINED_DIRECTIONS}`
+    )
+    refinement = {
+      type: 'adaptive',
+      tolerance: value.directions.refinement.tolerance,
+      maxPasses: maxPasses as number,
+      maxDirections: maxDirections as number,
+      probe
+    }
+  } else {
+    throw new Error(`${path}.directions.refinement.type is unsupported`)
+  }
+
+  return {
+    optionsVersion: ANALYSIS_OPTIONS_VERSION,
+    methodId: STRAIN_DOMAIN_SURFACE_METHOD,
+    stations: { basedOn: value.stations.basedOn, intermediate },
+    directions: { seed, refinement }
+  }
+}
+
 export const collectProjectWarnings = (document: PmProjectDocument): string[] => {
   const warnings: string[] = []
   const steelIds = new Set(document.inputs.materials.steel.map((item) => item.id))
@@ -345,7 +523,8 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
     inputs: {
       geometry: parseGeometry(value.inputs.geometry),
       materials: parseMaterials(value.inputs.materials),
-      loadings: parseLoadings(value.inputs.loadings)
+      loadings: parseLoadings(value.inputs.loadings),
+      analysis: parseAnalysis(value.inputs.analysis)
     }
   }
 }

@@ -14,9 +14,16 @@ import {
   strainDomainMismatch,
   type CompiledMaterial,
   type MaterialStore,
+  type SteelMaterial,
   type StrainDomainId
 } from '@pm/materials'
-import type { LoadCombination } from '@pm/project'
+import {
+  cloneAnalysisOptions,
+  createDefaultAnalysisOptions,
+  type AnalysisOptions,
+  type AnalysisStationCriterion,
+  type LoadCombination
+} from '@pm/project'
 
 /**
  * Typed fatal input errors (`docs/08` §5 fail-closed). The kernel must never substitute a plausible
@@ -28,6 +35,7 @@ export type AnalysisErrorCode =
   | 'UNSUPPORTED_CONCRETE_MODEL'
   | 'EMPTY_CONCRETE_SECTION'
   | 'MESH_RESOURCE_LIMIT'
+  | 'INVALID_ANALYSIS_OPTIONS'
   | 'MESH_NOT_VERIFIED'
 
 export class AnalysisInputError extends Error {
@@ -87,9 +95,20 @@ export type ResultantLedger = {
 export type PreviewSurfacePoint = Resultant & {
   id: string
   beta: number
+  /** Zero-based display/topology order within one direction row. */
   station: number
+  /** Stable persisted station identity; poles use reserved string ids. */
+  stationId: SurfaceStationId
   state: StrainState
   ledger: ResultantLedger
+}
+
+export type SurfaceStationId = 'pure-compression' | `station-${number}` | 'pure-tension'
+
+export type SurfaceStation = {
+  id: SurfaceStationId
+  label: string
+  definition: StationDefinition
 }
 
 /**
@@ -105,6 +124,7 @@ export type SurfaceDirectionError = {
   directions: number
   /** Station indices used as probes. */
   probedStations: number[]
+  probedStationIds: SurfaceStationId[]
   /** Worst chord error in `P`, relative to the surface `P` span. */
   maxRelativeP: number
   /** Worst chord error in the moment vector, relative to the surface moment span. */
@@ -116,20 +136,6 @@ export type SurfaceDirectionError = {
   /** True when the estimate is at or below the requested tolerance. */
   withinTolerance: boolean
   tolerance: number
-}
-
-export type SurfaceRefinementOptions = {
-  /**
-   * Relative chord error at which a direction interval stops being bisected. Refinement only runs
-   * when this is supplied; otherwise the fixed 24-direction grid is kept and only measured.
-   */
-  tolerance?: number
-  /** Maximum bisection passes over the direction grid. */
-  maxPasses?: number
-  /** Hard cap on sampled directions, so a tight tolerance cannot run away. */
-  maxDirections?: number
-  /** Stations probed by the midpoint test. Defaults to a spread across the schedule. */
-  probeStations?: number[]
 }
 
 export type PreviewSurface = {
@@ -144,6 +150,10 @@ export type PreviewSurface = {
     notes: string[]
   }
   mesh: ConcreteMeshReport
+  /** Canonical schedule and direction grid actually used by this result. */
+  stations: SurfaceStation[]
+  directions: number[]
+  analysisOptions: AnalysisOptions
   directionError: SurfaceDirectionError
   /** Which ultimate strain domain produced these states — never inferred from the material label. */
   strainDomain: StrainDomainId
@@ -172,6 +182,17 @@ export const contourStrainAngleSamples = (contour: PreviewContourPoint[]): Previ
 export type PreviewMomentPlanePoint = PreviewContourPoint & {
   /** Moment coordinate on the checked load direction. */
   M: number
+}
+
+/**
+ * One connected component of a vertical moment-plane/surface intersection.
+ *
+ * A closed path repeats its first point as its last point. `closed` is derived from the triangle
+ * adjacency graph; callers must never close an open path merely for presentation.
+ */
+export type PreviewMomentPlanePath = {
+  points: PreviewMomentPlanePoint[]
+  closed: boolean
 }
 
 export type AdmissibilityViolation =
@@ -265,7 +286,14 @@ export const analysisInputKey = (
   meshOptions: ConcreteMeshOptions = {}
 ) => JSON.stringify([section, rebars, materialStore, meshOptions])
 
-const PREVIEW_BETAS = Array.from({ length: 24 }, (_, index) => (index * Math.PI) / 12)
+export const surfaceInputKey = (
+  section: SectionGeometry,
+  rebars: GeometryInputRebarView[],
+  materialStore: MaterialStore,
+  analysisOptions: AnalysisOptions,
+  meshOptions: ConcreteMeshOptions = {}
+) => JSON.stringify([section, rebars, materialStore, meshOptions, analysisOptions])
+
 const PREVIEW_GEOMETRY_TOL = 1e-9
 const NEWTON_RESIDUAL_TOL = 1e-8
 const NEWTON_MAX_ITERATIONS = 30
@@ -278,7 +306,7 @@ export type StationDefinition =
   | { kind: 'pure-compression' }
   | { kind: 'neutral-axis-ratio'; cOverC1: number }
   | { kind: 'steel-strain'; strain: number }
-  | { kind: 'steel-yield-ratio'; ratio: number }
+  | { kind: 'steel-stress-ratio'; ratio: number }
   | { kind: 'pure-tension' }
 
 /**
@@ -292,11 +320,11 @@ export const PREVIEW_STATIONS: StationDefinition[] = [
   { kind: 'neutral-axis-ratio', cOverC1: 2 },
   { kind: 'neutral-axis-ratio', cOverC1: 1.5 },
   { kind: 'neutral-axis-ratio', cOverC1: 1.2 },
-  { kind: 'steel-strain', strain: 0 },
-  { kind: 'steel-yield-ratio', ratio: 0.25 },
-  { kind: 'steel-yield-ratio', ratio: 0.5 },
-  { kind: 'steel-yield-ratio', ratio: 0.75 },
-  { kind: 'steel-yield-ratio', ratio: 1 },
+  { kind: 'steel-stress-ratio', ratio: 0 },
+  { kind: 'steel-stress-ratio', ratio: 0.25 },
+  { kind: 'steel-stress-ratio', ratio: 0.5 },
+  { kind: 'steel-stress-ratio', ratio: 0.75 },
+  { kind: 'steel-stress-ratio', ratio: 1 },
   { kind: 'steel-strain', strain: -0.003 },
   { kind: 'steel-strain', strain: -0.005 },
   { kind: 'steel-strain', strain: -0.0075 },
@@ -308,26 +336,52 @@ export const PREVIEW_STATIONS: StationDefinition[] = [
   { kind: 'pure-tension' }
 ]
 
-/** Labels drawn on the vertical P–M slice (steel limit stations only). */
-export const VERTICAL_SLICE_KEY_STATIONS: Array<{ station: number; label: string }> = [
-  { station: 5, label: 'fs = 0' },
-  { station: 9, label: 'fs = fy' }
-]
-
 export const stationDefinitionLabel = (station: StationDefinition): string => {
   if (station.kind === 'pure-compression') return 'Pure compression'
   if (station.kind === 'pure-tension') return 'Pure tension'
   if (station.kind === 'neutral-axis-ratio') return `c = ${station.cOverC1.toFixed(1)}·c₁`
-  if (station.kind === 'steel-yield-ratio') {
+  if (station.kind === 'steel-stress-ratio') {
     if (station.ratio === 0) return 'fs = 0'
-    if (Math.abs(station.ratio - 1) < 1e-9) return 'fs = fy'
-    return `fs = ${station.ratio}·fy`
+    if (Math.abs(station.ratio - 1) < 1e-9) return 'fs = fyd'
+    return `fs = ${station.ratio}·fyd`
   }
   if (station.kind === 'steel-strain') {
     if (Math.abs(station.strain) < 1e-12) return 'fs = 0'
     return `εs = ${station.strain}`
   }
   return 'Station'
+}
+
+const criterionDefinition = (criterion: AnalysisStationCriterion): StationDefinition => {
+  if (criterion.type === 'c-over-c1') return { kind: 'neutral-axis-ratio', cOverC1: criterion.ratio }
+  if (criterion.type === 'steel-stress-ratio') return { kind: 'steel-stress-ratio', ratio: criterion.ratio }
+  return { kind: 'steel-strain', strain: criterion.strain }
+}
+
+/** Resolved schedule including the two mandatory poles. */
+export const analysisStations = (options: AnalysisOptions): SurfaceStation[] => [
+  { id: 'pure-compression', label: 'Pure compression', definition: { kind: 'pure-compression' } },
+  ...options.stations.intermediate.map((item) => ({
+    id: `station-${item.id}` as const,
+    label: item.label,
+    definition: criterionDefinition(item.criterion)
+  })),
+  { id: 'pure-tension', label: 'Pure tension', definition: { kind: 'pure-tension' } }
+]
+
+/** Canonical radians in strictly ascending order. */
+export const analysisDirections = (options: AnalysisOptions): number[] => {
+  const seed = options.directions.seed
+  if (seed.type === 'uniform') {
+    const start = (seed.startDeg * Math.PI) / 180
+    // This evaluation order intentionally preserves the legacy default exactly:
+    // index * π / 12 for 24 directions. Equivalent degree arithmetic changes a few last bits.
+    return Array.from(
+      { length: seed.count },
+      (_, index) => (start + (index * Math.PI) / (seed.count / 2)) % (2 * Math.PI)
+    ).sort((a, b) => a - b)
+  }
+  return seed.anglesDeg.map((degree) => (degree * Math.PI) / 180).sort((a, b) => a - b)
 }
 
 /**
@@ -740,7 +794,7 @@ const PURE_TENSION_YIELD_MULTIPLE = 25
  * Strain limits of the bar that controls one direction, taken from its compiled law.
  *
  * `epsYield` already carries the material partial factor: an EC2 bar with `gammaS = 1.15` yields at
- * `fy / 1.15 / Es`, so a station labelled `fs = fy` must sit there and not at `fy / Es`.
+ * `fy / 1.15 / Es`, so a station labelled `fs = fyd` must sit there and not at `fy / Es`.
  */
 export type StationSteelLimits = {
   epsY: number
@@ -750,24 +804,94 @@ export type StationSteelLimits = {
 
 const DEFAULT_STATION_STEEL_LIMITS: StationSteelLimits = { epsY: 0.002, epsU: null }
 
-const stationSteelLimits = (
+type StationSteelControl = StationSteelLimits & {
+  steel: CompiledMaterial
+  definition: SteelMaterial
+  /** Design yield stress fyd = fy / γs, MPa. */
+  fyd: number
+}
+
+const stationSteelControl = (
   materials: AnalysisMaterials,
+  materialStore: MaterialStore,
   rebars: GeometryInputRebarView[],
   defaultSteelMaterialId: number,
   controllingRebarIndex: number
-): StationSteelLimits => {
+): StationSteelControl => {
   const bar = controllingRebarIndex >= 0 ? rebars[controllingRebarIndex] : undefined
-  const steel = materials.steel.get(bar?.steelMaterialId ?? defaultSteelMaterialId)
-  if (!steel) return DEFAULT_STATION_STEEL_LIMITS
+  const steel =
+    materials.steel.get(bar?.steelMaterialId ?? defaultSteelMaterialId) ??
+    materials.steel.get(defaultSteelMaterialId) ??
+    [...materials.steel.values()][0]
+  if (!steel) {
+    throw new AnalysisInputError('INVALID_ANALYSIS_OPTIONS', 'A steel-based station schedule requires a steel material.')
+  }
+  const definition =
+    materialStore.steel.find((item) => item.id === steel.id) ??
+    materialStore.steel.find((item) => item.id === defaultSteelMaterialId)
+  if (!definition) {
+    throw new AnalysisInputError('INVALID_ANALYSIS_OPTIONS', `Steel material ${steel.id} has no source definition.`)
+  }
   return {
+    steel,
+    definition,
+    fyd: definition.fy / (definition.factors?.gammaS ?? 1),
     epsY: steel.limits.epsYield ?? DEFAULT_STATION_STEEL_LIMITS.epsY,
     epsU: steel.limits.epsTensionUltimate ?? null
   }
 }
 
-const farTensionSteelStrain = (station: StationDefinition, limits: StationSteelLimits) => {
+const strainAtSteelStressRatio = (ratio: number, control: StationSteelControl) => {
+  if (ratio === 0) return 0
+  const candidate = -ratio * control.epsY
+  const target = -ratio * control.fyd
+  const candidateStress = control.steel.stress(candidate)
+  const stressScale = Math.max(1, control.fyd)
+  // Preserve the exact legacy arithmetic on linear elastic branches.
+  if (Math.abs(candidateStress - target) <= 1e-12 * stressScale) return candidate
+
+  const curveKnots =
+    control.definition.stressStrain.type === 'user-curve'
+      ? control.definition.stressStrain.points
+          .map((point) => point.strain)
+          .filter((strain) => strain > -control.epsY && strain < 0)
+      : []
+  const knots = [...new Set([-control.epsY, ...curveKnots, 0])].sort((a, b) => a - b)
+  const stresses = knots.map((strain) => control.steel.stress(strain))
+  for (let index = 1; index < stresses.length; index++) {
+    if (stresses[index] < stresses[index - 1] - 1e-12 * stressScale) {
+      throw new AnalysisInputError(
+        'INVALID_ANALYSIS_OPTIONS',
+        'The controlling steel law is not monotone on its tensile pre-yield branch; fₛ/fyd is ambiguous.'
+      )
+    }
+  }
+  let bracket = -1
+  for (let index = knots.length - 2; index >= 0; index--) {
+    if (stresses[index] <= target && target <= stresses[index + 1]) {
+      bracket = index
+      break
+    }
+  }
+  if (bracket < 0) {
+    throw new AnalysisInputError(
+      'INVALID_ANALYSIS_OPTIONS',
+      `The controlling steel law cannot resolve fₛ/fyd = ${ratio} on its tensile pre-yield branch.`
+    )
+  }
+  let low = knots[bracket]
+  let high = knots[bracket + 1]
+  for (let iteration = 0; iteration < 64; iteration++) {
+    const mid = (low + high) / 2
+    if (control.steel.stress(mid) < target) low = mid
+    else high = mid
+  }
+  return (low + high) / 2
+}
+
+const farTensionSteelStrain = (station: StationDefinition, control: StationSteelControl) => {
   if (station.kind === 'steel-strain') return station.strain
-  if (station.kind === 'steel-yield-ratio') return -Math.abs(station.ratio * limits.epsY)
+  if (station.kind === 'steel-stress-ratio') return strainAtSteelStressRatio(station.ratio, control)
   return 0
 }
 
@@ -776,14 +900,14 @@ const pureTensionStrain = (limits: StationSteelLimits) =>
 
 const previewStationStateFromExtents = (
   beta: number,
-  stationIndex: number,
+  station: StationDefinition,
   epsCu: number,
-  limits: StationSteelLimits,
+  control: StationSteelControl,
+  globalPureTensionStrain: number,
   extents: ProjectedExtents
 ): StrainState => {
-  const station = PREVIEW_STATIONS[stationIndex]
-  if (!station || station.kind === 'pure-compression') return { e0: epsCu, kx: 0, ky: 0 }
-  if (station.kind === 'pure-tension') return { e0: pureTensionStrain(limits), kx: 0, ky: 0 }
+  if (station.kind === 'pure-compression') return { e0: epsCu, kx: 0, ky: 0 }
+  if (station.kind === 'pure-tension') return { e0: globalPureTensionStrain, kx: 0, ky: 0 }
 
   const compressionProjection = extents.max
   const c1 = Math.max(1e-9, compressionProjection - extents.tensionControl)
@@ -793,8 +917,8 @@ const previewStationStateFromExtents = (
       : extents.tensionControl
   // A schedule strain past the controlling bar's declared rupture strain is not a reachable state.
   const requestedStrain =
-    station.kind === 'neutral-axis-ratio' ? 0 : farTensionSteelStrain(station, limits)
-  const controlStrain = limits.epsU === null ? requestedStrain : Math.max(requestedStrain, -limits.epsU)
+    station.kind === 'neutral-axis-ratio' ? 0 : farTensionSteelStrain(station, control)
+  const controlStrain = control.epsU === null ? requestedStrain : Math.max(requestedStrain, -control.epsU)
   const curvature = (epsCu - controlStrain) / Math.max(1e-9, compressionProjection - controlProjection)
   const c = Math.cos(beta)
   const s = Math.sin(beta)
@@ -819,14 +943,39 @@ export const previewStationState = (
   epsCu: number,
   steel: number | StationSteelLimits,
   origin: AnalysisOrigin = netConcreteCentroid(section)
-): StrainState =>
-  previewStationStateFromExtents(
+): StrainState => {
+  const limits = typeof steel === 'number' ? { epsY: steel, epsU: null } : steel
+  const definition = PREVIEW_STATIONS[stationIndex] ?? PREVIEW_STATIONS[0]
+  // Compatibility helper has no compiled law. The default schedules only use the linear pre-yield
+  // branch, represented exactly by this minimal evaluator.
+  const control: StationSteelControl = {
+    ...limits,
+    fyd: 1,
+    definition: {
+      id: 0,
+      name: 'Compatibility linear steel',
+      standard: 'CUSTOM',
+      fy: 1,
+      elasticModulus: 1 / limits.epsY,
+      stressStrain: { type: 'elastic-perfectly-plastic' }
+    },
+    steel: {
+      id: 0,
+      family: 'steel',
+      stress: (strain) => strain / limits.epsY,
+      tangent: () => 1 / limits.epsY,
+      limits: {}
+    }
+  }
+  return previewStationStateFromExtents(
     beta,
-    stationIndex,
+    definition,
     epsCu,
-    typeof steel === 'number' ? { epsY: steel, epsU: null } : steel,
+    control,
+    pureTensionStrain(limits),
     projectedExtents(section, beta, origin, rebars)
   )
+}
 
 const groupSurfaceRows = (points: PreviewSurfacePoint[]) => {
   const byBeta = new Map<number, PreviewSurfacePoint[]>()
@@ -1016,28 +1165,21 @@ export const evaluatePreviewState = (
 ): ResultantLedger => evaluatePreparedState(prepareAnalysis(section, rebars, materialStore, meshOptions, origin), state)
 
 /**
- * Stations probed by the midpoint test.
+ * Build the configured strain-domain surface.
  *
- * Chosen from measurement, not intuition. Sweeping all 19 stations across the benchmark set shows
- * the chord error rising with station index: the poles `P0`/`P18` are direction independent and
- * score exactly zero, while the deep-tension stations peak near 16%. Of the candidate sets tried,
- * this one recovered at worst 92% and on average 97% of the full 19-station sweep, for about 21% of
- * a surface build. It is therefore a good estimate but a mild under-estimate; treat it as an
- * indication of magnitude, and sweep every station when a number has to be defended.
- *
- * Pass `probeStations: []` to switch the estimate off when a caller only needs raw capacity.
+ * Probe stations are persisted by stable ID. The default four-probe set is a measured low-cost
+ * estimate for the legacy schedule; custom schedules should normally use `probe: "all"`. An empty
+ * ID list deliberately skips the estimate and reports NaN rather than a false zero.
  */
-const DEFAULT_PROBE_STATIONS = [5, 10, 14, 16]
-const DEFAULT_MAX_REFINEMENT_PASSES = 6
-const DEFAULT_MAX_DIRECTIONS = 192
-
 export const buildPreviewSurfaceFromPrepared = (
   prepared: PreparedAnalysis,
-  refinement: SurfaceRefinementOptions = {}
+  analysisOptions: AnalysisOptions = createDefaultAnalysisOptions()
 ): PreviewSurface => {
   const { section, rebars, materialStore, origin, fibers, materials } = prepared
   const meshReport = prepared.mesh.report
   const epsCu = materialStore.concrete.limits.epsCu
+  const stations = analysisStations(analysisOptions)
+  const seedBetas = analysisDirections(analysisOptions)
   const warnings: string[] = []
 
   // An unusable mesh is rejected in prepareAnalysisFromMesh, so anything left here is advisory.
@@ -1047,31 +1189,109 @@ export const buildPreviewSurfaceFromPrepared = (
   const domainMismatch = strainDomainMismatch(materialStore.concrete)
   if (domainMismatch) warnings.push(`Strain domain: ${domainMismatch.message} See ${domainMismatch.reference}.`)
 
-  const ALL_STATIONS = PREVIEW_STATIONS.map((_, station) => station)
+  const usedSteel = new Map<number, CompiledMaterial>()
+  for (const bar of rebars) {
+    const materialId = bar.steelMaterialId ?? materialStore.defaults.steelMaterialId
+    const steel = materials.steel.get(materialId)
+    if (steel) usedSteel.set(materialId, steel)
+  }
+  if (usedSteel.size === 0) {
+    const fallback =
+      materials.steel.get(materialStore.defaults.steelMaterialId) ?? [...materials.steel.values()][0]
+    if (fallback) usedSteel.set(fallback.id, fallback)
+  }
+  const declaredTensionLimits = [...usedSteel.values()]
+    .map((steel) => steel.limits.epsTensionUltimate)
+    .filter((value): value is number => value !== undefined)
+  const undeclaredYieldStrains = [...usedSteel.values()]
+    .filter((steel) => steel.limits.epsTensionUltimate === undefined)
+    .map((steel) => steel.limits.epsYield ?? DEFAULT_STATION_STEEL_LIMITS.epsY)
+  const effectiveTensionLimits = [
+    ...declaredTensionLimits,
+    ...(undeclaredYieldStrains.length > 0
+      ? [PURE_TENSION_YIELD_MULTIPLE * Math.max(...undeclaredYieldStrains)]
+      : [])
+  ]
+  const deepestConfiguredTensionStrain = Math.max(
+    0,
+    ...stations.map((station) =>
+      station.definition.kind === 'steel-strain' ? Math.abs(station.definition.strain) : 0
+    )
+  )
+  const globalPureTensionStrain = -(
+    declaredTensionLimits.length > 0
+      ? Math.min(...effectiveTensionLimits)
+      : Math.max(
+          ...effectiveTensionLimits,
+          deepestConfiguredTensionStrain,
+          PURE_TENSION_YIELD_MULTIPLE * DEFAULT_STATION_STEEL_LIMITS.epsY
+        )
+  )
+  const ALL_STATIONS = stations.map((_, station) => station)
+  let duplicateStationWarning = false
 
   /**
    * Stations of one direction. `stations` narrows the work for the midpoint probe, which only needs
    * a handful of stations and would otherwise double the cost of every surface build.
    */
-  const buildRow = (beta: number, stations: number[] = ALL_STATIONS): PreviewSurfacePoint[] => {
+  const buildRow = (beta: number, stationOrders: number[] = ALL_STATIONS): PreviewSurfacePoint[] => {
     const extents = projectedExtents(section, beta, origin, rebars)
     // The controlling bar changes with direction, so its yield and rupture strains do too.
-    const limits = stationSteelLimits(
+    const control = stationSteelControl(
       materials,
+      materialStore,
       rebars,
       materialStore.defaults.steelMaterialId,
       extents.controllingRebarIndex
     )
     const degrees = Number(((beta * 180) / Math.PI).toFixed(3))
-    return stations.map((station) => {
-      const state = previewStationStateFromExtents(beta, station, epsCu, limits, extents)
+    const resolved = stationOrders.map((station) => {
+      const descriptor = stations[station]
+      const state = previewStationStateFromExtents(
+        beta,
+        descriptor.definition,
+        epsCu,
+        control,
+        globalPureTensionStrain,
+        extents
+      )
+      return { station, descriptor, state }
+    })
+
+    if (stationOrders.length === ALL_STATIONS.length && rebars.length > 0) {
+      const bar = rebars[extents.controllingRebarIndex]
+      let previous = Number.POSITIVE_INFINITY
+      for (const point of resolved) {
+        const strain =
+          point.state.e0 + point.state.kx * (bar.y - origin.y) + point.state.ky * (bar.x - origin.x)
+        const tolerance = 1e-11 * Math.max(1, Math.abs(previous), Math.abs(strain))
+        if (strain > previous + tolerance) {
+          throw new AnalysisInputError(
+            'INVALID_ANALYSIS_OPTIONS',
+            `Station "${point.descriptor.label}" breaks the compression-to-tension order at β=${degrees}°.`,
+            { betaDeg: degrees, stationId: point.descriptor.id, previousStrain: previous, strain }
+          )
+        }
+        if (Math.abs(strain - previous) <= tolerance && Number.isFinite(previous)) duplicateStationWarning = true
+        previous = strain
+      }
+    }
+    return resolved.map(({ station, descriptor, state }) => {
       const ledger = evaluate(fibers, materials, state)
-      return { id: `${degrees}-${station}`, beta, station, state, ledger, ...ledger.total }
+      return {
+        id: `${degrees}-${station}`,
+        beta,
+        station,
+        stationId: descriptor.id,
+        state,
+        ledger,
+        ...ledger.total
+      }
     })
   }
 
   const rows = new Map<number, PreviewSurfacePoint[]>()
-  for (const beta of PREVIEW_BETAS) rows.set(beta, buildRow(beta))
+  for (const beta of seedBetas) rows.set(beta, buildRow(beta))
 
   const sortedBetas = () => [...rows.keys()].sort((a, b) => a - b)
   const allPoints = () => sortedBetas().flatMap((beta) => rows.get(beta)!)
@@ -1086,18 +1306,30 @@ export const buildPreviewSurfaceFromPrepared = (
     return { pSpan, mSpan }
   }
 
-  const probeStations = (refinement.probeStations ?? DEFAULT_PROBE_STATIONS).filter(
-    (station) => station >= 0 && station < PREVIEW_STATIONS.length
-  )
+  const refinement = analysisOptions.directions.refinement
+  const probeStations =
+    refinement.probe === 'all'
+      ? ALL_STATIONS.slice(1, -1)
+      : refinement.probe.stationIds.flatMap((id) => {
+          const index = stations.findIndex((station) => station.id === `station-${id}`)
+          return index >= 0 ? [index] : []
+        })
 
   /**
    * Chord error of one direction interval: evaluate the true state halfway between two sampled
    * directions and compare it with the straight line the triangulated surface uses there.
    */
-  const intervalError = (betaA: number, betaB: number, pSpan: number, mSpan: number) => {
+  const intervalError = (
+    betaA: number,
+    betaB: number,
+    betaBKey: number,
+    pSpan: number,
+    mSpan: number
+  ) => {
     const rowA = rows.get(betaA)!
-    // betaB may be unwrapped past 2π on the closing interval; the row is keyed on its wrapped value.
-    const rowB = rows.get(betaB % (2 * Math.PI))!
+    // The closing interval uses an unwrapped betaB for its midpoint but an exact existing map key.
+    // `% 2π` is not bit-stable when the first configured angle is nonzero.
+    const rowB = rows.get(betaBKey)!
     const midBeta = (betaA + betaB) / 2
     const probe = buildRow(midBeta, probeStations)
     let relativeP = 0
@@ -1116,9 +1348,9 @@ export const buildPreviewSurfaceFromPrepared = (
     return { midBeta, relativeP, relativeMoment }
   }
 
-  const tolerance = refinement.tolerance ?? Number.POSITIVE_INFINITY
-  const maxPasses = refinement.tolerance === undefined ? 0 : refinement.maxPasses ?? DEFAULT_MAX_REFINEMENT_PASSES
-  const maxDirections = refinement.maxDirections ?? DEFAULT_MAX_DIRECTIONS
+  const tolerance = refinement.type === 'adaptive' ? refinement.tolerance : Number.POSITIVE_INFINITY
+  const maxPasses = refinement.type === 'adaptive' ? refinement.maxPasses : 0
+  const maxDirections = refinement.type === 'adaptive' ? refinement.maxDirections : rows.size
 
   // NaN, not 0: an estimate that was never taken must not read as "no error found".
   let maxRelativeP = Number.NaN
@@ -1140,7 +1372,8 @@ export const buildPreviewSurfaceFromPrepared = (
       const betaA = betas[index]
       // The closing interval wraps to the first direction at 2π.
       const betaB = index === betas.length - 1 ? betas[0] + 2 * Math.PI : betas[index + 1]
-      const { midBeta, relativeP, relativeMoment } = intervalError(betaA, betaB, pSpan, mSpan)
+      const betaBKey = index === betas.length - 1 ? betas[0] : betaB
+      const { midBeta, relativeP, relativeMoment } = intervalError(betaA, betaB, betaBKey, pSpan, mSpan)
       if (relativeP > maxRelativeP) maxRelativeP = relativeP
       if (relativeMoment > maxRelativeMoment) {
         maxRelativeMoment = relativeMoment
@@ -1163,11 +1396,14 @@ export const buildPreviewSurfaceFromPrepared = (
   const My = points.map((point) => point.My)
   const withinTolerance = Math.max(maxRelativeP, maxRelativeMoment) <= tolerance
 
-  if (refinement.tolerance !== undefined && !withinTolerance) {
+  if (refinement.type === 'adaptive' && !withinTolerance) {
     warnings.push(
       `Direction sampling did not reach the requested tolerance ${tolerance.toExponential(2)}; ` +
         `the estimate is ${Math.max(maxRelativeP, maxRelativeMoment).toExponential(2)} over ${rows.size} directions.`
     )
+  }
+  if (duplicateStationWarning && analysisOptions.stations.basedOn === 'custom') {
+    warnings.push('Two or more reporting stations collapse to the same effective material-limit state.')
   }
 
   return {
@@ -1178,10 +1414,14 @@ export const buildPreviewSurfaceFromPrepared = (
       My: [Math.min(...My), Math.max(...My)]
     },
     mesh: meshReport,
+    stations,
+    directions: sortedBetas(),
+    analysisOptions: cloneAnalysisOptions(analysisOptions),
     strainDomain: IMPLEMENTED_STRAIN_DOMAIN,
     directionError: {
       directions: rows.size,
       probedStations: probeStations,
+      probedStationIds: probeStations.map((station) => stations[station].id),
       maxRelativeP,
       maxRelativeMoment,
       worstBeta,
@@ -1206,9 +1446,9 @@ export const buildPreviewSurface = (
   rebars: GeometryInputRebarView[],
   materialStore: MaterialStore,
   meshOptions: ConcreteMeshOptions = {},
-  refinement: SurfaceRefinementOptions = {}
+  analysisOptions: AnalysisOptions = createDefaultAnalysisOptions()
 ): PreviewSurface =>
-  buildPreviewSurfaceFromPrepared(prepareAnalysis(section, rebars, materialStore, meshOptions), refinement)
+  buildPreviewSurfaceFromPrepared(prepareAnalysis(section, rebars, materialStore, meshOptions), analysisOptions)
 
 export const sliceFixedPContour = (points: PreviewSurfacePoint[], fixedP: number): PreviewContourPoint[] => {
   const momentScale = Math.max(...points.map((point) => Math.hypot(point.Mx, point.My)), 1)
@@ -1231,10 +1471,16 @@ export const sliceFixedPContour = (points: PreviewSurfacePoint[], fixedP: number
  * Intersect the preview surface with the vertical demand plane
  * `Mx*sin(theta) - My*cos(theta) = 0`, then project each intersection point to `P-Mtheta`.
  *
- * The preview surface is still the coarse beta/station grid, but this is a geometric section of
- * that surface. It does not assume the sampled strain-plane angle equals the moment direction.
+ * Each triangle contributes a segment. The segments are stitched by their shared surface-edge or
+ * surface-vertex identity, not by sorting the resulting point cloud by `P`. This preserves loops,
+ * non-monotone branches and multiple connected components. Pure-compression/pure-tension vertices
+ * are welded by station because every beta row contains a duplicate copy of the same pole.
+ *
+ * The preview surface is still the coarse beta/station grid. This is a geometric section of that
+ * surface; it does not assume the sampled strain-plane angle equals the moment direction.
  */
-export const sliceMomentPlane = (points: PreviewSurfacePoint[], theta: number): PreviewMomentPlanePoint[] => {
+export const sliceMomentPlane = (points: PreviewSurfacePoint[], theta: number): PreviewMomentPlanePath[] => {
+  if (points.length === 0) return []
   const c = Math.cos(theta)
   const s = Math.sin(theta)
   const momentScale = Math.max(...points.map((point) => Math.hypot(point.Mx, point.My)), 1)
@@ -1242,25 +1488,194 @@ export const sliceMomentPlane = (points: PreviewSurfacePoint[], theta: number): 
   const momentTol = momentScale * PREVIEW_GEOMETRY_TOL
   const forceTol = forceScale * PREVIEW_GEOMETRY_TOL
   const planeDistance = (point: PreviewSurfacePoint) => point.Mx * s - point.My * c
-  const path: PreviewMomentPlanePoint[] = []
+  // Classification must be tighter than display/point matching. With the 1e-9 matching tolerance,
+  // a nearly collapsed station next to a pole can make all three vertices of a small cap triangle
+  // appear coplanar and create a false branch in the intersection graph.
+  const planeTol = momentScale * 1e-12
+  const vertexIndex = new WeakMap<PreviewSurfacePoint, number>()
+  points.forEach((point, index) => vertexIndex.set(point, index))
+  const maxStation = Math.max(...points.map((point) => point.station))
 
-  for (const triangle of previewSurfaceTriangles(points)) {
-    const intersections = trianglePlaneIntersections(triangle, planeDistance, momentTol)
-    for (const point of intersections) {
-      appendUniquePoint(
-        path,
-        {
-          ...point,
-          beta: theta,
-          M: point.Mx * c + point.My * s
-        },
-        momentTol,
-        forceTol
-      )
+  type GraphNode = { point: PreviewMomentPlanePoint; neighbours: Set<string> }
+  const graph = new Map<string, GraphNode>()
+  const graphEdges = new Set<string>()
+
+  const vertexKey = (point: PreviewSurfacePoint) =>
+    point.station === 0 || point.station === maxStation
+      ? `pole:${point.station}`
+      : `vertex:${vertexIndex.get(point)!}`
+
+  const projected = (point: PreviewContourPoint): PreviewMomentPlanePoint => ({
+    ...point,
+    beta: theta,
+    M: point.Mx * c + point.My * s
+  })
+
+  const mergeNode = (key: string, point: PreviewMomentPlanePoint) => {
+    const existing = graph.get(key)
+    if (existing) {
+      if (point.onSampledDirection) existing.point.onSampledDirection = true
+      return
     }
+    graph.set(key, { point, neighbours: new Set() })
   }
 
-  return path.sort((a, b) => b.P - a.P || a.M - b.M)
+  const canonicalNode = (candidate: { key: string; point: PreviewMomentPlanePoint }) => {
+    for (const [key, node] of graph) {
+      if (
+        Math.abs(node.point.P - candidate.point.P) <= forceTol &&
+        Math.abs(node.point.Mx - candidate.point.Mx) <= momentTol &&
+        Math.abs(node.point.My - candidate.point.My) <= momentTol
+      ) {
+        if (candidate.point.onSampledDirection) node.point.onSampledDirection = true
+        return { key, point: node.point }
+      }
+    }
+    mergeNode(candidate.key, candidate.point)
+    return candidate
+  }
+
+  const addGraphEdge = (
+    a: { key: string; point: PreviewMomentPlanePoint },
+    b: { key: string; point: PreviewMomentPlanePoint }
+  ) => {
+    const canonicalA = canonicalNode(a)
+    const canonicalB = canonicalNode(b)
+    if (
+      canonicalA.key === canonicalB.key ||
+      (Math.abs(canonicalA.point.P - canonicalB.point.P) <= forceTol &&
+        Math.abs(canonicalA.point.Mx - canonicalB.point.Mx) <= momentTol &&
+        Math.abs(canonicalA.point.My - canonicalB.point.My) <= momentTol)
+    ) {
+      return
+    }
+    const edgeKey =
+      canonicalA.key < canonicalB.key
+        ? `${canonicalA.key}|${canonicalB.key}`
+        : `${canonicalB.key}|${canonicalA.key}`
+    if (graphEdges.has(edgeKey)) return
+    graphEdges.add(edgeKey)
+    graph.get(canonicalA.key)!.neighbours.add(canonicalB.key)
+    graph.get(canonicalB.key)!.neighbours.add(canonicalA.key)
+  }
+
+  for (const triangle of previewSurfaceTriangles(points)) {
+    const intersections = new Map<string, PreviewMomentPlanePoint>()
+    const addVertex = (point: PreviewSurfacePoint) =>
+      intersections.set(vertexKey(point), projected({ ...point, onSampledDirection: true }))
+    const edges: Array<[PreviewSurfacePoint, PreviewSurfacePoint, boolean]> = [
+      [triangle.vertices[0], triangle.vertices[1], triangle.sameDirectionEdge[0]],
+      [triangle.vertices[1], triangle.vertices[2], triangle.sameDirectionEdge[1]],
+      [triangle.vertices[2], triangle.vertices[0], triangle.sameDirectionEdge[2]]
+    ]
+
+    for (const [a, b, sameDirection] of edges) {
+      const da = planeDistance(a)
+      const db = planeDistance(b)
+      const aOn = Math.abs(da) <= planeTol
+      const bOn = Math.abs(db) <= planeTol
+      if (aOn) addVertex(a)
+      if (bOn) addVertex(b)
+      if (aOn || bOn || da * db > 0) continue
+
+      const aIndex = vertexIndex.get(a)!
+      const bIndex = vertexIndex.get(b)!
+      const edgeKey =
+        aIndex < bIndex ? `edge:${aIndex}:${bIndex}` : `edge:${bIndex}:${aIndex}`
+      const t = da / (da - db)
+      intersections.set(
+        edgeKey,
+        projected({ ...lerpPoint(a, b, t), onSampledDirection: sameDirection })
+      )
+    }
+
+    const nodes = [...intersections.entries()].map(([key, point]) => ({ key, point }))
+    if (nodes.length === 2) {
+      addGraphEdge(nodes[0], nodes[1])
+      continue
+    }
+    if (nodes.length < 2) continue
+
+    // A facet that is numerically coplanar has no unique one-dimensional intersection. Preserve a
+    // deterministic boundary segment without inventing a P-sorted chord; this branch is only a
+    // degeneracy fallback because `planeTol` is deliberately tight.
+    let farthest: [typeof nodes[number], typeof nodes[number]] = [nodes[0], nodes[1]]
+    let farthestDistance = -1
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const dP = (nodes[i].point.P - nodes[j].point.P) / forceScale
+        const dM = (nodes[i].point.M - nodes[j].point.M) / momentScale
+        const distance = dP * dP + dM * dM
+        if (distance > farthestDistance) {
+          farthestDistance = distance
+          farthest = [nodes[i], nodes[j]]
+        }
+      }
+    }
+    addGraphEdge(...farthest)
+  }
+
+  const unusedEdges = new Set(graphEdges)
+  const edgeKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`)
+  const paths: PreviewMomentPlanePath[] = []
+
+  while (unusedEdges.size > 0) {
+    const seed = unusedEdges.values().next().value as string
+    const [seedA, seedB] = seed.split('|')
+    const seedComponent = new Set<string>([seedA, seedB])
+    const queue = [seedA, seedB]
+    while (queue.length > 0) {
+      const node = queue.pop()!
+      for (const neighbour of graph.get(node)?.neighbours ?? []) {
+        if (seedComponent.has(neighbour)) continue
+        seedComponent.add(neighbour)
+        queue.push(neighbour)
+      }
+    }
+
+    // An open component starts at an odd/non-manifold vertex so the diagnostic stays visible.
+    // A regular loop starts deterministically at its highest-P, then lowest-M point.
+    const irregular = [...seedComponent].filter((key) => graph.get(key)!.neighbours.size !== 2)
+    const start =
+      irregular.sort()[0] ??
+      [...seedComponent].sort((a, b) => {
+        const pa = graph.get(a)!.point
+        const pb = graph.get(b)!.point
+        return pb.P - pa.P || pa.M - pb.M || a.localeCompare(b)
+      })[0]
+
+    const orderedKeys = [start]
+    let previous: string | null = null
+    let current = start
+    while (true) {
+      const candidates = [...graph.get(current)!.neighbours]
+        .filter((next) => unusedEdges.has(edgeKey(current, next)))
+        .sort()
+      const next = candidates.find((candidate) => candidate !== previous) ?? candidates[0]
+      if (!next) break
+      unusedEdges.delete(edgeKey(current, next))
+      orderedKeys.push(next)
+      previous = current
+      current = next
+      if (current === start) break
+    }
+
+    const closed = orderedKeys.length > 2 && orderedKeys[orderedKeys.length - 1] === start
+    paths.push({
+      points: orderedKeys.map((key) => graph.get(key)!.point),
+      closed
+    })
+  }
+
+  // Largest section loop first; multiple loops remain separate and are never connected by Plotly.
+  const area = (path: PreviewMomentPlanePath) => {
+    let twice = 0
+    for (let i = 0; i < path.points.length - 1; i++) {
+      twice += path.points[i].M * path.points[i + 1].P - path.points[i + 1].M * path.points[i].P
+    }
+    return Math.abs(twice) / 2
+  }
+  return paths.sort((a, b) => area(b) - area(a))
 }
 
 const cross2 = (a: Pick<Resultant, 'Mx' | 'My'>, b: Pick<Resultant, 'Mx' | 'My'>) => a.Mx * b.My - a.My * b.Mx

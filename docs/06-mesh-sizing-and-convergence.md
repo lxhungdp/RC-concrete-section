@@ -139,7 +139,12 @@ strain angle is under-tested.
 engine evaluates the true state halfway between two sampled directions and compares it with the
 chord the triangulation uses there. It is a sampled estimate over four probe stations, not a bound
 (§11); measured against a full 19-station sweep it recovered at worst 92% and on average 97% of the
-true worst, for about 21% of a surface build. Pass `probeStations: []` to switch it off.
+true worst, for about 21% of a surface build.
+
+Those four probes are the verified default profile only and are persisted by stable station ID.
+After a user changes the schedule, the UI initializes adaptive refinement with `probe: "all"` so a
+legacy index set cannot silently stand in for the new path. An explicit empty ID list disables the
+estimate and returns `NaN`, never a misleading zero.
 
 At the default fixed grid of 24 directions:
 

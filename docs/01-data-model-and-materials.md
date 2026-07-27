@@ -1,7 +1,7 @@
 # 01 — Domain Model, Materials, and Design-Code Boundary
 
 This file defines the **normalized analysis** engineering contract. It is not the current persisted
-editor DTO. Project schema v2 stores `GeometryInput.outers[]`; the adapter required by
+editor DTO. Project schema v3 stores `GeometryInput.outers[]`; the adapter required by
 [`development/02-data-contracts-persistence-and-versioning.md`](development/02-data-contracts-persistence-and-versioning.md)
 maps that definition to the validated model below. Runtime data shall be serializable at the
 definition boundary, validated, immutable after normalization, and independent of UI state.

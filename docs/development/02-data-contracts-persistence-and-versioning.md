@@ -15,19 +15,20 @@ Keep these types separate even when their fields initially look similar:
 
 Do not cast between layers. Use named adapters that can return typed issues.
 
-## 2. Current project schema v2
+## 2. Current project schema v3
 
 The implemented project contract is:
 
 ```ts
 type PmProjectDocument = {
   schema: 'pm-column-project'
-  version: 2
+  version: 3
   meta: { id: number; name: string; createdAt: string; updatedAt: string }
   inputs: {
     geometry: GeometryInput
     materials: MaterialStore
     loadings: LoadingsInput
+    analysis: AnalysisOptions
   }
 }
 ```
@@ -37,21 +38,65 @@ camera, visibility, locks, selections, and compiled material functions are inten
 
 Current `GeometryInput` stores multiple `outers`, holes, and outer-owned rebars. Current
 `MaterialStore` stores one concrete definition and multiple steel definitions. Current
-`LoadingsInput` stores combinations. These are facts about v2, not universal future engineering
-limits.
+`LoadingsInput` stores combinations. `AnalysisOptions` stores the authoritative reporting-station
+schedule, direction seed, and deterministic refinement policy.
+
+Version 3 is intentionally strict: `inputs.analysis` is required and old files are rejected rather
+than silently assigned a sampling profile. This project is pre-release, so no historical migration
+is maintained. Export writes the exact canonical configuration shown by the UI. Draft edits inside
+the Results Options dialog are not canonical and are neither persisted nor calculated until the
+user selects **Apply & recalculate**.
+
+The persisted sampling DTO is data-only:
+
+```ts
+type AnalysisOptions = {
+  optionsVersion: 1
+  methodId: 'strain-domain-surface-v1'
+  stations: {
+    basedOn: 'legacy-p0-p18-v1' | 'custom'
+    intermediate: Array<{
+      id: number
+      label: string
+      criterion:
+        | { type: 'c-over-c1'; ratio: number }
+        | { type: 'steel-stress-ratio'; ratio: number }
+        | { type: 'steel-strain'; strain: number }
+    }>
+  }
+  directions: {
+    seed:
+      | { type: 'uniform'; count: number; startDeg: number }
+      | { type: 'explicit'; anglesDeg: number[] }
+    refinement:
+      | { type: 'fixed'; probe: 'all' | { stationIds: number[] } }
+      | {
+          type: 'adaptive'
+          tolerance: number
+          maxPasses: number
+          maxDirections: number
+          probe: 'all' | { stationIds: number[] }
+        }
+  }
+}
+```
+
+`@pm/project` owns serialization, structural limits, uniqueness, ordering, and cross-reference
+validation. It does not derive strain planes. `@pm/analysis` resolves the two poles, controlling
+steel grade, nonlinear `fₛ/fyd` inverse, monotonicity, midpoint refinement, and actual result grid.
 
 ## 3. Required project evolution
 
-The next analysis-ready additive contract needs, at minimum:
+Remaining analysis-ready additions need, at minimum:
 
 - design basis/profile identity and method;
-- analysis mode and expanded option profile reference;
+- analysis mode and design-profile identity beyond the implemented surface sampling options;
 - loading action basis and reference frame;
 - optional project presentation preferences that do not affect results.
 
-If these can be introduced as optional fields with deterministic defaults that preserve old
-meaning, they may be an additive v2 extension. If units, material assignment, geometry meaning, or
-existing field semantics change, bump the project version and supply an explicit migration.
+Once the format is released, additive defaults must preserve old meaning and semantic changes must
+bump the project version with an explicit migration. The current pre-release v3 parser deliberately
+implements no v2 compatibility path.
 
 Results are not inserted into `inputs`. Save them as versioned result artifacts referencing the
 project input hash. The project may keep a list of result artifact references, but an old result
@@ -130,7 +175,7 @@ No standard/model switch has a default fallback. An unknown discriminant is a ty
 evaluators expose stress, tangent, breakpoints, admissibility, and contribution components required
 by the selected analysis mode.
 
-Current v2 project JSON must preserve the complete material store:
+Current v3 project JSON must preserve the complete material store:
 
 - `strainSign`, concrete definition, steel definitions, and `defaults.steelMaterialId`;
 - concrete `standard`, `fck`, `mc`, optional `elasticModulus`, complete `stressStrain`, `limits`,

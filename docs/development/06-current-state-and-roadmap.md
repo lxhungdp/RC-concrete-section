@@ -98,7 +98,7 @@ certification.
 
 ### P2 - scale-up risks
 
-1. Current v2 stores one concrete material while geometry can store multiple regions.
+1. Current v3 stores one concrete material while geometry can store multiple regions.
 2. Current loadings support combinations but not source load-case provenance.
 3. No content hash/stale-state graph exists for downstream Results/Report.
 4. ~~No worker protocol or cancellation.~~ **Partly closed** — the protocol is typed and versionable,
@@ -113,7 +113,7 @@ certification.
 - the current UI flow is Geometry -> Materials -> Results -> Report;
 - the current input packages are retained and hardened rather than bypassed;
 - multiple geometry regions are a persisted/editor capability but are analysis capability-gated;
-- project v2 units are fixed by schema, while external adapters must declare source units;
+- project v3 units are fixed by schema, while external adapters must declare source units;
 - material family labels are not complete design-code profiles;
 - loadcases distinguish action basis and eventually source cases from combinations;
 - Results are immutable artifacts with preview/current/stale/accepted states;

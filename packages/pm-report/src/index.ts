@@ -2,11 +2,11 @@
  * Excel export of the nominal section calculation, laid out after
  * `docs/example case/PM-advanced (7) 2D.xlsx`.
  *
- * Contract: the only numbers written as constants are the ones the engine owns — the clipped-cell
- * mesh (`No | X | Y | A`), the bar schedule, the polygon vertices, and the material/demand inputs.
- * Every strain, stress, force, moment, station parameter and interaction point is a live Excel
- * formula, so changing `fck`, material factors, design `fy`, `beta` or `Pu` in the workbook
- * recalculates the whole thing.
+ * Contract: constants are limited to input data and values the engine must own — clipped-cell mesh,
+ * resolved nonlinear material inverses, configured/refined strain planes, and their integrated
+ * resultants. The detailed beta ledger, contour, ray query, plane cut, equilibrium residual, and
+ * every algebraically representable material response remain formulas. Engine constants are shaded
+ * and identified in the provenance table rather than disguised as live spreadsheet mechanics.
  *
  * Two angles are kept strictly apart (`docs/engineering/02`):
  *   `beta`    strain-plane sampling angle that generates the boundary states;
@@ -17,10 +17,10 @@
  *   Input         materials, reference origin, demand, named ranges
  *   Geometry      rings and bars about the analysis origin, area/centroid by shoelace formula
  *   Mesh          quadrature points from the engine — the only geometric constants
- *   Concrete      per-fibre strain + stress for all 19 stations, full ledger for a selected one
- *   Steel         per-bar strain, stress, displaced concrete and moments for all 19 stations
- *   PM_Angle      19-station strain-domain row at beta, concrete/steel split
- *   MxMy_FixedP   24 directions at P = Pu, the Mx-My contour and the demand-ray query
+ *   Concrete      per-fibre strain + stress for the configured stations, selected-station ledger
+ *   Steel         per-bar strain, stress, displaced concrete and moments for every station
+ *   PM_Angle      configured strain-domain row at beta, concrete/steel split
+ *   MxMy_FixedP   configured/refined directions at P = Pu, contour and demand-ray query
  *   PM_Theta      vertical P-Mtheta section of the surface through the demand direction
  */
 import {
@@ -30,14 +30,15 @@ import {
   type SectionGeometry
 } from '@pm/geometry'
 import type { ConcreteMaterial, MaterialStore, SteelMaterial } from '@pm/materials'
-import type { LoadCombination } from '@pm/project'
 import {
-  PREVIEW_STATIONS,
+  cloneAnalysisOptions,
+  type AnalysisOptions,
+  type LoadCombination
+} from '@pm/project'
+import {
   buildPreviewSurfaceFromPrepared,
-  evaluatePreparedState,
   intersectFixedPContourWithMomentRay,
   prepareAnalysisFromMesh,
-  previewStationState,
   sliceFixedPContour,
   stationDefinitionLabel,
   type StationDefinition,
@@ -50,8 +51,9 @@ export type ExcelExportInput = {
   section: SectionGeometry
   rebars: GeometryInputRebarView[]
   materialStore: MaterialStore
+  analysisOptions: AnalysisOptions
   /**
-   * Strain-plane sampling angle for the detailed 19-station sheets, degrees. This is the neutral
+   * Strain-plane sampling angle for the detailed station sheets, degrees. This is the neutral
    * axis orientation of the state being audited, not the demand moment direction.
    */
   betaDeg: number
@@ -71,7 +73,6 @@ export type ExcelExportInput = {
 export class ExcelExportError extends Error {}
 
 const DEFAULT_MAX_MESH_POINTS = 1500
-const DIRECTION_COUNT = 24
 
 /**
  * Excel silently drops a defined name it considers a reference and then removes every formula that
@@ -303,7 +304,7 @@ const exportMesh = (section: SectionGeometry, maxPoints: number) => {
 const stationSchedule = (station: StationDefinition) => ({
   cOverC1: station.kind === 'neutral-axis-ratio' ? station.cOverC1 : null,
   fsRatio:
-    station.kind === 'steel-yield-ratio'
+    station.kind === 'steel-stress-ratio'
       ? station.ratio
       : station.kind === 'steel-strain' && Math.abs(station.strain) < 1e-12
         ? 0
@@ -383,23 +384,34 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     area: point.area
   }))
 
-  // Engine values for the verification columns, on the very mesh being exported.
-  const engineStations = PREVIEW_STATIONS.map((_, stationIndex) => {
-    const state = previewStationState(section, rebars, beta, stationIndex, params.epsCu, epsY, origin)
-    const ledger = evaluatePreparedState(prepared, state)
-    return { state, ledger }
-  })
-
   // The engine slices a triangulated surface; the workbook can only slice the sampled grid it
   // carries. Both are valid readings of the same samples, so the workbook reports the engine value
   // alongside its own and shows the spread instead of pretending they are identical.
   const demandP = input.loadcase ? input.loadcase.P : input.fixedP
   const thetaLoad = input.loadcase ? Math.atan2(input.loadcase.My, input.loadcase.Mx) : 0
-  const engineSurface = buildPreviewSurfaceFromPrepared(prepared)
-  // Indexed 24 x 19 grid of the engine surface, keyed the same way MxMy_FixedP lays it out.
+  const engineSurface = buildPreviewSurfaceFromPrepared(prepared, input.analysisOptions)
+  const stationLabels = engineSurface.stations.map((station) => station.label)
+  const stationDefinitions = engineSurface.stations.map((station) => station.definition)
+  const directionBetas = engineSurface.directions
+  const directionCount = directionBetas.length
+  const betaDegNormalized = ((input.betaDeg % 360) + 360) % 360
+  const auditOptions = cloneAnalysisOptions(input.analysisOptions)
+  const auditAngles = [0, 90, 180, 270]
+    .map((offset) => (betaDegNormalized + offset) % 360)
+    .sort((a, b) => a - b)
+  auditOptions.directions.seed = { type: 'explicit', anglesDeg: auditAngles }
+  auditOptions.directions.refinement = { type: 'fixed', probe: { stationIds: [] } }
+  const auditSurface = buildPreviewSurfaceFromPrepared(prepared, auditOptions)
+  const auditBeta = (betaDegNormalized * Math.PI) / 180
+  const engineStations = auditSurface.points
+    .filter((point) => Math.abs(point.beta - auditBeta) <= 1e-12)
+    .sort((a, b) => a.station - b.station)
+    .map((point) => ({ state: point.state, ledger: point.ledger }))
+
+  // Indexed direction x station grid of the engine surface, keyed the same way MxMy_FixedP lays it out.
   const surfaceAt = new Map<string, { P: number; Mx: number; My: number; e0: number; kx: number; ky: number }>()
   for (const point of engineSurface.points) {
-    const direction = Math.round((point.beta * 180) / Math.PI / (360 / DIRECTION_COUNT)) % DIRECTION_COUNT
+    const direction = directionBetas.findIndex((beta) => Math.abs(beta - point.beta) <= 1e-12)
     surfaceAt.set(`${direction}:${point.station}`, {
       P: point.P,
       Mx: point.Mx,
@@ -412,7 +424,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   // Per-direction support extremes, computed here so the sheet needs no array formula for them.
   const outerXY = outerVertices.map((v) => ({ x: v.x, y: v.y }))
   const directionSupport = (angleIndex: number) => {
-    const beta = (angleIndex * 2 * Math.PI) / DIRECTION_COUNT
+    const beta = directionBetas[angleIndex % directionCount]
     const c = Math.cos(beta)
     const sn = Math.sin(beta)
     const uMax = Math.max(...outerXY.map((v) => v.y * c + v.x * sn))
@@ -423,7 +435,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const engineBoundary = intersectFixedPContourWithMomentRay(engineContour, thetaLoad)
   const engineMb = engineBoundary ? engineBoundary.M / 1e6 : null
 
-  const stationCount = PREVIEW_STATIONS.length
+  const stationCount = stationDefinitions.length
 
   // ==========================================================================
   // Input
@@ -507,7 +519,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     { row: row++, label: 'fy (characteristic)', value: steel.fy, unit: 'MPa', name: 'fy_char' },
     { row: row++, label: 'γs', value: steelGammaS, unit: '-', name: 'gamma_s', note: steel.factors?.gammaS === undefined ? 'not applied by this material family' : 'material partial factor' },
     { row: row++, label: 'fy (model) / fyd', value: fyModel, unit: 'MPa', name: 'fy', note: 'yield stress used by formulas', formula: appliesSteelGamma ? 'fy_char/gamma_s' : 'fy_char' },
-    { row: row++, label: 'εy = fy/Es', value: epsY, unit: '-', note: 'used by the fs/fy stations', formula: 'fy/Es' },
+    { row: row++, label: 'εy = fyd/Es', value: epsY, unit: '-', note: 'used by the fₛ/fyd stations', formula: 'fy/Es' },
     { row: row++, label: 'law', value: sLaw.description, unit: '', note: '' }
   ]
 
@@ -604,7 +616,11 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
         ? 'algebra over the named inputs, so fck and fy stay live'
         : 'a law given only as points is published on the Materials sheet and interpolated by formula'
     ],
-    ['Station strain planes (PM_Angle, MxMy_FixedP)', 'formula', 'pure algebra from u_max, C1, ecu and fy/Es'],
+    [
+      'Station strain planes',
+      'formula plus resolved material inverses at β; engine values on direction grid',
+      'PM_Angle exposes geometric schedule algebra; fₛ/fyd inversion and MxMy_FixedP states come from the compiled material engine'
+    ],
     ['Fibre and bar ledger (Concrete, Steel)', 'formula', 'the audit trail a reviewer follows term by term'],
     [
       'Station totals at β (PM_Angle)',
@@ -614,9 +630,9 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
         : 'a lookup law cannot be applied elementwise inside SUMPRODUCT'
     ],
     [
-      '24 x 19 surface integrals (MxMy_FixedP)',
+      `${directionCount} x ${stationCount} surface integrals (MxMy_FixedP)`,
       'engine value',
-      '1425 array formulas over the whole mesh would dominate size and recalculation; two sentinels flag a stale import'
+      `${directionCount * stationCount * 3} resultant values avoid mesh-wide array formulas; two sentinels flag a stale import`
     ],
     ['Contour, ray query, plane cut, interpolation', 'formula', 'this is the logic under audit, so it stays visible'],
     [
@@ -883,10 +899,10 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   defineName(`Mesh!$D$${meshFirst}:$D$${meshLast}`, 'Mesh_A')
 
   // ==========================================================================
-  // PM_Angle — station parameters and the 19-point envelope
+  // PM_Angle — station parameters and the configured envelope
   // ==========================================================================
   const pmSheet = workbook.addWorksheet('PM_Angle', { views: [{ state: 'frozen', ySplit: 7, xSplit: 2 }] })
-  title(pmSheet, 1, 'P–M ENVELOPE AT β (STRAIN-PLANE ANGLE) — 19 STATIONS, NOMINAL', 20)
+  title(pmSheet, 1, `P–M ENVELOPE AT β (STRAIN-PLANE ANGLE) — ${stationCount} STATIONS, NOMINAL`, 20)
   pmSheet.getCell('B2').value =
     `Strain-plane sampling angle β = ${input.betaDeg.toFixed(2)} deg. This is a resistance sampling row, ` +
     'not the demand-direction diagram — see PM_Theta for that. Shaded cells are the station schedule.'
@@ -903,7 +919,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     { label: 'Engine check', span: 2 }
   ]
   const pmHeaders = [
-    'Point', 'C/C1', 'fs/fy', 'εs',
+    'Point', 'C/C1', 'fₛ/fyd', 'εs',
     'u_ctrl (mm)', 'ε_ctrl', 'c (mm)', 'κ (1/mm)', 'ε₀', 'κx (1/mm)', 'κy (1/mm)',
     'P (kN)', 'Mx (kN·m)', 'My (kN·m)',
     'P (kN)', 'Mx (kN·m)', 'My (kN·m)',
@@ -947,11 +963,13 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const stationRow = (index: number) => PM_FIRST + index
   const kxCol = PM.kx
   const kyCol = PM.ky
+  const auditUBar = Math.min(...bars.map((bar) => bar.y * Math.cos(beta) + bar.x * Math.sin(beta)))
 
-  PREVIEW_STATIONS.forEach((station, index) => {
+  stationDefinitions.forEach((station, index) => {
     const r = stationRow(index)
     const schedule = stationSchedule(station)
     pmSheet.getCell(r, PM.point).value = `P${index}`
+    pmSheet.getCell(r, PM.point).note = stationLabels[index]
     pmSheet.getCell(r, PM.point).font = { bold: true }
     pmSheet.getCell(r, PM.cRatio).value = schedule.cOverC1
     pmSheet.getCell(r, PM.fsRatio).value = schedule.fsRatio
@@ -985,13 +1003,21 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       pmSheet.getCell(r, PM.uCtrl).value = {
         formula: station.kind === 'neutral-axis-ratio' ? `u_max-${col(PM.cRatio)}${r}*u_C1` : 'u_bar'
       }
-      pmSheet.getCell(r, PM.epsCtrl).value = {
-        formula:
-          station.kind === 'neutral-axis-ratio'
-            ? 'ROUND(0,0)'
-            : station.kind === 'steel-yield-ratio'
-              ? `-${col(PM.fsRatio)}${r}*fy/Es`
-              : `-${col(PM.epsS)}${r}`
+      if (station.kind === 'steel-stress-ratio') {
+        const state = engineStations[index].state
+        const resolved = state.e0 + Math.hypot(state.kx, state.ky) * auditUBar
+        pmSheet.getCell(r, PM.epsCtrl).value = resolved
+        pmSheet.getCell(r, PM.epsCtrl).fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: CONST_FILL }
+        }
+        pmSheet.getCell(r, PM.epsCtrl).note =
+          'Engine-resolved inverse of the controlling bar material law at the requested fₛ/fyd.'
+      } else {
+        pmSheet.getCell(r, PM.epsCtrl).value = {
+          formula: station.kind === 'neutral-axis-ratio' ? 'ROUND(0,0)' : `-${col(PM.epsS)}${r}`
+        }
       }
       pmSheet.getCell(r, PM.kappa).value = { formula: `(ecu-${epsCtrl})/(u_max-${uCtrl})` }
       pmSheet.getCell(r, PM.c).value = { formula: `ecu/${kappa}` }
@@ -1024,12 +1050,12 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   concSheet.getCell('A2').value = `ε = ε₀ + κx·Y + κy·X    |    fc = ${cLaw.description}`
   concSheet.getCell('A2').font = { italic: true, color: { argb: 'FF6B7280' } }
   concSheet.getCell('A3').value =
-    'Columns A-D mirror the Mesh sheet. Columns E-I expand the full force/moment ledger for the station chosen in cell C4, which is the fibre-level audit trail. The 19 station totals on PM_Angle integrate the same law over the same mesh without materialising 19 more column blocks, so the file stays small.'
+    `Columns A-D mirror the Mesh sheet. Columns E-I expand the full force/moment ledger for the station chosen in cell C4. The ${stationCount} station totals on PM_Angle integrate the same law over the same mesh without materialising ${stationCount} more column blocks.`
   concSheet.getCell('A3').alignment = { wrapText: true, vertical: 'top' }
   concSheet.mergeCells('A3:I3')
   concSheet.getRow(3).height = 28
-  concSheet.getCell('A4').value = 'Detail station (0…18)'
-  concSheet.getCell('C4').value = 5
+  concSheet.getCell('A4').value = `Detail station (0…${stationCount - 1})`
+  concSheet.getCell('C4').value = Math.min(5, stationCount - 1)
   concSheet.getCell('C4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INPUT_FILL } }
   concSheet.getCell('C4').font = { bold: true }
   concSheet.getCell('C4').alignment = { horizontal: 'center' }
@@ -1115,7 +1141,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   // Steel — per bar, every station
   // ==========================================================================
   const steelSheet = workbook.addWorksheet('Steel', { views: [{ state: 'frozen', ySplit: 6, xSplit: 5 }] })
-  steelSheet.getCell('A1').value = 'REINFORCEMENT — PER BAR, ALL 19 STATIONS'
+  steelSheet.getCell('A1').value = `REINFORCEMENT — PER BAR, ALL ${stationCount} STATIONS`
   steelSheet.getCell('A1').font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } }
   steelSheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TITLE_FILL } }
   steelSheet.mergeCells('A1:L1')
@@ -1138,7 +1164,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   })
   const steelBlockCol = (stationIndex: number) => 6 + stationIndex * 7
   const steelSubHeaders = ['εs', 'fs (MPa)', 'fc (MPa)', 'fs,eff (MPa)', 'Fs (N)', 'Msx (N·mm)', 'Msy (N·mm)']
-  PREVIEW_STATIONS.forEach((_, index) => {
+  stationDefinitions.forEach((_, index) => {
     const base = steelBlockCol(index)
     const group = steelSheet.getCell(STEEL_HEAD - 1, base)
     group.value = `P${index}`
@@ -1174,7 +1200,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     steelSheet.getCell(r, 5).value = { formula: `Geometry!F${geomRowForBar}` }
     for (const c of [2, 3, 4, 5]) steelSheet.getCell(r, c).numFmt = '#,##0.000'
 
-    PREVIEW_STATIONS.forEach((_, stationIndex) => {
+    stationDefinitions.forEach((_, stationIndex) => {
       const base = steelBlockCol(stationIndex)
       const sRow = stationRow(stationIndex)
       const eps = `${col(base)}${r}`
@@ -1197,7 +1223,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     })
   })
 
-  PREVIEW_STATIONS.forEach((_, stationIndex) => {
+  stationDefinitions.forEach((_, stationIndex) => {
     const base = steelBlockCol(stationIndex)
     for (const offset of [4, 5, 6]) {
       const c = base + offset
@@ -1253,7 +1279,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   // ==========================================================================
   // PM_Angle totals — integrate the Concrete/Steel sheets
   // ==========================================================================
-  PREVIEW_STATIONS.forEach((station, index) => {
+  stationDefinitions.forEach((station, index) => {
     const r = stationRow(index)
     const sRow = stationRow(index)
     const steelBase = steelBlockCol(index)
@@ -1327,7 +1353,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const mmSheet = workbook.addWorksheet('MxMy_FixedP', { views: [{ state: 'frozen', ySplit: 8, xSplit: 1 }] })
   title(mmSheet, 1, 'Mx–My INTERACTION CONTOUR AT P = Pu', 12)
   mmSheet.getCell('B2').value =
-    `Each of the ${DIRECTION_COUNT} directions repeats the 19-station schedule. The strain planes are formulas; the P, Mx, My mesh integrals are engine values (shaded grey) because 1425 array formulas over the whole mesh would dominate the file and cannot be written at all for a tabulated material law. Everything derived from them - contour, ray query, interpolation - is a formula.`
+    `Each of the ${directionCount} directions repeats the ${stationCount}-station schedule. The strain planes and P, Mx, My mesh integrals are engine values (shaded grey); contour, ray query and interpolation remain formulas.`
   mmSheet.getCell('B2').alignment = { wrapText: true, vertical: 'top' }
   mmSheet.mergeCells('B2:N3')
   mmSheet.getRow(2).height = 26
@@ -1335,10 +1361,10 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const MM_HEAD = 7
   const MM_FIRST = 8
   const MM_PARAM_COL = 2 // beta, u_max, u_bar, C1
-  const MM_PLANE_COL = MM_PARAM_COL + 4 // 19 x (eps0, kx, ky)
-  const MM_P_COL = MM_PLANE_COL + stationCount * 3 // 19 contiguous P
-  const MM_MX_COL = MM_P_COL + stationCount // 19 contiguous Mx
-  const MM_MY_COL = MM_MX_COL + stationCount // 19 contiguous My
+  const MM_PLANE_COL = MM_PARAM_COL + 4
+  const MM_P_COL = MM_PLANE_COL + stationCount * 3
+  const MM_MX_COL = MM_P_COL + stationCount
+  const MM_MY_COL = MM_MX_COL + stationCount
   const MM_RESULT_COL = MM_MY_COL + stationCount // k, t, Mx, My, |M|
 
   const mmHeaderCell = (rowIndex: number, colIndex: number, text: string, fill = HEADER_FILL) => {
@@ -1363,7 +1389,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   mmGroup(MM_PARAM_COL, 4, 'Direction')
   const mmParamHeaders = ['β (deg)', 'u_max (mm)', 'u_bar (mm)', 'C1 (mm)']
   mmParamHeaders.forEach((text, index) => mmHeaderCell(MM_HEAD, MM_PARAM_COL + index, text))
-  PREVIEW_STATIONS.forEach((_, index) => {
+  stationDefinitions.forEach((_, index) => {
     const base = MM_PLANE_COL + index * 3
     mmGroup(base, 3, `P${index} plane`)
     const planeHeaders = ['ε₀', 'κx', 'κy']
@@ -1382,18 +1408,23 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   mmSheet.getColumn(1).width = 6
 
   // One extra wrap direction (beta + 360) closes every ring, so edge ranges stay contiguous.
-  for (let angleIndex = 0; angleIndex <= DIRECTION_COUNT; angleIndex++) {
+  for (let angleIndex = 0; angleIndex <= directionCount; angleIndex++) {
     const r = MM_FIRST + angleIndex
     mmSheet.getCell(r, 1).value = angleIndex + 1
     const betaCell = `$${col(MM_PARAM_COL)}${r}`
-    mmSheet.getCell(r, MM_PARAM_COL).value = (angleIndex * 360) / DIRECTION_COUNT
-    mmSheet.getCell(r, MM_PARAM_COL).numFmt = '0'
+    const directionIndex = angleIndex % directionCount
+    const directionDeg =
+      angleIndex === directionCount
+        ? (directionBetas[0] * 180) / Math.PI + 360
+        : (directionBetas[directionIndex] * 180) / Math.PI
+    mmSheet.getCell(r, MM_PARAM_COL).value = directionDeg
+    mmSheet.getCell(r, MM_PARAM_COL).numFmt = '0.########'
     mmSheet.getCell(r, MM_PARAM_COL).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INPUT_FILL } }
 
     // Support extremes and strain planes are engine values: computing them per direction with a
     // formula needs MAX/MIN over an array expression, which real Excel will not evaluate in a
     // plain cell. Nothing downstream reads these as formulas, so they are recorded for the audit.
-    const support = directionSupport(angleIndex % DIRECTION_COUNT)
+    const support = directionSupport(directionIndex)
     mmSheet.getCell(r, MM_PARAM_COL + 1).value = support.uMax
     mmSheet.getCell(r, MM_PARAM_COL + 2).value = support.uBar
     mmSheet.getCell(r, MM_PARAM_COL + 3).value = support.c1
@@ -1402,15 +1433,14 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       mmSheet.getCell(r, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CONST_FILL } }
     }
 
-    PREVIEW_STATIONS.forEach((_station, stationIndex) => {
+    stationDefinitions.forEach((_station, stationIndex) => {
       const base = MM_PLANE_COL + stationIndex * 3
-      const sample = surfaceAt.get(`${angleIndex % DIRECTION_COUNT}:${stationIndex}`)
+      const sample = surfaceAt.get(`${directionIndex}:${stationIndex}`)
       mmSheet.getCell(r, base).value = sample?.e0 ?? 0
       mmSheet.getCell(r, base + 1).value = sample?.kx ?? 0
       mmSheet.getCell(r, base + 2).value = sample?.ky ?? 0
-      // 24 x 19 mesh integrals are the expensive part: 1425 array formulas over the whole mesh
-      // would dominate both file size and recalculation, and a tabulated law cannot express them
-      // at all. They arrive as engine values; everything derived from them below stays a formula.
+      // The direction-by-station mesh integrals arrive as engine values; everything derived from
+      // them below remains a formula.
       mmSheet.getCell(r, MM_P_COL + stationIndex).value = (sample?.P ?? 0) / 1e3
       mmSheet.getCell(r, MM_MX_COL + stationIndex).value = (sample?.Mx ?? 0) / 1e6
       mmSheet.getCell(r, MM_MY_COL + stationIndex).value = (sample?.My ?? 0) / 1e6
@@ -1453,7 +1483,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     }
   }
 
-  const MM_LAST = MM_FIRST + DIRECTION_COUNT // inclusive of the wrap row
+  const MM_LAST = MM_FIRST + directionCount // inclusive of the wrap row
   const MM_EDGE_LAST = MM_LAST - 1
   mmSheet.getCell(MM_LAST, 1).value = 'wrap'
   mmSheet.getCell(MM_LAST, MM_PARAM_COL).note = 'Same direction as the first row, repeated so ring ranges are contiguous.'
@@ -1466,7 +1496,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
 
   const cTheta = 'COS(RADIANS(theta_L))'
   const sTheta = 'SIN(RADIANS(theta_L))'
-  for (let angleIndex = 0; angleIndex < DIRECTION_COUNT; angleIndex++) {
+  for (let angleIndex = 0; angleIndex < directionCount; angleIndex++) {
     const r = MM_FIRST + angleIndex
     const ax = `${col(MM_RESULT_COL + 2)}${r}`
     const ay = `${col(MM_RESULT_COL + 3)}${r}`
@@ -1629,7 +1659,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const ring = (colIndex: number) => `MxMy_FixedP!$${col(colIndex)}$${MM_FIRST}:$${col(colIndex)}$${MM_EDGE_LAST}`
   const ringNext = (colIndex: number) => `MxMy_FixedP!$${col(colIndex)}$${MM_FIRST + 1}:$${col(colIndex)}$${MM_LAST}`
 
-  PREVIEW_STATIONS.forEach((station, index) => {
+  stationDefinitions.forEach((station, index) => {
     const r = PT_FIRST + index
     const Xa = ring(MM_MX_COL + index)
     const Xb = ringNext(MM_MX_COL + index)
@@ -1651,13 +1681,13 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
 
     ptSheet.getCell(r, 2).value = `P${index}`
     ptSheet.getCell(r, 2).font = { bold: true }
-    ptSheet.getCell(r, 3).value = stationDefinitionLabel(station)
+    ptSheet.getCell(r, 3).value = stationLabels[index] || stationDefinitionLabel(station)
     ptSheet.getCell(r, 3).font = { size: 9, color: { argb: 'FF6B7280' } }
     // A pole ring carries no moment in any direction, so the plane contains it entirely. Its
-    // largest radius over the 24 directions is written as an engine value in column K; the pole
+    // largest radius over all configured directions is written as an engine value in column K; the pole
     // test is then a scalar comparison against Mtol (no MAX(SQRT(array)), which Excel rejects).
     const ringRmax = Math.max(
-      ...Array.from({ length: DIRECTION_COUNT }, (_unused, direction) => {
+      ...Array.from({ length: directionCount }, (_unused, direction) => {
         const sample = surfaceAt.get(`${direction}:${index}`)
         return sample ? Math.hypot(sample.Mx, sample.My) / 1e6 : 0
       })
@@ -1720,7 +1750,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     ],
     [
       'verdict',
-      `IF(NOT(ISNUMBER(C${mbRow + 3})),"n/a",IF(C${mbRow + 3}<=0.5,"ok - within the sampling spread of a 24-direction grid","CHECK - routes disagree beyond the sampling spread"))`,
+      `IF(NOT(ISNUMBER(C${mbRow + 3})),"n/a",IF(C${mbRow + 3}<=0.5,"ok - within the configured direction-grid spread","CHECK - routes disagree beyond the sampling spread"))`,
       '@'
     ],
     ['Mu / Mb  (fixed-axial moment ratio)', `IF(C${mbRow}<=0,"n/a",Mu/C${mbRow})`, '0.0000']
@@ -1734,7 +1764,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     cell.font = { bold: index >= ptRows.length - 2 }
   })
   ptSheet.getCell(ptDemand + ptRows.length + 2, 2).value =
-    'Three independent readings of the same 24x19 samples: the plane cut of the station rings, the ray on the P = Pu contour, and the engine triangle mesh. Their spread is the direction-sampling error, not a formula error.'
+    `Three independent readings of the same ${directionCount}x${stationCount} samples: the plane cut of the station rings, the ray on the P = Pu contour, and the engine triangle mesh. Their spread is direction-sampling error, not formula error.`
   ptSheet.getCell(ptDemand + ptRows.length + 2, 2).font = { italic: true, color: { argb: 'FF6B7280' } }
   ptSheet.mergeCells(ptDemand + ptRows.length + 2, 2, ptDemand + ptRows.length + 2, 10)
 
