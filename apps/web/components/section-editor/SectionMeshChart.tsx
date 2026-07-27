@@ -9,6 +9,7 @@ import {
 } from '../../lib/section-mesh-view'
 
 type Props = {
+  theme: 'light' | 'dark'
   mesh: SectionMeshView
   section: SectionGeometry
   rebars: GeometryInputRebarView[]
@@ -84,6 +85,7 @@ const triangleContains = (mesh: SectionMeshView, triangleIndex: number, x: numbe
  * clipped grid LOD. The exact buffers remain resident and appear automatically as the user zooms.
  */
 export function SectionMeshChart({
+  theme,
   mesh,
   section,
   rebars,
@@ -169,6 +171,9 @@ export function SectionMeshChart({
       const muted = styles.getPropertyValue('--foreground-muted').trim() || '#64748b'
       const border = styles.getPropertyValue('--border').trim() || '#cbd5e1'
       const card = styles.getPropertyValue('--card').trim() || '#ffffff'
+      const canvasBackground =
+        styles.getPropertyValue('--mesh-canvas-bg').trim() ||
+        (theme === 'dark' ? '#0b0d10' : '#ffffff')
       const accent = styles.getPropertyValue('--accent').trim() || '#2563eb'
 
       const padLeft = 38 * dpr
@@ -202,7 +207,7 @@ export function SectionMeshChart({
       }
 
       ctx.setTransform(1, 0, 0, 1, 0, 0)
-      ctx.fillStyle = card
+      ctx.fillStyle = canvasBackground
       ctx.fillRect(0, 0, width, height)
 
       drawSectionPath(ctx, px, py)
@@ -565,7 +570,7 @@ export function SectionMeshChart({
       canvas.removeEventListener('keydown', onKeyDown)
       host.classList.remove('is-panning')
     }
-  }, [bounds, mesh, rebars, section.solids, showQuadraturePoints, showRebars])
+  }, [bounds, mesh, rebars, section.solids, showQuadraturePoints, showRebars, theme])
 
   return (
     <div ref={hostRef} className="pm-section-mesh-host">

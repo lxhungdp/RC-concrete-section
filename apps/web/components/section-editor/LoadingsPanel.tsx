@@ -214,7 +214,10 @@ export function LoadingsPanel({
   return (
     <section className="pm-panel-section">
       <div className="pm-section-title pm-section-title--with-action">
-        <h2>Loadcases</h2>
+        <div>
+          <h2>Loadcases</h2>
+          <p>Factored ULS actions · checked against design resistance</p>
+        </div>
         <div className="pm-loadcase-header-actions">
           <button
             type="button"
@@ -275,7 +278,9 @@ export function LoadingsPanel({
                 <br />
                 kN.m
               </th>
-              <th className="pm-col-ur">UR</th>
+              <th className="pm-col-ur" title="Three-dimensional proportional utilization ratio">
+                3D UR
+              </th>
               <th className="pm-col-action" aria-label="Remove" />
             </tr>
           </thead>

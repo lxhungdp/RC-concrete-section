@@ -1,12 +1,13 @@
 import type { GeometryInput } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
+import type { DesignBasis } from '@pm/design'
 import type { AnalysisOptions } from './analysis-options'
 
 /** Schema id written into every project JSON file. */
 export const PM_PROJECT_SCHEMA = 'pm-column-project' as const
 
 /** Current document format version. */
-export const PM_PROJECT_VERSION = 3 as const
+export const PM_PROJECT_VERSION = 4 as const
 
 export type PmProjectSchema = typeof PM_PROJECT_SCHEMA
 export type PmProjectVersion = typeof PM_PROJECT_VERSION
@@ -18,6 +19,8 @@ export type PmProjectVersion = typeof PM_PROJECT_VERSION
 export type LoadCombination = {
   id: number
   name: string
+  /** Explicit demand basis. ULS resistance checks reject any other basis. */
+  actionBasis: 'factoredULS'
   /** Axial load (compression positive), N */
   P: number
   /** Moment about X, N·mm */
@@ -49,6 +52,7 @@ export type PmProjectDocument = {
     materials: MaterialStore
     loadings: LoadingsInput
     analysis: AnalysisOptions
+    design: DesignBasis
   }
 }
 
@@ -57,6 +61,7 @@ export type ProjectInputSnapshot = {
   materials: MaterialStore
   loadings?: LoadingsInput
   analysis?: AnalysisOptions
+  design?: DesignBasis
   meta?: Partial<PmProjectDocument['meta']>
 }
 

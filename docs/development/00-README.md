@@ -15,6 +15,7 @@ behavior, or package ownership.
 | 4 | [`04-loadings-analysis-results-and-report-pipelines.md`](04-loadings-analysis-results-and-report-pipelines.md) | Loadcase data, engine orchestration, results, Plotly adapter, reports. |
 | 5 | [`05-coding-quality-and-ai-workflow.md`](05-coding-quality-and-ai-workflow.md) | Testing discipline, review workflow, AI coding constraints. |
 | 6 | [`06-current-state-and-roadmap.md`](06-current-state-and-roadmap.md) | Current implementation status and phased delivery order. |
+| 7 | [`07-design-resistance-implementation.md`](07-design-resistance-implementation.md) | Nominal/design separation, factored ULS checks, UI, workbook and verification status. |
 
 The numbered root files are technical references, not competing implementation instructions. The
 control map names the single owner for each rule or parameter.

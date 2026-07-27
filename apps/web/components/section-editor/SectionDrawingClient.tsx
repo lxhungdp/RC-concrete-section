@@ -42,6 +42,10 @@ import {
 } from '@pm/geometry'
 import { createDefaultMaterialStore, type MaterialStore } from '@pm/materials'
 import {
+  createDefaultDesignBasis,
+  type DesignBasis
+} from '@pm/design'
+import {
   createEmptyLoadingsInput,
   createDefaultAnalysisOptions,
   createProjectDocument,
@@ -69,6 +73,7 @@ import { AnalysisOptionsPanel } from './AnalysisOptionsPanel'
 import { MaterialPanel } from './MaterialPanel'
 import { RebarPanel } from './RebarPanel'
 import { ResultsWorkspace } from './ResultsWorkspace'
+import { DesignBasisPanel } from './DesignBasisPanel'
 import {
   createSectionCamera2d,
   panSectionCamera2d,
@@ -120,6 +125,7 @@ type Tool = 'select' | 'draw-rectangle' | 'draw-circle' | 'draw-polygon'
 type Theme = 'light' | 'dark'
 type WorkspaceModule = 'geometry' | 'materials' | 'analysis' | 'results'
 type GeometrySubTab = 'concrete' | 'rebar'
+type AnalysisSubTab = 'points' | 'mesh' | 'design'
 type BuilderShape = 'rectangle' | 'circle' | 'capsule'
 type BooleanAction = 'union' | 'subtract'
 type BoundarySource =
@@ -442,6 +448,9 @@ export function SectionDrawingClient() {
   const [materialStore, setMaterialStore] = useState<MaterialStore>(() => createDefaultMaterialStore())
   const [loadingsInput, setLoadingsInput] = useState<LoadingsInput>(() => createEmptyLoadingsInput())
   const [analysisOptions, setAnalysisOptions] = useState<AnalysisOptions>(() => createDefaultAnalysisOptions())
+  const [designBasis, setDesignBasis] = useState<DesignBasis>(() =>
+    createDefaultDesignBasis(createDefaultMaterialStore())
+  )
   const [selectedLoadcaseId, setSelectedLoadcaseId] = useState<number | null>(null)
   const [resultsViewMode, setResultsViewMode] = useState<'overview' | 'loadcase'>('overview')
   const [fixedResultP, setFixedResultP] = useState(0)
@@ -459,6 +468,7 @@ export function SectionDrawingClient() {
   }))
   const [lastBooleanWarning, setLastBooleanWarning] = useState<string>('')
   const [detailTab, setDetailTab] = useState<'basic' | 'points'>('basic')
+  const [analysisSubTab, setAnalysisSubTab] = useState<AnalysisSubTab>('points')
   const [circleSegmentsDraft, setCircleSegmentsDraft] = useState<string | null>(null)
   const [size, setSize] = useState(DEFAULT_DRAWING_SIZE)
   const [isDrawingMeasured, setIsDrawingMeasured] = useState(false)
@@ -532,7 +542,10 @@ export function SectionDrawingClient() {
     const controller = new AbortController()
     setSurfaceStatus('working')
     const timer = window.setTimeout(() => {
-      buildPreviewSurfaceAsync({ section: finalSection, rebars, materialStore, analysisOptions }, controller.signal)
+      buildPreviewSurfaceAsync(
+        { section: finalSection, rebars, materialStore, analysisOptions, designBasis },
+        controller.signal
+      )
         .then((surface) => {
           setResultSurface(surface)
           setSurfaceStatus('idle')
@@ -549,7 +562,7 @@ export function SectionDrawingClient() {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [analysisOptions, finalSection, hasAppliedSection, materialStore, rebars])
+  }, [analysisOptions, designBasis, finalSection, hasAppliedSection, materialStore, rebars])
   const appliedSummary = useMemo(() => summarizeSection(finalSection), [finalSection])
   const steelArea = useMemo(
     () => rebars.reduce((sum, bar) => sum + (Math.PI * bar.dia * bar.dia) / 4, 0),
@@ -635,7 +648,7 @@ export function SectionDrawingClient() {
     setInverseResults({})
     setInverseWorkingById({})
     setQuickChecksById({})
-  }, [analysisOptions, appliedGeometryInput, materialStore])
+  }, [analysisOptions, appliedGeometryInput, designBasis, materialStore])
 
   useEffect(() => {
     const controllers = inverseAbortRef.current
@@ -702,7 +715,7 @@ export function SectionDrawingClient() {
     inverseAbortRef.current.set(loadcase.id, controller)
     setInverseWorkingById((current) => ({ ...current, [loadcase.id]: true }))
     checkLoadcaseAsync(
-      { section: finalSection, rebars, materialStore, loadcase, surface: resultSurface },
+      { section: finalSection, rebars, materialStore, loadcase, surface: resultSurface, designBasis },
       controller.signal
     )
       .then((result) => {
@@ -1206,6 +1219,7 @@ export function SectionDrawingClient() {
       materials: materialStore,
       loadings: loadingsInput,
       analysis: analysisOptions,
+      design: designBasis,
       meta: {
         id: projectMeta.id,
         name: projectMeta.name || appliedGeometryInput.name || 'Column project',
@@ -1242,6 +1256,7 @@ export function SectionDrawingClient() {
     setMaterialStore(document.inputs.materials)
     setLoadingsInput(document.inputs.loadings)
     setAnalysisOptions(document.inputs.analysis)
+    setDesignBasis(document.inputs.design)
     setSelectedLoadcaseId(document.inputs.loadings.combinations[0]?.id ?? null)
     setInverseResults({})
     setProjectMeta({
@@ -2040,7 +2055,36 @@ export function SectionDrawingClient() {
         )}
 
         {activeModule === 'analysis' && (
-          <AnalysisOptionsPanel options={analysisOptions} onChange={setAnalysisOptions} />
+          <>
+            <div className="pm-analysis-tabs" role="tablist" aria-label="Analysis option groups">
+              {([
+                ['points', 'Points'],
+                ['mesh', 'Mesh'],
+                ['design', 'Design Resistance']
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={analysisSubTab === id}
+                  className={analysisSubTab === id ? 'is-active' : ''}
+                  onClick={() => setAnalysisSubTab(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {analysisSubTab !== 'design' && (
+              <AnalysisOptionsPanel
+                options={analysisOptions}
+                onChange={setAnalysisOptions}
+                view={analysisSubTab}
+              />
+            )}
+            {analysisSubTab === 'design' && (
+              <DesignBasisPanel value={designBasis} onChange={setDesignBasis} />
+            )}
+          </>
         )}
 
         {activeModule === 'results' && (
@@ -2161,6 +2205,7 @@ export function SectionDrawingClient() {
             section={finalSection}
             rebars={rebars}
             materialStore={materialStore}
+            designBasis={designBasis}
             loadcases={loadingsInput.combinations}
             projectName={projectMeta.name || appliedGeometryInput.name || 'Column project'}
             selectedLoadcaseId={selectedLoadcaseId}
@@ -2171,6 +2216,8 @@ export function SectionDrawingClient() {
           />
         ) : activeModule === 'analysis' ? (
           <AnalysisMeshWorkspace
+            theme={theme}
+            projectName={projectMeta.name || appliedGeometryInput.name || 'Column project'}
             ready={hasAppliedSection}
             section={finalSection}
             rebars={rebars}

@@ -186,11 +186,19 @@ Profile key:
 
 ```text
 organization: MOLIT/KDS
-document: KDS 14 20 10:2021 + KDS 14 20 20:2022
-edition: 2021/2022 paired profile
-methodId: kds-basic-global-strength-reduction
+document: KDS 2024 current set · resistance: KDS 14 20 10:2021 + KDS 14 20 20:2022
+edition: 2024 partial-revision framework (effective 2025-01-05)
+amendment: MOLIT Notice 2024-879, 2024-12-30
+methodId: kds-2024-current-set-global-strength-reduction
 format: globalResultantFactor
 ```
+
+“KDS 2024 current set” identifies the current concrete-code set established by MOLIT Notice
+2024-879. The official revision notice identifies KDS 14 20 52 as revised and KDS 14 20 68 as a
+new standard; it does not list the strength-reduction provisions in KDS 14 20 10 or the
+flexure/compression provisions in KDS 14 20 20 as revised. The software therefore records both the
+2024 umbrella amendment and the exact 2021/2022 resistance documents from which this draft
+profile's coefficients are taken.
 
 KDS 14 20 10, 4.2.3 defines design strength as nominal strength multiplied by a strength-reduction
 factor. For moment, axial force, and combined P-M states covered here:
@@ -357,6 +365,8 @@ Before a profile is `verified`, test at least:
 
 ## 12. Normative/source anchors
 
+- Official KCSC notice for the 2024 concrete-code partial revision, MOLIT Notice 2024-879:
+  <https://kcsc.re.kr/board/notdetail/6639>
 - Official KDS 14 20 10 viewer, especially 4.2.3:
   <https://www.kcsc.re.kr/standardCode/viewer/KDS%2014%2020%2010:2022-01-11>
 - Official KDS 14 20 20:2022 viewer, Appendix 2.1 and 2.2:
@@ -372,3 +382,29 @@ Before a profile is `verified`, test at least:
 
 Source access alone does not make an adapter verified. The profile-specific traceability bundle
 must identify every implemented clause, edition, amendment, interpretation, test, and reviewer.
+
+## 13. Implemented preview boundary (2026-07-27)
+
+The current repository implements the two primary formats described above:
+
+- `globalResultantFactor` for the KDS basic and ACI 318-19(22) preview profiles;
+- `designMaterialReevaluation` for an EN 1992-1-1:2004 default-factor preview profile.
+
+The project schema persists the complete basis and loadcases are explicitly factored ULS actions.
+The result DTO contains both `nominalPoints` and governing design `points`. Analysis Options owns
+the selected design-code profile, factors, transverse-reinforcement class, and optional axial cap.
+Results does not edit that basis. The 3D plot uses a light Nominal/Design radio selector and renders
+only one surface at a time. The two-dimensional plots may show both curves; when both are visible,
+nominal is a faint dashed reference, while a single visible curve receives the primary blue line
+and red diagnostic points. All Mx-My point connections use explicit straight-line segments.
+The loadcase table uses
+the three-dimensional proportional demand-ray intersection with the design surface; the Fixed-P
+ratio is diagnostic only. Excel export records the exact profile and check in `Design_Check`.
+
+Implementation details and automated evidence are in
+[`development/07-design-resistance-implementation.md`](development/07-design-resistance-implementation.md).
+
+These profiles are all marked `draft`; none is `reviewed` or `verified`. The software must continue
+to reject any claim of certified code compliance until the
+profile verification matrix, jurisdiction/annex selection, and independent professional review are
+complete.

@@ -31,12 +31,20 @@ import {
 } from '@pm/geometry'
 import type { ConcreteMaterial, MaterialStore, SteelMaterial } from '@pm/materials'
 import {
+  buildResistanceMaterialSets,
+  createDefaultDesignBasis,
+  designBasisRequiresOverrideReason,
+  type DesignBasis
+} from '@pm/design'
+import {
   cloneAnalysisOptions,
   type AnalysisOptions,
   type LoadCombination
 } from '@pm/project'
 import {
+  buildDesignPreviewSurfaceFromPrepared,
   buildPreviewSurfaceFromPrepared,
+  checkLoadcaseUtilizationFromSurface,
   intersectFixedPContourWithMomentRay,
   prepareAnalysisFromMesh,
   sliceFixedPContour,
@@ -51,6 +59,8 @@ export type ExcelExportInput = {
   section: SectionGeometry
   rebars: GeometryInputRebarView[]
   materialStore: MaterialStore
+  /** Exact resistance profile snapshot used by the governing ULS check. */
+  designBasis?: DesignBasis
   analysisOptions: AnalysisOptions
   /**
    * Strain-plane sampling angle for the detailed station sheets, degrees. This is the neutral
@@ -344,7 +354,15 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   // No cached results are written, so Excel must evaluate everything on open.
   workbook.calcProperties.fullCalcOnLoad = true
 
-  const { section, rebars, materialStore } = input
+  const { section, rebars } = input
+  const designBasis = input.designBasis ?? createDefaultDesignBasis(input.materialStore)
+  const resistanceMaterials = buildResistanceMaterialSets(input.materialStore, designBasis)
+  // Detailed fibre ledgers audit the constitutive stage. A global-resultant factor is recorded
+  // separately on Design_Check; design-material formats are reevaluated directly.
+  const materialStore =
+    designBasis.format === 'globalResultantFactor'
+      ? resistanceMaterials.referenceMaterials
+      : resistanceMaterials.designMaterials
   const concrete = materialStore.concrete
   const steel =
     materialStore.steel.find((item) => item.id === materialStore.defaults.steelMaterialId) ?? materialStore.steel[0]
@@ -358,7 +376,13 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const epsY = steel.limits?.epsY ?? fyModel / steel.elasticModulus
   const origin = netConcreteCentroid(section)
   const mesh = exportMesh(section, input.maxMeshPoints ?? DEFAULT_MAX_MESH_POINTS)
-  const prepared = prepareAnalysisFromMesh(section, rebars, materialStore, mesh, origin)
+  const prepared = prepareAnalysisFromMesh(
+    section,
+    rebars,
+    resistanceMaterials.stateMaterials,
+    mesh,
+    origin
+  )
   const beta = (input.betaDeg * Math.PI) / 180
 
   // Geometry about the analysis origin — the frame every formula in the workbook uses.
@@ -390,6 +414,12 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const demandP = input.loadcase ? input.loadcase.P : input.fixedP
   const thetaLoad = input.loadcase ? Math.atan2(input.loadcase.My, input.loadcase.Mx) : 0
   const engineSurface = buildPreviewSurfaceFromPrepared(prepared, input.analysisOptions)
+  const designSurface = buildDesignPreviewSurfaceFromPrepared(
+    prepared,
+    input.materialStore,
+    designBasis,
+    input.analysisOptions
+  )
   const stationLabels = engineSurface.stations.map((station) => station.label)
   const stationDefinitions = engineSurface.stations.map((station) => station.definition)
   const directionBetas = engineSurface.directions
@@ -434,6 +464,9 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const engineContour = sliceFixedPContour(engineSurface.points, demandP)
   const engineBoundary = intersectFixedPContourWithMomentRay(engineContour, thetaLoad)
   const engineMb = engineBoundary ? engineBoundary.M / 1e6 : null
+  const designCheck = input.loadcase
+    ? checkLoadcaseUtilizationFromSurface(designSurface, input.loadcase)
+    : null
 
   const stationCount = stationDefinitions.length
 
@@ -467,7 +500,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     sheet.mergeCells(row, 2, row, 1 + span)
   }
 
-  title(inputSheet, 1, 'P–M SECTION CALCULATION — NOMINAL RESISTANCE', 4)
+  title(inputSheet, 1, 'P–M–M SECTION CALCULATION — DESIGN RESISTANCE', 4)
   inputSheet.getCell('B2').value = 'Project'
   inputSheet.getCell('C2').value = input.projectName
   inputSheet.getCell('B3').value = 'Section'
@@ -655,6 +688,109 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     inputSheet.getCell(r, 5).value = why
     inputSheet.getCell(r, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
   })
+
+  // ==========================================================================
+  // Design_Check — governing code profile and factored ULS assessment
+  // ==========================================================================
+  const designSheet = workbook.addWorksheet('Design_Check', { views: [{ showGridLines: false }] })
+  designSheet.columns = [
+    { width: 4 },
+    { width: 30 },
+    { width: 23 },
+    { width: 14 },
+    { width: 68 }
+  ]
+  title(designSheet, 1, 'GOVERNING DESIGN-RESISTANCE CHECK', 4)
+  designSheet.getCell('B2').value =
+    'The design surface is authoritative for acceptance. Nominal/reference results remain available for audit and are never compared directly with factored ULS demand.'
+  designSheet.getCell('B2').alignment = { wrapText: true, vertical: 'top' }
+  designSheet.mergeCells('B2:E3')
+  designSheet.getRow(2).height = 30
+
+  let designRow = 5
+  sectionHeading(designSheet, designRow, 'Profile identity', 4)
+  const profileRows: Array<[string, string | number, string, string]> = [
+    ['Organization', designBasis.identity.organization, '', 'Profile publisher'],
+    ['Document', designBasis.identity.document, '', 'Exact code document selected in the project'],
+    ['Edition', designBasis.identity.edition, '', designBasis.identity.amendment ?? ''],
+    ['Method ID', designBasis.identity.methodId, '', `Profile ${designBasis.identity.profileVersion}`],
+    ['Resistance format', designBasis.format, '', 'Determines whether factors act on resultants or material strengths'],
+    ['Profile status', designBasis.verificationStatus, '', designBasis.modified ? 'MODIFIED — independent review required' : 'Unmodified profile snapshot'],
+    [
+      'Override reason',
+      designBasis.overrideReason || 'None',
+      '',
+      designBasisRequiresOverrideReason(designBasis)
+        ? 'Required project audit trail'
+        : designBasis.format === 'globalResultantFactor' && !designBasis.axialCapEnabled
+          ? 'Not required when only the optional axial limit is disabled'
+          : ''
+    ]
+  ]
+  profileRows.forEach(([label, value, unit, note], index) => {
+    const r = designRow + 1 + index
+    designSheet.getCell(r, 2).value = label
+    designSheet.getCell(r, 3).value = value
+    designSheet.getCell(r, 4).value = unit
+    designSheet.getCell(r, 5).value = note
+  })
+
+  designRow += profileRows.length + 2
+  sectionHeading(designSheet, designRow, 'Resistance factors', 4)
+  const factorRows: Array<[string, number | string, string, string]> =
+    designBasis.format === 'globalResultantFactor'
+      ? [
+          ['φ compression · ties/other', designBasis.factors.phiCompressionOther, '-', 'Global factor on Pn, Mnx and Mny'],
+          ['φ compression · spiral', designBasis.factors.phiCompressionSpiral, '-', 'Used only for qualifying spiral classification'],
+          ['φ tension-controlled', designBasis.factors.phiTension, '-', 'Global factor on the complete resultant ledger'],
+          ['Transition Δεt', designBasis.factors.transitionExtraStrain, '-', 'Upper limit = εy + Δεt'],
+          ['Maximum axial ratio · ties/other', designBasis.factors.axialCapOther, '-', 'Applied after φ'],
+          ['Maximum axial ratio · spiral', designBasis.factors.axialCapSpiral, '-', 'Applied after φ'],
+          ['Transverse reinforcement', designBasis.transverseReinforcement, '', 'Project classification'],
+          ['Axial cap', designBasis.axialCapEnabled ? 'Enabled' : 'Disabled', '', 'Project setting']
+        ]
+      : [
+          ['αcc', designBasis.factors.alphaCc, '-', 'Concrete design-strength coefficient'],
+          ['γc', designBasis.factors.gammaC, '-', 'Concrete material partial factor'],
+          ['γs', designBasis.factors.gammaS, '-', 'Reinforcement material partial factor']
+        ]
+  factorRows.forEach(([label, value, unit, note], index) => {
+    const r = designRow + 1 + index
+    designSheet.getCell(r, 2).value = label
+    const valueCell = designSheet.getCell(r, 3)
+    valueCell.value = value
+    valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CONST_FILL } }
+    if (typeof value === 'number') valueCell.numFmt = '0.000000'
+    designSheet.getCell(r, 4).value = unit
+    designSheet.getCell(r, 5).value = note
+  })
+
+  designRow += factorRows.length + 2
+  sectionHeading(designSheet, designRow, 'Factored ULS demand versus design surface', 4)
+  const checkRows: Array<[string, number | string, string, string]> = [
+    ['Action basis', input.loadcase?.actionBasis ?? 'factoredULS', '', 'Only factored ULS actions are supported by this check'],
+    ['Loadcase', input.loadcase?.name ?? 'None', '', ''],
+    ['3D proportional UR', designCheck?.proportionalUtilization ?? 'n/a', '-', 'Governing reported section utilization'],
+    ['Fixed-P UR', designCheck?.fixedPUtilization ?? 'n/a', '-', 'Secondary diagnostic at Pu'],
+    ['Verdict', designCheck?.adequate == null ? 'n/a' : designCheck.adequate ? 'ADEQUATE' : 'NOT ADEQUATE', '', 'ADEQUATE requires 3D UR ≤ 1.0'],
+    ['Capacity P', designCheck?.capacityPoint ? designCheck.capacityPoint.P / 1e3 : 'n/a', 'kN', 'Demand-ray intersection'],
+    ['Capacity Mx', designCheck?.capacityPoint ? designCheck.capacityPoint.Mx / 1e6 : 'n/a', 'kN·m', 'Demand-ray intersection'],
+    ['Capacity My', designCheck?.capacityPoint ? designCheck.capacityPoint.My / 1e6 : 'n/a', 'kN·m', 'Demand-ray intersection'],
+    ['Controlling factor', designCheck?.resistance?.factor ?? 'material reevaluation', '-', designCheck?.resistance?.classification ?? ''],
+    ['εt,control', designCheck?.resistance?.controllingTensileStrain ?? 'n/a', '-', 'Recorded when a global factor is state-dependent']
+  ]
+  checkRows.forEach(([label, value, unit, note], index) => {
+    const r = designRow + 1 + index
+    designSheet.getCell(r, 2).value = label
+    const valueCell = designSheet.getCell(r, 3)
+    valueCell.value = value
+    valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CONST_FILL } }
+    if (typeof value === 'number') valueCell.numFmt = '0.000000'
+    designSheet.getCell(r, 4).value = unit
+    designSheet.getCell(r, 5).value = note
+  })
+  designSheet.getCell(designRow + 1, 5).value =
+    'Pipeline: factored ULS demand → 3D demand ray → design-resistance surface → UR = 1/λ.'
 
   // ==========================================================================
   // Materials — sampled curves for laws that have no spreadsheet form
@@ -1898,3 +2034,5 @@ export const sectionWorkbookFileName = (input: Pick<ExcelExportInput, 'projectNa
   const loadcase = input.loadcase ? `-LC${input.loadcase.id}` : ''
   return `${stem}${loadcase}-beta${Math.round(input.betaDeg)}.xlsx`
 }
+
+export * from './mesh-export'

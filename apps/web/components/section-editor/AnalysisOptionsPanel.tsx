@@ -19,6 +19,7 @@ import {
 type Props = {
   options: AnalysisOptions
   onChange: (options: AnalysisOptions) => void
+  view: 'points' | 'mesh'
 }
 
 const clone = (options: AnalysisOptions): AnalysisOptions => structuredClone(options)
@@ -104,7 +105,7 @@ function NumericInput({ value, onCommit, ariaLabel, min, max, step = 'any', inte
   )
 }
 
-export function AnalysisOptionsPanel({ options, onChange }: Props) {
+export function AnalysisOptionsPanel({ options, onChange, view }: Props) {
   const [angleDraft, setAngleDraft] = useState('')
   const [angleError, setAngleError] = useState('')
   const stationCount = analysisStationCount(options)
@@ -191,6 +192,8 @@ export function AnalysisOptionsPanel({ options, onChange }: Props) {
         </button>
       </div>
 
+      {view === 'points' && (
+        <>
       <div className="pm-result-status-list">
         <span>Reporting points</span>
         <strong>{stationCount}</strong>
@@ -504,6 +507,11 @@ export function AnalysisOptionsPanel({ options, onChange }: Props) {
         </>
       )}
 
+        </>
+      )}
+
+      {view === 'mesh' && (
+        <>
       <div className="pm-section-title">
         <div>
           <h3>Mesh</h3>
@@ -589,6 +597,8 @@ export function AnalysisOptionsPanel({ options, onChange }: Props) {
           }
         />
       </label>
+        </>
+      )}
     </section>
   )
 }

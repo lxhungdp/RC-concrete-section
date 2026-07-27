@@ -1,6 +1,14 @@
 import type { GeometryInput, GeometryInputOuter, GeometryInputRebar, Point2 } from '@pm/geometry'
 import { CONCRETE_MATERIAL_ID, DEFAULT_CONCRETE_DENSITY } from '@pm/materials'
 import type { ConcreteMaterial, MaterialStore, SteelMaterial, StressStrainPoint } from '@pm/materials'
+import {
+  DESIGN_BASIS_VERSION,
+  assertValidDesignBasis,
+  createDefaultDesignBasis,
+  type DesignBasis,
+  type DesignProfileId,
+  type GlobalStrengthReductionFactors
+} from '@pm/design'
 import { isValidEntityId } from './ids'
 import {
   ANALYSIS_OPTIONS_VERSION,
@@ -299,6 +307,7 @@ const parseLoadCombination = (value: unknown, path: string): LoadCombination => 
   return {
     id: value.id,
     name: value.name,
+    actionBasis: 'factoredULS',
     P: value.P,
     Mx: value.Mx,
     My: value.My
@@ -528,6 +537,94 @@ const parseAnalysis = (value: unknown): AnalysisOptions => {
   }
 }
 
+const parseDesignBasis = (value: unknown | undefined, materials: MaterialStore): DesignBasis => {
+  if (value === undefined) return createDefaultDesignBasis(materials)
+  assertRecord(value, 'inputs.design must be an object')
+  assert(value.basisVersion === DESIGN_BASIS_VERSION, 'inputs.design.basisVersion is unsupported')
+  assertRecord(value.identity, 'inputs.design.identity must be an object')
+  for (const key of ['organization', 'document', 'edition', 'methodId', 'profileVersion'] as const) {
+    assert(isString(value.identity[key]), `inputs.design.identity.${key} must be a string`)
+  }
+  assert(
+    value.profileId === 'kds-2024-current-set' ||
+      value.profileId === 'kds-basic-2021-2022' ||
+      value.profileId === 'aci-318-19-22' ||
+      value.profileId === 'en-1992-1-1-2004-default',
+    'inputs.design.profileId is unsupported'
+  )
+  assert(
+    value.verificationStatus === 'draft' ||
+      value.verificationStatus === 'reviewed' ||
+      value.verificationStatus === 'verified',
+    'inputs.design.verificationStatus is invalid'
+  )
+  assert(typeof value.modified === 'boolean', 'inputs.design.modified must be boolean')
+  assert(isString(value.overrideReason), 'inputs.design.overrideReason must be a string')
+  const factors = value.factors
+  assertRecord(factors, 'inputs.design.factors must be an object')
+
+  const common = {
+    basisVersion: DESIGN_BASIS_VERSION,
+    identity: {
+      organization: value.identity.organization as string,
+      document: value.identity.document as string,
+      edition: value.identity.edition as string,
+      amendment: isString(value.identity.amendment) ? value.identity.amendment : undefined,
+      jurisdiction: isString(value.identity.jurisdiction) ? value.identity.jurisdiction : undefined,
+      nationalAnnex: isString(value.identity.nationalAnnex) ? value.identity.nationalAnnex : undefined,
+      methodId: value.identity.methodId as string,
+      profileVersion: value.identity.profileVersion as string
+    },
+    profileId: value.profileId as DesignProfileId,
+    verificationStatus: value.verificationStatus as DesignBasis['verificationStatus'],
+    modified: value.modified,
+    overrideReason: value.overrideReason
+  }
+
+  let design: DesignBasis
+  if (value.format === 'globalResultantFactor') {
+    assert(
+      value.transverseReinforcement === 'other' || value.transverseReinforcement === 'qualifying-spiral',
+      'inputs.design.transverseReinforcement is invalid'
+    )
+    assert(typeof value.axialCapEnabled === 'boolean', 'inputs.design.axialCapEnabled must be boolean')
+    const factorKeys: Array<keyof GlobalStrengthReductionFactors> = [
+      'phiCompressionOther',
+      'phiCompressionSpiral',
+      'phiTension',
+      'transitionExtraStrain',
+      'axialCapOther',
+      'axialCapSpiral'
+    ]
+    for (const key of factorKeys) {
+      assert(isFiniteNumber(factors[key]), `inputs.design.factors.${key} must be finite`)
+    }
+    design = {
+      ...common,
+      format: 'globalResultantFactor',
+      transverseReinforcement: value.transverseReinforcement,
+      axialCapEnabled: value.axialCapEnabled,
+      factors: Object.fromEntries(factorKeys.map((key) => [key, factors[key]])) as unknown as GlobalStrengthReductionFactors
+    }
+  } else {
+    assert(value.format === 'designMaterialReevaluation', 'inputs.design.format is unsupported')
+    for (const key of ['alphaCc', 'gammaC', 'gammaS'] as const) {
+      assert(isFiniteNumber(factors[key]), `inputs.design.factors.${key} must be finite`)
+    }
+    design = {
+      ...common,
+      format: 'designMaterialReevaluation',
+      factors: {
+        alphaCc: factors.alphaCc as number,
+        gammaC: factors.gammaC as number,
+        gammaS: factors.gammaS as number
+      }
+    }
+  }
+  assertValidDesignBasis(design)
+  return design
+}
+
 export const collectProjectWarnings = (document: PmProjectDocument): string[] => {
   const warnings: string[] = []
   const steelIds = new Set(document.inputs.materials.steel.map((item) => item.id))
@@ -550,7 +647,7 @@ export const collectProjectWarnings = (document: PmProjectDocument): string[] =>
 export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => {
   assertRecord(value, 'Project JSON must be an object')
   assert(value.schema === PM_PROJECT_SCHEMA, `schema must be "${PM_PROJECT_SCHEMA}"`)
-  assert(value.version === PM_PROJECT_VERSION, `Unsupported project version: ${String(value.version)}`)
+  assert(value.version === 3 || value.version === PM_PROJECT_VERSION, `Unsupported project version: ${String(value.version)}`)
   assertRecord(value.meta, 'meta must be an object')
   assertEntityId(value.meta.id, 'meta.id')
   assert(isString(value.meta.name), 'meta.name must be a string')
@@ -558,6 +655,7 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
   assert(isString(value.meta.updatedAt), 'meta.updatedAt must be a string')
   assertRecord(value.inputs, 'inputs must be an object')
 
+  const materials = parseMaterials(value.inputs.materials)
   return {
     schema: PM_PROJECT_SCHEMA,
     version: PM_PROJECT_VERSION,
@@ -569,9 +667,10 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
     },
     inputs: {
       geometry: parseGeometry(value.inputs.geometry),
-      materials: parseMaterials(value.inputs.materials),
+      materials,
       loadings: parseLoadings(value.inputs.loadings),
-      analysis: parseAnalysis(value.inputs.analysis)
+      analysis: parseAnalysis(value.inputs.analysis),
+      design: parseDesignBasis(value.inputs.design, materials)
     }
   }
 }

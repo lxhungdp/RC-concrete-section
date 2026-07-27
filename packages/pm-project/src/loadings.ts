@@ -11,6 +11,7 @@ export const createLoadCombination = (
 ): LoadCombination => ({
   id: patch.id ?? nextAvailableId(usedIds),
   name: patch.name ?? 'Combination',
+  actionBasis: 'factoredULS',
   P: patch.P ?? 0,
   Mx: patch.Mx ?? 0,
   My: patch.My ?? 0

@@ -19,7 +19,7 @@ linked from the control map.
 ## 2. Product Workflow
 
 ```text
-Geometry -> Materials -> Results -> Report
+Geometry -> Materials -> Results -> Analysis Options -> Report
 ```
 
 Current UI note:
@@ -27,12 +27,18 @@ Current UI note:
 - `Results` owns loadcase entry in its sidebar for the current simple `Pu/Mux/Muy` workflow.
 - A separate `Loadings` workspace is intentionally avoided until source-load management becomes
   large enough to justify it.
-- `Analysis` is a pipeline behind Results, not a top-level menu.
-- `Report` remains downstream of an accepted result and is not implemented in the current preview.
+- `Analysis Options` is the fourth menu and separates its controls into `Points`, `Mesh`, and
+  `Design Resistance` tabs. Points also owns direction sampling; Design Resistance applies valid
+  edits immediately without a separate action button. These settings are not edited in `Results`.
+- The `Section mesh` toolbar exports the exact prepared analysis mesh as either an Excel audit
+  workbook or a DXF drawing. Excel includes Summary, Triangles, Quadrature, Boundaries, and Rebars
+  sheets; DXF uses broadly compatible R12 ASCII records and separates the same geometry into named
+  verification layers.
+- Excel export is available from a selected result as a preview audit workbook.
 
 ## 3. Current Implementation Status
 
-As of 2026-07-24:
+As of 2026-07-27:
 
 - Geometry editor, material editor, rebar input, project JSON round trip, Results preview plots, and
   loadcase entry are implemented as **preview** capability.
@@ -41,12 +47,22 @@ As of 2026-07-24:
   the selector is not a complete design-code resistance profile.
 - The current Results charts use Plotly for interactive visualization, but the underlying
   calculation is still a preview kernel.
+- Nominal/reference and design-resistance surfaces are separated. Factored ULS loadcases use a
+  governing 3D proportional check; Fixed-P utilization is a secondary diagnostic.
+- The KDS 2024 current-set profile (with resistance clauses explicitly traced to KDS 14 20 10:2021
+  and KDS 14 20 20:2022), ACI 318-19(22), and EN 1992-1-1:2004 default profiles are implemented as
+  `draft` previews; no profile is `reviewed` or `verified`.
+- Excel preview result export includes an explicit `Design_Check` audit sheet. The separate
+  Section-mesh Excel export includes formula-based area and first-moment recomputation so the
+  integration mesh can be independently inspected.
 - Accepted engineering analysis, verified design-code profiles, certified result DTOs, and
-  Excel/PDF report release are not complete.
+  released PDF reports are not complete.
 - Preview data cannot be promoted to accepted design output.
 
 The detailed status and roadmap live in
 [`development/06-current-state-and-roadmap.md`](development/06-current-state-and-roadmap.md).
+The implemented resistance pipeline is documented in
+[`development/07-design-resistance-implementation.md`](development/07-design-resistance-implementation.md).
 
 ## 4. Status Vocabulary
 

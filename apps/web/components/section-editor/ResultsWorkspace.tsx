@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Eye, EyeOff, FileSpreadsheet, Loader2, Maximize2, RotateCw } from 'lucide-react'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
+import type { DesignBasis } from '@pm/design'
 import type { LoadCombination } from '@pm/project'
 import {
   contourStrainAngleSamples,
@@ -30,6 +31,7 @@ type OverviewChartId = 'vertical' | 'surface3d' | 'fixedP'
 type LoadcaseChartId = 'heatmap' | 'fixedP' | 'vertical'
 type FieldMode = 'strain' | 'stress'
 type ResultsTheme = 'light' | 'dark'
+type SurfaceResistanceMode = 'nominal' | 'design'
 
 const OVERVIEW_CHARTS: OverviewChartId[] = ['vertical', 'surface3d', 'fixedP']
 const LOADCASE_CHARTS: LoadcaseChartId[] = ['heatmap', 'fixedP', 'vertical']
@@ -43,6 +45,7 @@ type Props = {
   section: SectionGeometry
   rebars: GeometryInputRebarView[]
   materialStore: MaterialStore
+  designBasis: DesignBasis
   loadcases: LoadCombination[]
   projectName: string
   selectedLoadcaseId: number | null
@@ -110,6 +113,21 @@ const groupByBeta = (points: PreviewSurfacePoint[]) => {
       curve: curve.sort((a, b) => a.station - b.station)
     }))
 }
+
+const pointBounds = (points: PreviewSurfacePoint[]) => ({
+  P: [
+    Math.min(...points.map((point) => point.P)),
+    Math.max(...points.map((point) => point.P))
+  ] as [number, number],
+  Mx: [
+    Math.min(...points.map((point) => point.Mx)),
+    Math.max(...points.map((point) => point.Mx))
+  ] as [number, number],
+  My: [
+    Math.min(...points.map((point) => point.My)),
+    Math.max(...points.map((point) => point.My))
+  ] as [number, number]
+})
 
 const normalizeAngleDeg = (degrees: number) => {
   const wrapped = ((degrees % 360) + 360) % 360
@@ -251,6 +269,66 @@ const SyncedControl = ({
   </label>
 )
 
+const ResistanceVisibilityControls = ({
+  showDesign,
+  showNominal,
+  onShowDesign,
+  onShowNominal
+}: {
+  showDesign: boolean
+  showNominal: boolean
+  onShowDesign: (value: boolean) => void
+  onShowNominal: (value: boolean) => void
+}) => (
+  <>
+    <label className={`pm-field-check${showDesign ? ' is-on' : ''}`}>
+      <input
+        type="checkbox"
+        checked={showDesign}
+        onChange={(event) => {
+          const next = event.target.checked
+          if (next || showNominal) onShowDesign(next)
+        }}
+      />
+      Design
+    </label>
+    <label className={`pm-field-check${showNominal ? ' is-on' : ''}`}>
+      <input
+        type="checkbox"
+        checked={showNominal}
+        onChange={(event) => {
+          const next = event.target.checked
+          if (next || showDesign) onShowNominal(next)
+        }}
+      />
+      Nominal
+    </label>
+  </>
+)
+
+const SurfaceResistanceControl = ({
+  value,
+  onChange
+}: {
+  value: SurfaceResistanceMode
+  onChange: (value: SurfaceResistanceMode) => void
+}) => (
+  <fieldset className="pm-result-radio-group" aria-label="3D resistance surface">
+    {(['nominal', 'design'] as const).map((mode) => (
+      <label key={mode} className={value === mode ? 'is-active' : ''}>
+        <input
+          type="radio"
+          name="surface-resistance"
+          value={mode}
+          checked={value === mode}
+          onChange={() => onChange(mode)}
+        />
+        {mode === 'nominal' ? 'Nominal' : 'Design'}
+      </label>
+    ))}
+  </fieldset>
+)
+
 export function ResultsWorkspace({
   theme,
   ready,
@@ -259,6 +337,7 @@ export function ResultsWorkspace({
   section,
   rebars,
   materialStore,
+  designBasis,
   loadcases,
   projectName,
   selectedLoadcaseId,
@@ -270,7 +349,11 @@ export function ResultsWorkspace({
   const [sliceAngle, setSliceAngle] = useState(0)
   const [includeOppositeMoment, setIncludeOppositeMoment] = useState(false)
   const [showFixedPAngleRays, setShowFixedPAngleRays] = useState(false)
+  const [showDesignResistance, setShowDesignResistance] = useState(true)
+  const [showNominalReference, setShowNominalReference] = useState(true)
   const [showSceneAxes, setShowSceneAxes] = useState(false)
+  const [surfaceResistanceMode, setSurfaceResistanceMode] =
+    useState<SurfaceResistanceMode>('design')
   const [fieldMode, setFieldMode] = useState<FieldMode>('strain')
   const [showNeutralAxis, setShowNeutralAxis] = useState(true)
   const [showMoments, setShowMoments] = useState(true)
@@ -321,7 +404,14 @@ export function ResultsWorkspace({
     const controller = new AbortController()
     setFieldMapWorking(true)
     buildSectionFieldMapAsync(
-      { section, rebars, materialStore, analysisOptions: surface.analysisOptions, state: inverseResult.state },
+      {
+        section,
+        rebars,
+        materialStore,
+        designBasis,
+        analysisOptions: surface.analysisOptions,
+        state: inverseResult.state
+      },
       controller.signal
     )
       .then((map) => {
@@ -335,7 +425,7 @@ export function ResultsWorkspace({
       })
 
     return () => controller.abort()
-  }, [inverseResult, isLoadcaseMode, materialStore, rebars, section, surface])
+  }, [designBasis, inverseResult, isLoadcaseMode, materialStore, rebars, section, surface])
 
   const activeFixedP = isLoadcaseMode ? selectedLoadcase.P : fixedP
   const activeAngle = isLoadcaseMode ? loadcaseAngleDeg(selectedLoadcase) : sliceAngle
@@ -360,11 +450,39 @@ export function ResultsWorkspace({
     () => (surface ? sliceFixedPContour(surface.points, activeFixedP) : []),
     [activeFixedP, surface]
   )
+  const nominalContour = useMemo(
+    () => (surface ? sliceFixedPContour(surface.nominalPoints, activeFixedP) : []),
+    [activeFixedP, surface]
+  )
+  const axialCapPKn = useMemo(() => {
+    const capped = surface?.points.filter((point) => point.resistance?.axialCapApplied) ?? []
+    return capped.length > 0 ? kn(Math.max(...capped.map((point) => point.P))) : null
+  }, [surface])
 
   // Diagnostic markers, taken from the contour that is actually drawn — not from a second slice.
   const strainAngleSamples = useMemo(() => contourStrainAngleSamples(contour), [contour])
-
-  const surfaceGrid = useMemo(() => (surface ? groupByBeta(surface.points) : []), [surface])
+  const nominalStrainAngleSamples = useMemo(
+    () => contourStrainAngleSamples(nominalContour),
+    [nominalContour]
+  )
+  const surfacePoints3d = useMemo(
+    () =>
+      surface
+        ? surfaceResistanceMode === 'design'
+          ? surface.points
+          : surface.nominalPoints
+        : [],
+    [surface, surfaceResistanceMode]
+  )
+  const surfaceGrid = useMemo(() => groupByBeta(surfacePoints3d), [surfacePoints3d])
+  const surfaceBounds3d = useMemo(
+    () => (surfacePoints3d.length > 0 ? pointBounds(surfacePoints3d) : null),
+    [surfacePoints3d]
+  )
+  const surfaceContour3d = useMemo(
+    () => sliceFixedPContour(surfacePoints3d, activeFixedP),
+    [activeFixedP, surfacePoints3d]
+  )
 
   useEffect(() => {
     if (!includeOppositeMoment) return
@@ -375,17 +493,17 @@ export function ResultsWorkspace({
   const angleSliderMax = includeOppositeMoment ? 180 : 345
 
   const surfaceData = useMemo(() => {
-    if (!surface) return []
+    if (!surface || !surfaceBounds3d) return []
     const x = surfaceGrid.map((row) => row.curve.map((point) => knm(point.Mx)))
     const y = surfaceGrid.map((row) => row.curve.map((point) => knm(point.My)))
     const z = surfaceGrid.map((row) => row.curve.map((point) => kn(point.P)))
     const customdata = surfaceGrid.map((row) => row.curve.map((point) => point.id))
 
-    const mxSpan = Math.max(Math.abs(surface.bounds.Mx[0]), Math.abs(surface.bounds.Mx[1]), 1)
-    const mySpan = Math.max(Math.abs(surface.bounds.My[0]), Math.abs(surface.bounds.My[1]), 1)
+    const mxSpan = Math.max(Math.abs(surfaceBounds3d.Mx[0]), Math.abs(surfaceBounds3d.Mx[1]), 1)
+    const mySpan = Math.max(Math.abs(surfaceBounds3d.My[0]), Math.abs(surfaceBounds3d.My[1]), 1)
     const radius = knm(Math.hypot(mxSpan, mySpan)) * 1.05
-    const p0 = kn(surface.bounds.P[0])
-    const p1 = kn(surface.bounds.P[1])
+    const p0 = kn(surfaceBounds3d.P[0])
+    const p1 = kn(surfaceBounds3d.P[1])
     const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
     const c = Math.cos(theta)
     const s = Math.sin(theta)
@@ -447,20 +565,20 @@ export function ResultsWorkspace({
       contours: { x: { highlight: false }, y: { highlight: false }, z: { highlight: false } }
     }
 
-    const ring = contour.length
+    const ring = surfaceContour3d.length
       ? {
           type: 'scatter3d',
           name: 'Fixed-P ring',
           mode: 'lines',
-          x: [...contour.map((point) => knm(point.Mx)), knm(contour[0].Mx)],
-          y: [...contour.map((point) => knm(point.My)), knm(contour[0].My)],
-          z: [...contour.map(() => pPlane), pPlane],
+          x: [...surfaceContour3d.map((point) => knm(point.Mx)), knm(surfaceContour3d[0].Mx)],
+          y: [...surfaceContour3d.map((point) => knm(point.My)), knm(surfaceContour3d[0].My)],
+          z: [...surfaceContour3d.map(() => pPlane), pPlane],
           line: { color: '#2563eb', width: 5 },
           hoverinfo: 'skip'
         }
       : null
 
-    const momentPlanePaths = sliceMomentPlane(surface.points, theta)
+    const momentPlanePaths = sliceMomentPlane(surfacePoints3d, theta)
     const visibleMomentPaths = includeOppositeMoment
       ? momentPlanePaths.map((path) => path.points)
       : clipMomentPlanePaths(momentPlanePaths, 'positive')
@@ -478,7 +596,7 @@ export function ResultsWorkspace({
     return [
       {
         type: 'surface',
-        name: 'Design surface',
+        name: surfaceResistanceMode === 'design' ? 'Design surface' : 'Nominal surface',
         x,
         y,
         z,
@@ -493,7 +611,9 @@ export function ResultsWorkspace({
           xpad: 4,
           tickfont: { size: 10 }
         },
-        hovertemplate: 'P=%{z:.1f} kN<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>Surface</extra>'
+        hovertemplate: `P=%{z:.1f} kN<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>${
+          surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'
+        } surface</extra>`
       },
       verticalPlane,
       fixedPPlane,
@@ -518,12 +638,15 @@ export function ResultsWorkspace({
   }, [
     activeAngle,
     activeFixedPKn,
-    contour,
     includeOppositeMoment,
     loadcases,
     selectedLoadcaseId,
     surface,
-    surfaceGrid
+    surfaceBounds3d,
+    surfaceContour3d,
+    surfaceGrid,
+    surfacePoints3d,
+    surfaceResistanceMode
   ])
 
   const surfaceLayout = useMemo(() => {
@@ -566,15 +689,23 @@ export function ResultsWorkspace({
   }, [plotPalette, plotTheme, showSceneAxes])
 
   const contourData = useMemo(() => {
+    const nominalOnly = showNominalReference && !showDesignResistance
+    const activeSamples = nominalOnly ? nominalStrainAngleSamples : strainAngleSamples
     const closedX = [...contour.map((point) => knm(point.Mx))]
     const closedY = [...contour.map((point) => knm(point.My))]
     if (contour[0]) {
       closedX.push(knm(contour[0].Mx))
       closedY.push(knm(contour[0].My))
     }
+    const nominalClosedX = [...nominalContour.map((point) => knm(point.Mx))]
+    const nominalClosedY = [...nominalContour.map((point) => knm(point.My))]
+    if (nominalContour[0]) {
+      nominalClosedX.push(knm(nominalContour[0].Mx))
+      nominalClosedY.push(knm(nominalContour[0].My))
+    }
     const rayRadius = Math.max(...contour.map((point) => knm(Math.hypot(point.Mx, point.My))), 1) * 1.18
-    const radialX = strainAngleSamples.flatMap((point) => [0, rayRadius * Math.cos(point.beta), null])
-    const radialY = strainAngleSamples.flatMap((point) => [0, rayRadius * Math.sin(point.beta), null])
+    const radialX = activeSamples.flatMap((point) => [0, rayRadius * Math.cos(point.beta), null])
+    const radialY = activeSamples.flatMap((point) => [0, rayRadius * Math.sin(point.beta), null])
     const demandGuideX = demandProjection
       ? [demandProjection.mx, demandProjection.mx, null, 0, demandProjection.mx]
       : []
@@ -609,22 +740,41 @@ export function ResultsWorkspace({
             }
           ]
         : []),
-      {
-        type: 'scatter',
-        name: `P = ${fmt(activeFixedPKn, 1)} kN`,
-        mode: 'lines',
-        x: closedX,
-        y: closedY,
-        line: { color: plotPalette.primary, width: 2.4 },
-        hovertemplate: 'Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>Fixed P</extra>'
-      },
-      {
+      ...(showNominalReference
+        ? [{
+            type: 'scatter',
+            name: 'Nominal reference',
+            mode: 'lines',
+            x: nominalClosedX,
+            y: nominalClosedY,
+            line: nominalOnly
+              ? { color: plotPalette.primary, width: 2.6, shape: 'linear', simplify: false }
+              : { color: plotPalette.guide, width: 1.8, dash: 'dash', shape: 'linear', simplify: false },
+            connectgaps: false,
+            hovertemplate:
+              'Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>Nominal reference</extra>'
+          }]
+        : []),
+      ...(showDesignResistance
+        ? [{
+            type: 'scatter',
+            name: `Design · P = ${fmt(activeFixedPKn, 1)} kN`,
+            mode: 'lines',
+            x: closedX,
+            y: closedY,
+            line: { color: plotPalette.primary, width: 2.6, shape: 'linear', simplify: false },
+            connectgaps: false,
+            hovertemplate:
+              'Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>Design resistance</extra>'
+          }]
+        : []),
+      ...(showDesignResistance || showNominalReference ? [{
         type: 'scatter',
         name: 'Strain-angle samples',
         mode: 'markers+text',
-        x: strainAngleSamples.map((point) => knm(point.Mx)),
-        y: strainAngleSamples.map((point) => knm(point.My)),
-        text: strainAngleSamples.map((point) => `${fmt((point.beta * 180) / Math.PI, 0)}°`),
+        x: activeSamples.map((point) => knm(point.Mx)),
+        y: activeSamples.map((point) => knm(point.My)),
+        text: activeSamples.map((point) => `${fmt((point.beta * 180) / Math.PI, 0)}°`),
         textposition: 'top center',
         textfont: {
           size: 10,
@@ -637,13 +787,13 @@ export function ResultsWorkspace({
           symbol: 'circle',
           line: { color: plotPalette.markerOutline, width: 1 }
         },
-        customdata: strainAngleSamples.map((point) => [
+        customdata: activeSamples.map((point) => [
           fmt((point.beta * 180) / Math.PI, 0),
           fmt((Math.atan2(point.My, point.Mx) * 180) / Math.PI, 1)
         ]),
         hovertemplate:
           'N.A. sample α=%{customdata[0]}°<br>Moment angle θ=%{customdata[1]}°<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra></extra>'
-      },
+      }] : []),
       ...(demandProjection
         ? [
             {
@@ -665,10 +815,29 @@ export function ResultsWorkspace({
           ]
         : [])
     ]
-  }, [activeFixedPKn, contour, demandProjection, plotPalette, showFixedPAngleRays, strainAngleSamples])
+  }, [
+    activeFixedPKn,
+    contour,
+    demandProjection,
+    nominalContour,
+    nominalStrainAngleSamples,
+    plotPalette,
+    showDesignResistance,
+    showFixedPAngleRays,
+    showNominalReference,
+    strainAngleSamples
+  ])
+
+  const displayedStrainAngleSamples = showDesignResistance
+    ? strainAngleSamples
+    : nominalStrainAngleSamples
 
   const contourAxisRange = useMemo(() => {
-    const points = [...contour, ...strainAngleSamples]
+    const points = [
+      ...(showDesignResistance ? contour : []),
+      ...displayedStrainAngleSamples,
+      ...(showNominalReference ? nominalContour : [])
+    ]
     if (points.length === 0 && !demandProjection) return null
     const xs = points.map((point) => knm(point.Mx))
     const ys = points.map((point) => knm(point.My))
@@ -688,7 +857,14 @@ export function ResultsWorkspace({
       x: [centerX - half, centerX + half] as [number, number],
       y: [centerY - half, centerY + half] as [number, number]
     }
-  }, [contour, demandProjection, strainAngleSamples])
+  }, [
+    contour,
+    demandProjection,
+    displayedStrainAngleSamples,
+    nominalContour,
+    showDesignResistance,
+    showNominalReference
+  ])
 
   const contourLayout = useMemo(
     () => ({
@@ -820,16 +996,69 @@ export function ResultsWorkspace({
     return { primaryPath, oppositePath, displayPaths, closed: momentPlane.every((path) => path.closed), stations, keys }
   }, [activeAngle, includeOppositeMoment, surface, surfaceGrid])
 
+  const nominalVerticalPaths = useMemo(() => {
+    if (!surface) return [] as Array<Array<{ m: number; p: number; station: number }>>
+    const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
+    const momentPlane = sliceMomentPlane(surface.nominalPoints, theta)
+    const visible = includeOppositeMoment
+      ? momentPlane.map((path) => path.points)
+      : clipMomentPlanePaths(momentPlane, 'positive')
+    return visible.map((path) =>
+      path.map((point) => ({
+        m: knm(point.M),
+        p: kn(point.P),
+        station: point.station ?? -1
+      }))
+    )
+  }, [activeAngle, includeOppositeMoment, surface])
+
+  const nominalVerticalAnnotations = useMemo(() => {
+    const curve = nominalVerticalPaths.flat()
+    const stations = (surface?.stations ?? []).flatMap((_, station) => {
+      const point = curve
+        .map((item) => ({ point: item, delta: Math.abs(item.station - station) }))
+        .filter((item) => item.delta <= 0.35)
+        .sort((a, b) => a.delta - b.delta)[0]?.point
+      return point ? [{ ...point, station }] : []
+    })
+    const keys = (surface?.stations ?? []).flatMap((descriptor, station) => {
+      const definition = descriptor.definition
+      if (
+        definition.kind !== 'steel-stress-ratio' ||
+        (Math.abs(definition.ratio) > 1e-12 && Math.abs(definition.ratio - 1) > 1e-12)
+      ) {
+        return []
+      }
+      const point = curve
+        .map((item) => ({ point: item, delta: Math.abs(item.station - station) }))
+        .filter((item) => item.delta <= 0.25)
+        .sort((a, b) => a.delta - b.delta)[0]?.point
+      return point
+        ? [{
+            ...point,
+            label: descriptor.label,
+            side: point.m < 0 ? 'opposite' as const : 'primary' as const
+          }]
+        : []
+    })
+    return { stations, keys }
+  }, [nominalVerticalPaths, surface])
+
   const verticalData = useMemo(() => {
-    const primaryKeys = verticalSlice.keys.filter((point) => point.side === 'primary')
-    const oppositeKeys = verticalSlice.keys.filter((point) => point.side === 'opposite')
-    const keyRays = verticalSlice.keys.flatMap((point) => [0, point.m, null])
-    const keyRayP = verticalSlice.keys.flatMap((point) => [0, point.p, null])
+    const nominalOnly = showNominalReference && !showDesignResistance
+    const selectedStations = nominalOnly ? nominalVerticalAnnotations.stations : verticalSlice.stations
+    const selectedKeys = nominalOnly ? nominalVerticalAnnotations.keys : verticalSlice.keys
+    const primaryKeys = selectedKeys.filter((point) => point.side === 'primary')
+    const oppositeKeys = selectedKeys.filter((point) => point.side === 'opposite')
+    const keyRays = selectedKeys.flatMap((point) => [0, point.m, null])
+    const keyRayP = selectedKeys.flatMap((point) => [0, point.p, null])
     const demandGuideM = demandProjection ? [demandProjection.m, demandProjection.m, null, 0, demandProjection.m] : []
     const demandGuideP = demandProjection ? [0, demandProjection.p, null, demandProjection.p, demandProjection.p] : []
-    const smoothLine = {
+    const primaryLine = {
       color: plotPalette.primary,
-      width: 2.4
+      width: 2.4,
+      shape: 'linear',
+      simplify: false
     }
 
     return [
@@ -855,7 +1084,21 @@ export function ResultsWorkspace({
             }
           ]
         : []),
-      ...verticalSlice.displayPaths.map((path, index) => ({
+      ...(showNominalReference
+        ? nominalVerticalPaths.map((path, index) => ({
+            type: 'scatter',
+            name: index === 0 ? 'Nominal reference' : `Nominal loop ${index + 1}`,
+            mode: 'lines',
+            x: path.map((point) => point.m),
+            y: path.map((point) => point.p),
+            line: nominalOnly
+              ? primaryLine
+              : { color: plotPalette.guide, width: 1.8, dash: 'dash', shape: 'linear', simplify: false },
+            connectgaps: false,
+            hovertemplate: 'M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra>Nominal reference</extra>'
+          }))
+        : []),
+      ...(showDesignResistance ? verticalSlice.displayPaths.map((path, index) => ({
         type: 'scatter',
         name:
           index === 0
@@ -866,26 +1109,27 @@ export function ResultsWorkspace({
         mode: 'lines',
         x: path.map((point) => point.m),
         y: path.map((point) => point.p),
-        line: smoothLine,
+        line: primaryLine,
+        connectgaps: false,
         marker: { size: 0 },
-        hoverinfo: 'skip'
-      })),
-      {
+        hovertemplate: 'M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra>Design resistance</extra>'
+      })) : []),
+      ...(showDesignResistance || showNominalReference ? [{
         type: 'scatter',
         name: 'Stations',
         mode: 'markers',
-        x: verticalSlice.stations.map((point) => point.m),
-        y: verticalSlice.stations.map((point) => point.p),
+        x: selectedStations.map((point) => point.m),
+        y: selectedStations.map((point) => point.p),
         marker: {
           size: 6,
           color: '#ef4444',
           symbol: 'circle',
           line: { color: plotPalette.markerOutline, width: 0.8 }
         },
-        customdata: verticalSlice.stations.map((point) => point.station),
+        customdata: selectedStations.map((point) => point.station),
         hovertemplate: 'P%{customdata}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra>Station</extra>'
-      },
-      {
+      }] : []),
+      ...(showDesignResistance || showNominalReference ? [{
         type: 'scatter',
         name: 'Key stations',
         mode: 'markers+text',
@@ -905,8 +1149,8 @@ export function ResultsWorkspace({
           line: { color: plotPalette.markerOutline, width: 1 }
         },
         hovertemplate: '%{text}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra></extra>'
-      },
-      ...(oppositeKeys.length > 0
+      }] : []),
+      ...((showDesignResistance || showNominalReference) && oppositeKeys.length > 0
         ? [
             {
               type: 'scatter',
@@ -952,7 +1196,16 @@ export function ResultsWorkspace({
           ]
         : [])
     ]
-  }, [activeAngle, demandProjection, plotPalette, verticalSlice])
+  }, [
+    activeAngle,
+    demandProjection,
+    nominalVerticalAnnotations,
+    nominalVerticalPaths,
+    plotPalette,
+    showDesignResistance,
+    showNominalReference,
+    verticalSlice
+  ])
 
   const verticalLayout = useMemo(
     () => ({
@@ -1051,6 +1304,7 @@ export function ResultsWorkspace({
         section,
         rebars,
         materialStore,
+        designBasis,
         analysisOptions: surface.analysisOptions,
         betaDeg,
         fixedP: activeFixedP,
@@ -1317,6 +1571,22 @@ export function ResultsWorkspace({
                       </strong>
                     </div>
                     <div>
+                      <span>Fixed-P UR</span>
+                      <strong>
+                        {inverseResult.fixedPUtilization == null
+                          ? 'n/a'
+                          : fmt(inverseResult.fixedPUtilization, 3)}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Resistance</span>
+                      <strong title={inverseResult.resistance?.classification ?? undefined}>
+                        {inverseResult.resistance?.factor == null
+                          ? 'Material design'
+                          : `φ = ${fmt(inverseResult.resistance.factor, 3)}`}
+                      </strong>
+                    </div>
+                    <div>
                       <span>Residual</span>
                       <strong>{sci(inverseResult.residualNorm, 2)}</strong>
                     </div>
@@ -1455,6 +1725,12 @@ export function ResultsWorkspace({
                   />
                   Angle rays
                 </label>
+                <ResistanceVisibilityControls
+                  showDesign={showDesignResistance}
+                  showNominal={showNominalReference}
+                  onShowDesign={setShowDesignResistance}
+                  onShowNominal={setShowNominalReference}
+                />
               </>
             ),
             children: <PlotlyChart data={contourData} layout={contourLayout} config={plotConfig} />
@@ -1463,7 +1739,9 @@ export function ResultsWorkspace({
           {renderChartShell({
             id: 'vertical',
             title: 'Vertical slice',
-            meta: `${fmt(activeAngle, 0)}°${verticalSlice.closed ? '' : ' · OPEN'}`,
+            meta: `${fmt(activeAngle, 0)}°${verticalSlice.closed ? '' : ' · OPEN'}${
+              axialCapPKn == null ? '' : ` · axial cap ${fmt(axialCapPKn, 0)} kN`
+            }`,
             primary: loadcasePrimary === 'vertical',
             visible: loadcaseVisible.vertical,
             onMakePrimary: () => setLoadcasePrimary('vertical'),
@@ -1488,6 +1766,12 @@ export function ResultsWorkspace({
                   />
                   Opposite
                 </label>
+                <ResistanceVisibilityControls
+                  showDesign={showDesignResistance}
+                  showNominal={showNominalReference}
+                  onShowDesign={setShowDesignResistance}
+                  onShowNominal={setShowNominalReference}
+                />
               </>
             ),
             children: <PlotlyChart data={verticalData} layout={verticalLayout} config={plotConfig} />
@@ -1516,7 +1800,9 @@ export function ResultsWorkspace({
         {renderChartShell({
           id: 'vertical',
           title: 'Vertical slice',
-          meta: `${fmt(sliceAngle, 0)}°${verticalSlice.closed ? '' : ' · OPEN'}`,
+          meta: `${fmt(sliceAngle, 0)}°${verticalSlice.closed ? '' : ' · OPEN'}${
+            axialCapPKn == null ? '' : ` · axial cap ${fmt(axialCapPKn, 0)} kN`
+          }`,
           primary: overviewPrimary === 'vertical',
           visible: overviewVisible.vertical,
           onMakePrimary: () => setOverviewPrimary('vertical'),
@@ -1540,6 +1826,12 @@ export function ResultsWorkspace({
                 />
                 Opposite
               </label>
+              <ResistanceVisibilityControls
+                showDesign={showDesignResistance}
+                showNominal={showNominalReference}
+                onShowDesign={setShowDesignResistance}
+                onShowNominal={setShowNominalReference}
+              />
             </>
           ),
           children: <PlotlyChart data={verticalData} layout={verticalLayout} config={plotConfig} />
@@ -1548,20 +1840,26 @@ export function ResultsWorkspace({
         {renderChartShell({
           id: 'surface3d',
           title: '3D P-Mx-My',
-          meta: `${surface?.points.length ?? 0} pts`,
+          meta: `${surfacePoints3d.length} pts · ${surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'}`,
           primary: overviewPrimary === 'surface3d',
           visible: overviewVisible.surface3d,
           onMakePrimary: () => setOverviewPrimary('surface3d'),
           onToggleVisible: () => toggleOverviewVisible('surface3d'),
           controls: (
-            <label className={`pm-field-check${showSceneAxes ? ' is-on' : ''}`}>
-              <input
-                type="checkbox"
-                checked={showSceneAxes}
-                onChange={(event) => setShowSceneAxes(event.target.checked)}
+            <>
+              <SurfaceResistanceControl
+                value={surfaceResistanceMode}
+                onChange={setSurfaceResistanceMode}
               />
-              Axes
-            </label>
+              <label className={`pm-field-check${showSceneAxes ? ' is-on' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={showSceneAxes}
+                  onChange={(event) => setShowSceneAxes(event.target.checked)}
+                />
+                Axes
+              </label>
+            </>
           ),
           children: <PlotlyChart data={surfaceData} layout={surfaceLayout} config={plotConfig} onClick={handle3dClick} />
         })}
@@ -1593,6 +1891,12 @@ export function ResultsWorkspace({
                 />
                 Angle rays
               </label>
+              <ResistanceVisibilityControls
+                showDesign={showDesignResistance}
+                showNominal={showNominalReference}
+                onShowDesign={setShowDesignResistance}
+                onShowNominal={setShowNominalReference}
+              />
             </>
           ),
           children: <PlotlyChart data={contourData} layout={contourLayout} config={plotConfig} />

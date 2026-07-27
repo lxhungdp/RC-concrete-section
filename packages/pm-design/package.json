@@ -1,5 +1,5 @@
 {
-  "name": "@pm/project",
+  "name": "@pm/design",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,9 +8,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@pm/design": "0.1.0",
-    "@pm/geometry": "0.1.0",
-    "@pm/ids": "0.1.0",
     "@pm/materials": "0.1.0"
   }
 }

@@ -1,8 +1,9 @@
 import {
   AnalysisInputError,
   analysisInputKey,
-  buildPreviewSurfaceFromPrepared,
+  buildDesignPreviewSurfaceFromPrepared,
   buildSectionFieldMapFromPrepared,
+  checkLoadcaseUtilizationFromSurface,
   checkLoadcasesUtilizationFromSurface,
   prepareAnalysis,
   sliceFixedPContour,
@@ -13,7 +14,17 @@ import {
   type PreviewSurface,
   type SectionFieldMap
 } from '@pm/analysis'
-import { exportSectionWorkbook, type ExcelExportInput } from '@pm/report'
+import {
+  buildResistanceMaterialSets,
+  createDefaultDesignBasis,
+  type DesignBasis
+} from '@pm/design'
+import {
+  exportMeshAuditDxf,
+  exportMeshAuditWorkbook,
+  exportSectionWorkbook,
+  type ExcelExportInput
+} from '@pm/report'
 import { analysisMeshKernelOptions } from '@pm/project'
 import { packSectionMeshView, type SectionMeshView } from '../section-mesh-view'
 import type {
@@ -24,7 +35,8 @@ import type {
   BuildSectionMeshPayload,
   BuildSurfacePayload,
   CheckLoadcasePayload,
-  CheckLoadcasesPayload
+  CheckLoadcasesPayload,
+  MeshAuditExportPayload
 } from '../../workers/pm-analysis.worker'
 
 /** Thrown when a request was superseded or its owner unmounted. Callers normally ignore it. */
@@ -51,12 +63,16 @@ const pending = new Map<string, PendingJob>()
 let fallbackPreparedCache: { key: string; value: PreparedAnalysis } | null = null
 
 const fallbackPreparedFor = (
-  payload: Pick<BuildSurfacePayload, 'section' | 'rebars' | 'materialStore' | 'analysisOptions'>
+  payload: Pick<BuildSurfacePayload, 'section' | 'rebars' | 'materialStore' | 'analysisOptions'> & {
+    designBasis?: DesignBasis
+  }
 ) => {
   const meshOptions = analysisMeshKernelOptions(payload.analysisOptions)
-  const key = analysisInputKey(payload.section, payload.rebars, payload.materialStore, meshOptions)
+  const designBasis = payload.designBasis ?? createDefaultDesignBasis(payload.materialStore)
+  const stateMaterials = buildResistanceMaterialSets(payload.materialStore, designBasis).stateMaterials
+  const key = `${analysisInputKey(payload.section, payload.rebars, stateMaterials, meshOptions)}:${JSON.stringify(designBasis)}`
   if (fallbackPreparedCache?.key === key) return fallbackPreparedCache.value
-  const value = prepareAnalysis(payload.section, payload.rebars, payload.materialStore, meshOptions)
+  const value = prepareAnalysis(payload.section, payload.rebars, stateMaterials, meshOptions)
   fallbackPreparedCache = { key, value }
   return value
 }
@@ -157,7 +173,13 @@ const runWorkerOrFallback = async <T>(
 export const buildPreviewSurfaceAsync = (payload: BuildSurfacePayload, signal?: AbortSignal): Promise<PreviewSurface> =>
   runWorkerOrFallback<PreviewSurface>(
     { type: 'buildSurface', payload },
-    () => buildPreviewSurfaceFromPrepared(fallbackPreparedFor(payload), payload.analysisOptions),
+    () =>
+      buildDesignPreviewSurfaceFromPrepared(
+        fallbackPreparedFor(payload),
+        payload.materialStore,
+        payload.designBasis,
+        payload.analysisOptions
+      ),
     signal
   )
 
@@ -179,11 +201,20 @@ export const checkLoadcaseAsync = (
     { type: 'checkLoadcase', payload },
     () => {
       const contour = sliceFixedPContour(payload.surface.points, payload.loadcase.P)
-      return solveInversePreviewFromPrepared(
+      const inverse = solveInversePreviewFromPrepared(
         fallbackPreparedFor({ ...payload, analysisOptions: payload.surface.analysisOptions }),
         payload.loadcase,
         contour
       )
+      const designCheck = checkLoadcaseUtilizationFromSurface(payload.surface, payload.loadcase)
+      return {
+        ...inverse,
+        utilization: designCheck.proportionalUtilization,
+        proportionalUtilization: designCheck.proportionalUtilization,
+        fixedPUtilization: designCheck.fixedPUtilization,
+        designCapacityPoint: designCheck.capacityPoint,
+        resistance: designCheck.resistance
+      }
     },
     signal
   )
@@ -207,6 +238,48 @@ export const buildSectionMeshAsync = (
     () => packSectionMeshView(fallbackPreparedFor(payload).mesh),
     signal
   )
+
+const exportMeshAuditAsync = async (
+  type: 'exportMeshExcel' | 'exportMeshDxf',
+  payload: MeshAuditExportPayload,
+  signal?: AbortSignal
+) => {
+  const result = await runWorkerOrFallback<ArrayBuffer>(
+    { type, payload },
+    async () => {
+      const mesh = fallbackPreparedFor(payload).mesh
+      const input = {
+        projectName: payload.projectName,
+        sectionName: payload.sectionName,
+        section: payload.section,
+        rebars: payload.rebars,
+        mesh
+      }
+      const blob =
+        type === 'exportMeshExcel'
+          ? await exportMeshAuditWorkbook(input)
+          : exportMeshAuditDxf(input)
+      return blob.arrayBuffer()
+    },
+    signal
+  )
+  return new Blob([result], {
+    type:
+      type === 'exportMeshExcel'
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : 'application/dxf'
+  })
+}
+
+export const exportMeshAuditWorkbookAsync = (
+  payload: MeshAuditExportPayload,
+  signal?: AbortSignal
+) => exportMeshAuditAsync('exportMeshExcel', payload, signal)
+
+export const exportMeshAuditDxfAsync = (
+  payload: MeshAuditExportPayload,
+  signal?: AbortSignal
+) => exportMeshAuditAsync('exportMeshDxf', payload, signal)
 
 export const exportSectionWorkbookAsync = async (payload: ExcelExportInput, signal?: AbortSignal): Promise<Blob> => {
   const result = await runWorkerOrFallback<ArrayBuffer>(

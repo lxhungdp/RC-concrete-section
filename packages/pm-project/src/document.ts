@@ -1,5 +1,6 @@
 import { createEmptyGeometryInput, type GeometryInput } from '@pm/geometry'
 import { createDefaultMaterialStore, type MaterialStore } from '@pm/materials'
+import { cloneDesignBasis, createDefaultDesignBasis } from '@pm/design'
 import { nextAvailableId } from './ids'
 import { cloneLoadingsInput, createEmptyLoadingsInput } from './loadings'
 import { cloneAnalysisOptions, createDefaultAnalysisOptions } from './analysis-options'
@@ -54,6 +55,7 @@ export const createProjectDocument = (snapshot: ProjectInputSnapshot): PmProject
   const materials = cloneMaterialStore(snapshot.materials)
   const loadings = cloneLoadingsInput(snapshot.loadings ?? createEmptyLoadingsInput())
   const analysis = cloneAnalysisOptions(snapshot.analysis ?? createDefaultAnalysisOptions())
+  const design = cloneDesignBasis(snapshot.design ?? createDefaultDesignBasis(materials))
 
   return {
     schema: PM_PROJECT_SCHEMA,
@@ -68,7 +70,8 @@ export const createProjectDocument = (snapshot: ProjectInputSnapshot): PmProject
       geometry,
       materials,
       loadings,
-      analysis
+      analysis,
+      design
     }
   }
 }
