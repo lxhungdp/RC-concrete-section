@@ -18,26 +18,25 @@ import {
 } from '@pm/analysis'
 import { ExcelExportError, sectionWorkbookFileName } from '@pm/report'
 import {
-  buildSectionMeshAsync,
   buildSectionFieldMapAsync,
   exportSectionWorkbookAsync,
   isAnalysisAbort
 } from '../../lib/workers/pm-analysis-client'
-import type { SectionMeshView } from '../../lib/section-mesh-view'
 import { PlotlyChart, type PlotlyClickPayload } from './PlotlyChart'
 import { momentAngleDeg, neutralAxisAngleDeg, SectionFieldChart } from './SectionFieldChart'
-import { SectionMeshChart } from './SectionMeshChart'
 
 type ResultsViewMode = 'overview' | 'loadcase'
-type OverviewChartId = 'vertical' | 'surface3d' | 'fixedP' | 'mesh'
-type LoadcaseChartId = 'heatmap' | 'fixedP' | 'vertical' | 'mesh'
+type OverviewChartId = 'vertical' | 'surface3d' | 'fixedP'
+type LoadcaseChartId = 'heatmap' | 'fixedP' | 'vertical'
 type FieldMode = 'strain' | 'stress'
+type ResultsTheme = 'light' | 'dark'
 
-const OVERVIEW_CHARTS: OverviewChartId[] = ['vertical', 'surface3d', 'fixedP', 'mesh']
-const LOADCASE_CHARTS: LoadcaseChartId[] = ['heatmap', 'fixedP', 'vertical', 'mesh']
+const OVERVIEW_CHARTS: OverviewChartId[] = ['vertical', 'surface3d', 'fixedP']
+const LOADCASE_CHARTS: LoadcaseChartId[] = ['heatmap', 'fixedP', 'vertical']
 const MAX_VISIBLE_CHARTS = 3
 
 type Props = {
+  theme: ResultsTheme
   ready: boolean
   viewMode: ResultsViewMode
   surface: PreviewSurface | null
@@ -62,13 +61,30 @@ const sci = (value: number, digits = 3) => {
   return value.toExponential(digits)
 }
 
-const plotTheme = {
-  paper_bgcolor: 'rgba(0,0,0,0)',
-  plot_bgcolor: 'rgba(0,0,0,0)',
-  autosize: true,
-  font: { family: 'IBM Plex Sans, system-ui, sans-serif', size: 11, color: '#6b7280' },
-  margin: { l: 48, r: 18, t: 10, b: 42 }
-}
+const plotPalettes = {
+  light: {
+    text: '#475569',
+    mutedText: '#64748b',
+    grid: 'rgba(15, 23, 42, 0.08)',
+    zeroLine: 'rgba(15, 23, 42, 0.24)',
+    tick: 'rgba(15, 23, 42, 0.28)',
+    primary: '#2563eb',
+    guide: 'rgba(100, 116, 139, 0.55)',
+    calloutText: '#b91c1c',
+    markerOutline: '#ffffff'
+  },
+  dark: {
+    text: '#cbd5e1',
+    mutedText: '#94a3b8',
+    grid: 'rgba(255, 255, 255, 0.055)',
+    zeroLine: 'rgba(255, 255, 255, 0.18)',
+    tick: 'rgba(255, 255, 255, 0.24)',
+    primary: '#60a5fa',
+    guide: 'rgba(148, 163, 184, 0.34)',
+    calloutText: '#facc15',
+    markerOutline: '#0e0f11'
+  }
+} as const
 
 const plotConfig = {
   displaylogo: false,
@@ -236,6 +252,7 @@ const SyncedControl = ({
 )
 
 export function ResultsWorkspace({
+  theme,
   ready,
   viewMode,
   surface,
@@ -252,6 +269,7 @@ export function ResultsWorkspace({
 }: Props) {
   const [sliceAngle, setSliceAngle] = useState(0)
   const [includeOppositeMoment, setIncludeOppositeMoment] = useState(false)
+  const [showFixedPAngleRays, setShowFixedPAngleRays] = useState(false)
   const [showSceneAxes, setShowSceneAxes] = useState(false)
   const [fieldMode, setFieldMode] = useState<FieldMode>('strain')
   const [showNeutralAxis, setShowNeutralAxis] = useState(true)
@@ -261,8 +279,7 @@ export function ResultsWorkspace({
   const [overviewVisible, setOverviewVisible] = useState<Record<OverviewChartId, boolean>>({
     vertical: true,
     surface3d: true,
-    fixedP: true,
-    mesh: false
+    fixedP: true
   })
   const [exportState, setExportState] = useState<'idle' | 'working' | 'error'>('idle')
   const [exportMessage, setExportMessage] = useState('')
@@ -270,32 +287,43 @@ export function ResultsWorkspace({
   const [loadcaseVisible, setLoadcaseVisible] = useState<Record<LoadcaseChartId, boolean>>({
     heatmap: true,
     fixedP: true,
-    vertical: true,
-    mesh: false
+    vertical: true
   })
   const [fieldMap, setFieldMap] = useState<SectionFieldMap | null>(null)
   const [fieldMapWorking, setFieldMapWorking] = useState(false)
-  const [sectionMesh, setSectionMesh] = useState<SectionMeshView | null>(null)
-  const [sectionMeshWorking, setSectionMeshWorking] = useState(false)
-  const [sectionMeshMessage, setSectionMeshMessage] = useState('')
-  const [showMeshQuadraturePoints, setShowMeshQuadraturePoints] = useState(false)
-  const [showMeshRebars, setShowMeshRebars] = useState(true)
+  const plotPalette = plotPalettes[theme]
+  const plotTheme = useMemo(
+    () => ({
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      autosize: true,
+      font: {
+        family: 'IBM Plex Sans, system-ui, sans-serif',
+        size: 11,
+        color: plotPalette.text
+      },
+      margin: { l: 48, r: 18, t: 10, b: 42 }
+    }),
+    [plotPalette.text]
+  )
 
   const selectedLoadcase = loadcases.find((item) => item.id === selectedLoadcaseId) ?? null
   const isLoadcaseMode = viewMode === 'loadcase' && selectedLoadcase != null
-  const sectionMeshVisible = isLoadcaseMode ? loadcaseVisible.mesh : overviewVisible.mesh
 
   useEffect(() => {
     setFieldMap(null)
 
-    if (!isLoadcaseMode || !inverseResult) {
+    if (!isLoadcaseMode || !inverseResult || !surface) {
       setFieldMapWorking(false)
       return
     }
 
     const controller = new AbortController()
     setFieldMapWorking(true)
-    buildSectionFieldMapAsync({ section, rebars, materialStore, state: inverseResult.state }, controller.signal)
+    buildSectionFieldMapAsync(
+      { section, rebars, materialStore, analysisOptions: surface.analysisOptions, state: inverseResult.state },
+      controller.signal
+    )
       .then((map) => {
         setFieldMap(map)
         setFieldMapWorking(false)
@@ -307,32 +335,7 @@ export function ResultsWorkspace({
       })
 
     return () => controller.abort()
-  }, [inverseResult, isLoadcaseMode, materialStore, rebars, section])
-
-  useEffect(() => {
-    if (!sectionMeshVisible) {
-      setSectionMeshWorking(false)
-      return
-    }
-
-    const controller = new AbortController()
-    setSectionMesh(null)
-    setSectionMeshWorking(true)
-    setSectionMeshMessage('')
-    buildSectionMeshAsync({ section, rebars, materialStore }, controller.signal)
-      .then((mesh) => {
-        setSectionMesh(mesh)
-        setSectionMeshWorking(false)
-      })
-      .catch((error) => {
-        if (isAnalysisAbort(error)) return
-        setSectionMesh(null)
-        setSectionMeshWorking(false)
-        setSectionMeshMessage(error instanceof Error ? error.message : String(error))
-      })
-
-    return () => controller.abort()
-  }, [materialStore, rebars, section, sectionMeshVisible])
+  }, [inverseResult, isLoadcaseMode, materialStore, rebars, section, surface])
 
   const activeFixedP = isLoadcaseMode ? selectedLoadcase.P : fixedP
   const activeAngle = isLoadcaseMode ? loadcaseAngleDeg(selectedLoadcase) : sliceAngle
@@ -532,9 +535,9 @@ export function ResultsWorkspace({
             showgrid: true,
             zeroline: true,
             showticklabels: true,
-            gridcolor: '#e5e7eb',
-            zerolinecolor: '#94a3b8',
-            tickfont: { size: 10 }
+            gridcolor: plotPalette.grid,
+            zerolinecolor: plotPalette.zeroLine,
+            tickfont: { size: 10, color: plotPalette.text }
           }
         : {
             title: '',
@@ -560,7 +563,7 @@ export function ResultsWorkspace({
       hovermode: 'closest',
       clickmode: 'event+select'
     }
-  }, [showSceneAxes])
+  }, [plotPalette, plotTheme, showSceneAxes])
 
   const contourData = useMemo(() => {
     const closedX = [...contour.map((point) => knm(point.Mx))]
@@ -580,15 +583,19 @@ export function ResultsWorkspace({
       : []
 
     return [
-      {
-        type: 'scatter',
-        name: 'Moment angle rays',
-        mode: 'lines',
-        x: radialX,
-        y: radialY,
-        line: { color: '#9ca3af', width: 1, dash: 'dot' },
-        hoverinfo: 'skip'
-      },
+      ...(showFixedPAngleRays
+        ? [
+            {
+              type: 'scatter',
+              name: 'Moment angle rays',
+              mode: 'lines',
+              x: radialX,
+              y: radialY,
+              line: { color: plotPalette.guide, width: 1, dash: 'dot' },
+              hoverinfo: 'skip'
+            }
+          ]
+        : []),
       ...(demandProjection
         ? [
             {
@@ -608,7 +615,7 @@ export function ResultsWorkspace({
         mode: 'lines',
         x: closedX,
         y: closedY,
-        line: { color: '#2563eb', width: 2.4 },
+        line: { color: plotPalette.primary, width: 2.4 },
         hovertemplate: 'Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>Fixed P</extra>'
       },
       {
@@ -619,12 +626,16 @@ export function ResultsWorkspace({
         y: strainAngleSamples.map((point) => knm(point.My)),
         text: strainAngleSamples.map((point) => `${fmt((point.beta * 180) / Math.PI, 0)}°`),
         textposition: 'top center',
-        textfont: { size: 10, color: '#b91c1c', family: 'IBM Plex Sans, system-ui, sans-serif' },
+        textfont: {
+          size: 10,
+          color: plotPalette.calloutText,
+          family: 'IBM Plex Sans, system-ui, sans-serif'
+        },
         marker: {
           size: 8.5,
           color: '#ef4444',
           symbol: 'circle',
-          line: { color: '#ffffff', width: 1 }
+          line: { color: plotPalette.markerOutline, width: 1 }
         },
         customdata: strainAngleSamples.map((point) => [
           fmt((point.beta * 180) / Math.PI, 0),
@@ -645,7 +656,7 @@ export function ResultsWorkspace({
                 size: 10,
                 color: '#ff1f3d',
                 symbol: 'circle',
-                line: { color: '#ffffff', width: 1 }
+                line: { color: plotPalette.markerOutline, width: 1 }
               },
               customdata: [[demandProjection.name, demandProjection.p]],
               hovertemplate:
@@ -654,7 +665,7 @@ export function ResultsWorkspace({
           ]
         : [])
     ]
-  }, [activeFixedPKn, contour, demandProjection, strainAngleSamples])
+  }, [activeFixedPKn, contour, demandProjection, plotPalette, showFixedPAngleRays, strainAngleSamples])
 
   const contourAxisRange = useMemo(() => {
     const points = [...contour, ...strainAngleSamples]
@@ -686,22 +697,24 @@ export function ResultsWorkspace({
       xaxis: {
         title: '',
         zeroline: true,
-        zerolinecolor: '#94a3b8',
-        gridcolor: '#e5e7eb',
+        zerolinecolor: plotPalette.zeroLine,
+        gridcolor: plotPalette.grid,
         automargin: false,
         range: contourAxisRange?.x,
-        tickfont: { size: 10 },
+        tickfont: { size: 10, color: plotPalette.text },
+        tickcolor: plotPalette.tick,
         titlefont: { size: 11 }
       },
       yaxis: {
         title: '',
         zeroline: true,
-        zerolinecolor: '#94a3b8',
-        gridcolor: '#e5e7eb',
+        zerolinecolor: plotPalette.zeroLine,
+        gridcolor: plotPalette.grid,
         scaleanchor: 'x',
         automargin: false,
         range: contourAxisRange?.y,
-        tickfont: { size: 10 }
+        tickfont: { size: 10, color: plotPalette.text },
+        tickcolor: plotPalette.tick
       },
       annotations: [
         {
@@ -713,7 +726,7 @@ export function ResultsWorkspace({
           showarrow: false,
           xanchor: 'left',
           yanchor: 'top',
-          font: { size: 11, color: '#6b7280' }
+          font: { size: 11, color: plotPalette.mutedText }
         },
         {
           xref: 'paper',
@@ -724,14 +737,14 @@ export function ResultsWorkspace({
           showarrow: false,
           xanchor: 'right',
           yanchor: 'bottom',
-          font: { size: 11, color: '#6b7280' }
+          font: { size: 11, color: plotPalette.mutedText }
         }
       ],
       hovermode: 'closest',
       clickmode: 'event+select',
       showlegend: false
     }),
-    [contourAxisRange]
+    [contourAxisRange, plotPalette, plotTheme]
   )
 
   const verticalSlice = useMemo(() => {
@@ -815,7 +828,7 @@ export function ResultsWorkspace({
     const demandGuideM = demandProjection ? [demandProjection.m, demandProjection.m, null, 0, demandProjection.m] : []
     const demandGuideP = demandProjection ? [0, demandProjection.p, null, demandProjection.p, demandProjection.p] : []
     const smoothLine = {
-      color: '#2563eb',
+      color: plotPalette.primary,
       width: 2.4
     }
 
@@ -826,7 +839,7 @@ export function ResultsWorkspace({
         mode: 'lines',
         x: keyRays,
         y: keyRayP,
-        line: { color: '#9ca3af', width: 1, dash: 'dot' },
+        line: { color: plotPalette.guide, width: 1, dash: 'dot' },
         hoverinfo: 'skip'
       },
       ...(demandProjection
@@ -867,7 +880,7 @@ export function ResultsWorkspace({
           size: 6,
           color: '#ef4444',
           symbol: 'circle',
-          line: { color: '#ffffff', width: 0.8 }
+          line: { color: plotPalette.markerOutline, width: 0.8 }
         },
         customdata: verticalSlice.stations.map((point) => point.station),
         hovertemplate: 'P%{customdata}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra>Station</extra>'
@@ -880,12 +893,16 @@ export function ResultsWorkspace({
         y: primaryKeys.map((point) => point.p),
         text: primaryKeys.map((point) => point.label),
         textposition: 'top center',
-        textfont: { size: 10, color: '#b91c1c', family: 'IBM Plex Sans, system-ui, sans-serif' },
+        textfont: {
+          size: 10,
+          color: plotPalette.calloutText,
+          family: 'IBM Plex Sans, system-ui, sans-serif'
+        },
         marker: {
           size: 8.5,
           color: '#ef4444',
           symbol: 'circle',
-          line: { color: '#ffffff', width: 1 }
+          line: { color: plotPalette.markerOutline, width: 1 }
         },
         hovertemplate: '%{text}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra></extra>'
       },
@@ -899,12 +916,16 @@ export function ResultsWorkspace({
               y: oppositeKeys.map((point) => point.p),
               text: oppositeKeys.map((point) => point.label),
               textposition: 'top center',
-              textfont: { size: 10, color: '#b91c1c', family: 'IBM Plex Sans, system-ui, sans-serif' },
+              textfont: {
+                size: 10,
+                color: plotPalette.calloutText,
+                family: 'IBM Plex Sans, system-ui, sans-serif'
+              },
               marker: {
                 size: 8,
                 color: '#ef4444',
                 symbol: 'circle',
-                line: { color: '#ffffff', width: 1 }
+                line: { color: plotPalette.markerOutline, width: 1 }
               },
               hovertemplate: '%{text}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra></extra>'
             }
@@ -922,7 +943,7 @@ export function ResultsWorkspace({
                 size: 10,
                 color: '#ff1f3d',
                 symbol: 'circle',
-                line: { color: '#ffffff', width: 1 }
+                line: { color: plotPalette.markerOutline, width: 1 }
               },
               customdata: [[demandProjection.name, demandProjection.mx, demandProjection.my]],
               hovertemplate:
@@ -931,7 +952,7 @@ export function ResultsWorkspace({
           ]
         : [])
     ]
-  }, [activeAngle, demandProjection, verticalSlice])
+  }, [activeAngle, demandProjection, plotPalette, verticalSlice])
 
   const verticalLayout = useMemo(
     () => ({
@@ -940,24 +961,24 @@ export function ResultsWorkspace({
       xaxis: {
         title: '',
         zeroline: true,
-        zerolinecolor: '#94a3b8',
-        gridcolor: '#e5e7eb',
+        zerolinecolor: plotPalette.zeroLine,
+        gridcolor: plotPalette.grid,
         automargin: false,
-        tickfont: { size: 10 },
+        tickfont: { size: 10, color: plotPalette.text },
         ticks: 'outside',
         ticklen: 4,
-        tickcolor: '#cbd5e1'
+        tickcolor: plotPalette.tick
       },
       yaxis: {
         title: '',
         zeroline: true,
-        zerolinecolor: '#94a3b8',
-        gridcolor: '#e5e7eb',
+        zerolinecolor: plotPalette.zeroLine,
+        gridcolor: plotPalette.grid,
         automargin: false,
-        tickfont: { size: 10 },
+        tickfont: { size: 10, color: plotPalette.text },
         ticks: 'outside',
         ticklen: 4,
-        tickcolor: '#cbd5e1'
+        tickcolor: plotPalette.tick
       },
       annotations: [
         {
@@ -969,7 +990,7 @@ export function ResultsWorkspace({
           showarrow: false,
           xanchor: 'left',
           yanchor: 'bottom',
-          font: { size: 11, color: '#6b7280' }
+          font: { size: 11, color: plotPalette.mutedText }
         },
         {
           xref: 'paper',
@@ -980,13 +1001,13 @@ export function ResultsWorkspace({
           showarrow: false,
           xanchor: 'left',
           yanchor: 'top',
-          font: { size: 11, color: '#6b7280' }
+          font: { size: 11, color: plotPalette.mutedText }
         }
       ],
       hovermode: 'closest',
       showlegend: false
     }),
-    []
+    [plotPalette, plotTheme]
   )
 
   const fieldExtremes = useMemo(() => {
@@ -1167,9 +1188,9 @@ export function ResultsWorkspace({
   const hiddenLoadcase = LOADCASE_CHARTS.filter((id) => !loadcaseVisible[id])
 
   const overviewRestoreLabel = (id: OverviewChartId) =>
-    id === 'vertical' ? 'Vertical' : id === 'surface3d' ? '3D' : id === 'fixedP' ? 'Fixed-P' : 'Section mesh'
+    id === 'vertical' ? 'Vertical' : id === 'surface3d' ? '3D' : 'Fixed-P'
   const loadcaseRestoreLabel = (id: LoadcaseChartId) =>
-    id === 'heatmap' ? 'Section field' : id === 'fixedP' ? 'Fixed-P' : id === 'vertical' ? 'Vertical' : 'Section mesh'
+    id === 'heatmap' ? 'Section field' : id === 'fixedP' ? 'Fixed-P' : 'Vertical'
 
   const renderRestoreBar = (buttons: Array<{ id: string; label: string; onClick: () => void }>) => {
     if (buttons.length === 0) return null
@@ -1184,54 +1205,6 @@ export function ResultsWorkspace({
       </div>
     )
   }
-
-  const meshReport = sectionMesh?.report ?? surface?.mesh ?? null
-  const meshMeta = meshReport
-    ? `${meshReport.cells.toLocaleString('en-US')} cells · ${meshReport.triangles.toLocaleString('en-US')} tri`
-    : 'On demand'
-  const meshControls = (
-    <div className="pm-section-field-toolbar" role="group" aria-label="Section mesh options">
-      <label className={`pm-field-check${showMeshQuadraturePoints ? ' is-on' : ''}`}>
-        <input
-          type="checkbox"
-          checked={showMeshQuadraturePoints}
-          onChange={(event) => setShowMeshQuadraturePoints(event.target.checked)}
-        />
-        Gauss pts
-      </label>
-      <label className={`pm-field-check${showMeshRebars ? ' is-on' : ''}`}>
-        <input
-          type="checkbox"
-          checked={showMeshRebars}
-          onChange={(event) => setShowMeshRebars(event.target.checked)}
-        />
-        Rebar
-      </label>
-    </div>
-  )
-  const meshFooter = meshReport ? (
-    <div className="pm-section-mesh-quality">
-      <span>h = {fmt(meshReport.cellSize, 3)} mm</span>
-      <span>{meshReport.points.toLocaleString('en-US')} integration points</span>
-      <span>area error = {sci(meshReport.areaError, 2)} mm²</span>
-      <strong className={meshReport.ok ? 'is-ok' : 'is-bad'}>{meshReport.ok ? 'Verified' : 'Check mesh'}</strong>
-    </div>
-  ) : null
-  const meshChart = sectionMesh ? (
-    <SectionMeshChart
-      mesh={sectionMesh}
-      section={section}
-      rebars={rebars}
-      showQuadraturePoints={showMeshQuadraturePoints}
-      showRebars={showMeshRebars}
-    />
-  ) : (
-    <div className="pm-results-plot-placeholder">
-      {sectionMeshWorking
-        ? 'Exact integration mesh is loading...'
-        : sectionMeshMessage || 'Turn the chart on to load the exact integration mesh.'}
-    </div>
-  )
 
   if (isLoadcaseMode && selectedLoadcase) {
     return (
@@ -1463,16 +1436,26 @@ export function ResultsWorkspace({
             onMakePrimary: () => setLoadcasePrimary('fixedP'),
             onToggleVisible: () => toggleLoadcaseVisible('fixedP'),
             controls: (
-              <SyncedControl
-                label="P"
-                value={Number(activeFixedPKn.toFixed(1))}
-                min={minPKn}
-                max={maxPKn}
-                step={Math.max(1, Math.round((maxPKn - minPKn) / 240))}
-                unit="kN"
-                disabled
-                onChange={() => undefined}
-              />
+              <>
+                <SyncedControl
+                  label="P"
+                  value={Number(activeFixedPKn.toFixed(1))}
+                  min={minPKn}
+                  max={maxPKn}
+                  step={Math.max(1, Math.round((maxPKn - minPKn) / 240))}
+                  unit="kN"
+                  disabled
+                  onChange={() => undefined}
+                />
+                <label className={`pm-field-check${showFixedPAngleRays ? ' is-on' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={showFixedPAngleRays}
+                    onChange={(event) => setShowFixedPAngleRays(event.target.checked)}
+                  />
+                  Angle rays
+                </label>
+              </>
             ),
             children: <PlotlyChart data={contourData} layout={contourLayout} config={plotConfig} />
           })}
@@ -1510,18 +1493,6 @@ export function ResultsWorkspace({
             children: <PlotlyChart data={verticalData} layout={verticalLayout} config={plotConfig} />
           })}
 
-          {renderChartShell({
-            id: 'mesh',
-            title: 'Section mesh',
-            meta: meshMeta,
-            primary: loadcasePrimary === 'mesh',
-            visible: loadcaseVisible.mesh,
-            onMakePrimary: () => setLoadcasePrimary('mesh'),
-            onToggleVisible: () => toggleLoadcaseVisible('mesh'),
-            controls: meshControls,
-            footer: meshFooter,
-            children: meshChart
-          })}
         </div>
       </section>
     )
@@ -1604,31 +1575,29 @@ export function ResultsWorkspace({
           onMakePrimary: () => setOverviewPrimary('fixedP'),
           onToggleVisible: () => toggleOverviewVisible('fixedP'),
           controls: (
-            <SyncedControl
-              label="P"
-              value={Number(kn(fixedP).toFixed(1))}
-              min={minPKn}
-              max={maxPKn}
-              step={Math.max(1, Math.round((maxPKn - minPKn) / 240))}
-              unit="kN"
-              onChange={(value) => onFixedPChange(value * 1000)}
-            />
+            <>
+              <SyncedControl
+                label="P"
+                value={Number(kn(fixedP).toFixed(1))}
+                min={minPKn}
+                max={maxPKn}
+                step={Math.max(1, Math.round((maxPKn - minPKn) / 240))}
+                unit="kN"
+                onChange={(value) => onFixedPChange(value * 1000)}
+              />
+              <label className={`pm-field-check${showFixedPAngleRays ? ' is-on' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={showFixedPAngleRays}
+                  onChange={(event) => setShowFixedPAngleRays(event.target.checked)}
+                />
+                Angle rays
+              </label>
+            </>
           ),
           children: <PlotlyChart data={contourData} layout={contourLayout} config={plotConfig} />
         })}
 
-        {renderChartShell({
-          id: 'mesh',
-          title: 'Section mesh',
-          meta: meshMeta,
-          primary: overviewPrimary === 'mesh',
-          visible: overviewVisible.mesh,
-          onMakePrimary: () => setOverviewPrimary('mesh'),
-          onToggleVisible: () => toggleOverviewVisible('mesh'),
-          controls: meshControls,
-          footer: meshFooter,
-          children: meshChart
-        })}
       </div>
     </section>
   )

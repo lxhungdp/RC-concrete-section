@@ -276,6 +276,12 @@ export function SectionFieldChart({
       const ctx = canvas.getContext('2d', { willReadFrequently: true })
       if (!ctx) return
 
+      const themeStyle = getComputedStyle(host)
+      const foreground = themeStyle.getPropertyValue('--foreground').trim() || '#0a0a0a'
+      const foregroundMuted = themeStyle.getPropertyValue('--foreground-muted').trim() || '#6b7280'
+      const background = themeStyle.getPropertyValue('--background').trim() || '#ffffff'
+      const border = themeStyle.getPropertyValue('--border').trim() || '#ededee'
+
       ctx.setTransform(1, 0, 0, 1, 0, 0)
       ctx.clearRect(0, 0, width, height)
 
@@ -320,15 +326,6 @@ export function SectionFieldChart({
 
       const image = ctx.createImageData(width, height)
       const data = image.data
-      for (let py = Math.floor(padT); py < Math.floor(padT + plotH); py++) {
-        for (let px = Math.floor(padL); px < Math.floor(padL + plotW); px++) {
-          const idx = (py * width + px) * 4
-          data[idx] = 241
-          data[idx + 1] = 245
-          data[idx + 2] = 249
-          data[idx + 3] = 255
-        }
-      }
 
       for (const tri of fieldMap.triangles) {
         const x0 = toPixelX(tri.ax)
@@ -377,7 +374,7 @@ export function SectionFieldChart({
           ctx.moveTo(toPixelX(ring[0].x), toPixelY(ring[0].y))
           for (let i = 1; i < ring.length; i++) ctx.lineTo(toPixelX(ring[i].x), toPixelY(ring[i].y))
           ctx.closePath()
-          ctx.strokeStyle = ringIndex === 0 ? '#111827' : '#64748b'
+          ctx.strokeStyle = ringIndex === 0 ? foreground : foregroundMuted
           ctx.lineWidth = (ringIndex === 0 ? 1.6 : 1) * dpr
           ctx.stroke()
         })
@@ -406,10 +403,10 @@ export function SectionFieldChart({
           ctx.fillStyle = `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`
         } else {
           // Geometry-only marker when rebar is excluded from the field scale.
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.55)'
+          ctx.fillStyle = foregroundMuted
         }
         ctx.fill()
-        ctx.strokeStyle = '#0f172a'
+        ctx.strokeStyle = foreground
         ctx.lineWidth = 1.6 * dpr
         ctx.stroke()
       }
@@ -506,13 +503,13 @@ export function SectionFieldChart({
       // Centroid marker
       ctx.beginPath()
       ctx.arc(toPixelX(ox), toPixelY(oy), 3.5 * dpr, 0, Math.PI * 2)
-      ctx.fillStyle = '#111827'
+      ctx.fillStyle = foreground
       ctx.fill()
-      ctx.strokeStyle = '#ffffff'
+      ctx.strokeStyle = background
       ctx.lineWidth = 1.2 * dpr
       ctx.stroke()
 
-      ctx.fillStyle = '#6b7280'
+      ctx.fillStyle = foregroundMuted
       ctx.font = `${11 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
       ctx.textAlign = 'center'
       ctx.fillText('x (mm)', padL + plotW / 2, height - 10 * dpr)
@@ -533,10 +530,10 @@ export function SectionFieldChart({
         ctx.fillStyle = `rgb(${r},${g},${b})`
         ctx.fillRect(barX, barY + i, barW, 1.5)
       }
-      ctx.strokeStyle = '#94a3b8'
+      ctx.strokeStyle = border
       ctx.lineWidth = 1 * dpr
       ctx.strokeRect(barX, barY, barW, barH)
-      ctx.fillStyle = '#6b7280'
+      ctx.fillStyle = foregroundMuted
       ctx.textAlign = 'left'
       ctx.font = `${10 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
       const title = fieldMode === 'strain' ? 'ε' : 'σ (MPa)'
@@ -553,9 +550,15 @@ export function SectionFieldChart({
     schedule()
     const observer = new ResizeObserver(schedule)
     observer.observe(host)
+    const themeObserver = new MutationObserver(schedule)
+    themeObserver.observe(document.body, {
+      attributes: true,
+      attributeFilter: ['data-jscad-theme']
+    })
     return () => {
       cancelAnimationFrame(frame)
       observer.disconnect()
+      themeObserver.disconnect()
     }
   }, [Mx, My, fieldMap, fieldMode, fieldRange, includeRebar, section.solids, showMoments, showNeutralAxis, state])
 

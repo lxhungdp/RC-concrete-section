@@ -1,12 +1,14 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronUp, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { Plus, RotateCcw, X } from 'lucide-react'
 import {
+  MAX_MESH_CELLS,
+  MAX_MESH_SEED_DIVISIONS,
+  MAX_MESH_SUBDIVISION,
   MAX_REFINED_DIRECTIONS,
   MAX_SEED_DIRECTIONS,
   MAX_INTERMEDIATE_STATIONS,
-  MAX_STATION_LABEL_LENGTH,
   analysisStationCount,
   createDefaultAnalysisOptions,
   type AnalysisOptions,
@@ -145,14 +147,6 @@ export function AnalysisOptionsPanel({ options, onChange }: Props) {
       if (index >= 0) draft.stations.intermediate[index] = { ...draft.stations.intermediate[index], ...patch }
     }, true)
 
-  const moveStation = (index: number, offset: -1 | 1) =>
-    commit((draft) => {
-      const target = index + offset
-      if (target < 0 || target >= draft.stations.intermediate.length) return
-      const [item] = draft.stations.intermediate.splice(index, 1)
-      draft.stations.intermediate.splice(target, 0, item)
-    }, true)
-
   const applyExplicitDraft = () => {
     const parsed = angleDraft
       .split(/[\s,;]+/)
@@ -210,59 +204,53 @@ export function AnalysisOptionsPanel({ options, onChange }: Props) {
 
       <div className="pm-section-title">
         <div>
-          <h3>Station schedule</h3>
-          <p>Ordered from compression to tension</p>
+          <h3>Points &amp; criteria</h3>
+          <p>Numbered automatically from compression to tension</p>
         </div>
-        <button
-          type="button"
-          className="pm-table-icon-btn"
-          disabled={options.stations.intermediate.length >= MAX_INTERMEDIATE_STATIONS}
-          onClick={() =>
-            commit((draft) => {
-              const id = Math.max(0, ...draft.stations.intermediate.map((station) => station.id)) + 1
-              draft.stations.intermediate.push({
-                id,
-                label: `Custom ${id}`,
-                criterion: { type: 'steel-strain', strain: -0.05 }
-              })
-            }, true)
-          }
-          title="Add station"
-        >
-          <Plus size={14} />
-        </button>
       </div>
 
       <div className="pm-table-wrap">
         <table className="pm-point-table">
           <thead>
             <tr>
-              <th>Point</th>
-              <th>Criterion</th>
+              <th>No.</th>
+              <th>Criteria</th>
               <th>Value</th>
-              <th />
+              <th>
+                <button
+                  type="button"
+                  className="pm-table-add-icon-btn"
+                  disabled={options.stations.intermediate.length >= MAX_INTERMEDIATE_STATIONS}
+                  onClick={() =>
+                    commit((draft) => {
+                      const id = Math.max(0, ...draft.stations.intermediate.map((station) => station.id)) + 1
+                      draft.stations.intermediate.push({
+                        id,
+                        label: `Custom ${id}`,
+                        criterion: { type: 'steel-strain', strain: -0.05 }
+                      })
+                    }, true)
+                  }
+                  title="Add point"
+                >
+                  <Plus size={14} />
+                </button>
+              </th>
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>Pure compression</td>
-              <td>Fixed pole</td>
-              <td>εcu</td>
+            <tr className="pm-analysis-fixed-point">
+              <td><span className="pm-point-index">1</span></td>
+              <td><span className="pm-analysis-fixed-label">Pure compression</span></td>
+              <td><span className="pm-analysis-fixed-value">εcu</span></td>
               <td />
             </tr>
             {options.stations.intermediate.map((station, index) => (
               <tr key={station.id}>
-                <td>
-                  <input
-                    aria-label={`Station ${station.id} label`}
-                    maxLength={MAX_STATION_LABEL_LENGTH}
-                    value={station.label}
-                    onChange={(event) => updateStation(station.id, { label: event.target.value || `Station ${station.id}` })}
-                  />
-                </td>
+                <td><span className="pm-point-index">{index + 2}</span></td>
                 <td>
                   <select
-                    aria-label={`Station ${station.id} criterion`}
+                    aria-label={`Point ${index + 2} criteria`}
                     value={station.criterion.type}
                     onChange={(event) =>
                       updateStation(station.id, {
@@ -270,14 +258,14 @@ export function AnalysisOptionsPanel({ options, onChange }: Props) {
                       })
                     }
                   >
-                    <option value="c-over-c1">c/c₁</option>
-                    <option value="steel-stress-ratio">fₛ/fyd</option>
+                    <option value="c-over-c1">c/c1</option>
+                    <option value="steel-stress-ratio">fs/fyd</option>
                     <option value="steel-strain">εₛ</option>
                   </select>
                 </td>
                 <td>
                   <NumericInput
-                    ariaLabel={`Station ${station.id} value`}
+                    ariaLabel={`Point ${index + 2} value`}
                     step="any"
                     value={criterionValue(station.criterion)}
                     onCommit={(value) =>
@@ -288,41 +276,31 @@ export function AnalysisOptionsPanel({ options, onChange }: Props) {
                   />
                 </td>
                 <td>
-                  <div className="pm-inline-actions">
-                    <button disabled={index === 0} onClick={() => moveStation(index, -1)} title="Move up">
-                      <ChevronUp size={12} />
-                    </button>
-                    <button
-                      disabled={index === options.stations.intermediate.length - 1}
-                      onClick={() => moveStation(index, 1)}
-                      title="Move down"
-                    >
-                      <ChevronDown size={12} />
-                    </button>
-                    <button
-                      onClick={() =>
-                        commit((draft) => {
-                          draft.stations.intermediate = draft.stations.intermediate.filter(
-                            (item) => item.id !== station.id
-                          )
-                          const probe = draft.directions.refinement.probe
-                          if (probe !== 'all') {
-                            probe.stationIds = probe.stationIds.filter((id) => id !== station.id)
-                          }
-                        }, true)
-                      }
-                      title="Delete station"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    className="pm-table-icon-btn pm-table-icon-btn--danger"
+                    onClick={() =>
+                      commit((draft) => {
+                        draft.stations.intermediate = draft.stations.intermediate.filter(
+                          (item) => item.id !== station.id
+                        )
+                        const probe = draft.directions.refinement.probe
+                        if (probe !== 'all') {
+                          probe.stationIds = probe.stationIds.filter((id) => id !== station.id)
+                        }
+                      }, true)
+                    }
+                    title={`Remove point ${index + 2}`}
+                  >
+                    <X size={14} />
+                  </button>
                 </td>
               </tr>
             ))}
-            <tr>
-              <td>Pure tension</td>
-              <td>Fixed pole</td>
-              <td>Material domain</td>
+            <tr className="pm-analysis-fixed-point">
+              <td><span className="pm-point-index">{options.stations.intermediate.length + 2}</span></td>
+              <td><span className="pm-analysis-fixed-label">Pure tension</span></td>
+              <td><span className="pm-analysis-fixed-value">Material domain</span></td>
               <td />
             </tr>
           </tbody>
@@ -378,7 +356,7 @@ export function AnalysisOptionsPanel({ options, onChange }: Props) {
             />
           </label>
           <label className="pm-field">
-            <span>Start angle</span>
+            <span>Start angle (deg)</span>
             <NumericInput
               min={0}
               max={359.999999}
@@ -392,7 +370,6 @@ export function AnalysisOptionsPanel({ options, onChange }: Props) {
                 })
               }
             />
-            <em>deg</em>
           </label>
           <p className="pm-field-note">Exact spacing: {(360 / options.directions.seed.count).toFixed(4)}°</p>
         </>
@@ -526,6 +503,92 @@ export function AnalysisOptionsPanel({ options, onChange }: Props) {
           </label>
         </>
       )}
+
+      <div className="pm-section-title">
+        <div>
+          <h3>Mesh</h3>
+          <p>Concrete integration mesh used by analysis and section preview</p>
+        </div>
+      </div>
+
+      <label className="pm-field">
+        <span>Mesh sizing</span>
+        <select
+          value={options.mesh.sizing.type}
+          onChange={(event) =>
+            commit((draft) => {
+              draft.mesh.sizing =
+                event.target.value === 'automatic'
+                  ? { type: 'automatic', seedDivisions: 32 }
+                  : { type: 'fixed', cellSize: 10 }
+            })
+          }
+        >
+          <option value="automatic">Automatic (Dmin / divisions)</option>
+          <option value="fixed">Fixed cell size</option>
+        </select>
+      </label>
+
+      {options.mesh.sizing.type === 'automatic' ? (
+        <label className="pm-field">
+          <span>Dmin divisions</span>
+          <NumericInput
+            min={4}
+            max={MAX_MESH_SEED_DIVISIONS}
+            integer
+            value={options.mesh.sizing.seedDivisions}
+            onCommit={(value) =>
+              commit((draft) => {
+                if (draft.mesh.sizing.type === 'automatic') draft.mesh.sizing.seedDivisions = value
+              })
+            }
+          />
+        </label>
+      ) : (
+        <label className="pm-field">
+          <span>Cell size (mm)</span>
+          <NumericInput
+            min={0.000001}
+            step="any"
+            value={options.mesh.sizing.cellSize}
+            onCommit={(value) =>
+              commit((draft) => {
+                if (draft.mesh.sizing.type === 'fixed') draft.mesh.sizing.cellSize = value
+              })
+            }
+          />
+        </label>
+      )}
+
+      <label className="pm-field">
+        <span>Maximum cells</span>
+        <NumericInput
+          min={1}
+          max={MAX_MESH_CELLS}
+          integer
+          value={options.mesh.maxCells}
+          onCommit={(value) =>
+            commit((draft) => {
+              draft.mesh.maxCells = value
+            })
+          }
+        />
+      </label>
+
+      <label className="pm-field">
+        <span>Maximum subdivision</span>
+        <NumericInput
+          min={0}
+          max={MAX_MESH_SUBDIVISION}
+          integer
+          value={options.mesh.maxSubdivision}
+          onCommit={(value) =>
+            commit((draft) => {
+              draft.mesh.maxSubdivision = value
+            })
+          }
+        />
+      </label>
     </section>
   )
 }

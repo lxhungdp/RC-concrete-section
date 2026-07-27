@@ -18,7 +18,7 @@ import {
 import { exportSectionWorkbook, type ExcelExportInput } from '@pm/report'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
-import type { AnalysisOptions, LoadCombination } from '@pm/project'
+import { analysisMeshKernelOptions, type AnalysisOptions, type LoadCombination } from '@pm/project'
 import {
   packSectionMeshView,
   sectionMeshTransferList,
@@ -44,6 +44,7 @@ export type BuildFieldMapPayload = {
   section: SectionGeometry
   rebars: GeometryInputRebarView[]
   materialStore: MaterialStore
+  analysisOptions: AnalysisOptions
   state: InversePreviewResult['state']
 }
 
@@ -51,6 +52,7 @@ export type BuildSectionMeshPayload = {
   section: SectionGeometry
   rebars: GeometryInputRebarView[]
   materialStore: MaterialStore
+  analysisOptions: AnalysisOptions
 }
 
 export type CheckLoadcasesPayload = {
@@ -114,11 +116,12 @@ let preparedCache: { key: string; value: PreparedAnalysis } | null = null
 let surfaceCache: { key: string; value: PreviewSurface } | null = null
 
 const preparedFor = (
-  payload: Pick<BuildSurfacePayload, 'section' | 'rebars' | 'materialStore'>
+  payload: Pick<BuildSurfacePayload, 'section' | 'rebars' | 'materialStore' | 'analysisOptions'>
 ) => {
-  const key = analysisInputKey(payload.section, payload.rebars, payload.materialStore)
+  const meshOptions = analysisMeshKernelOptions(payload.analysisOptions)
+  const key = analysisInputKey(payload.section, payload.rebars, payload.materialStore, meshOptions)
   if (preparedCache?.key === key) return preparedCache.value
-  const value = prepareAnalysis(payload.section, payload.rebars, payload.materialStore)
+  const value = prepareAnalysis(payload.section, payload.rebars, payload.materialStore, meshOptions)
   preparedCache = { key, value }
   return value
 }
@@ -166,7 +169,11 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
         (surfaceCache?.key === key ? surfaceCache.value : surface).points,
         loadcase.P
       )
-      const result = solveInversePreviewFromPrepared(preparedFor({ section, rebars, materialStore }), loadcase, contour)
+      const result = solveInversePreviewFromPrepared(
+        preparedFor({ section, rebars, materialStore, analysisOptions: surface.analysisOptions }),
+        loadcase,
+        contour
+      )
       workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
       return
     }

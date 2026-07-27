@@ -235,6 +235,37 @@ button {
   color: var(--btn-primary-foreground);
 }
 
+.pm-steel-stress-strain-icon {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  border-bottom: 1.6px solid currentColor;
+  border-left: 1.6px solid currentColor;
+  border-radius: 0 0 0 1px;
+}
+
+.pm-steel-stress-strain-icon::before,
+.pm-steel-stress-strain-icon::after {
+  position: absolute;
+  height: 0;
+  border-top: 1.7px solid currentColor;
+  content: '';
+}
+
+.pm-steel-stress-strain-icon::before {
+  bottom: 2px;
+  left: 2px;
+  width: 8px;
+  transform: rotate(-48deg);
+  transform-origin: left center;
+}
+
+.pm-steel-stress-strain-icon::after {
+  top: 7px;
+  right: 1px;
+  width: 7px;
+}
+
 .pm-toolbar {
   display: inline-flex;
   align-items: center;
@@ -300,25 +331,6 @@ button {
 .pm-panel-section + .pm-panel-section {
   padding-top: 14px;
   border-top: 1px solid var(--border);
-}
-
-.pm-result-options-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 28px;
-  padding: 0 9px;
-  border: 1px solid var(--accent-border);
-  border-radius: 6px;
-  background: var(--accent-muted);
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 0.7rem;
-  font-weight: 700;
-}
-
-.pm-result-options-btn:hover {
-  background: color-mix(in srgb, var(--accent) 16%, var(--card));
 }
 
 .pm-section-title {
@@ -1693,131 +1705,6 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
   background: var(--btn-secondary-hover-bg);
 }
 
-.pm-analysis-options-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: grid;
-  place-items: center;
-  padding: 18px;
-  background: color-mix(in srgb, #111827 58%, transparent);
-  backdrop-filter: blur(3px);
-}
-
-.pm-analysis-options-dialog {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  width: min(760px, calc(100vw - 36px));
-  max-height: min(860px, calc(100vh - 36px));
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--card);
-  color: var(--foreground);
-  box-shadow: 0 24px 72px rgb(15 23 42 / 35%);
-}
-
-.pm-analysis-options-dialog-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.pm-analysis-options-dialog-header h2,
-.pm-analysis-options-dialog-header p {
-  margin: 0;
-}
-
-.pm-analysis-options-dialog-header h2 {
-  font-family: var(--font-heading);
-  font-size: 0.98rem;
-}
-
-.pm-analysis-options-dialog-header p {
-  margin-top: 3px;
-  color: var(--foreground-muted);
-  font-size: 0.72rem;
-}
-
-.pm-analysis-options-dialog-body {
-  min-height: 0;
-  overflow: auto;
-  padding: 14px 16px 18px;
-}
-
-.pm-analysis-options-dialog-body .pm-point-table th:first-child,
-.pm-analysis-options-dialog-body .pm-point-table td:first-child {
-  width: 42%;
-  text-align: left;
-}
-
-.pm-analysis-options-dialog-body .pm-point-table th:nth-child(2),
-.pm-analysis-options-dialog-body .pm-point-table td:nth-child(2) {
-  width: 27%;
-}
-
-.pm-analysis-options-dialog-body .pm-point-table th:nth-child(3),
-.pm-analysis-options-dialog-body .pm-point-table td:nth-child(3) {
-  width: 21%;
-}
-
-.pm-analysis-options-dialog-body .pm-point-table th:last-child,
-.pm-analysis-options-dialog-body .pm-point-table td:last-child {
-  width: 74px;
-}
-
-.pm-analysis-options-dialog-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  min-height: 58px;
-  padding: 10px 16px;
-  border-top: 1px solid var(--border);
-  background: color-mix(in srgb, var(--foreground) 2.5%, var(--card));
-}
-
-.pm-analysis-options-dialog-footer > span {
-  color: var(--foreground-muted);
-  font-size: 0.7rem;
-}
-
-.pm-analysis-options-dialog-footer > div {
-  display: inline-flex;
-  gap: 8px;
-  flex: 0 0 auto;
-}
-
-.pm-analysis-options-dialog-footer button {
-  width: auto;
-  min-width: 92px;
-  padding: 0 13px;
-}
-
-@media (max-width: 680px) {
-  .pm-analysis-options-backdrop {
-    padding: 8px;
-  }
-
-  .pm-analysis-options-dialog {
-    width: calc(100vw - 16px);
-    max-height: calc(100vh - 16px);
-  }
-
-  .pm-analysis-options-dialog-footer {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .pm-analysis-options-dialog-footer > div {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
 .pm-primary-action:disabled {
   cursor: not-allowed;
   opacity: 0.42;
@@ -1841,6 +1728,23 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
 
 .pm-secondary-action:hover {
   background: var(--btn-secondary-hover-bg);
+}
+
+.pm-analysis-fixed-point td {
+  background: color-mix(in srgb, var(--foreground) 2%, var(--card));
+}
+
+.pm-analysis-fixed-label,
+.pm-analysis-fixed-value {
+  display: block;
+  padding: 0 7px;
+  color: var(--foreground-muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.pm-analysis-fixed-value {
+  font-variant-numeric: tabular-nums;
 }
 
 .pm-drawing-stage {
@@ -2151,6 +2055,31 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   overflow: auto;
 }
 
+.pm-loadcase-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pm-loadcase-csv-btn {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--btn-secondary-border);
+  border-radius: 6px;
+  background: var(--btn-secondary-bg);
+  color: var(--foreground-secondary);
+  cursor: pointer;
+}
+
+.pm-loadcase-csv-btn:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+
 .pm-loadcase-table {
   width: 100%;
   border-collapse: collapse;
@@ -2312,6 +2241,30 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
 
 .pm-results-stage--charts-only {
   min-height: 0;
+}
+
+.pm-analysis-mesh-stage {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.pm-analysis-mesh-card {
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.pm-analysis-mesh-card .pm-results-plot-title {
+  min-height: 34px;
+  padding: 0 2px 8px;
+}
+
+.pm-analysis-mesh-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .pm-results-toolbar {
@@ -2877,6 +2830,7 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   min-height: 0;
   overflow: hidden;
   cursor: crosshair;
+  background: transparent;
 }
 
 .pm-section-mesh-host {
@@ -2898,6 +2852,7 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   display: block;
   width: 100%;
   height: 100%;
+  background: transparent;
 }
 
 .pm-section-mesh-host .pm-section-field-canvas:focus-visible {

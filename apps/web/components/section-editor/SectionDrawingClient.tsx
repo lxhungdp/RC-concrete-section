@@ -2,22 +2,18 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
-  BrickWall,
-  ChartScatter,
+  ChartLine,
   Circle,
-  Eraser,
   Eye,
   EyeOff,
-  FileDown,
-  FileUp,
+  FileInput,
+  FileOutput,
   Lock,
-  Maximize2,
   Minus,
   Moon,
-  MousePointer2,
   Plus,
   RectangleHorizontal,
-  SlidersHorizontal,
+  Settings,
   Sun,
   Unlock,
   X
@@ -68,6 +64,7 @@ import {
   isAnalysisAbort
 } from '../../lib/workers/pm-analysis-client'
 import { LoadingsPanel } from './LoadingsPanel'
+import { AnalysisMeshWorkspace } from './AnalysisMeshWorkspace'
 import { AnalysisOptionsPanel } from './AnalysisOptionsPanel'
 import { MaterialPanel } from './MaterialPanel'
 import { RebarPanel } from './RebarPanel'
@@ -99,6 +96,14 @@ const RcSectionIcon = ({ size = 16 }: { size?: number }) => (
     <circle cx="8" cy="16" r="1.4" fill="currentColor" stroke="none" />
     <circle cx="16" cy="16" r="1.4" fill="currentColor" stroke="none" />
   </svg>
+)
+
+const SteelStressStrainIcon = ({ size = 16 }: { size?: number }) => (
+  <span
+    className="pm-steel-stress-strain-icon"
+    style={{ width: size, height: size }}
+    aria-hidden="true"
+  />
 )
 
 type Camera2d = {
@@ -437,7 +442,6 @@ export function SectionDrawingClient() {
   const [materialStore, setMaterialStore] = useState<MaterialStore>(() => createDefaultMaterialStore())
   const [loadingsInput, setLoadingsInput] = useState<LoadingsInput>(() => createEmptyLoadingsInput())
   const [analysisOptions, setAnalysisOptions] = useState<AnalysisOptions>(() => createDefaultAnalysisOptions())
-  const [analysisOptionsDraft, setAnalysisOptionsDraft] = useState<AnalysisOptions | null>(null)
   const [selectedLoadcaseId, setSelectedLoadcaseId] = useState<number | null>(null)
   const [resultsViewMode, setResultsViewMode] = useState<'overview' | 'loadcase'>('overview')
   const [fixedResultP, setFixedResultP] = useState(0)
@@ -463,15 +467,6 @@ export function SectionDrawingClient() {
   useEffect(() => {
     document.body.dataset.jscadTheme = theme
   }, [theme])
-
-  useEffect(() => {
-    if (!analysisOptionsDraft) return
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setAnalysisOptionsDraft(null)
-    }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [analysisOptionsDraft])
 
   useLayoutEffect(() => {
     if (activeModule === 'results') return
@@ -740,22 +735,13 @@ export function SectionDrawingClient() {
   }
 
   // A new surface invalidates every inverse result. If the user is inspecting one loadcase, rebuild
-  // that detail automatically when an Options change finishes instead of leaving the chart empty
+  // that detail automatically when an Analysis setting changes instead of leaving the chart empty
   // until the row is clicked again.
   useEffect(() => {
     if (!resultSurface || resultsViewMode !== 'loadcase' || selectedLoadcaseId == null) return
     const loadcase = loadingsInput.combinations.find((item) => item.id === selectedLoadcaseId)
     if (loadcase) calculateInverseForLoadcase(loadcase, true)
   }, [resultSurface])
-
-  const openAnalysisOptions = () => setAnalysisOptionsDraft(structuredClone(analysisOptions))
-  const applyAnalysisOptions = () => {
-    if (!analysisOptionsDraft) return
-    setAnalysisOptions(structuredClone(analysisOptionsDraft))
-    setAnalysisOptionsDraft(null)
-  }
-  const analysisOptionsChanged =
-    analysisOptionsDraft !== null && JSON.stringify(analysisOptionsDraft) !== JSON.stringify(analysisOptions)
 
   const draftRing = useMemo(() => {
     if (!drawingDraft) return []
@@ -1195,10 +1181,6 @@ export function SectionDrawingClient() {
     )
   }
 
-  const fitView = () => {
-    setCamera(fitCameraToPointsWithInsets(allVisiblePoints, size, DEFAULT_FIT_INSETS))
-  }
-
   useEffect(() => {
     if (!pendingFitAfterImportRef.current) return
     pendingFitAfterImportRef.current = false
@@ -1500,38 +1482,29 @@ export function SectionDrawingClient() {
             <span>Geometry</span>
           </button>
           <button className={activeModule === 'materials' ? 'is-active' : ''} onClick={() => switchModule('materials')}>
-            <BrickWall size={16} />
+            <SteelStressStrainIcon size={16} />
             <span>Materials</span>
           </button>
-          <button className={activeModule === 'analysis' ? 'is-active' : ''} onClick={() => switchModule('analysis')}>
-            <SlidersHorizontal size={16} />
-            <span>Analysis</span>
-          </button>
           <button className={activeModule === 'results' ? 'is-active' : ''} onClick={() => switchModule('results')}>
-            <ChartScatter size={16} />
+            <ChartLine size={16} />
             <span>Results</span>
+          </button>
+          <button className={activeModule === 'analysis' ? 'is-active' : ''} onClick={() => switchModule('analysis')}>
+            <Settings size={16} />
+            <span>Analysis Options</span>
           </button>
         </nav>
 
-        <div className="pm-toolbar" aria-label="Drawing tools">
-          <button className={tool === 'select' ? 'is-active' : ''} onClick={() => setTool('select')} title="Select boundary">
-            <MousePointer2 size={18} />
-          </button>
-          <button onClick={fitView} title="Fit view">
-            <Maximize2 size={18} />
-          </button>
-          <button onClick={() => deleteSelectedPoint()} disabled={!selectedPointId || activeRing.length <= 3 || Boolean(activeBoundary?.locked)} title="Delete point">
-            <Eraser size={18} />
-          </button>
-          <button onClick={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))} title="Theme">
-            {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-          </button>
-          <span className="pm-toolbar-sep" aria-hidden="true" />
+        <div className="pm-toolbar" aria-label="Project tools">
           <button onClick={() => importInputRef.current?.click()} title="Import project JSON">
-            <FileUp size={18} />
+            <FileInput size={18} />
           </button>
           <button onClick={exportProjectJson} title="Export project JSON">
-            <FileDown size={18} />
+            <FileOutput size={18} />
+          </button>
+          <span className="pm-toolbar-sep" aria-hidden="true" />
+          <button onClick={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))} title="Theme">
+            {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           </button>
           <input
             ref={importInputRef}
@@ -2073,17 +2046,8 @@ export function SectionDrawingClient() {
         {activeModule === 'results' && (
           <>
             <section className="pm-panel-section">
-              <div className="pm-section-title pm-section-title--with-action">
+              <div className="pm-section-title">
                 <h2>Result Status</h2>
-                <button
-                  type="button"
-                  className="pm-result-options-btn"
-                  onClick={openAnalysisOptions}
-                  aria-haspopup="dialog"
-                >
-                  <SlidersHorizontal size={14} />
-                  Options
-                </button>
               </div>
               <button
                 type="button"
@@ -2178,9 +2142,19 @@ export function SectionDrawingClient() {
         )}
       </aside>
 
-      <section className="pm-drawing-stage" aria-label={activeModule === 'results' ? 'Analysis results' : 'Section drawing'}>
+      <section
+        className="pm-drawing-stage"
+        aria-label={
+          activeModule === 'results'
+            ? 'Analysis results'
+            : activeModule === 'analysis'
+              ? 'Analysis section mesh'
+              : 'Section drawing'
+        }
+      >
         {activeModule === 'results' ? (
           <ResultsWorkspace
+            theme={theme}
             ready={hasAppliedSection}
             viewMode={resultsViewMode}
             surface={resultSurface}
@@ -2194,6 +2168,14 @@ export function SectionDrawingClient() {
             fixedP={fixedResultP}
             onFixedPChange={setFixedResultP}
             onSelectLoadcase={runInverseForLoadcase}
+          />
+        ) : activeModule === 'analysis' ? (
+          <AnalysisMeshWorkspace
+            ready={hasAppliedSection}
+            section={finalSection}
+            rebars={rebars}
+            materialStore={materialStore}
+            analysisOptions={analysisOptions}
           />
         ) : (
         <>
@@ -2373,64 +2355,6 @@ export function SectionDrawingClient() {
         )}
       </section>
 
-      {analysisOptionsDraft && (
-        <div
-          className="pm-analysis-options-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setAnalysisOptionsDraft(null)
-          }}
-        >
-          <section
-            className="pm-analysis-options-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="analysis-options-dialog-title"
-          >
-            <header className="pm-analysis-options-dialog-header">
-              <div>
-                <h2 id="analysis-options-dialog-title">Calculation options</h2>
-                <p>Changes are applied together and recalculate every result.</p>
-              </div>
-              <button
-                type="button"
-                className="pm-chart-tool"
-                title="Close calculation options"
-                aria-label="Close calculation options"
-                onClick={() => setAnalysisOptionsDraft(null)}
-              >
-                <X size={16} />
-              </button>
-            </header>
-            <div className="pm-analysis-options-dialog-body">
-              <AnalysisOptionsPanel options={analysisOptionsDraft} onChange={setAnalysisOptionsDraft} />
-            </div>
-            <footer className="pm-analysis-options-dialog-footer">
-              <span>
-                {analysisOptionsChanged
-                  ? 'Pending changes will replace the current result surface.'
-                  : 'No pending changes.'}
-              </span>
-              <div>
-                <button
-                  type="button"
-                  className="pm-secondary-action"
-                  onClick={() => setAnalysisOptionsDraft(null)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="pm-primary-action"
-                  disabled={!analysisOptionsChanged}
-                  onClick={applyAnalysisOptions}
-                >
-                  Apply & recalculate
-                </button>
-              </div>
-            </footer>
-          </section>
-        </div>
-      )}
     </main>
   )
 }

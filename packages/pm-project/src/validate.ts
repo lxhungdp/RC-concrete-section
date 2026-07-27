@@ -5,10 +5,14 @@ import { isValidEntityId } from './ids'
 import {
   ANALYSIS_OPTIONS_VERSION,
   MAX_INTERMEDIATE_STATIONS,
+  MAX_MESH_CELLS,
+  MAX_MESH_SEED_DIVISIONS,
+  MAX_MESH_SUBDIVISION,
   MAX_REFINED_DIRECTIONS,
   MAX_SEED_DIRECTIONS,
   MAX_STATION_LABEL_LENGTH,
   STRAIN_DOMAIN_SURFACE_METHOD,
+  createDefaultAnalysisOptions,
   type AnalysisOptions,
   type AnalysisStation,
   type DirectionProbe
@@ -473,11 +477,54 @@ const parseAnalysis = (value: unknown): AnalysisOptions => {
     throw new Error(`${path}.directions.refinement.type is unsupported`)
   }
 
+  const defaultMesh = createDefaultAnalysisOptions().mesh
+  let mesh: AnalysisOptions['mesh'] = defaultMesh
+  if (value.mesh !== undefined) {
+    assertRecord(value.mesh, `${path}.mesh must be an object`)
+    assertRecord(value.mesh.sizing, `${path}.mesh.sizing must be an object`)
+    let sizing: AnalysisOptions['mesh']['sizing']
+    if (value.mesh.sizing.type === 'automatic') {
+      assert(
+        Number.isInteger(value.mesh.sizing.seedDivisions) &&
+          (value.mesh.sizing.seedDivisions as number) >= 4 &&
+          (value.mesh.sizing.seedDivisions as number) <= MAX_MESH_SEED_DIVISIONS,
+        `${path}.mesh.sizing.seedDivisions must be an integer between 4 and ${MAX_MESH_SEED_DIVISIONS}`
+      )
+      sizing = { type: 'automatic', seedDivisions: value.mesh.sizing.seedDivisions as number }
+    } else if (value.mesh.sizing.type === 'fixed') {
+      assert(
+        isFiniteNumber(value.mesh.sizing.cellSize) && value.mesh.sizing.cellSize >= 1e-6,
+        `${path}.mesh.sizing.cellSize must be at least 1e-6 mm`
+      )
+      sizing = { type: 'fixed', cellSize: value.mesh.sizing.cellSize }
+    } else {
+      throw new Error(`${path}.mesh.sizing.type is unsupported`)
+    }
+    assert(
+      Number.isInteger(value.mesh.maxCells) &&
+        (value.mesh.maxCells as number) >= 1 &&
+        (value.mesh.maxCells as number) <= MAX_MESH_CELLS,
+      `${path}.mesh.maxCells must be an integer between 1 and ${MAX_MESH_CELLS}`
+    )
+    assert(
+      Number.isInteger(value.mesh.maxSubdivision) &&
+        (value.mesh.maxSubdivision as number) >= 0 &&
+        (value.mesh.maxSubdivision as number) <= MAX_MESH_SUBDIVISION,
+      `${path}.mesh.maxSubdivision must be an integer between 0 and ${MAX_MESH_SUBDIVISION}`
+    )
+    mesh = {
+      sizing,
+      maxCells: value.mesh.maxCells as number,
+      maxSubdivision: value.mesh.maxSubdivision as number
+    }
+  }
+
   return {
     optionsVersion: ANALYSIS_OPTIONS_VERSION,
     methodId: STRAIN_DOMAIN_SURFACE_METHOD,
     stations: { basedOn: value.stations.basedOn, intermediate },
-    directions: { seed, refinement }
+    directions: { seed, refinement },
+    mesh
   }
 }
 

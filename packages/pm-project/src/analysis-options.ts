@@ -11,6 +11,9 @@ export const MAX_INTERMEDIATE_STATIONS = 198
 export const MAX_STATION_LABEL_LENGTH = 120
 export const MAX_SEED_DIRECTIONS = 360
 export const MAX_REFINED_DIRECTIONS = 720
+export const MAX_MESH_SEED_DIVISIONS = 256
+export const MAX_MESH_CELLS = 1_000_000
+export const MAX_MESH_SUBDIVISION = 8
 
 export type AnalysisStationCriterion =
   | { type: 'c-over-c1'; ratio: number }
@@ -40,6 +43,14 @@ export type DirectionRefinement =
       probe: DirectionProbe
     }
 
+export type AnalysisMeshOptions = {
+  sizing:
+    | { type: 'automatic'; seedDivisions: number }
+    | { type: 'fixed'; cellSize: number }
+  maxCells: number
+  maxSubdivision: number
+}
+
 export type AnalysisOptions = {
   optionsVersion: typeof ANALYSIS_OPTIONS_VERSION
   methodId: typeof STRAIN_DOMAIN_SURFACE_METHOD
@@ -52,6 +63,7 @@ export type AnalysisOptions = {
     seed: DirectionSeed
     refinement: DirectionRefinement
   }
+  mesh: AnalysisMeshOptions
 }
 
 const station = (id: number, label: string, criterion: AnalysisStationCriterion): AnalysisStation => ({
@@ -89,6 +101,11 @@ export const createDefaultAnalysisOptions = (): AnalysisOptions => ({
   directions: {
     seed: { type: 'uniform', count: 24, startDeg: 0 },
     refinement: { type: 'fixed', probe: { stationIds: [5, 10, 14, 16] } }
+  },
+  mesh: {
+    sizing: { type: 'automatic', seedDivisions: 32 },
+    maxCells: 250_000,
+    maxSubdivision: 4
   }
 })
 
@@ -96,3 +113,12 @@ export const cloneAnalysisOptions = (options: AnalysisOptions): AnalysisOptions 
   JSON.parse(JSON.stringify(options)) as AnalysisOptions
 
 export const analysisStationCount = (options: AnalysisOptions) => options.stations.intermediate.length + 2
+
+/** Convert the persisted, UI-facing mesh settings to the geometry kernel's structural options. */
+export const analysisMeshKernelOptions = (options: AnalysisOptions) => ({
+  ...(options.mesh.sizing.type === 'automatic'
+    ? { seedDivisions: options.mesh.sizing.seedDivisions }
+    : { cellSize: options.mesh.sizing.cellSize }),
+  maxCells: options.mesh.maxCells,
+  maxSubdivision: options.mesh.maxSubdivision
+})

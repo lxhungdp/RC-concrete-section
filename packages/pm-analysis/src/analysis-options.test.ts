@@ -37,7 +37,8 @@ const explicitOptions = (): AnalysisOptions => ({
   directions: {
     seed: { type: 'explicit', anglesDeg: [5, 20, 75, 160, 250] },
     refinement: { type: 'fixed', probe: { stationIds: [22] } }
-  }
+  },
+  mesh: createDefaultAnalysisOptions().mesh
 })
 
 const controllingBarStrain = (

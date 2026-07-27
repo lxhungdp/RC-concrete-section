@@ -14,6 +14,7 @@ import {
   type SectionFieldMap
 } from '@pm/analysis'
 import { exportSectionWorkbook, type ExcelExportInput } from '@pm/report'
+import { analysisMeshKernelOptions } from '@pm/project'
 import { packSectionMeshView, type SectionMeshView } from '../section-mesh-view'
 import type {
   AnalysisWorkerJob,
@@ -50,11 +51,12 @@ const pending = new Map<string, PendingJob>()
 let fallbackPreparedCache: { key: string; value: PreparedAnalysis } | null = null
 
 const fallbackPreparedFor = (
-  payload: Pick<BuildSurfacePayload, 'section' | 'rebars' | 'materialStore'>
+  payload: Pick<BuildSurfacePayload, 'section' | 'rebars' | 'materialStore' | 'analysisOptions'>
 ) => {
-  const key = analysisInputKey(payload.section, payload.rebars, payload.materialStore)
+  const meshOptions = analysisMeshKernelOptions(payload.analysisOptions)
+  const key = analysisInputKey(payload.section, payload.rebars, payload.materialStore, meshOptions)
   if (fallbackPreparedCache?.key === key) return fallbackPreparedCache.value
-  const value = prepareAnalysis(payload.section, payload.rebars, payload.materialStore)
+  const value = prepareAnalysis(payload.section, payload.rebars, payload.materialStore, meshOptions)
   fallbackPreparedCache = { key, value }
   return value
 }
@@ -177,7 +179,11 @@ export const checkLoadcaseAsync = (
     { type: 'checkLoadcase', payload },
     () => {
       const contour = sliceFixedPContour(payload.surface.points, payload.loadcase.P)
-      return solveInversePreviewFromPrepared(fallbackPreparedFor(payload), payload.loadcase, contour)
+      return solveInversePreviewFromPrepared(
+        fallbackPreparedFor({ ...payload, analysisOptions: payload.surface.analysisOptions }),
+        payload.loadcase,
+        contour
+      )
     },
     signal
   )

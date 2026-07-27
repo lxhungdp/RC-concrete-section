@@ -1,6 +1,7 @@
 'use client'
 
-import { Plus, X } from 'lucide-react'
+import { useRef, type ChangeEvent } from 'react'
+import { Download, Plus, Upload, X } from 'lucide-react'
 import { createLoadCombination, type LoadCombination, type LoadingsInput } from '@pm/project'
 
 type Props = {
@@ -24,6 +25,65 @@ const fromNumber = (value: string, fallback: number) => {
 
 const formatUr = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 })
 
+const CSV_HEADERS = ['ID', 'Name', 'Pu (kN)', 'Mux (kN.m)', 'Muy (kN.m)']
+
+const escapeCsvCell = (value: string | number) => {
+  const text = String(value)
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+const parseCsvRows = (text: string) => {
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ''
+  let quoted = false
+
+  for (let index = 0; index < text.length; index++) {
+    const character = text[index]
+    if (quoted) {
+      if (character === '"' && text[index + 1] === '"') {
+        cell += '"'
+        index++
+      } else if (character === '"') {
+        quoted = false
+      } else {
+        cell += character
+      }
+    } else if (character === '"') {
+      quoted = true
+    } else if (character === ',') {
+      row.push(cell)
+      cell = ''
+    } else if (character === '\n' || character === '\r') {
+      if (character === '\r' && text[index + 1] === '\n') index++
+      row.push(cell)
+      if (row.some((value) => value.trim() !== '')) rows.push(row)
+      row = []
+      cell = ''
+    } else {
+      cell += character
+    }
+  }
+
+  if (quoted) throw new Error('An opening quote is not closed.')
+  row.push(cell)
+  if (row.some((value) => value.trim() !== '')) rows.push(row)
+  return rows
+}
+
+const normalizeCsvHeader = (value: string) =>
+  value
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+
+const csvColumnIndex = (headers: string[], aliases: string[], required = true) => {
+  const index = headers.findIndex((header) => aliases.includes(normalizeCsvHeader(header)))
+  if (index < 0 && required) throw new Error(`Missing column "${aliases[0]}".`)
+  return index
+}
+
 export function LoadingsPanel({
   input,
   selectedLoadcaseId,
@@ -34,6 +94,7 @@ export function LoadingsPanel({
   onDemandChanged
 }: Props) {
   const combinations = input.combinations
+  const csvInputRef = useRef<HTMLInputElement | null>(null)
 
   const activateCombination = (combination: LoadCombination) => {
     onSelectLoadcase(combination.id)
@@ -72,14 +133,119 @@ export function LoadingsPanel({
     if (selectedLoadcaseId === id) onSelectLoadcase(next[0]?.id ?? null)
   }
 
+  const exportCsv = () => {
+    const rows = combinations.map((combination) => [
+      combination.id,
+      combination.name,
+      toKn(combination.P),
+      toKnM(combination.Mx),
+      toKnM(combination.My)
+    ])
+    const csv = [CSV_HEADERS, ...rows]
+      .map((row) => row.map(escapeCsvCell).join(','))
+      .join('\r\n')
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'loadcases.csv'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const importCsv = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    try {
+      const rows = parseCsvRows(await file.text())
+      if (rows.length < 2) throw new Error('The CSV must contain a header and at least one loadcase.')
+
+      const headers = rows[0]
+      const idColumn = csvColumnIndex(headers, ['id', 'no', 'number'], false)
+      const nameColumn = csvColumnIndex(headers, ['name', 'loadcase', 'loadcasename'])
+      const puColumn = csvColumnIndex(headers, ['pu', 'pukn'])
+      const muxColumn = csvColumnIndex(headers, ['mux', 'muxknm'])
+      const muyColumn = csvColumnIndex(headers, ['muy', 'muyknm'])
+      const usedIds = new Set<number>()
+      const imported = rows.slice(1).map((row, rowIndex) => {
+        const line = rowIndex + 2
+        const name = (row[nameColumn] ?? '').trim()
+        if (!name) throw new Error(`Line ${line}: Name is required.`)
+
+        const readNumber = (column: number, label: string) => {
+          const value = Number((row[column] ?? '').trim())
+          if (!Number.isFinite(value)) throw new Error(`Line ${line}: ${label} must be a finite number.`)
+          return value
+        }
+
+        const requestedId = idColumn >= 0 && (row[idColumn] ?? '').trim() !== ''
+          ? Number((row[idColumn] ?? '').trim())
+          : undefined
+        if (
+          requestedId !== undefined &&
+          (!Number.isInteger(requestedId) || requestedId <= 0 || usedIds.has(requestedId))
+        ) {
+          throw new Error(`Line ${line}: ID must be a unique positive integer.`)
+        }
+
+        const combination = createLoadCombination(
+          {
+            id: requestedId,
+            name,
+            P: readNumber(puColumn, 'Pu') * 1000,
+            Mx: readNumber(muxColumn, 'Mux') * 1_000_000,
+            My: readNumber(muyColumn, 'Muy') * 1_000_000
+          },
+          usedIds
+        )
+        usedIds.add(combination.id)
+        return combination
+      })
+
+      onChange({ ...input, combinations: imported })
+      onSelectLoadcase(null)
+    } catch (error) {
+      window.alert(`CSV import failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   return (
     <section className="pm-panel-section">
       <div className="pm-section-title pm-section-title--with-action">
         <h2>Loadcases</h2>
-        <button type="button" className="pm-table-add-btn" onClick={addCombination}>
-          <Plus size={14} />
-          Add
-        </button>
+        <div className="pm-loadcase-header-actions">
+          <button
+            type="button"
+            className="pm-loadcase-csv-btn"
+            onClick={exportCsv}
+            title="Export loadcases to CSV"
+            aria-label="Export loadcases to CSV"
+          >
+            <Download size={14} />
+          </button>
+          <button
+            type="button"
+            className="pm-loadcase-csv-btn"
+            onClick={() => csvInputRef.current?.click()}
+            title="Import loadcases from CSV"
+            aria-label="Import loadcases from CSV"
+          >
+            <Upload size={14} />
+          </button>
+          <button type="button" className="pm-table-add-btn" onClick={addCombination}>
+            <Plus size={14} />
+            Add
+          </button>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            hidden
+            onChange={importCsv}
+          />
+        </div>
       </div>
       <div className="pm-loadcase-table-wrap">
         <table className="pm-loadcase-table">
