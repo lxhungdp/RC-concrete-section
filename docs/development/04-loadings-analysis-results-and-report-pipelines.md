@@ -160,7 +160,29 @@ modebar controls, click events, and filled 3D surfaces. Current preview implemen
 - `surface` for the preview `P-Mx-My` interaction surface from the strain-plane-angle/station grid;
 - `scatter3d` for demand/loadcase points that can be clicked to trigger lazy inverse evaluation;
 - `scatter` for fixed-`P` `Mx-My` contours and vertical `P-Mtheta` slices;
+- a dedicated interactive canvas renderer for the clipped-cell section mesh, because drawing every
+  triangle and optional quadrature point as individual Plotly traces is unnecessary overhead;
 - app-level range sliders for quickly changing fixed `P` and the slice rotation angle.
+
+The section-mesh chart is an inspector, not a duplicate of the static section drawing. It supports
+cursor-centred wheel zoom, drag pan, keyboard/button zoom, fit, a physical scale bar and per-triangle
+hover information. The worker packs the same `ConcreteMesh` owned by `PreparedAnalysis` into
+cell-ordered transferable typed arrays. React must not regenerate a display mesh from the section
+boundary. Triangle coordinates remain `Float64`; actual degree-2 Gauss locations are reconstructed
+from the kernel's exported barycentric rule, so display transfer does not duplicate three point
+objects per triangle.
+
+Rendering is viewport-cullable and frame-bounded. When a base cell is smaller than 2.5 device
+pixels, or more than 60,000 triangles are visible, the chart explicitly labels and draws a clipped
+grid LOD. Exact outer/hole rings remain visible. Zooming until the visible work is within budget
+automatically reveals every actual triangle and optional Gauss point in that viewport. LOD is never
+presented as the integration triangulation. A requested display over 750,000 triangles is rejected
+as a presentation resource limit without changing or invalidating the engineering analysis.
+
+The footer reports `h`, cells, triangles, integration points, the area sanity error, and the mesh
+verification state. This architecture is important for high-aspect-ratio sections: because the seed
+rule uses `h = Dmin/32`, a 0.1 m × 10 m section has about 102,400 base cells even though a
+geometrically similar compact section is inexpensive.
 
 The slice rotation angle is a moment-direction angle. For loadcase mode it is
 `thetaLoad = atan2(Muy, Mux)`. It must be applied as a geometric query on the completed surface:
@@ -195,6 +217,18 @@ contract as the Analysis module. The dialog edits an isolated draft:
 - if a loadcase detail is open, its inverse solve is rerun automatically after the new surface
   arrives;
 - the dialog never owns a second persisted options object.
+
+Each Results mode offers four chart choices. Three are visible by default and **Section mesh** is
+off, so its potentially large geometry DTO is not transferred to the UI until requested. The chart
+workspace has exactly three visual slots: one primary chart spanning both rows and two secondary
+charts. Restoring a fourth choice replaces a visible secondary chart rather than silently changing
+the established layout; the displaced chart remains available in the restore toolbar. Hiding the
+primary promotes the first remaining visible chart, and the last visible chart cannot be hidden.
+
+Mesh-chart visibility is presentation state, not analysis input and not project engineering data.
+Changing it must not invalidate the surface, inverse solutions, or quick checks. A geometry/material
+revision still invalidates the lazy worker payload so an old mesh is never shown as current.
+
 | accepted/stale | view/compare allowed; report release disabled for current project |
 
 Results are keyed by input hash and result ID, not by the currently selected row name.

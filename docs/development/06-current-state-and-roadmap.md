@@ -26,7 +26,7 @@ certification.
 | Results-sidebar loadcases | add/edit/delete/duplicate/select Pu/Mux/Muy combinations in Results | implemented preview | typed validation, import, stale-state graph, accepted demand checks |
 | analysis core | detailed specifications only | not implemented | packages, mechanics, mesh, surface, checks, V&V |
 | design-code registry | detailed specification only | not implemented | exact profiles, traceability, review/evidence |
-| Results | Plotly 3D preview surface, 2D fixed-P slice, vertical slice, lazy inverse loadcase detail | implemented preview | accepted result contract, DTO-driven plots, checks, convergence evidence; preserve the strain-angle vs demand-angle separation |
+| Results | Plotly 3D preview surface, 2D fixed-P slice, vertical slice, lazy zoomable section-mesh inspector with exact/LOD modes, lazy inverse loadcase detail | implemented preview | accepted result contract, DTO-driven plots, checks, convergence evidence; preserve the strain-angle vs demand-angle separation |
 | Report | Excel/PDF model/renderers | not implemented | accepted-result-only pipeline and render verification |
 | analysis kernel package | `@pm/analysis` — fibres, stations, surface, slicing, inverse solve, field map | implemented preview | moved out of `apps/web/lib`; still one module, still preview mechanics |
 | report package | `@pm/report` — Excel workbook export | implemented preview | moved out of `apps/web/lib`; accepted-result-only pipeline still missing |

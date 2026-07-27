@@ -2560,6 +2560,24 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   font-size: 0.78rem;
 }
 
+.pm-section-mesh-quality {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  min-height: 27px;
+  padding: 6px 4px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  color: var(--foreground-muted);
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+.pm-section-mesh-quality strong {
+  margin-left: auto;
+  font-size: 0.66rem;
+}
+
 .pm-chart-tool {
   display: inline-grid;
   place-items: center;
@@ -2861,10 +2879,89 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   cursor: crosshair;
 }
 
+.pm-section-mesh-host {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.pm-section-mesh-host.is-panning {
+  cursor: grabbing;
+}
+
 .pm-section-field-canvas {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.pm-section-mesh-host .pm-section-field-canvas:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.pm-section-mesh-nav {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  box-shadow: 0 5px 16px -12px rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(6px);
+}
+
+.pm-section-mesh-nav button {
+  display: inline-grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--foreground-muted);
+  cursor: pointer;
+}
+
+.pm-section-mesh-nav button:hover {
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+
+.pm-section-mesh-lod,
+.pm-section-mesh-hint {
+  position: absolute;
+  z-index: 2;
+  padding: 4px 7px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  color: var(--foreground-muted);
+  font-size: 0.62rem;
+  font-weight: 650;
+  line-height: 1.2;
+  pointer-events: none;
+  backdrop-filter: blur(5px);
+}
+
+.pm-section-mesh-lod {
+  top: 8px;
+  left: 8px;
+}
+
+.pm-section-mesh-hint {
+  right: 8px;
+  bottom: 7px;
+  opacity: 0.82;
 }
 
 .pm-section-field-tooltip {

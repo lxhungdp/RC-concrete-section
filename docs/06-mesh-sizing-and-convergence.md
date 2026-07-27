@@ -80,7 +80,31 @@ do not call it Richardson extrapolation.
 Refinement stops successfully only when all required quantities meet `tolMesh`. Hitting `maxLevels`,
 `maxFibers`, time, or memory limits returns `MESH_NOT_CONVERGED`/`RESOURCE_LIMIT`.
 
-### 4.1 Measured discretization error of the current seed rule
+### 4.1 Mesh inspection in Results
+
+The optional **Section mesh** chart is a zoomable traceability view of the exact `ConcreteMesh` used
+by the analysis revision. It is loaded lazily. At inspection zoom it draws all clipped triangles in
+the visible viewport; optional Gauss-point markers are the actual quadrature locations derived from
+the same exported degree-2 barycentric rule, not a new display sampling.
+
+At overview scale the chart may show an explicitly labelled clipped-grid LOD to keep frame work
+bounded. This happens when cells are sub-pixel or more than 60,000 triangles would be drawn in one
+frame. The exact triangle buffers remain available and appear automatically after zooming. Section
+rings are exact at every level, but the overview grid must not be interpreted as triangle topology.
+The view uses transferable typed arrays, viewport cell ranges, batched canvas paths and
+`requestAnimationFrame`; it never sends the raw triangle/quadrature object graph through
+`postMessage`.
+
+The display safety ceiling is 750,000 triangles. Exceeding it disables only the interactive view and
+reports a resource message; it does not silently coarsen, replace, or invalidate the analysis mesh.
+This distinction is required by the rule that presentation optimization must never change an
+engineering result.
+
+The chart's `Verified` badge means only that the mesh passed the area/first-moment sanity checks in
+file `02` §8. Visual inspection and those invariants do **not** establish integration convergence.
+Only the refinement comparison in this section controls `emesh`.
+
+### 4.2 Measured discretization error of the current seed rule
 
 Mesh refinement is not yet automatic; the seed rule `h0 = Dmin/32` from file `02` is used as is. Its
 error has, however, been measured — surface states at `h0`, `h0/2` and `h0/4` against an `h0/12`

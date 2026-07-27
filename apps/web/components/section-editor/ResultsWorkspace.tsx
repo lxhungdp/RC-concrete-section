@@ -18,17 +18,24 @@ import {
 } from '@pm/analysis'
 import { ExcelExportError, sectionWorkbookFileName } from '@pm/report'
 import {
+  buildSectionMeshAsync,
   buildSectionFieldMapAsync,
   exportSectionWorkbookAsync,
   isAnalysisAbort
 } from '../../lib/workers/pm-analysis-client'
+import type { SectionMeshView } from '../../lib/section-mesh-view'
 import { PlotlyChart, type PlotlyClickPayload } from './PlotlyChart'
 import { momentAngleDeg, neutralAxisAngleDeg, SectionFieldChart } from './SectionFieldChart'
+import { SectionMeshChart } from './SectionMeshChart'
 
 type ResultsViewMode = 'overview' | 'loadcase'
-type OverviewChartId = 'vertical' | 'surface3d' | 'fixedP'
-type LoadcaseChartId = 'heatmap' | 'fixedP' | 'vertical'
+type OverviewChartId = 'vertical' | 'surface3d' | 'fixedP' | 'mesh'
+type LoadcaseChartId = 'heatmap' | 'fixedP' | 'vertical' | 'mesh'
 type FieldMode = 'strain' | 'stress'
+
+const OVERVIEW_CHARTS: OverviewChartId[] = ['vertical', 'surface3d', 'fixedP', 'mesh']
+const LOADCASE_CHARTS: LoadcaseChartId[] = ['heatmap', 'fixedP', 'vertical', 'mesh']
+const MAX_VISIBLE_CHARTS = 3
 
 type Props = {
   ready: boolean
@@ -254,7 +261,8 @@ export function ResultsWorkspace({
   const [overviewVisible, setOverviewVisible] = useState<Record<OverviewChartId, boolean>>({
     vertical: true,
     surface3d: true,
-    fixedP: true
+    fixedP: true,
+    mesh: false
   })
   const [exportState, setExportState] = useState<'idle' | 'working' | 'error'>('idle')
   const [exportMessage, setExportMessage] = useState('')
@@ -262,13 +270,20 @@ export function ResultsWorkspace({
   const [loadcaseVisible, setLoadcaseVisible] = useState<Record<LoadcaseChartId, boolean>>({
     heatmap: true,
     fixedP: true,
-    vertical: true
+    vertical: true,
+    mesh: false
   })
   const [fieldMap, setFieldMap] = useState<SectionFieldMap | null>(null)
   const [fieldMapWorking, setFieldMapWorking] = useState(false)
+  const [sectionMesh, setSectionMesh] = useState<SectionMeshView | null>(null)
+  const [sectionMeshWorking, setSectionMeshWorking] = useState(false)
+  const [sectionMeshMessage, setSectionMeshMessage] = useState('')
+  const [showMeshQuadraturePoints, setShowMeshQuadraturePoints] = useState(false)
+  const [showMeshRebars, setShowMeshRebars] = useState(true)
 
   const selectedLoadcase = loadcases.find((item) => item.id === selectedLoadcaseId) ?? null
   const isLoadcaseMode = viewMode === 'loadcase' && selectedLoadcase != null
+  const sectionMeshVisible = isLoadcaseMode ? loadcaseVisible.mesh : overviewVisible.mesh
 
   useEffect(() => {
     setFieldMap(null)
@@ -293,6 +308,31 @@ export function ResultsWorkspace({
 
     return () => controller.abort()
   }, [inverseResult, isLoadcaseMode, materialStore, rebars, section])
+
+  useEffect(() => {
+    if (!sectionMeshVisible) {
+      setSectionMeshWorking(false)
+      return
+    }
+
+    const controller = new AbortController()
+    setSectionMesh(null)
+    setSectionMeshWorking(true)
+    setSectionMeshMessage('')
+    buildSectionMeshAsync({ section, rebars, materialStore }, controller.signal)
+      .then((mesh) => {
+        setSectionMesh(mesh)
+        setSectionMeshWorking(false)
+      })
+      .catch((error) => {
+        if (isAnalysisAbort(error)) return
+        setSectionMesh(null)
+        setSectionMeshWorking(false)
+        setSectionMeshMessage(error instanceof Error ? error.message : String(error))
+      })
+
+    return () => controller.abort()
+  }, [materialStore, rebars, section, sectionMeshVisible])
 
   const activeFixedP = isLoadcaseMode ? selectedLoadcase.P : fixedP
   const activeAngle = isLoadcaseMode ? loadcaseAngleDeg(selectedLoadcase) : sliceAngle
@@ -1026,10 +1066,15 @@ export function ResultsWorkspace({
   const toggleOverviewVisible = (id: OverviewChartId) => {
     setOverviewVisible((current) => {
       const next = { ...current, [id]: !current[id] }
-      const visibleCount = Object.values(next).filter(Boolean).length
-      if (visibleCount === 0) return current
+      if (Object.values(next).every((visible) => !visible)) return current
+      if (!current[id] && Object.values(current).filter(Boolean).length >= MAX_VISIBLE_CHARTS) {
+        const replacement = [...OVERVIEW_CHARTS]
+          .reverse()
+          .find((chartId) => chartId !== overviewPrimary && current[chartId])
+        if (replacement) next[replacement] = false
+      }
       if (!next[overviewPrimary]) {
-        const fallback = (Object.keys(next) as OverviewChartId[]).find((key) => next[key])
+        const fallback = OVERVIEW_CHARTS.find((key) => next[key])
         if (fallback) setOverviewPrimary(fallback)
       }
       return next
@@ -1039,10 +1084,15 @@ export function ResultsWorkspace({
   const toggleLoadcaseVisible = (id: LoadcaseChartId) => {
     setLoadcaseVisible((current) => {
       const next = { ...current, [id]: !current[id] }
-      const visibleCount = Object.values(next).filter(Boolean).length
-      if (visibleCount === 0) return current
+      if (Object.values(next).every((visible) => !visible)) return current
+      if (!current[id] && Object.values(current).filter(Boolean).length >= MAX_VISIBLE_CHARTS) {
+        const replacement = [...LOADCASE_CHARTS]
+          .reverse()
+          .find((chartId) => chartId !== loadcasePrimary && current[chartId])
+        if (replacement) next[replacement] = false
+      }
       if (!next[loadcasePrimary]) {
-        const fallback = (Object.keys(next) as LoadcaseChartId[]).find((key) => next[key])
+        const fallback = LOADCASE_CHARTS.find((key) => next[key])
         if (fallback) setLoadcasePrimary(fallback)
       }
       return next
@@ -1113,13 +1163,13 @@ export function ResultsWorkspace({
     )
   }
 
-  const hiddenOverview = (Object.keys(overviewVisible) as OverviewChartId[]).filter((id) => !overviewVisible[id])
-  const hiddenLoadcase = (Object.keys(loadcaseVisible) as LoadcaseChartId[]).filter((id) => !loadcaseVisible[id])
+  const hiddenOverview = OVERVIEW_CHARTS.filter((id) => !overviewVisible[id])
+  const hiddenLoadcase = LOADCASE_CHARTS.filter((id) => !loadcaseVisible[id])
 
   const overviewRestoreLabel = (id: OverviewChartId) =>
-    id === 'vertical' ? 'Vertical' : id === 'surface3d' ? '3D' : 'Fixed-P'
+    id === 'vertical' ? 'Vertical' : id === 'surface3d' ? '3D' : id === 'fixedP' ? 'Fixed-P' : 'Section mesh'
   const loadcaseRestoreLabel = (id: LoadcaseChartId) =>
-    id === 'heatmap' ? 'Section field' : id === 'fixedP' ? 'Fixed-P' : 'Vertical'
+    id === 'heatmap' ? 'Section field' : id === 'fixedP' ? 'Fixed-P' : id === 'vertical' ? 'Vertical' : 'Section mesh'
 
   const renderRestoreBar = (buttons: Array<{ id: string; label: string; onClick: () => void }>) => {
     if (buttons.length === 0) return null
@@ -1134,6 +1184,54 @@ export function ResultsWorkspace({
       </div>
     )
   }
+
+  const meshReport = sectionMesh?.report ?? surface?.mesh ?? null
+  const meshMeta = meshReport
+    ? `${meshReport.cells.toLocaleString('en-US')} cells · ${meshReport.triangles.toLocaleString('en-US')} tri`
+    : 'On demand'
+  const meshControls = (
+    <div className="pm-section-field-toolbar" role="group" aria-label="Section mesh options">
+      <label className={`pm-field-check${showMeshQuadraturePoints ? ' is-on' : ''}`}>
+        <input
+          type="checkbox"
+          checked={showMeshQuadraturePoints}
+          onChange={(event) => setShowMeshQuadraturePoints(event.target.checked)}
+        />
+        Gauss pts
+      </label>
+      <label className={`pm-field-check${showMeshRebars ? ' is-on' : ''}`}>
+        <input
+          type="checkbox"
+          checked={showMeshRebars}
+          onChange={(event) => setShowMeshRebars(event.target.checked)}
+        />
+        Rebar
+      </label>
+    </div>
+  )
+  const meshFooter = meshReport ? (
+    <div className="pm-section-mesh-quality">
+      <span>h = {fmt(meshReport.cellSize, 3)} mm</span>
+      <span>{meshReport.points.toLocaleString('en-US')} integration points</span>
+      <span>area error = {sci(meshReport.areaError, 2)} mm²</span>
+      <strong className={meshReport.ok ? 'is-ok' : 'is-bad'}>{meshReport.ok ? 'Verified' : 'Check mesh'}</strong>
+    </div>
+  ) : null
+  const meshChart = sectionMesh ? (
+    <SectionMeshChart
+      mesh={sectionMesh}
+      section={section}
+      rebars={rebars}
+      showQuadraturePoints={showMeshQuadraturePoints}
+      showRebars={showMeshRebars}
+    />
+  ) : (
+    <div className="pm-results-plot-placeholder">
+      {sectionMeshWorking
+        ? 'Exact integration mesh is loading...'
+        : sectionMeshMessage || 'Turn the chart on to load the exact integration mesh.'}
+    </div>
+  )
 
   if (isLoadcaseMode && selectedLoadcase) {
     return (
@@ -1411,6 +1509,19 @@ export function ResultsWorkspace({
             ),
             children: <PlotlyChart data={verticalData} layout={verticalLayout} config={plotConfig} />
           })}
+
+          {renderChartShell({
+            id: 'mesh',
+            title: 'Section mesh',
+            meta: meshMeta,
+            primary: loadcasePrimary === 'mesh',
+            visible: loadcaseVisible.mesh,
+            onMakePrimary: () => setLoadcasePrimary('mesh'),
+            onToggleVisible: () => toggleLoadcaseVisible('mesh'),
+            controls: meshControls,
+            footer: meshFooter,
+            children: meshChart
+          })}
         </div>
       </section>
     )
@@ -1504,6 +1615,19 @@ export function ResultsWorkspace({
             />
           ),
           children: <PlotlyChart data={contourData} layout={contourLayout} config={plotConfig} />
+        })}
+
+        {renderChartShell({
+          id: 'mesh',
+          title: 'Section mesh',
+          meta: meshMeta,
+          primary: overviewPrimary === 'mesh',
+          visible: overviewVisible.mesh,
+          onMakePrimary: () => setOverviewPrimary('mesh'),
+          onToggleVisible: () => toggleOverviewVisible('mesh'),
+          controls: meshControls,
+          footer: meshFooter,
+          children: meshChart
         })}
       </div>
     </section>

@@ -14,11 +14,13 @@ import {
   type SectionFieldMap
 } from '@pm/analysis'
 import { exportSectionWorkbook, type ExcelExportInput } from '@pm/report'
+import { packSectionMeshView, type SectionMeshView } from '../section-mesh-view'
 import type {
   AnalysisWorkerJob,
   AnalysisWorkerRequest,
   AnalysisWorkerResponse,
   BuildFieldMapPayload,
+  BuildSectionMeshPayload,
   BuildSurfacePayload,
   CheckLoadcasePayload,
   CheckLoadcasesPayload
@@ -187,6 +189,16 @@ export const buildSectionFieldMapAsync = (
   runWorkerOrFallback<SectionFieldMap>(
     { type: 'buildFieldMap', payload },
     () => buildSectionFieldMapFromPrepared(fallbackPreparedFor(payload), payload.state),
+    signal
+  )
+
+export const buildSectionMeshAsync = (
+  payload: BuildSectionMeshPayload,
+  signal?: AbortSignal
+): Promise<SectionMeshView> =>
+  runWorkerOrFallback<SectionMeshView>(
+    { type: 'buildSectionMesh', payload },
+    () => packSectionMeshView(fallbackPreparedFor(payload).mesh),
     signal
   )
 

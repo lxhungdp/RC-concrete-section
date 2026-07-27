@@ -19,6 +19,11 @@ import { exportSectionWorkbook, type ExcelExportInput } from '@pm/report'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
 import type { AnalysisOptions, LoadCombination } from '@pm/project'
+import {
+  packSectionMeshView,
+  sectionMeshTransferList,
+  type SectionMeshView
+} from '../lib/section-mesh-view'
 
 export type BuildSurfacePayload = {
   section: SectionGeometry
@@ -42,6 +47,12 @@ export type BuildFieldMapPayload = {
   state: InversePreviewResult['state']
 }
 
+export type BuildSectionMeshPayload = {
+  section: SectionGeometry
+  rebars: GeometryInputRebarView[]
+  materialStore: MaterialStore
+}
+
 export type CheckLoadcasesPayload = {
   surface: PreviewSurface
   loadcases: LoadCombination[]
@@ -51,6 +62,7 @@ export type AnalysisWorkerJob =
   | { type: 'buildSurface'; jobId: string; payload: BuildSurfacePayload }
   | { type: 'checkLoadcases'; jobId: string; payload: CheckLoadcasesPayload }
   | { type: 'checkLoadcase'; jobId: string; payload: CheckLoadcasePayload }
+  | { type: 'buildSectionMesh'; jobId: string; payload: BuildSectionMeshPayload }
   | { type: 'buildFieldMap'; jobId: string; payload: BuildFieldMapPayload }
   | { type: 'exportExcel'; jobId: string; payload: ExcelExportInput }
 
@@ -63,6 +75,7 @@ export type AnalysisWorkerResultMap = {
   buildSurface: PreviewSurface
   checkLoadcases: LoadcaseQuickCheckResult[]
   checkLoadcase: InversePreviewResult
+  buildSectionMesh: SectionMeshView
   buildFieldMap: SectionFieldMap
   exportExcel: ArrayBuffer
 }
@@ -162,6 +175,15 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
       const { state } = request.payload
       const result = buildSectionFieldMapFromPrepared(preparedFor(request.payload), state)
       workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
+      return
+    }
+
+    if (request.type === 'buildSectionMesh') {
+      const result = packSectionMeshView(preparedFor(request.payload).mesh)
+      workerSelf.postMessage(
+        { type: 'success', jobId: request.jobId, requestType: request.type, result },
+        sectionMeshTransferList(result)
+      )
       return
     }
 

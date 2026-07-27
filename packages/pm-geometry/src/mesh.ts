@@ -295,7 +295,8 @@ const triangulateSimpleRing = (pairs: Pair[]): Array<[Pair, Pair, Pair]> => {
 }
 
 /** Degree-2 barycentric rule: permutations of (2/3, 1/6, 1/6), each weighted A/3. */
-const TRIANGLE_RULE: Array<[number, number, number]> = [
+/** Degree-2 triangle quadrature rule used by every concrete integration triangle. */
+export const TRIANGLE_RULE: ReadonlyArray<readonly [number, number, number]> = [
   [2 / 3, 1 / 6, 1 / 6],
   [1 / 6, 2 / 3, 1 / 6],
   [1 / 6, 1 / 6, 2 / 3]
