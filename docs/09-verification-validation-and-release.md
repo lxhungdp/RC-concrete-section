@@ -119,7 +119,8 @@ Cover the Cartesian combination of representative categories, not one sample sec
 
 - principal and nonprincipal axes;
 - angles midway between initial beta samples;
-- load moment directions that do not coincide with sampled strain-plane/neutral-axis angles;
+- load moment directions that do not coincide with sampled strain directions or their derived
+  neutral-axis line angles;
 - demand rays through vertices, edges, faces, and near-tangent directions;
 - axial-cap intersection and fixed-P contours near extrema.
 

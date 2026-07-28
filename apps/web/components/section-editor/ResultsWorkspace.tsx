@@ -24,7 +24,14 @@ import {
   isAnalysisAbort
 } from '../../lib/workers/pm-analysis-client'
 import { PlotlyChart, type PlotlyClickPayload } from './PlotlyChart'
-import { momentAngleDeg, neutralAxisAngleDeg, SectionFieldChart } from './SectionFieldChart'
+import { SectionFieldChart } from './SectionFieldChart'
+import {
+  lineAngleDifferenceDeg,
+  momentAngleDeg,
+  perpendicularBendingAxisAngleDeg,
+  sectionFieldAngleComparison,
+  strainDirectionToNeutralAxisAngleDeg
+} from './section-field-angles'
 
 type ResultsViewMode = 'overview' | 'loadcase'
 type OverviewChartId = 'vertical' | 'surface3d' | 'fixedP'
@@ -788,11 +795,34 @@ export function ResultsWorkspace({
           line: { color: plotPalette.markerOutline, width: 1 }
         },
         customdata: activeSamples.map((point) => [
-          fmt((point.beta * 180) / Math.PI, 0),
-          fmt((Math.atan2(point.My, point.Mx) * 180) / Math.PI, 1)
+          (() => {
+            const betaDeg = (point.beta * 180) / Math.PI
+            return fmt(betaDeg, 0)
+          })(),
+          (() => {
+            const betaDeg = (point.beta * 180) / Math.PI
+            return fmt(strainDirectionToNeutralAxisAngleDeg(betaDeg), 1)
+          })(),
+          (() => {
+            const angle = perpendicularBendingAxisAngleDeg(point.Mx, point.My)
+            return angle == null ? 'n/a' : fmt(angle, 1)
+          })(),
+          (() => {
+            const betaDeg = (point.beta * 180) / Math.PI
+            const reference = perpendicularBendingAxisAngleDeg(point.Mx, point.My)
+            return reference == null
+              ? 'n/a'
+              : fmt(
+                  lineAngleDifferenceDeg(
+                    strainDirectionToNeutralAxisAngleDeg(betaDeg),
+                    reference
+                  ),
+                  1
+                )
+          })()
         ]),
         hovertemplate:
-          'N.A. sample α=%{customdata[0]}°<br>Moment angle θ=%{customdata[1]}°<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra></extra>'
+          'Strain direction β=%{customdata[0]}°<br>N.A. axis αNA=%{customdata[1]}°<br>⊥ resultant α⊥=%{customdata[2]}°<br>Difference Δα=%{customdata[3]}°<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra></extra>'
       }] : []),
       ...(demandProjection
         ? [
@@ -1285,13 +1315,25 @@ export function ResultsWorkspace({
     return { epsMin, epsMax, sigMin, sigMax }
   }, [fieldMap])
 
+  const fieldAngleComparison = useMemo(
+    () =>
+      inverseResult
+        ? sectionFieldAngleComparison(
+            inverseResult.state,
+            inverseResult.demand.Mx,
+            inverseResult.demand.My
+          )
+        : null,
+    [inverseResult]
+  )
+
   const handleExcelExport = async () => {
     if (!selectedLoadcase || !surface) return
     setExportState('working')
     setExportMessage('')
     try {
-      // The detail sheets audit a strain plane, so they must use the neutral-axis orientation of
-      // the equilibrium state — not the demand moment direction, which the workbook derives itself.
+      // The detail sheets audit a strain-gradient direction, not an N.A. line angle and not the
+      // demand moment direction. The workbook derives and labels all three independently.
       const equilibrium = inverseResult?.state
       const curvature = equilibrium ? Math.hypot(equilibrium.kx, equilibrium.ky) : 0
       const betaDeg =
@@ -1536,7 +1578,7 @@ export function ResultsWorkspace({
                     checked={showMoments}
                     onChange={(event) => setShowMoments(event.target.checked)}
                   />
-                  Moments
+                  Resultant
                 </label>
                 <label className={`pm-field-check${includeRebar ? ' is-on' : ''}`}>
                   <input
@@ -1589,15 +1631,6 @@ export function ResultsWorkspace({
                     <div>
                       <span>Residual</span>
                       <strong>{sci(inverseResult.residualNorm, 2)}</strong>
-                    </div>
-                    <div>
-                      <span>N.A.</span>
-                      <strong>
-                        {(() => {
-                          const angle = neutralAxisAngleDeg(inverseResult.state)
-                          return angle == null ? 'n/a' : `${fmt(angle, 1)}°`
-                        })()}
-                      </strong>
                     </div>
                   </div>
                 </article>
@@ -1664,14 +1697,46 @@ export function ResultsWorkspace({
                       <strong>{fmt(knm(inverseResult.demand.My), 1)} kN·m</strong>
                     </div>
                     <div>
-                      <span>|M| / ∠M</span>
-                      <strong>
+                      <span title="θM = atan2(My,Mx) in Mx-My action space; it is not an N.A. line angle.">
+                        |M| / θM (M-space)
+                      </span>
+                      <strong title="The M-space angle is used for P-Mx-My demand queries, not for comparison with N.A.">
                         {fmt(knm(Math.hypot(inverseResult.demand.Mx, inverseResult.demand.My)), 1)}
                         {' · '}
                         {(() => {
                           const angle = momentAngleDeg(inverseResult.demand.Mx, inverseResult.demand.My)
                           return angle == null ? 'n/a' : `${fmt(angle, 1)}°`
                         })()}
+                      </strong>
+                    </div>
+                  </div>
+                </article>
+
+                <article className="pm-field-metric-card pm-field-metric-card--angles">
+                  <header>Section-axis comparison</header>
+                  <div className="pm-field-metric-rows">
+                    <div title="Actual epsilon=0 neutral-axis line, measured CCW from section +x modulo 180 degrees.">
+                      <span>N.A. axis αNA</span>
+                      <strong>
+                        {fieldAngleComparison?.neutralAxis == null
+                          ? 'n/a'
+                          : `${fmt(fieldAngleComparison.neutralAxis, 1)}°`}
+                      </strong>
+                    </div>
+                    <div title="Reference line perpendicular to the in-section resultant direction (Muy,Mux).">
+                      <span>Reference ⊥Rₘ α⊥</span>
+                      <strong>
+                        {fieldAngleComparison?.perpendicularBendingAxis == null
+                          ? 'n/a'
+                          : `${fmt(fieldAngleComparison.perpendicularBendingAxis, 1)}°`}
+                      </strong>
+                    </div>
+                    <div title="Smallest angle between the actual N.A. and the perpendicular reference line.">
+                      <span>Angular deviation Δα</span>
+                      <strong>
+                        {fieldAngleComparison?.difference == null
+                          ? 'n/a'
+                          : `${fmt(fieldAngleComparison.difference, 1)}°`}
                       </strong>
                     </div>
                   </div>

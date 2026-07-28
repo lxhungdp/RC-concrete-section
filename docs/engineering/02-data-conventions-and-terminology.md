@@ -35,6 +35,13 @@ changes shall not rerun or alter resistance calculations.
   boundary states used to generate the surface; demand angles are computed from the action vector as
   `thetaLoad = atan2(My, Mx)` and are used only for geometric queries of the finished surface.
 
+The physical section view and the `Mx-My` action-space view do not use the same plotted vector.
+Under the authoritative resultant convention below, the bending-action direction overlaid on
+section coordinates `(x,y)` has components `(My,Mx)`. The reference section line perpendicular to
+that direction has tangent `(-Mx,My)`. Compare the actual neutral-axis tangent `(-kx,ky)` with this
+perpendicular reference line, treating both as undirected axes modulo 180 degrees. Do not compare
+the neutral-axis angle directly with `thetaLoad = atan2(My,Mx)`, which lives in `Mx-My` action space.
+
 The generalized strain plane is:
 
 `ε(x,y) = ε0 + κx·y + κy·x`

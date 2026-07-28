@@ -3024,6 +3024,15 @@ body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {
   letter-spacing: 0.02em;
 }
 
+.pm-field-metric-card--angles {
+  grid-column: 1 / -1;
+}
+
+.pm-field-metric-card--angles .pm-field-metric-rows {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px 14px;
+}
+
 .pm-field-metric-rows {
   display: grid;
   gap: 1px 0;
@@ -3069,6 +3078,10 @@ body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {
 @media (max-width: 1100px) {
   .pm-section-field-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pm-field-metric-card--angles .pm-field-metric-rows {
+    grid-template-columns: 1fr;
   }
 }
 

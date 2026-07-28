@@ -141,7 +141,8 @@ Reviewers ask:
 - Are errors typed and tied to an entity/path?
 - Are exact geometry and integration approximation kept separate?
 - Are units/origin/sign/action basis explicit at every boundary?
-- Are strain-plane/neutral-axis sample angles kept separate from demand moment-direction angles?
+- Are strain-direction samples, derived N.A. line angles, and demand moment-direction angles kept
+  explicitly separate?
 - Do `P-Mtheta` and fixed-P loadcase checks use geometric ray/plane intersections instead of
   nearest sampled angle rows?
 - Are preview/current/stale/accepted/released states impossible to confuse?

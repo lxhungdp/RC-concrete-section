@@ -52,6 +52,11 @@ const check = (label: string, actual: number, expected: number, relTol: number, 
 }
 
 const fmt = (value: number) => (Number.isFinite(value) ? value.toFixed(4).padStart(14) : String(value).padStart(14))
+const normalizeLineAngleDeg = (degrees: number) => ((degrees % 180) + 180) % 180
+const lineAngleDifferenceDeg = (first: number, second: number) => {
+  const difference = Math.abs(normalizeLineAngleDeg(first) - normalizeLineAngleDeg(second))
+  return Math.min(difference, 180 - difference)
+}
 
 /** ExcelJS cell -> HyperFormula sheet cell (formula string, primitive, or null). */
 const toHyperFormulaValue = (cell: ExcelJS.Cell): string | number | boolean | null => {
@@ -430,21 +435,29 @@ const run = async () => {
   check('worst |ΔMy| over the contour', worstMy, 0, 1e-9, momentScale)
   console.log()
 
-  console.log('== 9. The two angles are kept apart ==')
+  console.log('== 9. Moment-space angles and section-line angles are kept apart ==')
   const inputSheet2 = readBack.getWorksheet('Input')!
-  const betaCell = cellValue('Input', `C${findLabelRow(inputSheet2, 'β (strain-plane angle)')}`)
+  const betaCell = cellValue('Input', `C${findLabelRow(inputSheet2, 'β (strain direction)')}`)
   const thetaCell = cellValue('Input', `C${findLabelRow(inputSheet2, 'θ_L (demand direction)')}`)
+  const naAxisCell = cellValue('Input', `C${findLabelRow(inputSheet2, 'αNA (N.A. axis')}`)
+  const perpendicularAxisCell = cellValue('Input', `C${findLabelRow(inputSheet2, 'α⊥ (axis perpendicular')}`)
+  const deltaAxisCell = cellValue('Input', `C${findLabelRow(inputSheet2, 'Δα = angle')}`)
   const thetaExpected = (Math.atan2(loadcase.My, loadcase.Mx) * 180) / Math.PI
+  const naAxisExpected = normalizeLineAngleDeg(180 - BETA_DEG)
+  const perpendicularAxisExpected = normalizeLineAngleDeg(
+    (Math.atan2(loadcase.My, -loadcase.Mx) * 180) / Math.PI
+  )
+  const deltaAxisExpected = lineAngleDifferenceDeg(naAxisExpected, perpendicularAxisExpected)
   check('beta (strain-plane, deg)', betaCell, BETA_DEG, 1e-12)
   check('theta_L derived in Excel (deg)', thetaCell, thetaExpected, 1e-9)
-  const separation = Math.abs(thetaCell - betaCell)
-  console.log(`      theta_L - beta = ${separation.toFixed(4)} deg`)
-  if (separation < 1e-6) {
-    failures.push('FAIL  theta_L equals beta — the fixture no longer exercises the angle separation')
-    console.log('FAIL  theta_L equals beta; this fixture cannot detect the old conflation')
-  } else {
-    console.log('PASS  the workbook derives theta_L from the demand, independently of beta\n')
-  }
+  check('N.A. axis alpha_NA (deg)', naAxisCell, naAxisExpected, 1e-9)
+  check('perpendicular axis alpha_perp (deg)', perpendicularAxisCell, perpendicularAxisExpected, 1e-9)
+  check('valid line deviation delta_alpha (deg)', deltaAxisCell, deltaAxisExpected, 1e-9)
+  console.log(
+    `      theta_L=${thetaCell.toFixed(4)} deg is retained only for Mx-My queries; ` +
+      `the valid section-line comparison is ${naAxisCell.toFixed(4)} vs ` +
+      `${perpendicularAxisCell.toFixed(4)} deg\n`
+  )
 
   console.log('== 10. Demand-ray capacity: workbook vs engine ==')
   const surfaceForDemand = buildPreviewSurface(section, rebars, materialStore, { cellSize })
@@ -534,12 +547,33 @@ const run = async () => {
   const eqSheet = readBack.getWorksheet('Equilibrium')!
   const relRow = findLabelRow(eqSheet, 'relative residual')
   const relResidual = cellValue('Equilibrium', `C${relRow}`)
-  const naRow = findLabelRow(eqSheet, 'neutral-axis angle')
-  console.log(
-    `      neutral-axis angle in the workbook: ${cellValue('Equilibrium', `C${naRow}`).toFixed(4)} deg ` +
-      `(engine ${((Math.atan2(inverse.state.ky, inverse.state.kx) * 180) / Math.PI).toFixed(4)} deg)`
+  const betaEqRow = findLabelRow(eqSheet, 'strain direction βeq')
+  const naRow = findLabelRow(eqSheet, 'N.A. axis αNA')
+  const perpendicularRow = findLabelRow(eqSheet, 'reference axis α⊥')
+  const deltaRow = findLabelRow(eqSheet, 'angular deviation Δα')
+  const betaEqExpected =
+    ((Math.atan2(inverse.state.ky, inverse.state.kx) * 180) / Math.PI + 360) % 360
+  const naExpected = normalizeLineAngleDeg(
+    (Math.atan2(inverse.state.ky, -inverse.state.kx) * 180) / Math.PI
   )
-  check('workbook neutral-axis angle (deg)', cellValue('Equilibrium', `C${naRow}`), BETA_DEG, 5e-3)
+  const perpendicularExpected = normalizeLineAngleDeg(
+    (Math.atan2(loadcase.My, -loadcase.Mx) * 180) / Math.PI
+  )
+  const deltaExpected = lineAngleDifferenceDeg(naExpected, perpendicularExpected)
+  console.log(
+    `      beta_eq=${cellValue('Equilibrium', `C${betaEqRow}`).toFixed(4)} deg, ` +
+      `N.A.=${cellValue('Equilibrium', `C${naRow}`).toFixed(4)} deg, ` +
+      `perpendicular reference=${cellValue('Equilibrium', `C${perpendicularRow}`).toFixed(4)} deg`
+  )
+  check('workbook strain direction beta_eq (deg)', cellValue('Equilibrium', `C${betaEqRow}`), betaEqExpected, 1e-9)
+  check('workbook N.A. axis alpha_NA (deg)', cellValue('Equilibrium', `C${naRow}`), naExpected, 1e-9)
+  check(
+    'workbook perpendicular axis alpha_perp (deg)',
+    cellValue('Equilibrium', `C${perpendicularRow}`),
+    perpendicularExpected,
+    1e-9
+  )
+  check('workbook angular deviation delta_alpha (deg)', cellValue('Equilibrium', `C${deltaRow}`), deltaExpected, 1e-9)
   console.log(`      relative residual recomputed by formula: ${relResidual.toExponential(3)}`)
   check('equilibrium residual', relResidual, 0, 1, 1e-4)
   const verdict = cellText('Equilibrium', `C${relRow + 1}`)

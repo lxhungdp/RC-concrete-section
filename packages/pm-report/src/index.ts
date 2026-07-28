@@ -9,9 +9,11 @@
  * and identified in the provenance table rather than disguised as live spreadsheet mechanics.
  *
  * Two angles are kept strictly apart (`docs/engineering/02`):
- *   `beta`    strain-plane sampling angle that generates the boundary states;
+ *   `beta`    strain-gradient sampling direction that generates the boundary states;
  *   `theta_L` demand moment direction, `ATAN2(Mux, Muy)`, used only to query the finished surface.
  * They are not interchangeable, so `beta` is an input and `theta_L` is derived from the demand.
+ * In a physical section view, compare the N.A. line with the line perpendicular to the in-section
+ * bending direction `(Muy,Mux)`; never compare either line angle directly with `theta_L`.
  *
  * Sheets
  *   Input         materials, reference origin, demand, named ranges
@@ -63,8 +65,8 @@ export type ExcelExportInput = {
   designBasis?: DesignBasis
   analysisOptions: AnalysisOptions
   /**
-   * Strain-plane sampling angle for the detailed station sheets, degrees. This is the neutral
-   * axis orientation of the state being audited, not the demand moment direction.
+   * Strain-gradient sampling direction for the detailed station sheets, degrees. The corresponding
+   * neutral-axis line is `alphaNA = (180° - beta) mod 180°`; beta is not the N.A. line angle.
    */
   betaDeg: number
   /** Axial level for the Mx-My contour sheet, N. */
@@ -560,7 +562,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   sectionHeading(inputSheet, row, 'Analysis', 4)
   row += 1
   const analysisInputs: NamedInput[] = [
-    { row: row++, label: 'β (strain-plane angle)', value: input.betaDeg, unit: 'deg', name: 'beta', note: 'neutral-axis orientation of the audited states; drives Geometry, PM_Angle, Concrete, Steel' },
+    { row: row++, label: 'β (strain direction)', value: input.betaDeg, unit: 'deg', name: 'beta', note: 'strain-gradient direction of the audited states; not the N.A. line angle; drives Geometry, PM_Angle, Concrete, Steel' },
     { row: row++, label: 'εtu', value: -0.05, unit: '-', name: 'etu', note: 'uniform strain used for station P18' },
     { row: row++, label: 'xc', value: origin.x, unit: 'mm', name: 'xc', note: 'analysis origin = net concrete centroid' },
     { row: row++, label: 'yc', value: origin.y, unit: 'mm', name: 'yc', note: 'all X, Y below are measured from it' },
@@ -618,13 +620,37 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   inputSheet.getCell(muRow, 4).value = 'kN·m'
   defineName(`Input!$C$${muRow}`, 'Mu')
 
-  const deltaRow = muRow + 1
-  inputSheet.getCell(deltaRow, 2).value = 'θ_L − β'
-  inputSheet.getCell(deltaRow, 3).value = { formula: `C${thetaRow}-beta` }
+  const naAxisRow = muRow + 1
+  inputSheet.getCell(naAxisRow, 2).value = 'αNA (N.A. axis in section x-y)'
+  inputSheet.getCell(naAxisRow, 3).value = { formula: 'MOD(180-beta,180)' }
+  inputSheet.getCell(naAxisRow, 3).numFmt = '#,##0.0000'
+  inputSheet.getCell(naAxisRow, 4).value = 'deg'
+  inputSheet.getCell(naAxisRow, 5).value =
+    'Undirected ε = 0 line angle, CCW from section +x. This is the line angle corresponding to β.'
+  inputSheet.getCell(naAxisRow, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
+  inputSheet.getCell(naAxisRow, 5).alignment = { wrapText: true }
+
+  const perpendicularAxisRow = naAxisRow + 1
+  inputSheet.getCell(perpendicularAxisRow, 2).value = 'α⊥ (axis perpendicular to Rₘ)'
+  inputSheet.getCell(perpendicularAxisRow, 3).value = {
+    formula: 'IF(AND(Mux=0,Muy=0),0,MOD(DEGREES(ATAN2(-Mux,Muy)),180))'
+  }
+  inputSheet.getCell(perpendicularAxisRow, 3).numFmt = '#,##0.0000'
+  inputSheet.getCell(perpendicularAxisRow, 4).value = 'deg'
+  inputSheet.getCell(perpendicularAxisRow, 5).value =
+    'Reference line perpendicular to the in-section bending direction Rₘ = (Muy,Mux).'
+  inputSheet.getCell(perpendicularAxisRow, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
+  inputSheet.getCell(perpendicularAxisRow, 5).alignment = { wrapText: true }
+
+  const deltaRow = perpendicularAxisRow + 1
+  inputSheet.getCell(deltaRow, 2).value = 'Δα = angle(N.A., ⊥Rₘ)'
+  inputSheet.getCell(deltaRow, 3).value = {
+    formula: `MIN(ABS(C${naAxisRow}-C${perpendicularAxisRow}),180-ABS(C${naAxisRow}-C${perpendicularAxisRow}))`
+  }
   inputSheet.getCell(deltaRow, 3).numFmt = '#,##0.0000'
   inputSheet.getCell(deltaRow, 4).value = 'deg'
   inputSheet.getCell(deltaRow, 5).value =
-    'Non-zero on almost every biaxial section. If this were assumed to be zero the capacity check would be wrong.'
+    'Smallest angle between two undirected section lines. This is the valid N.A. comparison.'
   inputSheet.getCell(deltaRow, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
   inputSheet.getCell(deltaRow, 5).alignment = { wrapText: true }
 
@@ -1038,7 +1064,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   // PM_Angle — station parameters and the configured envelope
   // ==========================================================================
   const pmSheet = workbook.addWorksheet('PM_Angle', { views: [{ state: 'frozen', ySplit: 7, xSplit: 2 }] })
-  title(pmSheet, 1, `P–M ENVELOPE AT β (STRAIN-PLANE ANGLE) — ${stationCount} STATIONS, NOMINAL`, 20)
+  title(pmSheet, 1, `P–M ENVELOPE AT β (STRAIN DIRECTION) — ${stationCount} STATIONS, NOMINAL`, 20)
   pmSheet.getCell('B2').value =
     `Strain-plane sampling angle β = ${input.betaDeg.toFixed(2)} deg. This is a resistance sampling row, ` +
     'not the demand-direction diagram — see PM_Theta for that. Shaded cells are the station schedule.'
@@ -1938,14 +1964,62 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       defineName(`Equilibrium!$C$${r}`, name)
     })
     eqRow += 5
-    eqSheet.getCell(eqRow, 2).value = 'neutral-axis angle atan2(κy, κx)'
-    eqSheet.getCell(eqRow, 3).value = { formula: 'DEGREES(ATAN2(Eq_kx,Eq_ky))' }
-    eqSheet.getCell(eqRow, 3).numFmt = '#,##0.0000'
-    eqSheet.getCell(eqRow, 4).value = 'deg'
-    eqSheet.getCell(eqRow, 5).value = { formula: '"beta on Input is "&TEXT(beta,"0.0000")&" deg — the detail sheets audit this same plane"' }
-    eqSheet.getCell(eqRow, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
+    const equilibriumBetaRow = eqRow
+    eqSheet.getCell(equilibriumBetaRow, 2).value = 'strain direction βeq = atan2(κy, κx)'
+    eqSheet.getCell(equilibriumBetaRow, 3).value = {
+      formula: 'MOD(DEGREES(ATAN2(Eq_kx,Eq_ky)),360)'
+    }
+    eqSheet.getCell(equilibriumBetaRow, 3).numFmt = '#,##0.0000'
+    eqSheet.getCell(equilibriumBetaRow, 4).value = 'deg'
+    eqSheet.getCell(equilibriumBetaRow, 5).value = {
+      formula: '"β on Input is "&TEXT(beta,"0.0000")&" deg — the detail sheets audit this strain direction"'
+    }
+    eqSheet.getCell(equilibriumBetaRow, 5).font = {
+      italic: true,
+      color: { argb: 'FF6B7280' }
+    }
 
-    eqRow += 2
+    const equilibriumNaRow = equilibriumBetaRow + 1
+    eqSheet.getCell(equilibriumNaRow, 2).value = 'N.A. axis αNA (section x-y)'
+    eqSheet.getCell(equilibriumNaRow, 3).value = {
+      formula: 'MOD(DEGREES(ATAN2(-Eq_kx,Eq_ky)),180)'
+    }
+    eqSheet.getCell(equilibriumNaRow, 3).numFmt = '#,##0.0000'
+    eqSheet.getCell(equilibriumNaRow, 4).value = 'deg'
+    eqSheet.getCell(equilibriumNaRow, 5).value = 'tangent (-κx,κy) to the actual ε = 0 line'
+    eqSheet.getCell(equilibriumNaRow, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
+
+    const equilibriumPerpendicularRow = equilibriumNaRow + 1
+    eqSheet.getCell(equilibriumPerpendicularRow, 2).value = 'reference axis α⊥ = ⊥Rₘ'
+    eqSheet.getCell(equilibriumPerpendicularRow, 3).value = {
+      formula: 'IF(AND(Mux=0,Muy=0),0,MOD(DEGREES(ATAN2(-Mux,Muy)),180))'
+    }
+    eqSheet.getCell(equilibriumPerpendicularRow, 3).numFmt = '#,##0.0000'
+    eqSheet.getCell(equilibriumPerpendicularRow, 4).value = 'deg'
+    eqSheet.getCell(equilibriumPerpendicularRow, 5).value =
+      'reference tangent (-Mux,Muy), perpendicular to Rₘ = (Muy,Mux)'
+    eqSheet.getCell(equilibriumPerpendicularRow, 5).font = {
+      italic: true,
+      color: { argb: 'FF6B7280' }
+    }
+
+    const equilibriumDeltaRow = equilibriumPerpendicularRow + 1
+    eqSheet.getCell(equilibriumDeltaRow, 2).value = 'angular deviation Δα'
+    eqSheet.getCell(equilibriumDeltaRow, 3).value = {
+      formula:
+        `MIN(ABS(C${equilibriumNaRow}-C${equilibriumPerpendicularRow}),` +
+        `180-ABS(C${equilibriumNaRow}-C${equilibriumPerpendicularRow}))`
+    }
+    eqSheet.getCell(equilibriumDeltaRow, 3).numFmt = '#,##0.0000'
+    eqSheet.getCell(equilibriumDeltaRow, 4).value = 'deg'
+    eqSheet.getCell(equilibriumDeltaRow, 5).value =
+      'smallest angle between the actual N.A. and the perpendicular reference axis'
+    eqSheet.getCell(equilibriumDeltaRow, 5).font = {
+      italic: true,
+      color: { argb: 'FF6B7280' }
+    }
+
+    eqRow = equilibriumDeltaRow + 2
     sectionHeading(eqSheet, eqRow, 'Section response at that plane — formulas', 4)
     const concEqSig = `Concrete!$L$${CONC_FIRST}:$L$${concLastRow}`
     const responses: Array<[string, string, string]> = [

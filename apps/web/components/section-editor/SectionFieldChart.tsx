@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SectionGeometry } from '@pm/geometry'
 import type { SectionFieldMap, SectionFieldRebar, SectionFieldTriangle } from '@pm/analysis'
+import {
+  neutralAxisAngleDeg,
+  sectionFieldAngleComparison
+} from './section-field-angles'
 
 type FieldMode = 'strain' | 'stress'
 
@@ -88,21 +92,6 @@ const normInRange = (value: number, range: { min: number; max: number }) =>
 
 const fmt = (value: number, digits = 4) =>
   Math.abs(value) < 1e-12 ? '0' : value.toLocaleString('en-US', { maximumFractionDigits: digits })
-
-const normalizeAngleDeg = (degrees: number) => ((degrees % 360) + 360) % 360
-
-/** Orientation of the ε=0 line (tangent direction), degrees CCW from +x. */
-export const neutralAxisAngleDeg = (state: { e0: number; kx: number; ky: number }) => {
-  const kappa = Math.hypot(state.kx, state.ky)
-  if (kappa < 1e-16) return null
-  // Line: ky·x + kx·y + e0 = 0 (local). Tangent ⟂ (ky, kx) → (-kx, ky).
-  return normalizeAngleDeg((Math.atan2(state.ky, -state.kx) * 180) / Math.PI)
-}
-
-export const momentAngleDeg = (Mx: number, My: number) => {
-  if (Math.hypot(Mx, My) < 1e-9) return null
-  return normalizeAngleDeg((Math.atan2(My, Mx) * 180) / Math.PI)
-}
 
 /** Clip infinite line through (px,py) with direction (dx,dy) to an AABB. */
 const clipLineToBounds = (
@@ -238,6 +227,10 @@ export function SectionFieldChart({
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const viewRef = useRef<ViewTransform | null>(null)
   const [hover, setHover] = useState<HoverInfo | null>(null)
+  const angleComparison = useMemo(
+    () => sectionFieldAngleComparison(state, Mx, My),
+    [Mx, My, state]
+  )
 
   const fieldRange = useMemo(() => {
     const values: number[] = []
@@ -423,63 +416,48 @@ export function SectionFieldChart({
       const minSpan = Math.min(spanX, spanY)
       const kappa = Math.hypot(state.kx, state.ky)
 
-      if (showNeutralAxis && kappa >= 1e-16) {
-        const xl = Math.abs(state.ky) >= Math.abs(state.kx) ? -state.e0 / state.ky : 0
-        const yl = Math.abs(state.ky) >= Math.abs(state.kx) ? 0 : -state.e0 / state.kx
-        const naPoint = { x: ox + xl, y: oy + yl }
-        const naSeg = clipLineToBounds(naPoint.x, naPoint.y, -state.kx, state.ky, clipBounds)
-        if (naSeg) {
-          ctx.beginPath()
-          ctx.moveTo(toPixelX(naSeg[0].x), toPixelY(naSeg[0].y))
-          ctx.lineTo(toPixelX(naSeg[1].x), toPixelY(naSeg[1].y))
-          ctx.strokeStyle = '#be123c'
-          ctx.lineWidth = 2.4 * dpr
-          ctx.setLineDash([7 * dpr, 5 * dpr])
-          ctx.stroke()
-          ctx.setLineDash([])
-          const midX = toPixelX((naSeg[0].x + naSeg[1].x) / 2)
-          const midY = toPixelY((naSeg[0].y + naSeg[1].y) / 2)
-          ctx.fillStyle = '#be123c'
-          ctx.font = `600 ${11 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
-          ctx.textAlign = 'left'
-          ctx.fillText('N.A. (ε=0)', midX + 6 * dpr, midY - 6 * dpr)
-        }
-      }
-
       const mMag = Math.hypot(Mx, My)
       if (showMoments && mMag > 1e-9) {
-        const theta = Math.atan2(My, Mx)
-        // Shared scale so Mux, Muy, and |M| stay proportional.
+        // The physical section direction is (My,Mx), because Mx=∫σy dA and My=∫σx dA.
+        // The (Mx,My) direction belongs to action space and must not be drawn directly on x-y.
+        const sectionX = My
+        const sectionY = Mx
+        const theta = Math.atan2(sectionY, sectionX)
+        // Shared scale so Mux, Muy, and the section resultant stay proportional.
         const mScale = (0.4 * minSpan) / Math.max(mMag, Math.abs(Mx), Math.abs(My), 1)
 
-        if (Math.abs(Mx) > 1e-9) {
-          drawArrow(ctx, toPixelX(ox), toPixelY(oy), toPixelX(ox + Mx * mScale), toPixelY(oy), dpr, '#0d9488')
-          ctx.fillStyle = '#0d9488'
-          ctx.font = `600 ${10 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
-          ctx.textAlign = 'left'
-          ctx.fillText('Mux', toPixelX(ox + Mx * mScale) + 5 * dpr, toPixelY(oy) + 4 * dpr)
-        }
         if (Math.abs(My) > 1e-9) {
-          drawArrow(ctx, toPixelX(ox), toPixelY(oy), toPixelX(ox), toPixelY(oy + My * mScale), dpr, '#7c3aed')
+          drawArrow(ctx, toPixelX(ox), toPixelY(oy), toPixelX(ox + My * mScale), toPixelY(oy), dpr, '#7c3aed')
           ctx.fillStyle = '#7c3aed'
           ctx.font = `600 ${10 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
           ctx.textAlign = 'left'
-          ctx.fillText('Muy', toPixelX(ox) + 5 * dpr, toPixelY(oy + My * mScale) - 4 * dpr)
+          ctx.fillText('Muy', toPixelX(ox + My * mScale) + 5 * dpr, toPixelY(oy) + 4 * dpr)
+        }
+        if (Math.abs(Mx) > 1e-9) {
+          drawArrow(ctx, toPixelX(ox), toPixelY(oy), toPixelX(ox), toPixelY(oy + Mx * mScale), dpr, '#0d9488')
+          ctx.fillStyle = '#0d9488'
+          ctx.font = `600 ${10 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
+          ctx.textAlign = 'left'
+          ctx.fillText('Mux', toPixelX(ox) + 5 * dpr, toPixelY(oy + Mx * mScale) - 4 * dpr)
         }
 
         drawArrow(
           ctx,
           toPixelX(ox),
           toPixelY(oy),
-          toPixelX(ox + Mx * mScale),
-          toPixelY(oy + My * mScale),
+          toPixelX(ox + sectionX * mScale),
+          toPixelY(oy + sectionY * mScale),
           dpr,
           '#ea580c'
         )
         ctx.fillStyle = '#ea580c'
         ctx.font = `600 ${11 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
         ctx.textAlign = 'left'
-        ctx.fillText('M', toPixelX(ox + Mx * mScale) + 6 * dpr, toPixelY(oy + My * mScale) - 4 * dpr)
+        ctx.fillText(
+          'Rₘ',
+          toPixelX(ox + sectionX * mScale) + 6 * dpr,
+          toPixelY(oy + sectionY * mScale) - 4 * dpr
+        )
 
         const perpSeg = clipLineToBounds(ox, oy, -Math.sin(theta), Math.cos(theta), clipBounds)
         if (perpSeg) {
@@ -491,12 +469,56 @@ export function SectionFieldChart({
           ctx.setLineDash([4 * dpr, 4 * dpr])
           ctx.stroke()
           ctx.setLineDash([])
-          const midX = toPixelX((perpSeg[0].x + perpSeg[1].x) / 2)
-          const midY = toPixelY((perpSeg[0].y + perpSeg[1].y) / 2)
+          // Keep the reference label away from the centroid, where the component arrows meet.
+          const labelT = 0.78
+          const labelX = toPixelX(lerp(perpSeg[0].x, perpSeg[1].x, labelT))
+          const labelY = toPixelY(lerp(perpSeg[0].y, perpSeg[1].y, labelT))
           ctx.fillStyle = '#2563eb'
           ctx.font = `600 ${11 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
           ctx.textAlign = 'left'
-          ctx.fillText('⊥M', midX + 6 * dpr, midY + 12 * dpr)
+          const referenceAngle = angleComparison.perpendicularBendingAxis
+          ctx.fillText(
+            referenceAngle == null ? '⊥ Rₘ' : `⊥ Rₘ  α⊥=${fmt(referenceAngle, 1)}°`,
+            labelX + 6 * dpr,
+            labelY + 12 * dpr
+          )
+          if (angleComparison.difference != null) {
+            ctx.fillText(
+              `Δα=${fmt(angleComparison.difference, 1)}°`,
+              labelX + 6 * dpr,
+              labelY + 25 * dpr
+            )
+          }
+        }
+      }
+
+      // Draw the actual equilibrium neutral axis last so it remains visible when the two lines
+      // are close. Its offset comes from e0; its angular difference from the blue reference is real.
+      if (showNeutralAxis && kappa >= 1e-16) {
+        const xl = Math.abs(state.ky) >= Math.abs(state.kx) ? -state.e0 / state.ky : 0
+        const yl = Math.abs(state.ky) >= Math.abs(state.kx) ? 0 : -state.e0 / state.kx
+        const naPoint = { x: ox + xl, y: oy + yl }
+        const naSeg = clipLineToBounds(naPoint.x, naPoint.y, -state.kx, state.ky, clipBounds)
+        if (naSeg) {
+          ctx.beginPath()
+          ctx.moveTo(toPixelX(naSeg[0].x), toPixelY(naSeg[0].y))
+          ctx.lineTo(toPixelX(naSeg[1].x), toPixelY(naSeg[1].y))
+          ctx.strokeStyle = '#be123c'
+          ctx.lineWidth = 2.6 * dpr
+          ctx.setLineDash([7 * dpr, 5 * dpr])
+          ctx.stroke()
+          ctx.setLineDash([])
+          const midX = toPixelX((naSeg[0].x + naSeg[1].x) / 2)
+          const midY = toPixelY((naSeg[0].y + naSeg[1].y) / 2)
+          const naAngle = neutralAxisAngleDeg(state)
+          ctx.fillStyle = '#be123c'
+          ctx.font = `600 ${11 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
+          ctx.textAlign = 'left'
+          ctx.fillText(
+            naAngle == null ? 'N.A. (ε=0)' : `N.A.  αNA=${fmt(naAngle, 1)}°`,
+            midX + 6 * dpr,
+            midY - 6 * dpr
+          )
         }
       }
 
@@ -560,7 +582,19 @@ export function SectionFieldChart({
       observer.disconnect()
       themeObserver.disconnect()
     }
-  }, [Mx, My, fieldMap, fieldMode, fieldRange, includeRebar, section.solids, showMoments, showNeutralAxis, state])
+  }, [
+    Mx,
+    My,
+    angleComparison,
+    fieldMap,
+    fieldMode,
+    fieldRange,
+    includeRebar,
+    section.solids,
+    showMoments,
+    showNeutralAxis,
+    state
+  ])
 
   const resolveHover = (clientX: number, clientY: number): HoverInfo | null => {
     const host = hostRef.current

@@ -3,11 +3,11 @@
 This file defines the authoritative ULS check. It replaces v1's axial screen plus fixed-P radial
 moment ratio.
 
-Classic biaxial-bending pitfall: the strain-plane or neutral-axis sampling angle used to generate
-the `P-Mx-My` surface is not the moment direction of a demand. Demand checks use the demand vector
-itself, with `thetaLoad = atan2(Muy, Mux)`, and intersect the completed surface geometry. Any
-implementation that chooses a sampled beta/neutral-axis row because it is closest to `thetaLoad`
-is a mechanics bug.
+Classic biaxial-bending pitfall: the sampled strain-gradient direction `beta` used to generate the
+`P-Mx-My` surface—and the derived neutral-axis line angle—are not the moment direction of a demand.
+Demand checks use the demand vector itself, with `thetaLoad = atan2(Muy, Mux)`, and intersect the
+completed surface geometry. Any implementation that chooses a sampled beta row because it is
+closest to `thetaLoad` is a mechanics bug.
 
 ## 1. Demand contract
 
