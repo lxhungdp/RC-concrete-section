@@ -1,6 +1,6 @@
 {
   "schema": "pm-column-project",
-  "version": 3,
+  "version": 4,
   "meta": {
     "id": 1,
     "name": "PM-advanced (7) 2D reference case",
@@ -328,6 +328,7 @@
         {
           "id": 1,
           "name": "ULS-1 workbook Newton demand (on the 15 deg surface)",
+          "actionBasis": "factoredULS",
           "P": 24942922.10245218,
           "Mx": 3714165943.842699,
           "My": 1431780727.695074
@@ -335,6 +336,7 @@
         {
           "id": 2,
           "name": "ULS-2 same axial, half moment (inside)",
+          "actionBasis": "factoredULS",
           "P": 24942922.10245218,
           "Mx": 1857082971.9213495,
           "My": 715890363.8475369
@@ -342,6 +344,7 @@
         {
           "id": 3,
           "name": "ULS-3 low axial, high moment",
+          "actionBasis": "factoredULS",
           "P": 5000000,
           "Mx": 4000000000,
           "My": 1500000000
@@ -509,7 +512,41 @@
             ]
           }
         }
+      },
+      "mesh": {
+        "sizing": {
+          "type": "automatic",
+          "seedDivisions": 32
+        },
+        "maxCells": 250000,
+        "maxSubdivision": 4
       }
+    },
+    "design": {
+      "basisVersion": 1,
+      "profileId": "kds-2024-current-set",
+      "identity": {
+        "organization": "MOLIT/KDS",
+        "document": "KDS 2024 current set · resistance: KDS 14 20 10:2021 + KDS 14 20 20:2022",
+        "edition": "2024 partial-revision framework (effective 2025-01-05)",
+        "methodId": "kds-2024-current-set-global-strength-reduction",
+        "profileVersion": "1.0.0",
+        "amendment": "MOLIT Notice 2024-879, 2024-12-30"
+      },
+      "verificationStatus": "draft",
+      "format": "globalResultantFactor",
+      "transverseReinforcement": "other",
+      "factors": {
+        "phiCompressionOther": 0.65,
+        "phiCompressionSpiral": 0.7,
+        "phiTension": 0.85,
+        "transitionExtraStrain": 0.003,
+        "axialCapOther": 0.8,
+        "axialCapSpiral": 0.85
+      },
+      "axialCapEnabled": true,
+      "modified": false,
+      "overrideReason": ""
     }
   }
 }
