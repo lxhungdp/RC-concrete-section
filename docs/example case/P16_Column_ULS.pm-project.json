@@ -1,0 +1,3260 @@
+{
+  "schema": "pm-column-project",
+  "version": 4,
+  "meta": {
+    "id": 1,
+    "name": "P16 Column ULS — UMD verification case",
+    "createdAt": "2026-07-30T00:00:00.000Z",
+    "updatedAt": "2026-07-30T01:30:11.336Z"
+  },
+  "inputs": {
+    "geometry": {
+      "id": 1,
+      "name": "P16 — UMD hollow rectangular column 4500 x 12000, 650 wall",
+      "outers": [
+        {
+          "id": 1,
+          "points": [
+            {
+              "id": 1,
+              "x": 2250,
+              "y": -6000
+            },
+            {
+              "id": 2,
+              "x": 2250,
+              "y": 6000
+            },
+            {
+              "id": 3,
+              "x": -2250,
+              "y": 6000
+            },
+            {
+              "id": 4,
+              "x": -2250,
+              "y": -6000
+            }
+          ],
+          "holes": [
+            {
+              "id": 1,
+              "points": [
+                {
+                  "id": 101,
+                  "x": 1600,
+                  "y": 5350
+                },
+                {
+                  "id": 102,
+                  "x": 1600,
+                  "y": -5350
+                },
+                {
+                  "id": 103,
+                  "x": -1600,
+                  "y": -5350
+                },
+                {
+                  "id": 104,
+                  "x": -1600,
+                  "y": 5350
+                }
+              ]
+            }
+          ],
+          "rebars": [
+            {
+              "id": 1,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -5325
+            },
+            {
+              "id": 2,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -5325
+            },
+            {
+              "id": 3,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -5175
+            },
+            {
+              "id": 4,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -5175
+            },
+            {
+              "id": 5,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -5025
+            },
+            {
+              "id": 6,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -5025
+            },
+            {
+              "id": 7,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -825
+            },
+            {
+              "id": 8,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -675
+            },
+            {
+              "id": 9,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -375
+            },
+            {
+              "id": 10,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -525
+            },
+            {
+              "id": 11,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -825
+            },
+            {
+              "id": 12,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -675
+            },
+            {
+              "id": 13,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -375
+            },
+            {
+              "id": 14,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -525
+            },
+            {
+              "id": 15,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -4875
+            },
+            {
+              "id": 16,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -4725
+            },
+            {
+              "id": 17,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -4575
+            },
+            {
+              "id": 18,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -4425
+            },
+            {
+              "id": 19,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -4275
+            },
+            {
+              "id": 20,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -4125
+            },
+            {
+              "id": 21,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -3975
+            },
+            {
+              "id": 22,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -3825
+            },
+            {
+              "id": 23,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -3675
+            },
+            {
+              "id": 24,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -3525
+            },
+            {
+              "id": 25,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -3375
+            },
+            {
+              "id": 26,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -3225
+            },
+            {
+              "id": 27,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -3075
+            },
+            {
+              "id": 28,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -2925
+            },
+            {
+              "id": 29,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -2775
+            },
+            {
+              "id": 30,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -2625
+            },
+            {
+              "id": 31,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -2475
+            },
+            {
+              "id": 32,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -2325
+            },
+            {
+              "id": 33,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -2175
+            },
+            {
+              "id": 34,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -2025
+            },
+            {
+              "id": 35,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -1875
+            },
+            {
+              "id": 36,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -1725
+            },
+            {
+              "id": 37,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -1575
+            },
+            {
+              "id": 38,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -1425
+            },
+            {
+              "id": 39,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -1275
+            },
+            {
+              "id": 40,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -1125
+            },
+            {
+              "id": 41,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -975
+            },
+            {
+              "id": 42,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -225
+            },
+            {
+              "id": 43,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -75
+            },
+            {
+              "id": 44,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -4875
+            },
+            {
+              "id": 45,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -4725
+            },
+            {
+              "id": 46,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -4575
+            },
+            {
+              "id": 47,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -4425
+            },
+            {
+              "id": 48,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -4275
+            },
+            {
+              "id": 49,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -4125
+            },
+            {
+              "id": 50,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -3975
+            },
+            {
+              "id": 51,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -3825
+            },
+            {
+              "id": 52,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -3675
+            },
+            {
+              "id": 53,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -3525
+            },
+            {
+              "id": 54,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -3375
+            },
+            {
+              "id": 55,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -3225
+            },
+            {
+              "id": 56,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -3075
+            },
+            {
+              "id": 57,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -2925
+            },
+            {
+              "id": 58,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -2775
+            },
+            {
+              "id": 59,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -2625
+            },
+            {
+              "id": 60,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -2475
+            },
+            {
+              "id": 61,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -2325
+            },
+            {
+              "id": 62,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -2175
+            },
+            {
+              "id": 63,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -2025
+            },
+            {
+              "id": 64,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -1875
+            },
+            {
+              "id": 65,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -1725
+            },
+            {
+              "id": 66,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -1575
+            },
+            {
+              "id": 67,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -1425
+            },
+            {
+              "id": 68,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -1275
+            },
+            {
+              "id": 69,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -1125
+            },
+            {
+              "id": 70,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -975
+            },
+            {
+              "id": 71,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -225
+            },
+            {
+              "id": 72,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -75
+            },
+            {
+              "id": 73,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -5725
+            },
+            {
+              "id": 74,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -5600
+            },
+            {
+              "id": 75,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1975,
+              "y": -5850
+            },
+            {
+              "id": 76,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1850,
+              "y": -5850
+            },
+            {
+              "id": 77,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -5475
+            },
+            {
+              "id": 78,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -5475
+            },
+            {
+              "id": 79,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": -5850
+            },
+            {
+              "id": 80,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1575,
+              "y": -5475
+            },
+            {
+              "id": 81,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1575,
+              "y": -5850
+            },
+            {
+              "id": 82,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1425,
+              "y": -5475
+            },
+            {
+              "id": 83,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1425,
+              "y": -5850
+            },
+            {
+              "id": 84,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1275,
+              "y": -5475
+            },
+            {
+              "id": 85,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 75,
+              "y": -5475
+            },
+            {
+              "id": 86,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 225,
+              "y": -5475
+            },
+            {
+              "id": 87,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 375,
+              "y": -5475
+            },
+            {
+              "id": 88,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 525,
+              "y": -5475
+            },
+            {
+              "id": 89,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 675,
+              "y": -5475
+            },
+            {
+              "id": 90,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 825,
+              "y": -5475
+            },
+            {
+              "id": 91,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 975,
+              "y": -5475
+            },
+            {
+              "id": 92,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1125,
+              "y": -5475
+            },
+            {
+              "id": 93,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 75,
+              "y": -5850
+            },
+            {
+              "id": 94,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 225,
+              "y": -5850
+            },
+            {
+              "id": 95,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 375,
+              "y": -5850
+            },
+            {
+              "id": 96,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 525,
+              "y": -5850
+            },
+            {
+              "id": 97,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 675,
+              "y": -5850
+            },
+            {
+              "id": 98,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 825,
+              "y": -5850
+            },
+            {
+              "id": 99,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 975,
+              "y": -5850
+            },
+            {
+              "id": 100,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1125,
+              "y": -5850
+            },
+            {
+              "id": 101,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1275,
+              "y": -5850
+            },
+            {
+              "id": 102,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": -5850
+            },
+            {
+              "id": 103,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -5725
+            },
+            {
+              "id": 104,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -5600
+            },
+            {
+              "id": 105,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1975,
+              "y": -5850
+            },
+            {
+              "id": 106,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1850,
+              "y": -5850
+            },
+            {
+              "id": 107,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -5475
+            },
+            {
+              "id": 108,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -5325
+            },
+            {
+              "id": 109,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -5325
+            },
+            {
+              "id": 110,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -5175
+            },
+            {
+              "id": 111,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -5175
+            },
+            {
+              "id": 112,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -5025
+            },
+            {
+              "id": 113,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -5025
+            },
+            {
+              "id": 114,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -5475
+            },
+            {
+              "id": 115,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -5850
+            },
+            {
+              "id": 116,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1575,
+              "y": -5475
+            },
+            {
+              "id": 117,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1575,
+              "y": -5850
+            },
+            {
+              "id": 118,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1425,
+              "y": -5475
+            },
+            {
+              "id": 119,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1425,
+              "y": -5850
+            },
+            {
+              "id": 120,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1275,
+              "y": -5475
+            },
+            {
+              "id": 121,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -825
+            },
+            {
+              "id": 122,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -675
+            },
+            {
+              "id": 123,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -375
+            },
+            {
+              "id": 124,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -525
+            },
+            {
+              "id": 125,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -825
+            },
+            {
+              "id": 126,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -675
+            },
+            {
+              "id": 127,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -375
+            },
+            {
+              "id": 128,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -525
+            },
+            {
+              "id": 129,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -4875
+            },
+            {
+              "id": 130,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -4725
+            },
+            {
+              "id": 131,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -4575
+            },
+            {
+              "id": 132,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -4425
+            },
+            {
+              "id": 133,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -4275
+            },
+            {
+              "id": 134,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -4125
+            },
+            {
+              "id": 135,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -3975
+            },
+            {
+              "id": 136,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -3825
+            },
+            {
+              "id": 137,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -3675
+            },
+            {
+              "id": 138,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -3525
+            },
+            {
+              "id": 139,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -3375
+            },
+            {
+              "id": 140,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -3225
+            },
+            {
+              "id": 141,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -3075
+            },
+            {
+              "id": 142,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -2925
+            },
+            {
+              "id": 143,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -2775
+            },
+            {
+              "id": 144,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -2625
+            },
+            {
+              "id": 145,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -2475
+            },
+            {
+              "id": 146,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -2325
+            },
+            {
+              "id": 147,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -2175
+            },
+            {
+              "id": 148,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -2025
+            },
+            {
+              "id": 149,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -1875
+            },
+            {
+              "id": 150,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -1725
+            },
+            {
+              "id": 151,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -1575
+            },
+            {
+              "id": 152,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -1425
+            },
+            {
+              "id": 153,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -1275
+            },
+            {
+              "id": 154,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -1125
+            },
+            {
+              "id": 155,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -975
+            },
+            {
+              "id": 156,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -225
+            },
+            {
+              "id": 157,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -75
+            },
+            {
+              "id": 158,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -75,
+              "y": -5475
+            },
+            {
+              "id": 159,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -225,
+              "y": -5475
+            },
+            {
+              "id": 160,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -375,
+              "y": -5475
+            },
+            {
+              "id": 161,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -525,
+              "y": -5475
+            },
+            {
+              "id": 162,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -675,
+              "y": -5475
+            },
+            {
+              "id": 163,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -825,
+              "y": -5475
+            },
+            {
+              "id": 164,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -975,
+              "y": -5475
+            },
+            {
+              "id": 165,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1125,
+              "y": -5475
+            },
+            {
+              "id": 166,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -4875
+            },
+            {
+              "id": 167,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -4725
+            },
+            {
+              "id": 168,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -4575
+            },
+            {
+              "id": 169,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -4425
+            },
+            {
+              "id": 170,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -4275
+            },
+            {
+              "id": 171,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -4125
+            },
+            {
+              "id": 172,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -3975
+            },
+            {
+              "id": 173,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -3825
+            },
+            {
+              "id": 174,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -3675
+            },
+            {
+              "id": 175,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -3525
+            },
+            {
+              "id": 176,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -3375
+            },
+            {
+              "id": 177,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -3225
+            },
+            {
+              "id": 178,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -3075
+            },
+            {
+              "id": 179,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -2925
+            },
+            {
+              "id": 180,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -2775
+            },
+            {
+              "id": 181,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -2625
+            },
+            {
+              "id": 182,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -2475
+            },
+            {
+              "id": 183,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -2325
+            },
+            {
+              "id": 184,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -2175
+            },
+            {
+              "id": 185,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -2025
+            },
+            {
+              "id": 186,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -1875
+            },
+            {
+              "id": 187,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -1725
+            },
+            {
+              "id": 188,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -1575
+            },
+            {
+              "id": 189,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -1425
+            },
+            {
+              "id": 190,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -1275
+            },
+            {
+              "id": 191,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -1125
+            },
+            {
+              "id": 192,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -975
+            },
+            {
+              "id": 193,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -225
+            },
+            {
+              "id": 194,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": -75
+            },
+            {
+              "id": 195,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -75,
+              "y": -5850
+            },
+            {
+              "id": 196,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -225,
+              "y": -5850
+            },
+            {
+              "id": 197,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -375,
+              "y": -5850
+            },
+            {
+              "id": 198,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -525,
+              "y": -5850
+            },
+            {
+              "id": 199,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -675,
+              "y": -5850
+            },
+            {
+              "id": 200,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -825,
+              "y": -5850
+            },
+            {
+              "id": 201,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -975,
+              "y": -5850
+            },
+            {
+              "id": 202,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1125,
+              "y": -5850
+            },
+            {
+              "id": 203,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1275,
+              "y": -5850
+            },
+            {
+              "id": 204,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": -5850
+            },
+            {
+              "id": 205,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 5325
+            },
+            {
+              "id": 206,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 5325
+            },
+            {
+              "id": 207,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 5175
+            },
+            {
+              "id": 208,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 5175
+            },
+            {
+              "id": 209,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 5025
+            },
+            {
+              "id": 210,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 5025
+            },
+            {
+              "id": 211,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 825
+            },
+            {
+              "id": 212,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 675
+            },
+            {
+              "id": 213,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 375
+            },
+            {
+              "id": 214,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 525
+            },
+            {
+              "id": 215,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 825
+            },
+            {
+              "id": 216,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 675
+            },
+            {
+              "id": 217,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 375
+            },
+            {
+              "id": 218,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 525
+            },
+            {
+              "id": 219,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 4875
+            },
+            {
+              "id": 220,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 4725
+            },
+            {
+              "id": 221,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 4575
+            },
+            {
+              "id": 222,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 4425
+            },
+            {
+              "id": 223,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 4275
+            },
+            {
+              "id": 224,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 4125
+            },
+            {
+              "id": 225,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 3975
+            },
+            {
+              "id": 226,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 3825
+            },
+            {
+              "id": 227,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 3675
+            },
+            {
+              "id": 228,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 3525
+            },
+            {
+              "id": 229,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 3375
+            },
+            {
+              "id": 230,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 3225
+            },
+            {
+              "id": 231,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 3075
+            },
+            {
+              "id": 232,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 2925
+            },
+            {
+              "id": 233,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 2775
+            },
+            {
+              "id": 234,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 2625
+            },
+            {
+              "id": 235,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 2475
+            },
+            {
+              "id": 236,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 2325
+            },
+            {
+              "id": 237,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 2175
+            },
+            {
+              "id": 238,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 2025
+            },
+            {
+              "id": 239,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 1875
+            },
+            {
+              "id": 240,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 1725
+            },
+            {
+              "id": 241,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 1575
+            },
+            {
+              "id": 242,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 1425
+            },
+            {
+              "id": 243,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 1275
+            },
+            {
+              "id": 244,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 1125
+            },
+            {
+              "id": 245,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 975
+            },
+            {
+              "id": 246,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 225
+            },
+            {
+              "id": 247,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 75
+            },
+            {
+              "id": 248,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 4875
+            },
+            {
+              "id": 249,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 4725
+            },
+            {
+              "id": 250,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 4575
+            },
+            {
+              "id": 251,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 4425
+            },
+            {
+              "id": 252,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 4275
+            },
+            {
+              "id": 253,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 4125
+            },
+            {
+              "id": 254,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 3975
+            },
+            {
+              "id": 255,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 3825
+            },
+            {
+              "id": 256,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 3675
+            },
+            {
+              "id": 257,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 3525
+            },
+            {
+              "id": 258,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 3375
+            },
+            {
+              "id": 259,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 3225
+            },
+            {
+              "id": 260,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 3075
+            },
+            {
+              "id": 261,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 2925
+            },
+            {
+              "id": 262,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 2775
+            },
+            {
+              "id": 263,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 2625
+            },
+            {
+              "id": 264,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 2475
+            },
+            {
+              "id": 265,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 2325
+            },
+            {
+              "id": 266,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 2175
+            },
+            {
+              "id": 267,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 2025
+            },
+            {
+              "id": 268,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 1875
+            },
+            {
+              "id": 269,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 1725
+            },
+            {
+              "id": 270,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 1575
+            },
+            {
+              "id": 271,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 1425
+            },
+            {
+              "id": 272,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 1275
+            },
+            {
+              "id": 273,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 1125
+            },
+            {
+              "id": 274,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 975
+            },
+            {
+              "id": 275,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 225
+            },
+            {
+              "id": 276,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 75
+            },
+            {
+              "id": 277,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 5725
+            },
+            {
+              "id": 278,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 5600
+            },
+            {
+              "id": 279,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1975,
+              "y": 5850
+            },
+            {
+              "id": 280,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1850,
+              "y": 5850
+            },
+            {
+              "id": 281,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 5475
+            },
+            {
+              "id": 282,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 5475
+            },
+            {
+              "id": 283,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1725,
+              "y": 5850
+            },
+            {
+              "id": 284,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1575,
+              "y": 5475
+            },
+            {
+              "id": 285,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1575,
+              "y": 5850
+            },
+            {
+              "id": 286,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1425,
+              "y": 5475
+            },
+            {
+              "id": 287,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1425,
+              "y": 5850
+            },
+            {
+              "id": 288,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1275,
+              "y": 5475
+            },
+            {
+              "id": 289,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 75,
+              "y": 5475
+            },
+            {
+              "id": 290,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 225,
+              "y": 5475
+            },
+            {
+              "id": 291,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 375,
+              "y": 5475
+            },
+            {
+              "id": 292,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 525,
+              "y": 5475
+            },
+            {
+              "id": 293,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 675,
+              "y": 5475
+            },
+            {
+              "id": 294,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 825,
+              "y": 5475
+            },
+            {
+              "id": 295,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 975,
+              "y": 5475
+            },
+            {
+              "id": 296,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1125,
+              "y": 5475
+            },
+            {
+              "id": 297,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 75,
+              "y": 5850
+            },
+            {
+              "id": 298,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 225,
+              "y": 5850
+            },
+            {
+              "id": 299,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 375,
+              "y": 5850
+            },
+            {
+              "id": 300,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 525,
+              "y": 5850
+            },
+            {
+              "id": 301,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 675,
+              "y": 5850
+            },
+            {
+              "id": 302,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 825,
+              "y": 5850
+            },
+            {
+              "id": 303,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 975,
+              "y": 5850
+            },
+            {
+              "id": 304,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1125,
+              "y": 5850
+            },
+            {
+              "id": 305,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 1275,
+              "y": 5850
+            },
+            {
+              "id": 306,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": 2100,
+              "y": 5850
+            },
+            {
+              "id": 307,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 5725
+            },
+            {
+              "id": 308,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 5600
+            },
+            {
+              "id": 309,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1975,
+              "y": 5850
+            },
+            {
+              "id": 310,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1850,
+              "y": 5850
+            },
+            {
+              "id": 311,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 5475
+            },
+            {
+              "id": 312,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 5325
+            },
+            {
+              "id": 313,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 5325
+            },
+            {
+              "id": 314,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 5175
+            },
+            {
+              "id": 315,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 5175
+            },
+            {
+              "id": 316,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 5025
+            },
+            {
+              "id": 317,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 5025
+            },
+            {
+              "id": 318,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 5475
+            },
+            {
+              "id": 319,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 5850
+            },
+            {
+              "id": 320,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1575,
+              "y": 5475
+            },
+            {
+              "id": 321,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1575,
+              "y": 5850
+            },
+            {
+              "id": 322,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1425,
+              "y": 5475
+            },
+            {
+              "id": 323,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1425,
+              "y": 5850
+            },
+            {
+              "id": 324,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1275,
+              "y": 5475
+            },
+            {
+              "id": 325,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 825
+            },
+            {
+              "id": 326,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 675
+            },
+            {
+              "id": 327,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 375
+            },
+            {
+              "id": 328,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 525
+            },
+            {
+              "id": 329,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 825
+            },
+            {
+              "id": 330,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 675
+            },
+            {
+              "id": 331,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 375
+            },
+            {
+              "id": 332,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 525
+            },
+            {
+              "id": 333,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 4875
+            },
+            {
+              "id": 334,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 4725
+            },
+            {
+              "id": 335,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 4575
+            },
+            {
+              "id": 336,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 4425
+            },
+            {
+              "id": 337,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 4275
+            },
+            {
+              "id": 338,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 4125
+            },
+            {
+              "id": 339,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 3975
+            },
+            {
+              "id": 340,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 3825
+            },
+            {
+              "id": 341,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 3675
+            },
+            {
+              "id": 342,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 3525
+            },
+            {
+              "id": 343,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 3375
+            },
+            {
+              "id": 344,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 3225
+            },
+            {
+              "id": 345,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 3075
+            },
+            {
+              "id": 346,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 2925
+            },
+            {
+              "id": 347,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 2775
+            },
+            {
+              "id": 348,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 2625
+            },
+            {
+              "id": 349,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 2475
+            },
+            {
+              "id": 350,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 2325
+            },
+            {
+              "id": 351,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 2175
+            },
+            {
+              "id": 352,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 2025
+            },
+            {
+              "id": 353,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 1875
+            },
+            {
+              "id": 354,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 1725
+            },
+            {
+              "id": 355,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 1575
+            },
+            {
+              "id": 356,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 1425
+            },
+            {
+              "id": 357,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 1275
+            },
+            {
+              "id": 358,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 1125
+            },
+            {
+              "id": 359,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 975
+            },
+            {
+              "id": 360,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 225
+            },
+            {
+              "id": 361,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 75
+            },
+            {
+              "id": 362,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -75,
+              "y": 5475
+            },
+            {
+              "id": 363,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -225,
+              "y": 5475
+            },
+            {
+              "id": 364,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -375,
+              "y": 5475
+            },
+            {
+              "id": 365,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -525,
+              "y": 5475
+            },
+            {
+              "id": 366,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -675,
+              "y": 5475
+            },
+            {
+              "id": 367,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -825,
+              "y": 5475
+            },
+            {
+              "id": 368,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -975,
+              "y": 5475
+            },
+            {
+              "id": 369,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1125,
+              "y": 5475
+            },
+            {
+              "id": 370,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 4875
+            },
+            {
+              "id": 371,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 4725
+            },
+            {
+              "id": 372,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 4575
+            },
+            {
+              "id": 373,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 4425
+            },
+            {
+              "id": 374,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 4275
+            },
+            {
+              "id": 375,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 4125
+            },
+            {
+              "id": 376,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 3975
+            },
+            {
+              "id": 377,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 3825
+            },
+            {
+              "id": 378,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 3675
+            },
+            {
+              "id": 379,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 3525
+            },
+            {
+              "id": 380,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 3375
+            },
+            {
+              "id": 381,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 3225
+            },
+            {
+              "id": 382,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 3075
+            },
+            {
+              "id": 383,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 2925
+            },
+            {
+              "id": 384,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 2775
+            },
+            {
+              "id": 385,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 2625
+            },
+            {
+              "id": 386,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 2475
+            },
+            {
+              "id": 387,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 2325
+            },
+            {
+              "id": 388,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 2175
+            },
+            {
+              "id": 389,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 2025
+            },
+            {
+              "id": 390,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 1875
+            },
+            {
+              "id": 391,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 1725
+            },
+            {
+              "id": 392,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 1575
+            },
+            {
+              "id": 393,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 1425
+            },
+            {
+              "id": 394,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 1275
+            },
+            {
+              "id": 395,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 1125
+            },
+            {
+              "id": 396,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 975
+            },
+            {
+              "id": 397,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 225
+            },
+            {
+              "id": 398,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1725,
+              "y": 75
+            },
+            {
+              "id": 399,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -75,
+              "y": 5850
+            },
+            {
+              "id": 400,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -225,
+              "y": 5850
+            },
+            {
+              "id": 401,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -375,
+              "y": 5850
+            },
+            {
+              "id": 402,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -525,
+              "y": 5850
+            },
+            {
+              "id": 403,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -675,
+              "y": 5850
+            },
+            {
+              "id": 404,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -825,
+              "y": 5850
+            },
+            {
+              "id": 405,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -975,
+              "y": 5850
+            },
+            {
+              "id": 406,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1125,
+              "y": 5850
+            },
+            {
+              "id": 407,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -1275,
+              "y": 5850
+            },
+            {
+              "id": 408,
+              "steelMaterialId": 1,
+              "dia": 29,
+              "x": -2100,
+              "y": 5850
+            }
+          ]
+        }
+      ]
+    },
+    "materials": {
+      "strainSign": "compression-positive",
+      "concrete": {
+        "id": 1,
+        "name": "C50 (UMD explicit ULS curve)",
+        "standard": "EC2",
+        "fck": 50,
+        "mc": 2400,
+        "elasticModulus": 37280,
+        "stressStrain": {
+          "type": "user-curve",
+          "points": [
+            {
+              "strain": 0,
+              "stress": 0
+            },
+            {
+              "strain": 0.0003,
+              "stress": 7.08
+            },
+            {
+              "strain": 0.0006,
+              "stress": 13.17
+            },
+            {
+              "strain": 0.0009,
+              "stress": 18.21
+            },
+            {
+              "strain": 0.0012,
+              "stress": 22.22
+            },
+            {
+              "strain": 0.0015,
+              "stress": 25.14
+            },
+            {
+              "strain": 0.0018,
+              "stress": 26.98
+            },
+            {
+              "strain": 0.0021,
+              "stress": 27.62
+            },
+            {
+              "strain": 0.0026,
+              "stress": 27.62
+            },
+            {
+              "strain": 0.0032,
+              "stress": 27.62
+            }
+          ],
+          "interpolation": "linear",
+          "zeroTension": true
+        },
+        "limits": {
+          "eps0": 0.0021,
+          "epsCu": 0.0032,
+          "ignoreTension": true
+        },
+        "factors": {
+          "gammaC": 1
+        }
+      },
+      "steel": [
+        {
+          "id": 1,
+          "name": "FY500 (UMD)",
+          "standard": "EC2",
+          "fy": 500,
+          "elasticModulus": 200000,
+          "stressStrain": {
+            "type": "elastic-perfectly-plastic"
+          },
+          "limits": {
+            "epsU": 0.05
+          },
+          "factors": {
+            "gammaS": 1.111
+          }
+        }
+      ],
+      "defaults": {
+        "steelMaterialId": 1
+      }
+    },
+    "loadings": {
+      "combinations": [
+        {
+          "id": 1,
+          "name": "Load Case 1 (UMD)",
+          "actionBasis": "factoredULS",
+          "P": 181800000,
+          "Mx": 42950000000,
+          "My": 286600000000
+        },
+        {
+          "id": 2,
+          "name": "Load Case 2 (UMD)",
+          "actionBasis": "factoredULS",
+          "P": 122300000,
+          "Mx": -56420000000,
+          "My": 116100000000
+        },
+        {
+          "id": 3,
+          "name": "Load Case 3 (UMD)",
+          "actionBasis": "factoredULS",
+          "P": 118300000,
+          "Mx": 24550000000,
+          "My": -47690000000
+        },
+        {
+          "id": 4,
+          "name": "Load Case 4 (UMD)",
+          "actionBasis": "factoredULS",
+          "P": 111000000,
+          "Mx": 26200000000,
+          "My": 58510000000
+        },
+        {
+          "id": 5,
+          "name": "Load Case 5 (UMD)",
+          "actionBasis": "factoredULS",
+          "P": 173300000,
+          "Mx": 125400000000,
+          "My": 0
+        },
+        {
+          "id": 6,
+          "name": "Load Case 6 (UMD)",
+          "actionBasis": "factoredULS",
+          "P": 173000000,
+          "Mx": 0,
+          "My": 394100000000
+        }
+      ]
+    },
+    "analysis": {
+      "optionsVersion": 1,
+      "methodId": "strain-domain-surface-v1",
+      "stations": {
+        "basedOn": "legacy-p0-p18-v1",
+        "intermediate": [
+          {
+            "id": 1,
+            "label": "c = 3·c₁",
+            "criterion": {
+              "type": "c-over-c1",
+              "ratio": 3
+            }
+          },
+          {
+            "id": 2,
+            "label": "c = 2·c₁",
+            "criterion": {
+              "type": "c-over-c1",
+              "ratio": 2
+            }
+          },
+          {
+            "id": 3,
+            "label": "c = 1.5·c₁",
+            "criterion": {
+              "type": "c-over-c1",
+              "ratio": 1.5
+            }
+          },
+          {
+            "id": 4,
+            "label": "c = 1.2·c₁",
+            "criterion": {
+              "type": "c-over-c1",
+              "ratio": 1.2
+            }
+          },
+          {
+            "id": 5,
+            "label": "fₛ = 0",
+            "criterion": {
+              "type": "steel-stress-ratio",
+              "ratio": 0
+            }
+          },
+          {
+            "id": 6,
+            "label": "fₛ = 0.25·fyd",
+            "criterion": {
+              "type": "steel-stress-ratio",
+              "ratio": 0.25
+            }
+          },
+          {
+            "id": 7,
+            "label": "fₛ = 0.5·fyd",
+            "criterion": {
+              "type": "steel-stress-ratio",
+              "ratio": 0.5
+            }
+          },
+          {
+            "id": 8,
+            "label": "fₛ = 0.75·fyd",
+            "criterion": {
+              "type": "steel-stress-ratio",
+              "ratio": 0.75
+            }
+          },
+          {
+            "id": 9,
+            "label": "fₛ = fyd",
+            "criterion": {
+              "type": "steel-stress-ratio",
+              "ratio": 1
+            }
+          },
+          {
+            "id": 10,
+            "label": "εₛ = -0.003",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.003
+            }
+          },
+          {
+            "id": 11,
+            "label": "εₛ = -0.005",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.005
+            }
+          },
+          {
+            "id": 12,
+            "label": "εₛ = -0.0075",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.0075
+            }
+          },
+          {
+            "id": 13,
+            "label": "εₛ = -0.01",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.01
+            }
+          },
+          {
+            "id": 14,
+            "label": "εₛ = -0.015",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.015
+            }
+          },
+          {
+            "id": 15,
+            "label": "εₛ = -0.025",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.025
+            }
+          },
+          {
+            "id": 16,
+            "label": "εₛ = -0.03",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.03
+            }
+          },
+          {
+            "id": 17,
+            "label": "εₛ = -0.05",
+            "criterion": {
+              "type": "steel-strain",
+              "strain": -0.05
+            }
+          }
+        ]
+      },
+      "directions": {
+        "seed": {
+          "type": "uniform",
+          "count": 24,
+          "startDeg": 0
+        },
+        "refinement": {
+          "type": "fixed",
+          "probe": {
+            "stationIds": [
+              5,
+              10,
+              14,
+              16
+            ]
+          }
+        }
+      },
+      "mesh": {
+        "sizing": {
+          "type": "automatic",
+          "seedDivisions": 32
+        },
+        "maxCells": 250000,
+        "maxSubdivision": 4
+      }
+    },
+    "design": {
+      "basisVersion": 1,
+      "profileId": "en-1992-1-1-2004-default",
+      "identity": {
+        "organization": "CEN",
+        "document": "EN 1992-1-1:2004",
+        "edition": "2004",
+        "methodId": "en-1992-design-material-reevaluation",
+        "profileVersion": "1.0.0",
+        "jurisdiction": "Default recommended values",
+        "nationalAnnex": "None selected"
+      },
+      "verificationStatus": "draft",
+      "format": "designMaterialReevaluation",
+      "factors": {
+        "alphaCc": 0.85,
+        "gammaC": 1.5,
+        "gammaS": 1.15
+      },
+      "modified": false,
+      "overrideReason": ""
+    }
+  }
+}
