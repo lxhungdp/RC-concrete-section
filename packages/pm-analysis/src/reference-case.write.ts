@@ -33,6 +33,6 @@ console.log(`wrote ${target}`)
 console.log(
   `  solids=${geometry.outers.length}  outer points=${outer.points.length}  ` +
     `holes=${outer.holes.length} (${outer.holes.map((hole) => hole.points.length).join(', ')} points)  ` +
-    `rebars=${outer.rebars.length}  steel materials=${parsed.document.inputs.materials.steel.length}  ` +
+  `rebars=${geometry.rebars.length}  steel materials=${parsed.document.inputs.materials.steel.length}  ` +
     `load combinations=${parsed.document.inputs.loadings.combinations.length}`
 )

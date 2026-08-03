@@ -101,10 +101,10 @@ export const referenceGeometryInput = (): GeometryInput => ({
       holes: [
         { id: 1, points: HOLE_1.map((point) => ({ ...point })) },
         { id: 2, points: HOLE_2.map((point) => ({ ...point })) }
-      ],
-      rebars: REBARS.map((rebar) => ({ ...rebar }))
+      ]
     }
-  ]
+  ],
+  rebars: REBARS.map((rebar) => ({ ...rebar }))
 })
 
 /** Sheet `Input`: fck 30 MPa, epsCu 0.0033, eps0 0.002, n 2, alpha 0.85, Es 200000, fy 400. */

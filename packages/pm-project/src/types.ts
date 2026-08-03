@@ -7,7 +7,7 @@ import type { AnalysisOptions } from './analysis-options'
 export const PM_PROJECT_SCHEMA = 'pm-column-project' as const
 
 /** Current document format version. */
-export const PM_PROJECT_VERSION = 4 as const
+export const PM_PROJECT_VERSION = 1 as const
 
 export type PmProjectSchema = typeof PM_PROJECT_SCHEMA
 export type PmProjectVersion = typeof PM_PROJECT_VERSION

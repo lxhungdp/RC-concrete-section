@@ -1,6 +1,6 @@
 {
   "schema": "pm-column-project",
-  "version": 4,
+  "version": 1,
   "meta": {
     "id": 1,
     "name": "PM-advanced (7) 2D reference case",
@@ -147,135 +147,135 @@
                 }
               ]
             }
-          ],
-          "rebars": [
-            {
-              "id": 1,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": -400,
-              "y": 530
-            },
-            {
-              "id": 2,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": -200,
-              "y": 530
-            },
-            {
-              "id": 3,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": 0,
-              "y": 530
-            },
-            {
-              "id": 4,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": 200,
-              "y": 530
-            },
-            {
-              "id": 5,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": 400,
-              "y": 530
-            },
-            {
-              "id": 6,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": -400,
-              "y": -530
-            },
-            {
-              "id": 7,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": -200,
-              "y": -530
-            },
-            {
-              "id": 8,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": 0,
-              "y": -530
-            },
-            {
-              "id": 9,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": 200,
-              "y": -530
-            },
-            {
-              "id": 10,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": 400,
-              "y": -530
-            },
-            {
-              "id": 11,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": -680,
-              "y": 300
-            },
-            {
-              "id": 12,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": -680,
-              "y": 100
-            },
-            {
-              "id": 13,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": -680,
-              "y": -100
-            },
-            {
-              "id": 14,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": -680,
-              "y": -300
-            },
-            {
-              "id": 15,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": 680,
-              "y": 300
-            },
-            {
-              "id": 16,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": 680,
-              "y": 100
-            },
-            {
-              "id": 17,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": 680,
-              "y": -100
-            },
-            {
-              "id": 18,
-              "steelMaterialId": 1,
-              "dia": 32,
-              "x": 680,
-              "y": -300
-            }
           ]
+        }
+      ],
+      "rebars": [
+        {
+          "id": 1,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": -400,
+          "y": 530
+        },
+        {
+          "id": 2,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": -200,
+          "y": 530
+        },
+        {
+          "id": 3,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": 0,
+          "y": 530
+        },
+        {
+          "id": 4,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": 200,
+          "y": 530
+        },
+        {
+          "id": 5,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": 400,
+          "y": 530
+        },
+        {
+          "id": 6,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": -400,
+          "y": -530
+        },
+        {
+          "id": 7,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": -200,
+          "y": -530
+        },
+        {
+          "id": 8,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": 0,
+          "y": -530
+        },
+        {
+          "id": 9,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": 200,
+          "y": -530
+        },
+        {
+          "id": 10,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": 400,
+          "y": -530
+        },
+        {
+          "id": 11,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": -680,
+          "y": 300
+        },
+        {
+          "id": 12,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": -680,
+          "y": 100
+        },
+        {
+          "id": 13,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": -680,
+          "y": -100
+        },
+        {
+          "id": 14,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": -680,
+          "y": -300
+        },
+        {
+          "id": 15,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": 680,
+          "y": 300
+        },
+        {
+          "id": 16,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": 680,
+          "y": 100
+        },
+        {
+          "id": 17,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": 680,
+          "y": -100
+        },
+        {
+          "id": 18,
+          "steelMaterialId": 1,
+          "dia": 32,
+          "x": 680,
+          "y": -300
         }
       ]
     },

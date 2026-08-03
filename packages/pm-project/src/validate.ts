@@ -93,7 +93,6 @@ const parseOuter = (value: unknown, path: string): GeometryInputOuter => {
   assertEntityId(value.id, `${path}.id`)
   assertArray(value.points, `${path}.points must be an array`)
   assertArray(value.holes, `${path}.holes must be an array`)
-  assertArray(value.rebars, `${path}.rebars must be an array`)
 
   return {
     id: value.id,
@@ -105,8 +104,7 @@ const parseOuter = (value: unknown, path: string): GeometryInputOuter => {
         id: hole.id,
         points: parseRing(hole.points, `${path}.holes[${index}].points`)
       }
-    }),
-    rebars: value.rebars.map((rebar, index) => parseRebar(rebar, `${path}.rebars[${index}]`))
+    })
   }
 }
 
@@ -115,10 +113,12 @@ const parseGeometry = (value: unknown): GeometryInput => {
   assertEntityId(value.id, 'inputs.geometry.id')
   assert(isString(value.name), 'inputs.geometry.name must be a string')
   assertArray(value.outers, 'inputs.geometry.outers must be an array')
+  assertArray(value.rebars, 'inputs.geometry.rebars must be an array')
   return {
     id: value.id,
     name: value.name,
-    outers: value.outers.map((outer, index) => parseOuter(outer, `inputs.geometry.outers[${index}]`))
+    outers: value.outers.map((outer, index) => parseOuter(outer, `inputs.geometry.outers[${index}]`)),
+    rebars: value.rebars.map((rebar, index) => parseRebar(rebar, `inputs.geometry.rebars[${index}]`))
   }
 }
 
@@ -633,11 +633,9 @@ export const collectProjectWarnings = (document: PmProjectDocument): string[] =>
     warnings.push('defaults.steelMaterialId does not match any steel material; the first steel will be used on open')
   }
 
-  for (const outer of document.inputs.geometry.outers) {
-    for (const rebar of outer.rebars) {
-      if (rebar.steelMaterialId !== undefined && !steelIds.has(rebar.steelMaterialId)) {
-        warnings.push(`Rebar ${rebar.id} references missing steelMaterialId ${rebar.steelMaterialId}`)
-      }
+  for (const rebar of document.inputs.geometry.rebars) {
+    if (rebar.steelMaterialId !== undefined && !steelIds.has(rebar.steelMaterialId)) {
+      warnings.push(`Rebar ${rebar.id} references missing steelMaterialId ${rebar.steelMaterialId}`)
     }
   }
 
@@ -647,7 +645,7 @@ export const collectProjectWarnings = (document: PmProjectDocument): string[] =>
 export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => {
   assertRecord(value, 'Project JSON must be an object')
   assert(value.schema === PM_PROJECT_SCHEMA, `schema must be "${PM_PROJECT_SCHEMA}"`)
-  assert(value.version === 3 || value.version === PM_PROJECT_VERSION, `Unsupported project version: ${String(value.version)}`)
+  assert(value.version === PM_PROJECT_VERSION, `Unsupported project version: ${String(value.version)}`)
   assertRecord(value.meta, 'meta must be an object')
   assertEntityId(value.meta.id, 'meta.id')
   assert(isString(value.meta.name), 'meta.name must be a string')

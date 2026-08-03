@@ -273,10 +273,10 @@ const geometryInput = (): GeometryInput => ({
     {
       id: 1,
       points: NODES.slice(0, 4).map((node, index) => ({ id: index + 1, x: node.x, y: node.y })),
-      holes: [{ id: 1, points: NODES.slice(4, 8).map((node, index) => ({ id: 101 + index, x: node.x, y: node.y })) }],
-      rebars: BARS.map((bar) => ({ ...bar }))
+      holes: [{ id: 1, points: NODES.slice(4, 8).map((node, index) => ({ id: 101 + index, x: node.x, y: node.y })) }]
     }
-  ]
+  ],
+  rebars: BARS.map((bar) => ({ ...bar }))
 })
 
 /**

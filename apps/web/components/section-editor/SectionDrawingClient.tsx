@@ -274,11 +274,11 @@ const pointInRing = (point: Pick<Point2, 'x' | 'y'>, ring: Point2[]) => {
   return inside
 }
 
-const barCenterInsideOuters = (outers: Point2[][][], bar: GeometryInputRebarView) => {
-  const outer = outers[bar.solidIndex]
-  if (!outer?.[0] || !pointInRing(bar, outer[0])) return false
-  return outer.slice(1).every((hole) => !pointInRing(bar, hole))
-}
+const barCenterInsideOuters = (outers: Point2[][][], bar: Pick<GeometryInputRebarView, 'x' | 'y'>) =>
+  outers.some((outer) => {
+    if (!outer?.[0] || !pointInRing(bar, outer[0])) return false
+    return outer.slice(1).every((hole) => !pointInRing(bar, hole))
+  })
 
 const barCenterInsideBoundary = (boundary: BoundaryObject, bar: GeometryInputRebarView) =>
   barCenterInsideOuters(boundary.outers, bar)
@@ -906,20 +906,25 @@ export function SectionDrawingClient() {
     event.target.value = ''
     if (!file) return
     try {
+      const fallbackName = file.name.replace(/\.xlsx$/i, '').replace(/-section$/i, '') || 'Imported section'
       const imported = await importSectionWorkbook(
         await file.arrayBuffer(),
         materialStore.steel,
-        materialStore.defaults.steelMaterialId
+        materialStore.defaults.steelMaterialId,
+        fallbackName
       )
       const pointCount = imported.outers.reduce(
         (sum, outer) => sum + outer.reduce((ringSum, ring) => ringSum + ring.length, 0),
         0
       )
       const outside = imported.rebars.filter((bar) => !barCenterInsideOuters(imported.outers, bar))
+      const warnings = [...imported.warnings]
       if (outside.length > 0) {
-        throw new Error(`Imported bar center(s) outside the concrete section or inside a hole: ${outside.map((bar) => bar.id).join(', ')}.`)
+        warnings.push(
+          `${outside.length} bar(s) outside concrete or inside a hole (ids: ${outside.map((bar) => bar.id).join(', ')}). You can edit them after import.`
+        )
       }
-      const warningText = imported.warnings.length ? `\n\nWarnings:\n${imported.warnings.join('\n')}` : ''
+      const warningText = warnings.length ? `\n\nWarnings:\n${warnings.join('\n')}` : ''
       const confirmed = window.confirm(
         `Import "${imported.name}" as a new draft boundary?\n\n${imported.outers.length} outer(s), ${pointCount} point(s), ${imported.rebars.length} rebar(s).${warningText}`
       )
@@ -1110,8 +1115,8 @@ export function SectionDrawingClient() {
     })
     return {
       ...boundary,
-      sourceKind: 'manual',
-      source: { kind: 'manual' },
+      sourceKind: boundary.source.kind === 'boolean' ? 'boolean' : 'manual',
+      source: boundary.source.kind === 'boolean' ? boundary.source : { kind: 'manual' },
       outers: boundary.outers.map((outer) => outer.map((ring) => ring.map(rotate))),
       rebars: boundary.rebars.map(rotate)
     }
@@ -1377,10 +1382,13 @@ export function SectionDrawingClient() {
       const appliedBoundary = boundaries.find((boundary) => boundary.id === appliedBoundaryId)
       if (!appliedBoundary) throw new Error('The applied boundary is not available in the editor.')
       const outside = imported.rebars.filter((bar) => !barCenterInsideBoundary(appliedBoundary, bar))
+      const warnings = [...imported.warnings]
       if (outside.length > 0) {
-        throw new Error(`Bar center(s) outside the concrete section or inside a hole: ${outside.map((bar) => bar.id).join(', ')}.`)
+        warnings.push(
+          `${outside.length} bar(s) outside concrete or inside a hole (ids: ${outside.map((bar) => bar.id).join(', ')}). You can edit them after import.`
+        )
       }
-      const warningText = imported.warnings.length ? `\n\nWarnings:\n${imported.warnings.join('\n')}` : ''
+      const warningText = warnings.length ? `\n\nWarnings:\n${warnings.join('\n')}` : ''
       const confirmed = window.confirm(
         `Replace the current ${rebars.length} rebar(s) with ${imported.rebars.length} imported rebar(s)?\nConcrete geometry will not change.${warningText}`
       )
@@ -1862,7 +1870,20 @@ export function SectionDrawingClient() {
 
             {boundaries.length > 0 && (
             <section className="pm-panel-section pm-vertex-section">
-              <div className="pm-section-title"><h2>Boundary Details</h2></div>
+              <div className="pm-section-title pm-section-title--with-action">
+                <h2>Boundary Details</h2>
+                {activeBoundary && (
+                  <button
+                    type="button"
+                    className="pm-boundary-export-btn"
+                    onClick={() => exportBoundaryExcel(activeBoundary)}
+                    title="Export boundary Excel"
+                  >
+                    <FileOutput size={13} />
+                    Export
+                  </button>
+                )}
+              </div>
 
               {activeBoundary ? (
                 <div className="pm-boundary-detail-toolbar">
@@ -1891,10 +1912,6 @@ export function SectionDrawingClient() {
                       Points
                     </button>
                   </div>
-                  <button type="button" className="pm-boundary-export-btn" onClick={() => exportBoundaryExcel(activeBoundary)}>
-                    <FileOutput size={13} />
-                    Export
-                  </button>
                 </div>
               ) : (
                 <p className="pm-boundary-empty">Select a boundary to edit its details.</p>
@@ -2130,36 +2147,36 @@ export function SectionDrawingClient() {
                     </>
                   )}
                 </div>
-                <label className="pm-boundary-rotation">
-                  <span>
-                    Rotate
-                    <small>
-                      X {formatNumber(activeSummary.centroid.x, 3)} · Y {formatNumber(activeSummary.centroid.y, 3)}
-                    </small>
-                  </span>
-                  <span className="pm-boundary-rotation-input">
-                    <RotateCw size={13} />
-                    <input
-                      type="number"
-                      step="any"
-                      disabled={activeBoundary.locked}
-                      value={rotationDraft}
-                      aria-label="Rotate boundary by degrees"
-                      onFocus={beginRotationPreview}
-                      onChange={(event) => previewRotation(event.target.value)}
-                      onBlur={commitRotationDraft}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') event.currentTarget.blur()
-                      }}
-                    />
-                    <em>°</em>
-                  </span>
-                </label>
                 </>
               )}
 
               {activeBoundary && effectiveDetailTab === 'points' && (
                 <>
+                  <label className="pm-boundary-rotation">
+                    <span>
+                      Rotate
+                      <small>
+                        X {formatNumber(activeSummary.centroid.x, 3)} · Y {formatNumber(activeSummary.centroid.y, 3)}
+                      </small>
+                    </span>
+                    <span className="pm-boundary-rotation-input">
+                      <RotateCw size={13} />
+                      <input
+                        type="number"
+                        step="any"
+                        disabled={activeBoundary.locked}
+                        value={rotationDraft}
+                        aria-label="Rotate boundary by degrees"
+                        onFocus={beginRotationPreview}
+                        onChange={(event) => previewRotation(event.target.value)}
+                        onBlur={commitRotationDraft}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') event.currentTarget.blur()
+                        }}
+                      />
+                      <em>°</em>
+                    </span>
+                  </label>
                   {(activeBoundary.outers.length > 1 || activeBoundary.outers.some((outer) => outer.length > 1)) && (
                     <div className="pm-ring-nav" aria-label="Ring navigation">
                       {activeBoundary.outers.map((outer, outerIndex) => {

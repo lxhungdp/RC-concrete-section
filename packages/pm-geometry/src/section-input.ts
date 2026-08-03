@@ -10,7 +10,6 @@ export type GeometryInputOuter = {
   id: number
   points: Point2[]
   holes: GeometryInputHole[]
-  rebars: GeometryInputRebar[]
 }
 
 export type GeometryInputRebar = {
@@ -30,12 +29,14 @@ export type GeometryInput = {
   id: number
   name: string
   outers: GeometryInputOuter[]
+  rebars: GeometryInputRebar[]
 }
 
 export const createEmptyGeometryInput = (patch: Partial<Pick<GeometryInput, 'id' | 'name'>> = {}): GeometryInput => ({
   id: patch.id ?? 1,
   name: patch.name ?? 'Geometry input',
-  outers: []
+  outers: [],
+  rebars: []
 })
 
 export const clonePoint = (point: Point2): Point2 => ({ ...point })
@@ -44,24 +45,17 @@ export const cloneRing = (ring: Point2[]): Point2[] => ring.map(clonePoint)
 export const createGeometryInputOuter = (
   id: number,
   points: Point2[],
-  holes: GeometryInputHole[] = [],
-  rebars: GeometryInputRebar[] = []
+  holes: GeometryInputHole[] = []
 ): GeometryInputOuter => ({
   id,
   points: cloneRing(points),
-  holes: holes.map((hole) => ({ id: hole.id, points: cloneRing(hole.points) })),
-  rebars: cloneRebars(rebars)
+  holes: holes.map((hole) => ({ id: hole.id, points: cloneRing(hole.points) }))
 })
 
 type RebarWithOuterIndex = GeometryInputRebar & { solidIndex?: number }
 
 export const cloneRebars = (rebars: GeometryInputRebar[]): GeometryInputRebar[] =>
   rebars.map(({ id, steelMaterialId, dia, x, y }) => ({ id, steelMaterialId, dia, x, y }))
-
-const rebarsForOuter = (rebars: RebarWithOuterIndex[], outerIndex: number) =>
-  rebars
-    .filter((bar) => (Number.isFinite(bar.solidIndex) ? bar.solidIndex === outerIndex : outerIndex === 0))
-    .map(({ id, steelMaterialId, dia, x, y }) => ({ id, steelMaterialId, dia, x, y }))
 
 export const geometryInputFromOuterRings = (
   id: number,
@@ -84,10 +78,10 @@ export const geometryInputFromOuterRings = (
         return {
           id: outerIndex + 1,
           points: cloneRing(rings[0] ?? []),
-          holes,
-          rebars: rebarsForOuter(rebars, outerIndex)
+          holes
         }
-      })
+      }),
+    rebars: cloneRebars(rebars)
   }
 }
 
@@ -135,21 +129,18 @@ export const geometryInputFromSolid = (solid: SectionSolid, id: number): Geometr
         id: holeId,
         points: cloneRing(hole)
       }
-    }),
-    rebars: []
+    })
   }
 }
 
+/** Flat rebar list as analysis/UI views. solidIndex is UI-only (defaults to 0). */
 export const geometryInputRebars = (input: GeometryInput): GeometryInputRebarView[] =>
-  input.outers.flatMap((outer, solidIndex) => outer.rebars.map((bar) => ({ ...bar, solidIndex })))
+  input.rebars.map((bar) => ({ ...bar, solidIndex: 0 }))
 
 export const updateGeometryInputRebars = (
   input: GeometryInput,
   rebars: RebarWithOuterIndex[]
 ): GeometryInput => ({
   ...input,
-  outers: input.outers.map((outer, index) => ({
-    ...outer,
-    rebars: rebarsForOuter(rebars, index)
-  }))
+  rebars: cloneRebars(rebars)
 })

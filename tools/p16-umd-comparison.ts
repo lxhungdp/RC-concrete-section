@@ -251,10 +251,10 @@ const geometry: GeometryInput = {
           id: 1,
           points: nodes.slice(4).map(([x, y], index) => ({ id: index + 101, x, y }))
         }
-      ],
-      rebars: parseBars()
+      ]
     }
-  ]
+  ],
+  rebars: parseBars()
 }
 
 const materials: MaterialStore = {
@@ -335,7 +335,7 @@ const section = {
     holes: outer.holes.map((hole) => hole.points)
   }))
 }
-const rebars = geometry.outers.flatMap((outer) => outer.rebars)
+const rebars = geometry.rebars
 
 const meshOptions = {
   seedDivisions: analysis.mesh.sizing.type === 'automatic' ? analysis.mesh.sizing.seedDivisions : undefined,

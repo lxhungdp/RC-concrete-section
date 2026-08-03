@@ -28,9 +28,9 @@ const cloneGeometryInput = (input: GeometryInput): GeometryInput => ({
     holes: outer.holes.map((hole) => ({
       id: hole.id,
       points: hole.points.map(clonePoint)
-    })),
-    rebars: outer.rebars.map((rebar) => ({ ...rebar }))
-  }))
+    }))
+  })),
+  rebars: input.rebars.map((rebar) => ({ ...rebar }))
 })
 
 const cloneMaterialStore = (store: MaterialStore): MaterialStore =>

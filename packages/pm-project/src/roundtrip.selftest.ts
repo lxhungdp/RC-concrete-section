@@ -53,12 +53,12 @@ const run = () => {
             { id: 8, x: 100, y: 200 }
           ]
         }
-      ],
-      rebars: [
-        { id: 1, dia: 25, x: 50, y: 50, steelMaterialId: 1 },
-        { id: 2, dia: 25, x: 350, y: 550, steelMaterialId: 2 }
       ]
     }
+  ]
+  geometry.rebars = [
+    { id: 1, dia: 25, x: 50, y: 50, steelMaterialId: 1 },
+    { id: 2, dia: 25, x: 350, y: 550, steelMaterialId: 2 }
   ]
 
   const loadings = createEmptyLoadingsInput()
@@ -73,7 +73,7 @@ const run = () => {
 
   const raw = serializeProjectDocument(original)
   const json = JSON.parse(raw) as Record<string, unknown>
-  assert.equal(json.version, 4)
+  assert.equal(json.version, 1)
   assert.equal((json.inputs as { geometry: { unit?: unknown } }).geometry.unit, undefined)
   assert.equal((json.inputs as { materials: { unit?: unknown } }).materials.unit, undefined)
   assert.equal((json.inputs as { loadings: { forceUnit?: unknown } }).loadings.forceUnit, undefined)
@@ -95,7 +95,7 @@ const run = () => {
   assert.equal(parsed.document.inputs.materials.steel[0]?.factors?.gammaS, 1.15)
   assert.equal(parsed.document.inputs.materials.steel[0]?.limits?.epsY, 500 / 1.15 / 200000)
   assert.equal(parsed.document.inputs.materials.steel[1]?.id, 2)
-  assert.equal(parsed.document.inputs.geometry.outers[0]?.rebars[1]?.steelMaterialId, 2)
+  assert.equal(parsed.document.inputs.geometry.rebars[1]?.steelMaterialId, 2)
   assert.equal(parsed.document.inputs.loadings.combinations[0]?.P, 1_000_000)
   assert.equal(parsed.document.inputs.loadings.combinations[0]?.actionBasis, 'factoredULS')
   assert.equal(parsed.document.inputs.design.profileId, 'en-1992-1-1-2004-default')

@@ -346,7 +346,7 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
       {activePage === 'concrete' && (
         <section className="pm-panel-section">
           <div className="pm-section-title">
-            <h2>Section Concrete</h2>
+            <h2>Concrete Material</h2>
           </div>
           <div className="pm-material-form">
             <div className="pm-material-row-2">
