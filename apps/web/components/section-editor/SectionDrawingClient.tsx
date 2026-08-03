@@ -13,6 +13,7 @@ import {
   Moon,
   Plus,
   RectangleHorizontal,
+  RotateCw,
   Settings,
   Sun,
   Unlock,
@@ -74,6 +75,13 @@ import { MaterialPanel } from './MaterialPanel'
 import { RebarPanel } from './RebarPanel'
 import { ResultsWorkspace } from './ResultsWorkspace'
 import { DesignBasisPanel } from './DesignBasisPanel'
+import {
+  downloadRebarWorkbook,
+  downloadSectionWorkbook,
+  importRebarWorkbook,
+  importSectionWorkbook,
+  type ImportedSectionWorkbook
+} from '../../lib/section-xlsx'
 import {
   createSectionCamera2d,
   panSectionCamera2d,
@@ -146,6 +154,8 @@ type BoundaryObject = {
   outers: Point2[][][]
   sourceKind: BuilderShape | 'manual' | 'boolean'
   source: BoundarySource
+  /** Reinforcement travels with this editor boundary and becomes active when the boundary is applied. */
+  rebars: GeometryInputRebarView[]
   visible: boolean
   locked: boolean
 }
@@ -163,7 +173,7 @@ const DEFAULT_VIEW_MAJOR_COUNT = 4
 const DEFAULT_DRAWING_SIZE = { width: 900, height: 620 }
 const DEFAULT_DRAWING_UNITS_PER_PIXEL =
   (MAJOR_GRID_SPACING_MM * DEFAULT_VIEW_MAJOR_COUNT) / DEFAULT_DRAWING_SIZE.width
-const DEFAULT_CIRCLE_SEGMENTS = 64
+const DEFAULT_CIRCLE_SEGMENTS = 32
 /** Quiet period before an edit is allowed to start a surface build. */
 const ANALYSIS_DEBOUNCE_MS = 250
 
@@ -213,6 +223,7 @@ const sectionGeometryToBoundary = (
   sourceKind: patch.sourceKind,
   source: patch.source ?? { kind: 'manual' },
   outers: geometry.solids.map((solid) => solidRings(solid)),
+  rebars: [],
   visible: patch.visible ?? true,
   locked: patch.locked ?? false
 })
@@ -225,15 +236,21 @@ const geometryInputToBoundary = (input: GeometryInput): BoundaryObject => ({
   outers: input.outers
     .filter((outer) => outer.points.length >= 3)
     .map((outer) => [cloneRing(outer.points), ...outer.holes.map((hole) => cloneRing(hole.points))]),
+  rebars: geometryInputRebars(input),
   visible: true,
   locked: true
 })
 
 const makeBoundaryId = (used: Iterable<number>) => nextAvailableId(used)
 
-const remapBoundaryPoints = (outers: Point2[][][], dx = 0, dy = 0): Point2[][][] => {
+const remapBoundaryPoints = (
+  outers: Point2[][][],
+  dx = 0,
+  dy = 0,
+  usedPointIds: Iterable<number> = []
+): Point2[][][] => {
   const count = outers.reduce((sum, outer) => sum + outer.reduce((ringSum, ring) => ringSum + ring.length, 0), 0)
-  const ids = allocateIds(count, [])
+  const ids = allocateIds(count, usedPointIds)
   let index = 0
   return outers.map((outer) =>
     outer.map((ring) =>
@@ -245,6 +262,26 @@ const remapBoundaryPoints = (outers: Point2[][][], dx = 0, dy = 0): Point2[][][]
     )
   )
 }
+
+const pointInRing = (point: Pick<Point2, 'x' | 'y'>, ring: Point2[]) => {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i]
+    const b = ring[j]
+    const crosses = (a.y > point.y) !== (b.y > point.y)
+    if (crosses && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) inside = !inside
+  }
+  return inside
+}
+
+const barCenterInsideOuters = (outers: Point2[][][], bar: GeometryInputRebarView) => {
+  const outer = outers[bar.solidIndex]
+  if (!outer?.[0] || !pointInRing(bar, outer[0])) return false
+  return outer.slice(1).every((hole) => !pointInRing(bar, hole))
+}
+
+const barCenterInsideBoundary = (boundary: BoundaryObject, bar: GeometryInputRebarView) =>
+  barCenterInsideOuters(boundary.outers, bar)
 
 const ringBounds = (ring: Point2[]) => {
   if (ring.length === 0) return { centerX: 0, centerY: 0, width: 0, height: 0 }
@@ -316,7 +353,7 @@ const createRectangleRingFromCorners = (a: Point2, b: Point2) => {
 const circleSourceFromRadiusPoint = (
   center: Point2,
   radiusPoint: Point2,
-  segments = 64
+  segments = DEFAULT_CIRCLE_SEGMENTS
 ): Extract<BoundarySource, { kind: 'circle' }> => ({
   kind: 'circle',
   center,
@@ -324,7 +361,11 @@ const circleSourceFromRadiusPoint = (
   segments
 })
 
-const createCircleRingFromRadiusPoint = (center: Point2, radiusPoint: Point2, segments = 64) =>
+const createCircleRingFromRadiusPoint = (
+  center: Point2,
+  radiusPoint: Point2,
+  segments = DEFAULT_CIRCLE_SEGMENTS
+) =>
   createCircleRing({
     center,
     radius: Math.max(1, Math.hypot(radiusPoint.x - center.x, radiusPoint.y - center.y)),
@@ -419,6 +460,8 @@ const fitCameraToPointsWithInsets = (
 export function SectionDrawingClient() {
   const svgRef = useRef<SVGSVGElement | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const boundaryExcelInputRef = useRef<HTMLInputElement | null>(null)
+  const rotationSessionRef = useRef<BoundaryObject | null>(null)
   const pendingFitAfterImportRef = useRef(false)
   const pendingFitOnGeometryModuleRef = useRef(false)
   const analysisRevisionRef = useRef(0)
@@ -470,6 +513,7 @@ export function SectionDrawingClient() {
   const [detailTab, setDetailTab] = useState<'basic' | 'points'>('basic')
   const [analysisSubTab, setAnalysisSubTab] = useState<AnalysisSubTab>('points')
   const [circleSegmentsDraft, setCircleSegmentsDraft] = useState<string | null>(null)
+  const [rotationDraft, setRotationDraft] = useState('0')
   const [size, setSize] = useState(DEFAULT_DRAWING_SIZE)
   const [isDrawingMeasured, setIsDrawingMeasured] = useState(false)
   const [camera, setCamera] = useState<Camera2d>(() => createDefaultDrawingCamera())
@@ -523,9 +567,6 @@ export function SectionDrawingClient() {
   const activeOuterHoleCount = Math.max(0, activeOuter.length - 1)
   const hasAppliedSection = finalSection.solids.some((solid) => solid.outer.length >= 3)
   const appliedBoundaryId = hasAppliedSection ? finalSection.id : 0
-  const canApplySection = Boolean(
-    activeBoundary && !(activeBoundary.id === appliedBoundaryId && activeBoundary.locked)
-  )
   const activeSummary = useMemo(() => summarizeSection(activeSection), [activeSection])
 
   useEffect(() => {
@@ -788,6 +829,11 @@ export function SectionDrawingClient() {
 
   const updateAppliedRebars = (nextRebars: GeometryInputRebarView[]) => {
     setAppliedGeometryInput((current) => updateGeometryInputRebars(current, nextRebars))
+    setBoundaries((current) =>
+      current.map((boundary) =>
+        boundary.id === appliedBoundaryId ? { ...boundary, rebars: nextRebars.map((bar) => ({ ...bar })) } : boundary
+      )
+    )
   }
 
   const addBoundary = (boundary: BoundaryObject) => {
@@ -797,6 +843,90 @@ export function SectionDrawingClient() {
     setActiveOuterIndex(0)
     setActiveRingIndex(0)
     setSelectedPointId(boundary.outers[0]?.[0]?.[0]?.id ?? null)
+    setDetailTab(boundary.source.kind === 'boolean' ? 'points' : 'basic')
+  }
+
+  const createDefaultBoundary = (kind: 'rectangle' | 'circle') => {
+    const id = makeBoundaryId(boundaries.map((item) => item.id))
+    const usedPointIds = boundaries.flatMap(collectBoundaryPointIds)
+    const center = { id: makePointId(usedPointIds), x: 0, y: 0 }
+    const source: BoundarySource =
+      kind === 'rectangle'
+        ? { kind: 'rectangle', center, width: 400, height: 400 }
+        : { kind: 'circle', center, radius: 200, segments: DEFAULT_CIRCLE_SEGMENTS }
+    const ring =
+      source.kind === 'rectangle'
+        ? createRectangleRing({ center: source.center, width: source.width, height: source.height, usedIds: usedPointIds })
+        : createCircleRing({ center: source.center, radius: source.radius, segments: source.segments, usedIds: usedPointIds })
+    addBoundary({
+      id,
+      name: `${kind === 'rectangle' ? 'Rectangle' : 'Circle'} ${id}`,
+      outers: [[ring]],
+      sourceKind: kind,
+      source,
+      rebars: [],
+      visible: true,
+      locked: false
+    })
+    pendingFitAfterImportRef.current = true
+  }
+
+  const exportBoundaryExcel = async (boundary: BoundaryObject) => {
+    try {
+      await downloadSectionWorkbook({
+        name: boundary.name,
+        outers: boundary.outers,
+        rebars: boundary.rebars,
+        steelMaterials: materialStore.steel
+      })
+    } catch (error) {
+      window.alert(`Excel export failed:\n${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  const addImportedBoundary = (imported: ImportedSectionWorkbook) => {
+    const id = makeBoundaryId(boundaries.map((item) => item.id))
+    const usedPointIds = boundaries.flatMap(collectBoundaryPointIds)
+    const boundary: BoundaryObject = {
+      id,
+      name: imported.name,
+      outers: remapBoundaryPoints(imported.outers, 0, 0, usedPointIds),
+      sourceKind: 'manual',
+      source: { kind: 'manual' },
+      rebars: imported.rebars.map((bar) => ({ ...bar })),
+      visible: true,
+      locked: false
+    }
+    addBoundary(boundary)
+    pendingFitAfterImportRef.current = true
+  }
+
+  const handleBoundaryExcelFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const imported = await importSectionWorkbook(
+        await file.arrayBuffer(),
+        materialStore.steel,
+        materialStore.defaults.steelMaterialId
+      )
+      const pointCount = imported.outers.reduce(
+        (sum, outer) => sum + outer.reduce((ringSum, ring) => ringSum + ring.length, 0),
+        0
+      )
+      const outside = imported.rebars.filter((bar) => !barCenterInsideOuters(imported.outers, bar))
+      if (outside.length > 0) {
+        throw new Error(`Imported bar center(s) outside the concrete section or inside a hole: ${outside.map((bar) => bar.id).join(', ')}.`)
+      }
+      const warningText = imported.warnings.length ? `\n\nWarnings:\n${imported.warnings.join('\n')}` : ''
+      const confirmed = window.confirm(
+        `Import "${imported.name}" as a new draft boundary?\n\n${imported.outers.length} outer(s), ${pointCount} point(s), ${imported.rebars.length} rebar(s).${warningText}`
+      )
+      if (confirmed) addImportedBoundary(imported)
+    } catch (error) {
+      window.alert(`Excel import failed:\n${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   const commitDrawnBoundary = (name: string, sourceKind: BoundaryObject['sourceKind'], ring: Point2[], source?: BoundarySource) => {
@@ -807,6 +937,7 @@ export function SectionDrawingClient() {
       outers: [[ring]],
       sourceKind,
       source: source ?? { kind: 'manual' },
+      rebars: [],
       visible: true,
       locked: false
     }
@@ -967,6 +1098,50 @@ export function SectionDrawingClient() {
     )
   }
 
+  const rotatedBoundary = (boundary: BoundaryObject, angleDeg: number): BoundaryObject => {
+    const centroid = summarizeSection(boundaryToSectionGeometry(boundary)).centroid
+    const angle = (angleDeg * Math.PI) / 180
+    const cos = Math.cos(angle)
+    const sin = Math.sin(angle)
+    const rotate = <T extends { x: number; y: number }>(value: T): T => ({
+      ...value,
+      x: centroid.x + (value.x - centroid.x) * cos - (value.y - centroid.y) * sin,
+      y: centroid.y + (value.x - centroid.x) * sin + (value.y - centroid.y) * cos
+    })
+    return {
+      ...boundary,
+      sourceKind: 'manual',
+      source: { kind: 'manual' },
+      outers: boundary.outers.map((outer) => outer.map((ring) => ring.map(rotate))),
+      rebars: boundary.rebars.map(rotate)
+    }
+  }
+
+  const beginRotationPreview = () => {
+    if (!activeBoundary || activeBoundary.locked) return
+    rotationSessionRef.current = {
+      ...activeBoundary,
+      outers: activeBoundary.outers.map((outer) => outer.map(cloneRing)),
+      rebars: activeBoundary.rebars.map((bar) => ({ ...bar }))
+    }
+    setRotationDraft('0')
+  }
+
+  const previewRotation = (value: string) => {
+    setRotationDraft(value)
+    const baseline = rotationSessionRef.current
+    const angle = Number(value)
+    if (!baseline || !Number.isFinite(angle)) return
+    setBoundaries((current) =>
+      current.map((boundary) => (boundary.id === baseline.id ? rotatedBoundary(baseline, angle) : boundary))
+    )
+  }
+
+  const commitRotationDraft = () => {
+    rotationSessionRef.current = null
+    setRotationDraft('0')
+  }
+
   const deleteBoundary = (id: number) => {
     setBoundaries((current) => current.filter((boundary) => boundary.id !== id))
     setSelectedBoundaryIds((current) => current.filter((selectedId) => selectedId !== id))
@@ -995,24 +1170,6 @@ export function SectionDrawingClient() {
     }
 
     deleteBoundary(id)
-  }
-
-  const duplicateBoundary = (boundary: BoundaryObject) => {
-    const id = makeBoundaryId(boundaries.map((item) => item.id))
-    const duplicate: BoundaryObject = {
-      ...boundary,
-      id,
-      name: `${boundary.name} Copy`,
-      outers: remapBoundaryPoints(boundary.outers, 25, 25),
-      sourceKind: 'manual',
-      source: { kind: 'manual' }
-    }
-    setBoundaries((current) => [...current, duplicate])
-    setSelectedBoundaryIds([id])
-    setActiveBoundaryId(id)
-    setActiveOuterIndex(0)
-    setActiveRingIndex(0)
-    setSelectedPointId(duplicate.outers[0]?.[0]?.[0]?.id ?? null)
   }
 
   const applyBooleanAction = (action: BooleanAction) => {
@@ -1168,17 +1325,18 @@ export function SectionDrawingClient() {
     setSelectedPointId(nextRing[0]?.id ?? null)
   }
 
-  const applyActiveAsSection = () => {
-    if (!activeBoundary || !canApplySection) return
-    const appliedId = activeBoundary.id
+  const applyBoundaryAsSection = (boundaryToApply: BoundaryObject) => {
+    const summary = summarizeSection(boundaryToSectionGeometry(boundaryToApply))
+    if (summary.area <= 0 || boundaryToApply.outers.every((outer) => (outer[0]?.length ?? 0) < 3)) return
+    const appliedId = boundaryToApply.id
     const previousAppliedId = hasAppliedSection ? finalSection.id : 0
 
     setAppliedGeometryInput(
       geometryInputFromOuterRings(
         appliedId,
-        activeBoundary.name,
-        activeBoundary.outers,
-        previousAppliedId === appliedId ? geometryInputRebars(appliedGeometryInput) : []
+        boundaryToApply.name,
+        boundaryToApply.outers,
+        boundaryToApply.rebars
       )
     )
     setLastBooleanWarning('')
@@ -1192,6 +1350,46 @@ export function SectionDrawingClient() {
         return boundary
       })
     )
+  }
+
+  const exportAppliedRebarsExcel = async () => {
+    if (!hasAppliedSection) return
+    try {
+      await downloadRebarWorkbook({
+        sectionName: finalSection.name,
+        rebars,
+        steelMaterials: materialStore.steel
+      })
+    } catch (error) {
+      window.alert(`Rebar Excel export failed:\n${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  const importAppliedRebarsExcel = async (file: File) => {
+    if (!hasAppliedSection) return
+    try {
+      const imported = await importRebarWorkbook(
+        await file.arrayBuffer(),
+        materialStore.steel,
+        materialStore.defaults.steelMaterialId,
+        finalSection.solids.length
+      )
+      const appliedBoundary = boundaries.find((boundary) => boundary.id === appliedBoundaryId)
+      if (!appliedBoundary) throw new Error('The applied boundary is not available in the editor.')
+      const outside = imported.rebars.filter((bar) => !barCenterInsideBoundary(appliedBoundary, bar))
+      if (outside.length > 0) {
+        throw new Error(`Bar center(s) outside the concrete section or inside a hole: ${outside.map((bar) => bar.id).join(', ')}.`)
+      }
+      const warningText = imported.warnings.length ? `\n\nWarnings:\n${imported.warnings.join('\n')}` : ''
+      const confirmed = window.confirm(
+        `Replace the current ${rebars.length} rebar(s) with ${imported.rebars.length} imported rebar(s)?\nConcrete geometry will not change.${warningText}`
+      )
+      if (!confirmed) return
+      updateAppliedRebars(imported.rebars)
+      setSelectedRebarId(imported.rebars[0]?.id ?? null)
+    } catch (error) {
+      window.alert(`Rebar Excel import failed:\n${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   useEffect(() => {
@@ -1558,19 +1756,6 @@ export function SectionDrawingClient() {
 
             {geometrySubTab === 'concrete' && (
           <>
-            {boundaries.length === 0 && (
-              <section className="pm-panel-section">
-                <div className="pm-section-title">
-                  <h2>No Boundary</h2>
-                </div>
-                <p className="pm-preview-hint">
-                  Use the drawing toolbar on the canvas to create a rectangle, circle, or polygon boundary.
-                </p>
-              </section>
-            )}
-
-            {boundaries.length > 0 && (
-              <>
             <section className="pm-panel-section pm-boundary-list-section">
               <div className="pm-section-title pm-section-title--with-action">
                 <h2>Boundary List</h2>
@@ -1598,35 +1783,48 @@ export function SectionDrawingClient() {
                 </div>
               </div>
               <div className="pm-boundary-list">
+                {boundaries.length === 0 && (
+                  <p className="pm-boundary-empty">Create a default shape, import Excel, or draw on the canvas.</p>
+                )}
                 {boundaries.map((boundary) => {
                   const isSelected = selectedBoundaryIds.includes(boundary.id)
                   const isActive = boundary.id === activeBoundaryId
                   const isApplied = boundary.id === appliedBoundaryId
+                  const isFinal = isApplied && boundary.locked
                   return (
                     <div
-                      className={`pm-boundary-row${isSelected ? ' is-selected' : ''}${isActive ? ' is-active' : ''}${isApplied ? ' is-applied' : ''}`}
+                      className={`pm-boundary-row${isSelected ? ' is-selected' : ''}${isActive ? ' is-active' : ''}${isFinal ? ' is-applied' : ''}`}
                       key={boundary.id}
                     >
                       <button className="pm-boundary-row-main" onClick={(event) => selectBoundary(boundary.id, event.shiftKey || event.metaKey)}>
-                        <span className={`pm-selection-badge${isSelected ? ' is-on' : ''}${isApplied ? ' is-applied' : ''}`} />
+                        <span className={`pm-selection-badge${isSelected ? ' is-on' : ''}${isFinal ? ' is-applied' : ''}`} />
                         <span className="pm-boundary-row-name">
                           {boundary.name}
-                          {isApplied && <span className="pm-boundary-row-badge">Applied</span>}
                         </span>
                         <span className="pm-boundary-row-meta">
                           {boundaryPointCount(boundary)} pts
+                          {boundary.rebars.length > 0 ? ` · ${boundary.rebars.length} bars` : ''}
                           {boundary.outers.length > 1 ? ` · ${boundary.outers.length} outers` : ''}
                           {boundaryHoleCount(boundary) > 0 ? ` · ${boundaryHoleCount(boundary)} holes` : ''}
                         </span>
                       </button>
+                      {isFinal ? (
+                        <span className="pm-boundary-final-label">Final</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="pm-boundary-apply-btn"
+                          onClick={() => applyBoundaryAsSection(boundary)}
+                          title="Use this boundary and its rebars as the final section"
+                        >
+                          Apply
+                        </button>
+                      )}
                       <button className="pm-table-icon-btn" title="Visibility" onClick={() => updateBoundary(boundary.id, { visible: !boundary.visible })}>
                         {boundary.visible ? <Eye size={14} /> : <EyeOff size={14} />}
                       </button>
                       <button className="pm-table-icon-btn" title="Lock" onClick={() => updateBoundary(boundary.id, { locked: !boundary.locked })}>
                         {boundary.locked ? <Lock size={14} /> : <Unlock size={14} />}
-                      </button>
-                      <button className="pm-table-icon-btn" title="Duplicate" onClick={() => duplicateBoundary(boundary)}>
-                        <Plus size={14} />
                       </button>
                       <button className="pm-table-icon-btn pm-table-icon-btn--danger" title="Delete boundary" onClick={() => requestDeleteBoundary(boundary.id)}>
                         <X size={14} />
@@ -1638,20 +1836,51 @@ export function SectionDrawingClient() {
               {lastBooleanWarning && <p className="pm-warning-text">{lastBooleanWarning}</p>}
             </section>
 
+            <section className="pm-panel-section pm-boundary-create-section">
+              <div className="pm-boundary-create">
+                <span>Create Boundary</span>
+                <div className="pm-boundary-create-actions">
+                  <button type="button" title="Create rectangle" aria-label="Create rectangle" onClick={() => createDefaultBoundary('rectangle')}>
+                    <RectangleHorizontal size={14} />
+                  </button>
+                  <button type="button" title="Create circle" aria-label="Create circle" onClick={() => createDefaultBoundary('circle')}>
+                    <Circle size={14} />
+                  </button>
+                  <button type="button" title="Import XLSX" aria-label="Import XLSX" onClick={() => boundaryExcelInputRef.current?.click()}>
+                    <FileInput size={14} />
+                  </button>
+                </div>
+              </div>
+              <input
+                ref={boundaryExcelInputRef}
+                type="file"
+                accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"
+                hidden
+                onChange={handleBoundaryExcelFileChange}
+              />
+            </section>
+
+            {boundaries.length > 0 && (
             <section className="pm-panel-section pm-vertex-section">
-              <div className="pm-section-title pm-section-title--with-action">
-                <h2>Boundary Details</h2>
-                {showBasicDetailTab && (
-                  <div className="pm-detail-tabs" role="tablist" aria-label="Boundary detail tabs">
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={effectiveDetailTab === 'basic'}
-                      className={effectiveDetailTab === 'basic' ? 'is-active' : ''}
-                      onClick={() => setDetailTab('basic')}
-                    >
-                      Basic
-                    </button>
+              <div className="pm-section-title"><h2>Boundary Details</h2></div>
+
+              {activeBoundary ? (
+                <div className="pm-boundary-detail-toolbar">
+                  <span className="pm-boundary-detail-name" title={activeBoundary.name}>
+                    {activeBoundary.name}
+                  </span>
+                  <div className="pm-detail-tabs" role="tablist" aria-label={`${activeBoundary.name} details`}>
+                    {showBasicDetailTab && (
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={effectiveDetailTab === 'basic'}
+                        className={effectiveDetailTab === 'basic' ? 'is-active' : ''}
+                        onClick={() => setDetailTab('basic')}
+                      >
+                        Basic
+                      </button>
+                    )}
                     <button
                       type="button"
                       role="tab"
@@ -1662,12 +1891,17 @@ export function SectionDrawingClient() {
                       Points
                     </button>
                   </div>
-                )}
-              </div>
-
-              {!activeBoundary && <p className="pm-preview-hint">Select or draw a boundary.</p>}
+                  <button type="button" className="pm-boundary-export-btn" onClick={() => exportBoundaryExcel(activeBoundary)}>
+                    <FileOutput size={13} />
+                    Export
+                  </button>
+                </div>
+              ) : (
+                <p className="pm-boundary-empty">Select a boundary to edit its details.</p>
+              )}
 
               {activeBoundary && showBasicDetailTab && effectiveDetailTab === 'basic' && (
+                <>
                 <div className="pm-shape-params">
                   {activeBoundary.source.kind === 'rectangle' && (
                     <>
@@ -1896,64 +2130,80 @@ export function SectionDrawingClient() {
                     </>
                   )}
                 </div>
+                <label className="pm-boundary-rotation">
+                  <span>
+                    Rotate
+                    <small>
+                      X {formatNumber(activeSummary.centroid.x, 3)} · Y {formatNumber(activeSummary.centroid.y, 3)}
+                    </small>
+                  </span>
+                  <span className="pm-boundary-rotation-input">
+                    <RotateCw size={13} />
+                    <input
+                      type="number"
+                      step="any"
+                      disabled={activeBoundary.locked}
+                      value={rotationDraft}
+                      aria-label="Rotate boundary by degrees"
+                      onFocus={beginRotationPreview}
+                      onChange={(event) => previewRotation(event.target.value)}
+                      onBlur={commitRotationDraft}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') event.currentTarget.blur()
+                      }}
+                    />
+                    <em>°</em>
+                  </span>
+                </label>
+                </>
               )}
 
               {activeBoundary && effectiveDetailTab === 'points' && (
                 <>
-                  {(activeBoundary.outers.length > 1 || activeOuterHoleCount > 0) && (
+                  {(activeBoundary.outers.length > 1 || activeBoundary.outers.some((outer) => outer.length > 1)) && (
                     <div className="pm-ring-nav" aria-label="Ring navigation">
-                      {activeBoundary.outers.length > 1 ? (
-                        <div className="pm-ring-nav__outers" role="tablist" aria-label="Outers">
-                          {activeBoundary.outers.map((outer, index) => {
-                            const isActiveOuter = activeOuterIndex === index
-                            const isEditingOuterRing = isActiveOuter && activeRingIndex === 0
-                            return (
-                              <button
-                                type="button"
-                                role="tab"
-                                key={`outer-${index}`}
-                                aria-selected={isActiveOuter}
-                                className={`pm-ring-nav__outer${isActiveOuter ? ' is-active' : ''}${isEditingOuterRing ? ' is-editing' : ''}`}
-                                onClick={() => {
-                                  setActiveOuterIndex(index)
-                                  setActiveRingIndex(0)
-                                  setSelectedPointId(outer[0]?.[0]?.id ?? null)
-                                }}
-                              >
-                                Outer {index + 1}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          className={`pm-ring-nav__context${activeRingIndex === 0 ? ' is-editing' : ''}`}
-                          onClick={() => {
-                            setActiveRingIndex(0)
-                            setSelectedPointId(activeOuter[0]?.[0]?.id ?? null)
-                          }}
-                        >
-                          Outer 1
-                        </button>
-                      )}
-                      {activeOuterHoleCount > 0 && (
-                        <div className="pm-ring-nav__holes" role="group" aria-label={`Holes of Outer ${activeOuterIndex + 1}`}>
-                          {activeOuter.slice(1).map((hole, holeIndex) => (
+                      {activeBoundary.outers.map((outer, outerIndex) => {
+                        const isActiveOuter = activeOuterIndex === outerIndex
+                        const holes = outer.slice(1)
+                        return (
+                          <div
+                            key={`outer-group-${outerIndex}`}
+                            className={`pm-ring-nav__group${isActiveOuter ? ' is-active' : ''}`}
+                            role="group"
+                            aria-label={`Outer ${outerIndex + 1}${holes.length > 0 ? ` with ${holes.length} hole(s)` : ''}`}
+                          >
                             <button
                               type="button"
-                              key={`hole-${holeIndex + 1}`}
-                              className={activeRingIndex === holeIndex + 1 ? 'is-active' : ''}
+                              className={`pm-ring-nav__btn${isActiveOuter && activeRingIndex === 0 ? ' is-editing' : ''}${isActiveOuter ? ' is-active' : ''}`}
                               onClick={() => {
-                                setActiveRingIndex(holeIndex + 1)
-                                setSelectedPointId(hole[0]?.id ?? null)
+                                setActiveOuterIndex(outerIndex)
+                                setActiveRingIndex(0)
+                                setSelectedPointId(outer[0]?.[0]?.id ?? null)
                               }}
                             >
-                              Hole {holeIndex + 1}
+                              Outer {outerIndex + 1}
                             </button>
-                          ))}
-                        </div>
-                      )}
+                            {holes.map((hole, holeIndex) => {
+                              const ringIndex = holeIndex + 1
+                              const isEditingHole = isActiveOuter && activeRingIndex === ringIndex
+                              return (
+                                <button
+                                  type="button"
+                                  key={`hole-${outerIndex}-${ringIndex}`}
+                                  className={`pm-ring-nav__btn pm-ring-nav__btn--hole${isEditingHole ? ' is-editing is-active' : ''}`}
+                                  onClick={() => {
+                                    setActiveOuterIndex(outerIndex)
+                                    setActiveRingIndex(ringIndex)
+                                    setSelectedPointId(hole[0]?.id ?? null)
+                                  }}
+                                >
+                                  Hole {ringIndex}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                   <div className="pm-point-table-wrap">
@@ -2026,7 +2276,6 @@ export function SectionDrawingClient() {
                 </>
               )}
             </section>
-              </>
             )}
           </>
             )}
@@ -2041,6 +2290,8 @@ export function SectionDrawingClient() {
                 selectedRebarId={selectedRebarId}
                 onSelectRebar={setSelectedRebarId}
                 onChangeRebars={updateAppliedRebars}
+                onImportExcel={importAppliedRebarsExcel}
+                onExportExcel={exportAppliedRebarsExcel}
               />
             )}
           </>
@@ -2171,19 +2422,6 @@ export function SectionDrawingClient() {
         )}
         </div>
 
-        {activeModule === 'geometry' && geometrySubTab === 'concrete' && (
-          <div className="pm-panel-footer">
-            <button
-              type="button"
-              className="pm-primary-action"
-              onClick={applyActiveAsSection}
-              disabled={!canApplySection}
-              title="Commit the active boundary as the section used by later design steps"
-            >
-              Apply
-            </button>
-          </div>
-        )}
       </aside>
 
       <section

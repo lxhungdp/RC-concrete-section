@@ -439,9 +439,9 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
 .pm-vertex-section {
   display: flex;
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   flex-direction: column;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .pm-boundary-switch {
@@ -540,84 +540,62 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
 
 .pm-ring-nav {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   margin-bottom: 2px;
 }
 
-.pm-ring-nav__outers {
+.pm-ring-nav__group {
   display: inline-flex;
   flex-wrap: wrap;
-  width: fit-content;
+  align-items: center;
+  gap: 2px;
   max-width: 100%;
   padding: 2px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--panel-muted, var(--btn-secondary-bg));
-  gap: 0;
+  border-radius: 7px;
+  background: var(--toggle-bg);
 }
 
-.pm-ring-nav__outer,
-.pm-ring-nav__context {
-  min-height: 22px;
+.pm-ring-nav__group.is-active {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--toggle-bg));
+}
+
+.pm-ring-nav__btn {
+  min-height: 24px;
   padding: 2px 8px;
-  border: 0;
-  border-radius: 4px;
+  border: 1px solid transparent;
+  border-radius: 5px;
   background: transparent;
   color: var(--foreground-secondary);
   cursor: pointer;
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 600;
   letter-spacing: 0.01em;
 }
 
-.pm-ring-nav__outer:hover,
-.pm-ring-nav__context:hover {
-  color: var(--foreground);
-}
-
-.pm-ring-nav__outer.is-active,
-.pm-ring-nav__context.is-editing {
-  background: var(--btn-secondary-bg);
-  color: var(--foreground);
-  box-shadow: 0 0 0 1px var(--btn-secondary-border);
-}
-
-.pm-ring-nav__outer.is-editing,
-.pm-ring-nav__context.is-editing {
-  color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-border);
-}
-
-.pm-ring-nav__holes {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 6px;
-  padding-left: 2px;
-}
-
-.pm-ring-nav__holes button {
-  min-height: 18px;
-  padding: 0 4px;
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
+.pm-ring-nav__btn--hole {
   color: var(--foreground-muted);
-  cursor: pointer;
-  font-size: 0.65rem;
   font-weight: 500;
 }
 
-.pm-ring-nav__holes button:hover {
-  color: var(--foreground);
+.pm-ring-nav__btn:hover {
   background: var(--btn-secondary-hover-bg);
+  color: var(--foreground);
 }
 
-.pm-ring-nav__holes button.is-active {
+.pm-ring-nav__btn.is-active {
+  background: var(--btn-secondary-bg);
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 1px var(--btn-secondary-border);
+}
+
+.pm-ring-nav__btn.is-editing {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
-  background: var(--accent-muted);
-  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--accent-border);
 }
 
 .pm-point-table-caption {
@@ -646,16 +624,69 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
 .pm-boundary-list-section {
   display: flex;
   flex-direction: column;
-  flex: 0 1 auto;
-  min-height: 0;
+  flex: 0 0 36%;
+  height: 36%;
   max-height: 36%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .pm-boundary-list {
   display: grid;
   gap: 5px;
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+}
+
+.pm-boundary-create-section {
+  flex: 0 0 auto;
+  gap: 0;
+}
+
+.pm-boundary-create-section.pm-panel-section {
+  padding-top: 8px;
+  padding-bottom: 0;
+}
+
+.pm-boundary-detail-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 8px;
+}
+
+.pm-boundary-detail-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--foreground);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.pm-boundary-detail-toolbar .pm-detail-tabs {
+  flex: 0 0 auto;
+}
+
+.pm-boundary-detail-toolbar .pm-boundary-export-btn {
+  flex: 0 0 auto;
+  min-height: 26px;
+  padding: 2px 7px;
+}
+
+.pm-boundary-empty {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 7px;
+  color: var(--foreground-muted);
+  font-size: 0.7rem;
+  line-height: 1.4;
+  text-align: center;
 }
 
 .pm-boundary-list-actions {
@@ -947,7 +978,7 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
 
 .pm-boundary-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 24px 24px 24px 24px;
+  grid-template-columns: minmax(0, 1fr) auto 24px 24px 24px;
   align-items: center;
   gap: 4px;
   min-height: 34px;
@@ -955,6 +986,35 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   background: var(--card);
+}
+
+.pm-boundary-apply-btn,
+.pm-boundary-final-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 24px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pm-boundary-apply-btn {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-foreground);
+  cursor: pointer;
+}
+
+.pm-boundary-apply-btn:hover {
+  background: var(--btn-primary-hover-bg);
+}
+
+.pm-boundary-final-label {
+  color: var(--applied);
+  background: color-mix(in srgb, var(--applied) 12%, transparent);
 }
 
 .pm-boundary-row.is-selected {
@@ -975,18 +1035,139 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
   box-shadow: inset 3px 0 0 var(--applied);
 }
 
-.pm-boundary-row-badge {
-  display: inline-block;
-  margin-left: 4px;
-  padding: 0 5px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--applied) 18%, transparent);
-  color: var(--applied);
-  font-size: 0.6rem;
+.pm-boundary-export-btn,
+.pm-rebar-excel-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 27px;
+  padding: 3px 8px;
+  border: 1px solid var(--btn-secondary-border);
+  border-radius: 6px;
+  background: var(--btn-secondary-bg);
+  color: var(--foreground-secondary);
+  cursor: pointer;
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
+.pm-boundary-export-btn:hover,
+.pm-rebar-excel-actions button:hover {
+  background: var(--btn-secondary-hover-bg);
+  color: var(--foreground);
+}
+
+.pm-boundary-create {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pm-boundary-create > span {
+  color: var(--foreground-muted);
+  font-size: 0.64rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.pm-boundary-create-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+}
+
+.pm-boundary-create-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--btn-secondary-border);
+  border-radius: 5px;
+  background: var(--btn-secondary-bg);
+  color: var(--foreground-secondary);
+  cursor: pointer;
+}
+
+.pm-boundary-create-actions button:hover {
+  border-color: var(--border);
+  background: var(--btn-secondary-hover-bg);
+  color: var(--foreground);
+}
+
+.pm-boundary-rotation {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 8px;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.pm-boundary-rotation > span:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-bottom: 6px;
+  color: var(--foreground-muted);
+  font-size: 0.7rem;
+}
+
+.pm-boundary-rotation > span:first-child small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--foreground-muted);
+  font-size: 0.6rem;
+  font-weight: 500;
+}
+
+.pm-boundary-rotation-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--foreground-muted);
+}
+
+.pm-boundary-rotation-input:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ui-focus-ring);
+}
+
+.pm-boundary-rotation-input input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.78rem;
+  outline: 0;
+}
+
+.pm-boundary-rotation-input em {
+  font-style: normal;
+  color: var(--foreground-muted);
+  font-size: 0.72rem;
+}
+
+.pm-rebar-excel-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
 }
 
 .pm-boundary-row-main {
@@ -3589,7 +3770,9 @@ body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {
   }
 
   .pm-boundary-list-section {
-    max-height: 40%;
+    flex-basis: 32%;
+    height: 32%;
+    max-height: 32%;
   }
 
   .pm-drawing-stage {

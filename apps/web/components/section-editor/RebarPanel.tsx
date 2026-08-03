@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus, X } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { FileInput, FileOutput, Plus, X } from 'lucide-react'
 import {
   generateRebarsForSection,
   makeRebarId,
@@ -22,6 +22,8 @@ type Props = {
   selectedRebarId: number | null
   onSelectRebar: (id: number | null) => void
   onChangeRebars: (rebars: GeometryInputRebarView[]) => void
+  onImportExcel: (file: File) => Promise<void>
+  onExportExcel: () => Promise<void>
 }
 
 const DEFAULT_PARAMS: RebarGenerateParams = {
@@ -40,8 +42,11 @@ export function RebarPanel({
   defaultSteelMaterialId,
   selectedRebarId,
   onSelectRebar,
-  onChangeRebars
+  onChangeRebars,
+  onImportExcel,
+  onExportExcel
 }: Props) {
+  const importInputRef = useRef<HTMLInputElement | null>(null)
   const [pattern, setPattern] = useState<RebarPatternKind>('top-bottom')
   const [params, setParams] = useState<RebarGenerateParams>(DEFAULT_PARAMS)
   const [replaceExisting, setReplaceExisting] = useState(true)
@@ -211,6 +216,27 @@ export function RebarPanel({
         <div className="pm-section-title pm-section-title--with-action">
           <h2>Rebar List</h2>
           <span className="pm-rebar-count">{rebars.length} bars</span>
+        </div>
+        <div className="pm-rebar-excel-actions" role="group" aria-label="Rebar Excel tools">
+          <button type="button" onClick={() => importInputRef.current?.click()}>
+            <FileInput size={14} />
+            Import XLSX
+          </button>
+          <button type="button" onClick={onExportExcel}>
+            <FileOutput size={14} />
+            Export XLSX
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (file) void onImportExcel(file)
+            }}
+          />
         </div>
         <div className="pm-point-table-wrap pm-rebar-table-wrap">
           <table className="pm-point-table">
