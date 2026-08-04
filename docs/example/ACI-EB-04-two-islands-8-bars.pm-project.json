@@ -1,0 +1,401 @@
+{
+  "schema": "pm-column-project",
+  "version": 1,
+  "meta": {
+    "id": 4,
+    "name": "ACI-EB 04 - Two disconnected concrete regions, 8 bars",
+    "createdAt": "2026-08-04T00:00:00.000Z",
+    "updatedAt": "2026-08-04T00:00:00.000Z"
+  },
+  "inputs": {
+    "calculationProfileId": "aci-318-19-22-equivalent-block",
+    "geometry": {
+      "id": 4,
+      "name": "Benchmark 04 - Two disconnected regions, 8 bars",
+      "outers": [
+        {
+          "id": 1,
+          "points": [
+            {
+              "id": 1,
+              "x": -310,
+              "y": -220
+            },
+            {
+              "id": 2,
+              "x": -90,
+              "y": -220
+            },
+            {
+              "id": 3,
+              "x": -90,
+              "y": 220
+            },
+            {
+              "id": 4,
+              "x": -310,
+              "y": 220
+            }
+          ],
+          "holes": []
+        },
+        {
+          "id": 2,
+          "points": [
+            {
+              "id": 101,
+              "x": 90,
+              "y": -220
+            },
+            {
+              "id": 102,
+              "x": 310,
+              "y": -220
+            },
+            {
+              "id": 103,
+              "x": 310,
+              "y": 220
+            },
+            {
+              "id": 104,
+              "x": 90,
+              "y": 220
+            }
+          ],
+          "holes": []
+        }
+      ],
+      "rebars": [
+        {
+          "id": 1,
+          "x": -260,
+          "y": -170,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 2,
+          "x": -140,
+          "y": -170,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 3,
+          "x": -140,
+          "y": 170,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 4,
+          "x": -260,
+          "y": 170,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 5,
+          "x": 140,
+          "y": -170,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 6,
+          "x": 260,
+          "y": -170,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 7,
+          "x": 260,
+          "y": 170,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 8,
+          "x": 140,
+          "y": 170,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        }
+      ]
+    },
+    "materials": {
+      "strainSign": "compression-positive",
+      "concrete": {
+        "id": 1,
+        "name": "Concrete C40",
+        "standard": "ACI318",
+        "fck": 40,
+        "mc": 2350,
+        "elasticModulus": 29725.410005582766,
+        "stressStrain": {
+          "type": "aci-whitney-block",
+          "beta1": 0.7642857142857142,
+          "epsCu": 0.003,
+          "alpha": 0.85
+        },
+        "limits": {
+          "epsCu": 0.003,
+          "ignoreTension": true
+        },
+        "factors": {
+          "alpha": 0.85
+        }
+      },
+      "steel": [
+        {
+          "id": 1,
+          "name": "Rebar fy 420",
+          "standard": "ACI318",
+          "fy": 420,
+          "elasticModulus": 200000,
+          "stressStrain": {
+            "type": "elastic-perfectly-plastic"
+          },
+          "limits": {
+            "epsY": 0.0021
+          },
+          "factors": {}
+        }
+      ],
+      "defaults": {
+        "steelMaterialId": 1
+      }
+    },
+    "loadings": {
+      "combinations": [
+        {
+          "id": 1,
+          "name": "Audit ray 55% - NA 26.93 deg, c/D 0.55",
+          "actionBasis": "factoredULS",
+          "P": 934752.4070561597,
+          "Mx": 58786559.41606444,
+          "My": -293949615.003645
+        },
+        {
+          "id": 2,
+          "name": "Cardinal audit 85% - NA 0 deg, c/D 0.55",
+          "actionBasis": "factoredULS",
+          "P": 1844093.9941348974,
+          "Mx": 0,
+          "My": -482724143.1085044
+        },
+        {
+          "id": 3,
+          "name": "Cardinal audit 85% - NA 90 deg, c/D 0.55",
+          "actionBasis": "factoredULS",
+          "P": 2419148.5199371595,
+          "Mx": 264168081.91444308,
+          "My": 2.0582228899002075e-9
+        }
+      ]
+    },
+    "analysis": {
+      "optionsVersion": 1,
+      "methodId": "equivalent-block-surface-v1",
+      "neutralAxisStations": {
+        "basedOn": "verified-37-v1",
+        "values": [
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.1
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.075
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.05
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.04
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.03
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.025
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.02
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.0175
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.015
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.0125
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.01
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.00875
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.0075
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.00625
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.005
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.004
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.003
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.0025
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.002
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.0015
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.001
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.0005
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1.1
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1.2
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1.35
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1.5
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1.75
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 2
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 2.5
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 3
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 4
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 5
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 7.5
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 10
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 20
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 50
+          }
+        ],
+        "refinement": {
+          "type": "adaptive",
+          "tolerance": 0.0075,
+          "maxPasses": 6,
+          "maxStations": 128
+        }
+      },
+      "directions": {
+        "seedCount": 24,
+        "startDeg": 0,
+        "refinement": {
+          "type": "adaptive",
+          "tolerance": 0.0075,
+          "maxPasses": 6,
+          "maxDirections": 360
+        }
+      }
+    },
+    "design": {
+      "basisVersion": 1,
+      "profileId": "aci-318-19-22",
+      "identity": {
+        "organization": "ACI",
+        "document": "ACI CODE-318-19 (Reapproved 2022)",
+        "edition": "2019 (Reapproved 2022)",
+        "methodId": "aci-318-19-22-global-strength-reduction",
+        "profileVersion": "1.0.0"
+      },
+      "verificationStatus": "draft",
+      "format": "globalResultantFactor",
+      "transverseReinforcement": "other",
+      "factors": {
+        "phiCompressionOther": 0.65,
+        "phiCompressionSpiral": 0.75,
+        "phiTension": 0.9,
+        "axialCapOther": 0.8,
+        "axialCapSpiral": 0.85
+      },
+      "transition": {
+        "type": "yield-plus-strain",
+        "extraStrain": 0.003
+      },
+      "axialCapEnabled": true,
+      "modified": false,
+      "overrideReason": ""
+    }
+  }
+}

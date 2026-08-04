@@ -1,0 +1,379 @@
+{
+  "schema": "pm-column-project",
+  "version": 1,
+  "meta": {
+    "id": 1,
+    "name": "KDS-EB 01 - Rectangle 400 x 500 mm, 8 bars",
+    "createdAt": "2026-08-04T00:00:00.000Z",
+    "updatedAt": "2026-08-04T00:00:00.000Z"
+  },
+  "inputs": {
+    "calculationProfileId": "kds-142020-equivalent-block",
+    "geometry": {
+      "id": 1,
+      "name": "Benchmark 01 - Rectangle 400 x 500 mm, 8 bars",
+      "outers": [
+        {
+          "id": 1,
+          "points": [
+            {
+              "id": 1,
+              "x": -200,
+              "y": -250
+            },
+            {
+              "id": 2,
+              "x": 200,
+              "y": -250
+            },
+            {
+              "id": 3,
+              "x": 200,
+              "y": 250
+            },
+            {
+              "id": 4,
+              "x": -200,
+              "y": 250
+            }
+          ],
+          "holes": []
+        }
+      ],
+      "rebars": [
+        {
+          "id": 1,
+          "x": -150,
+          "y": -200,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 2,
+          "x": 0,
+          "y": -200,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 3,
+          "x": 150,
+          "y": -200,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 4,
+          "x": 150,
+          "y": 0,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 5,
+          "x": 150,
+          "y": 200,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 6,
+          "x": 0,
+          "y": 200,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 7,
+          "x": -150,
+          "y": 200,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 8,
+          "x": -150,
+          "y": 0,
+          "dia": 22.56758334191025,
+          "steelMaterialId": 1
+        }
+      ]
+    },
+    "materials": {
+      "strainSign": "compression-positive",
+      "concrete": {
+        "id": 1,
+        "name": "Concrete C40",
+        "standard": "KDS",
+        "fck": 40,
+        "mc": 2350,
+        "elasticModulus": 30967.78031257298,
+        "stressStrain": {
+          "type": "kds-parabolic",
+          "n": 2,
+          "eps0": 0.002,
+          "epsCu": 0.0033,
+          "alpha": 0.85
+        },
+        "limits": {
+          "eps0": 0.002,
+          "epsCu": 0.0033,
+          "ignoreTension": true
+        },
+        "factors": {
+          "alpha": 0.85
+        }
+      },
+      "steel": [
+        {
+          "id": 1,
+          "name": "Rebar fy 420",
+          "standard": "KDS",
+          "fy": 420,
+          "elasticModulus": 200000,
+          "stressStrain": {
+            "type": "elastic-perfectly-plastic"
+          },
+          "limits": {
+            "epsY": 0.0021
+          }
+        }
+      ],
+      "defaults": {
+        "steelMaterialId": 1
+      }
+    },
+    "loadings": {
+      "combinations": [
+        {
+          "id": 1,
+          "name": "Audit ray 55% - NA 26.93 deg, c/D 0.55",
+          "actionBasis": "factoredULS",
+          "P": 732333.9960725956,
+          "Mx": 99910508.65391329,
+          "My": -129855737.35632461
+        },
+        {
+          "id": 2,
+          "name": "Cardinal audit 85% - NA 0 deg, c/D 0.55",
+          "actionBasis": "factoredULS",
+          "P": 2267460,
+          "Mx": 1.2692374487717945e-8,
+          "My": -242260200
+        },
+        {
+          "id": 3,
+          "name": "Cardinal audit 85% - NA 90 deg, c/D 0.55",
+          "actionBasis": "factoredULS",
+          "P": 1657058,
+          "Mx": 338306800,
+          "My": 2.5727786123752594e-10
+        }
+      ]
+    },
+    "analysis": {
+      "optionsVersion": 1,
+      "methodId": "equivalent-block-surface-v1",
+      "neutralAxisStations": {
+        "basedOn": "verified-37-v1",
+        "values": [
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.1
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.075
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.05
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.04
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.03
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.025
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.02
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.0175
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.015
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.0125
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.01
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.00875
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.0075
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.00625
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.005
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.004
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.003
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.0025
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.002
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.0015
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.001
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0.0005
+          },
+          {
+            "type": "extreme-tension-strain",
+            "strain": 0
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1.1
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1.2
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1.35
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1.5
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1.75
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 2
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 2.5
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 3
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 4
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 5
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 7.5
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 10
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 20
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 50
+          }
+        ],
+        "refinement": {
+          "type": "adaptive",
+          "tolerance": 0.0075,
+          "maxPasses": 6,
+          "maxStations": 128
+        }
+      },
+      "directions": {
+        "seedCount": 24,
+        "startDeg": 0,
+        "refinement": {
+          "type": "adaptive",
+          "tolerance": 0.0075,
+          "maxPasses": 6,
+          "maxDirections": 360
+        }
+      }
+    },
+    "design": {
+      "basisVersion": 1,
+      "profileId": "kds-2024-current-set",
+      "identity": {
+        "organization": "MOLIT/KDS",
+        "document": "KDS 2024 current set · resistance: KDS 14 20 10:2021 + KDS 14 20 20:2022",
+        "edition": "2024 partial-revision framework (effective 2025-01-05)",
+        "methodId": "kds-2024-current-set-global-strength-reduction",
+        "profileVersion": "1.0.0",
+        "amendment": "MOLIT Notice 2024-879, 2024-12-30"
+      },
+      "verificationStatus": "draft",
+      "format": "globalResultantFactor",
+      "transverseReinforcement": "other",
+      "factors": {
+        "phiCompressionOther": 0.65,
+        "phiCompressionSpiral": 0.7,
+        "phiTension": 0.85,
+        "axialCapOther": 0.8,
+        "axialCapSpiral": 0.85
+      },
+      "transition": {
+        "type": "fixed-or-yield-multiple",
+        "yieldStressThreshold": 400,
+        "fixedStrainLimit": 0.005,
+        "highStrengthYieldMultiple": 2.5
+      },
+      "axialCapEnabled": true,
+      "modified": false,
+      "overrideReason": ""
+    }
+  }
+}

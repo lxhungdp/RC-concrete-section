@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import test from 'node:test'
 import { sliceMomentPlane } from '@pm/analysis'
@@ -117,6 +117,43 @@ test('KDS block cardinal slices do not weld the axial cap to the tension pole', 
   )
   const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
   assertCardinalSlicesHaveNoCapToTensionChord(surface, 'KDS PM-advanced (7) 2D')
+})
+
+test('docs/example equivalent-block projects parse and solve with their shipped production options', () => {
+  const directory = resolve(process.cwd(), 'docs/example')
+  const files = readdirSync(directory)
+    .filter((file) => /^(KDS|ACI)-EB-\d{2}-.+\.pm-project\.json$/.test(file))
+    .sort()
+  assert.equal(files.length, 8, 'the public audit set must contain 4 geometries x 2 code profiles')
+
+  for (const file of files) {
+    const parsed = parseProjectDocument(readFileSync(resolve(directory, file), 'utf8'))
+    assert.ok(parsed.ok, `${file}: project schema v1 must parse`)
+    if (!parsed.ok) continue
+    assert.deepEqual(parsed.warnings, [], `${file}: import warnings`)
+    const { inputs } = parsed.document
+    assert.equal(parsed.document.version, 1, `${file}: project version`)
+    assert.notEqual(inputs.calculationProfileId, 'kds-2024-stress-strain', `${file}: block profile`)
+    assert.equal(inputs.analysis.methodId, 'equivalent-block-surface-v1', `${file}: analysis method`)
+    const options = inputs.analysis as EquivalentBlockAnalysisOptions
+    const prepared = prepareBlockAnalysis(
+      inputs.calculationProfileId,
+      sectionGeometryFromGeometryInput(inputs.geometry),
+      geometryInputRebars(inputs.geometry),
+      inputs.materials,
+      inputs.design
+    )
+    const designSurface = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+    const preview = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options, designSurface)
+    assert.equal(designSurface.topology.closed, true, `${file}: closed design surface`)
+    assertCardinalSlicesHaveNoCapToTensionChord(preview, file)
+    assert.equal(inputs.loadings.combinations.length, 3, `${file}: audit loadcase count`)
+    for (const loadcase of inputs.loadings.combinations) {
+      const solved = solveEquivalentBlockDemandFromPrepared(prepared, options, loadcase, designSurface)
+      assert.equal(solved.ok, true, `${file}/${loadcase.name}: demand solve`)
+      assert.ok(solved.utilization !== null && solved.utilization < 1, `${file}/${loadcase.name}: inside surface`)
+    }
+  }
 })
 
 for (const profileId of ['kds-142020-equivalent-block', 'aci-318-19-22-equivalent-block'] as const) {
