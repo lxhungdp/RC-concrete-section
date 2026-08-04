@@ -9,7 +9,7 @@
     "lint": "npm run typecheck",
     "typecheck": "tsc --noEmit",
     "test": "npm run typecheck && npm run test:unit && npm run test:cad && npm run test:roundtrip && npm run test:pm-stations && npm run test:excel-export",
-    "test:unit": "node --import tsx --test packages/pm-analysis/src/admissibility.test.ts packages/pm-analysis/src/surface.test.ts packages/pm-analysis/src/materials-integrity.test.ts packages/pm-analysis/src/mesh-spatial.test.ts packages/pm-analysis/src/mesh-gate.test.ts packages/pm-analysis/src/stations.test.ts packages/pm-analysis/src/analysis-options.test.ts packages/pm-analysis/src/refinement.test.ts packages/pm-analysis/src/tangent.test.ts packages/pm-analysis/src/moment-plane.test.ts packages/pm-analysis/src/design-resistance.test.ts packages/pm-report/src/mesh-export.test.ts apps/web/lib/section-mesh-view.test.ts apps/web/lib/section-xlsx.test.ts apps/web/components/section-editor/section-field-angles.test.ts",
+    "test:unit": "node --import tsx --test packages/pm-equivalent-block/src/*.test.ts packages/pm-code-kds142020/src/*.test.ts packages/pm-code-aci318/src/*.test.ts packages/pm-analysis/src/admissibility.test.ts packages/pm-analysis/src/surface.test.ts packages/pm-analysis/src/materials-integrity.test.ts packages/pm-analysis/src/mesh-spatial.test.ts packages/pm-analysis/src/mesh-gate.test.ts packages/pm-analysis/src/stations.test.ts packages/pm-analysis/src/analysis-options.test.ts packages/pm-analysis/src/refinement.test.ts packages/pm-analysis/src/tangent.test.ts packages/pm-analysis/src/moment-plane.test.ts packages/pm-analysis/src/design-resistance.test.ts packages/pm-report/src/mesh-export.test.ts apps/web/lib/section-mesh-view.test.ts apps/web/lib/section-xlsx.test.ts apps/web/components/section-editor/section-field-angles.test.ts",
     "test:cad": "npm run test -w @structures/cad-drawing",
     "test:roundtrip": "tsx packages/pm-project/src/roundtrip.selftest.ts",
     "test:pm-stations": "tsx packages/pm-analysis/src/analysis.selftest.ts",
@@ -18,6 +18,7 @@
     "bench": "tsx packages/pm-analysis/src/bench/run.ts",
     "bench:materials": "tsx packages/pm-analysis/src/bench/material.ts",
     "bench:mesh": "tsx packages/pm-analysis/src/bench/mesh.ts",
+    "bench:equivalent-block": "tsx bench/equivalent-block.ts",
     "bench:record": "tsx packages/pm-analysis/src/bench/run.ts --repeats 1 --fingerprint-out packages/pm-analysis/src/bench/capacity-baseline.json",
     "bench:verify": "tsx packages/pm-analysis/src/bench/run.ts --repeats 1 --baseline packages/pm-analysis/src/bench/capacity-baseline.json"
   },

@@ -25,6 +25,12 @@
       "@pm/project/*": ["./packages/pm-project/src/*"],
       "@pm/analysis": ["./packages/pm-analysis/src"],
       "@pm/analysis/*": ["./packages/pm-analysis/src/*"],
+      "@pm/equivalent-block": ["./packages/pm-equivalent-block/src"],
+      "@pm/equivalent-block/*": ["./packages/pm-equivalent-block/src/*"],
+      "@pm/code-kds142020": ["./packages/pm-code-kds142020/src"],
+      "@pm/code-kds142020/*": ["./packages/pm-code-kds142020/src/*"],
+      "@pm/code-aci318": ["./packages/pm-code-aci318/src"],
+      "@pm/code-aci318/*": ["./packages/pm-code-aci318/src/*"],
       "@pm/report": ["./packages/pm-report/src"],
       "@pm/report/*": ["./packages/pm-report/src/*"]
     },
