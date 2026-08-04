@@ -3831,3 +3831,200 @@ body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {
     min-height: 0;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Section Results / Demand Check sidebars
+
+   The chart parameters moved out of the plot headers into these panels, so the
+   controls need the sidebar's vertical rhythm rather than the toolbar's.
+   --------------------------------------------------------------------------- */
+
+.pm-result-slider {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.pm-result-slider-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 82px auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: var(--foreground-muted);
+}
+
+.pm-result-slider-head input[type='number'] {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input-background, var(--card));
+  color: var(--foreground);
+  font-size: 0.72rem;
+  text-align: right;
+}
+
+.pm-result-slider-head em {
+  font-style: normal;
+  font-size: 0.68rem;
+  color: var(--foreground-muted);
+}
+
+.pm-result-slider input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent, #2563eb);
+}
+
+.pm-result-check-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.pm-result-status-list strong.is-good {
+  color: #15803d;
+}
+
+.pm-result-status-list strong.is-warn,
+.pm-result-status-list strong.is-warning {
+  color: #b45309;
+}
+
+.pm-result-status-list strong.is-bad {
+  color: #b91c1c;
+}
+
+.pm-chart-toggle-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.pm-chart-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--card);
+  opacity: 0.6;
+}
+
+.pm-chart-toggle.is-on {
+  opacity: 1;
+}
+
+.pm-chart-toggle-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.72rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pm-chart-toggle .pm-chart-tool {
+  margin-right: 6px;
+}
+
+.pm-chart-toggle .pm-chart-tool:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.pm-result-radio-group legend {
+  padding: 0 0 4px;
+}
+
+/* ---------------------------------------------------------------------------
+   Deferred stage loading and stale-result feedback
+   --------------------------------------------------------------------------- */
+
+.pm-workspace-loading {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 14px;
+  height: 100%;
+  padding: 16px;
+}
+
+.pm-workspace-loading-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--foreground-muted);
+  font-size: 0.78rem;
+}
+
+.pm-workspace-loading-head strong {
+  display: block;
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.pm-workspace-loading-head span {
+  display: block;
+  font-size: 0.72rem;
+}
+
+.pm-workspace-loading-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  min-height: 0;
+}
+
+.pm-workspace-loading-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(
+    100deg,
+    var(--card) 30%,
+    color-mix(in srgb, var(--card) 70%, var(--foreground) 8%) 50%,
+    var(--card) 70%
+  );
+  background-size: 300% 100%;
+  animation: pm-skeleton-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes pm-skeleton-sweep {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pm-workspace-loading-card {
+    animation: none;
+  }
+}
+
+.pm-results-stale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--card);
+  color: var(--foreground-muted);
+  font-size: 0.72rem;
+}
+
+/* Report combination picker: a dense list, so the rows stay compact. */
+.pm-report-pick {
+  justify-content: flex-start;
+  width: 100%;
+  text-align: left;
+}

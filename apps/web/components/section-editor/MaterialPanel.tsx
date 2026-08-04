@@ -5,17 +5,15 @@ import { Plus, X } from 'lucide-react'
 import {
   aciBeta1,
   applyAci318ConcreteDerived,
-  applyAci318SteelDerived,
   applyEn1992ConcreteDerived,
   applyEn1992SteelDerived,
   applyKdsConcreteDerived,
-  BLOCKED_CONCRETE_STANDARDS,
   compileConcreteMaterial,
   concreteModelSupportIssue,
   compileSteelMaterial,
   createKdsRebarSteel,
   DEFAULT_CONCRETE_DENSITY,
-  kdsConcreteParams,
+  userBlockCompressionStress,
   type ConcreteMaterial,
   type MaterialStore,
   type SteelMaterial,
@@ -23,7 +21,10 @@ import {
 } from '@pm/materials'
 import {
   CALCULATION_PROFILES,
+  CONCRETE_MODELS_FOR_MECHANICS,
+  CUSTOM_STEEL_MODELS,
   applyCalculationProfileToMaterials,
+  calculationProfile,
   type CalculationProfileId
 } from '@pm/project'
 import { resolveKds142020BlockParameters } from '@pm/code-kds142020'
@@ -56,76 +57,91 @@ const standardLabel = (standard: ConcreteMaterial['standard'] | SteelMaterial['s
   }
 }
 
-const concreteStandardDefaults = (
+/**
+ * Switch the concrete constitutive model inside a Custom profile.
+ *
+ * Every branch seeds a complete, valid model from what the material already holds so the analysis
+ * DTO never carries a half-filled law. It does not touch `standard`: the calculation profile owns
+ * that, and a Custom profile is the only place this selector is reachable.
+ */
+const concreteModelDefaults = (
   material: ConcreteMaterial,
-  standard: ConcreteMaterial['standard']
+  type: ConcreteMaterial['stressStrain']['type']
 ): ConcreteMaterial => {
-  const next = { ...material, standard, mc: material.mc ?? DEFAULT_CONCRETE_DENSITY }
-  if (standard === 'KDS') {
-    const params = kdsConcreteParams(next.fck)
-    return applyKdsConcreteDerived({
-      ...next,
-      stressStrain: { type: 'kds-parabolic', ...params },
-      factors: { ...next.factors, alpha: params.alpha, gammaC: undefined }
-    })
+  if (material.stressStrain.type === type) return material
+  const alpha = 'alpha' in material.stressStrain ? material.stressStrain.alpha : material.factors?.alpha ?? 0.85
+  const eps0 = material.limits.eps0 ?? 0.002
+  if (type === 'kds-parabolic') {
+    return {
+      ...material,
+      stressStrain: { type: 'kds-parabolic', n: 2, eps0, epsCu: material.limits.epsCu, alpha },
+      limits: { ...material.limits, eps0 }
+    }
   }
-  if (standard === 'ACI318') {
-    return applyAci318ConcreteDerived({ ...next, factors: { ...next.factors, alpha: 0.85, gammaC: undefined } })
+  if (type === 'ec2-parabolic-rectangular') {
+    return {
+      ...material,
+      stressStrain: {
+        type: 'ec2-parabolic-rectangular',
+        n: 2,
+        epsC2: eps0,
+        epsCu2: material.limits.epsCu,
+        alpha
+      },
+      limits: { ...material.limits, eps0 }
+    }
   }
-  if (standard === 'EC2') {
-    return applyEn1992ConcreteDerived({ ...next, factors: { ...next.factors, alpha: 0.85, gammaC: 1.5 } })
+  if (type === 'user-block') {
+    return {
+      ...material,
+      stressStrain: {
+        type: 'user-block',
+        beta1: material.stressStrain.type === 'aci-whitney-block' ? material.stressStrain.beta1 : 0.8,
+        alpha,
+        epsCu: material.limits.epsCu
+      }
+    }
   }
   return {
-    ...next,
-    standard: 'CUSTOM',
-    factors: { ...next.factors, gammaC: undefined },
+    ...material,
     stressStrain: {
       type: 'user-curve',
       interpolation: 'linear',
-      zeroTension: next.limits.ignoreTension,
+      zeroTension: material.limits.ignoreTension,
       points: [
         { strain: 0, stress: 0 },
-        { strain: next.limits.eps0 ?? 0.002, stress: next.fck },
-        { strain: next.limits.epsCu, stress: next.fck }
+        { strain: eps0, stress: alpha * material.fck },
+        { strain: material.limits.epsCu, stress: alpha * material.fck }
       ]
     }
   }
 }
 
-const steelStandardDefaults = (material: SteelMaterial, standard: SteelMaterial['standard']): SteelMaterial => {
-  const next = { ...material, standard }
-  if (standard === 'ACI318') return applyAci318SteelDerived({ ...next, stressStrain: { type: 'elastic-perfectly-plastic' } })
-  if (standard === 'EC2') {
-    return applyEn1992SteelDerived({
-      ...next,
-      stressStrain: { type: 'elastic-perfectly-plastic' },
-      factors: { ...next.factors, gammaS: 1.15 }
-    })
-  }
-  if (standard === 'KDS') {
-    const elasticModulus = 200000
+const steelModelDefaults = (
+  material: SteelMaterial,
+  type: SteelMaterial['stressStrain']['type']
+): SteelMaterial => {
+  if (material.stressStrain.type === type) return material
+  if (type === 'bilinear') return { ...material, stressStrain: { type: 'bilinear', hardeningRatio: 0.01 } }
+  if (type === 'user-curve') {
+    const epsY = material.limits?.epsY ?? material.fy / material.elasticModulus
+    const epsU = material.limits?.epsU ?? Math.max(0.05, epsY * 10)
     return {
-      ...next,
-      elasticModulus,
-      stressStrain: { type: 'elastic-perfectly-plastic' },
-      factors: { ...next.factors, gammaS: undefined },
-      limits: { ...next.limits, epsY: next.fy / elasticModulus }
+      ...material,
+      stressStrain: {
+        type: 'user-curve',
+        interpolation: 'linear',
+        points: [
+          { strain: -epsU, stress: -material.fy },
+          { strain: -epsY, stress: -material.fy },
+          { strain: 0, stress: 0 },
+          { strain: epsY, stress: material.fy },
+          { strain: epsU, stress: material.fy }
+        ]
+      }
     }
   }
-  return {
-    ...next,
-    standard: 'CUSTOM',
-    factors: { ...next.factors, gammaS: undefined },
-    stressStrain: {
-      type: 'user-curve',
-      interpolation: 'linear',
-      points: [
-        { strain: -next.fy / next.elasticModulus, stress: -next.fy },
-        { strain: 0, stress: 0 },
-        { strain: next.fy / next.elasticModulus, stress: next.fy }
-      ]
-    }
-  }
+  return { ...material, stressStrain: { type: 'elastic-perfectly-plastic' } }
 }
 
 const modelName = (type: ConcreteMaterial['stressStrain']['type'] | SteelMaterial['stressStrain']['type']) =>
@@ -135,7 +151,8 @@ const modelName = (type: ConcreteMaterial['stressStrain']['type'] | SteelMateria
     'ec2-parabolic-rectangular': 'EC2 Parabola-Rectangle',
     'elastic-perfectly-plastic': 'Elastic Perfectly Plastic',
     bilinear: 'Bilinear',
-    'user-curve': 'User-Defined Curve'
+    'user-curve': 'User-Defined Curve',
+    'user-block': 'User-Defined Block'
   })[type]
 
 const formatFormulaNumber = (value: number, digits = 4) =>
@@ -153,6 +170,8 @@ const concreteFormula = (material: ConcreteMaterial) => {
       return `σc = ${formatFormulaNumber(material.stressStrain.alpha)} fck [1 - (1 - ε / εc2)^${formatFormulaNumber(material.stressStrain.n, 2)}], then plateau`
     case 'user-curve':
       return 'σc is linearly interpolated from user-defined ε-σ points'
+    case 'user-block':
+      return `σc = ${formatFormulaNumber(material.stressStrain.alpha)} fck over a = ${formatFormulaNumber(material.stressStrain.beta1, 3)}·c, zero elsewhere`
     default:
       return ''
   }
@@ -289,9 +308,10 @@ export function MaterialPanel({
   onCalculationProfileChange,
   onChange
 }: Props) {
-  const concreteSupportIssue = calculationProfileId === 'kds-2024-stress-strain'
-    ? concreteModelSupportIssue(store.concrete)
-    : null
+  const profile = calculationProfile(calculationProfileId)
+  const isBlockMechanics = profile.mechanics === 'equivalent-rectangular-block'
+  const isCustomProfile = profile.materialStandard === 'CUSTOM'
+  const concreteSupportIssue = isBlockMechanics ? null : concreteModelSupportIssue(store.concrete)
   const [activePage, setActivePage] = useState<MaterialPage>('concrete')
   const activeSteel = store.steel.find((material) => material.id === store.defaults.steelMaterialId) ?? store.steel[0]
   const kdsBlockResolution = useMemo(() => {
@@ -402,33 +422,31 @@ export function MaterialPanel({
                 onChange={(event) => updateConcrete((material) => ({ ...material, name: event.target.value }))}
               />
             </label>
-              <label className="pm-field">
-              <span>Standard</span>
-              <select hidden aria-hidden="true"
-                value={store.concrete.standard}
-                onChange={(event) =>
-                  updateConcrete((material) => {
-                    const standard = event.target.value as ConcreteMaterial['standard']
-                    return concreteStandardDefaults(material, standard)
-                  })
-                }
-              >
-                {(['KDS', 'ACI318', 'EC2', 'CUSTOM'] as const).map((standard) => {
-                  const blocked = BLOCKED_CONCRETE_STANDARDS[standard]
-                  return (
-                    <option
-                      key={standard}
-                      value={standard}
-                      disabled={Boolean(blocked) && store.concrete.standard !== standard}
-                    >
-                      {standardLabel(standard)}
-                      {blocked ? ' — blocked' : ''}
-                    </option>
-                  )
-                })}
-              </select>
-              <input readOnly value={standardLabel(store.concrete.standard)} />
-            </label>
+              {isCustomProfile ? (
+                <label className="pm-field">
+                  <span>Concrete model</span>
+                  <select
+                    value={store.concrete.stressStrain.type}
+                    onChange={(event) =>
+                      updateConcrete((material) =>
+                        concreteModelDefaults(
+                          material,
+                          event.target.value as ConcreteMaterial['stressStrain']['type']
+                        )
+                      )
+                    }
+                  >
+                    {CONCRETE_MODELS_FOR_MECHANICS[profile.mechanics].map((type) => (
+                      <option key={type} value={type}>{modelName(type)}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <label className="pm-field">
+                  <span>Standard</span>
+                  <input readOnly value={standardLabel(store.concrete.standard)} />
+                </label>
+              )}
             </div>
 
             {concreteSupportIssue ? (
@@ -528,20 +546,108 @@ export function MaterialPanel({
               </label>
             </div>
 
-            {calculationProfileId !== 'kds-2024-stress-strain' && (
+            {isBlockMechanics && (
               <div className="pm-material-stress-box">
                 <div className="pm-material-stress-title">Equivalent rectangular stress block</div>
-                <div className="pm-material-row-3">
-                  <label className="pm-field"><span>β1</span><input readOnly value={Number((kdsBlockParameters?.beta1 ?? (store.concrete.stressStrain.type === 'aci-whitney-block' ? store.concrete.stressStrain.beta1 : 0)).toFixed(4))} /></label>
-                  <label className="pm-field"><span>η</span><input readOnly value={Number((kdsBlockParameters?.eta ?? 1).toFixed(4))} /></label>
-                  <label className="pm-field"><span>εcu</span><input readOnly value={kdsBlockParameters?.extremeCompressionStrain ?? store.concrete.limits.epsCu} /></label>
-                </div>
-                <p className="pm-field-note">Concrete stress is uniform only over a = β1·c. Stress is zero between a and c and over the tension region.</p>
-                {kdsBlockResolution.error && <p className="pm-field-error">{kdsBlockResolution.error}</p>}
+                {isCustomProfile && store.concrete.stressStrain.type === 'user-block' ? (
+                  <>
+                    <div className="pm-material-row-3">
+                      <label className="pm-field">
+                        <span>β1</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min={0.05}
+                          max={1}
+                          value={store.concrete.stressStrain.beta1}
+                          onChange={(event) =>
+                            updateConcrete((material) =>
+                              material.stressStrain.type === 'user-block'
+                                ? {
+                                    ...material,
+                                    stressStrain: {
+                                      ...material.stressStrain,
+                                      beta1: numberValue(event.target.value, material.stressStrain.beta1)
+                                    }
+                                  }
+                                : material
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="pm-field">
+                        <span>α (σblock/fck)</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min={0.05}
+                          value={store.concrete.stressStrain.alpha}
+                          onChange={(event) =>
+                            updateConcrete((material) =>
+                              material.stressStrain.type === 'user-block'
+                                ? {
+                                    ...material,
+                                    stressStrain: {
+                                      ...material.stressStrain,
+                                      alpha: numberValue(event.target.value, material.stressStrain.alpha)
+                                    },
+                                    factors: {
+                                      ...material.factors,
+                                      alpha: numberValue(event.target.value, material.stressStrain.alpha)
+                                    }
+                                  }
+                                : material
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="pm-field">
+                        <span>εcu</span>
+                        <input
+                          type="number"
+                          step="0.0001"
+                          min={0}
+                          value={store.concrete.stressStrain.epsCu}
+                          onChange={(event) =>
+                            updateConcrete((material) => {
+                              if (material.stressStrain.type !== 'user-block') return material
+                              const epsCu = numberValue(event.target.value, material.stressStrain.epsCu)
+                              return {
+                                ...material,
+                                stressStrain: { ...material.stressStrain, epsCu },
+                                limits: { ...material.limits, epsCu }
+                              }
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="pm-material-row-2">
+                      <label className="pm-field">
+                        <span>σblock (MPa)</span>
+                        <input readOnly value={Number(userBlockCompressionStress(store.concrete).toFixed(3))} />
+                      </label>
+                    </div>
+                    <p className="pm-field-note">
+                      No code table is applied. β1, α and εcu are the values this project declares; the surface,
+                      the φ transition and the axial cap all follow the Design Basis you edit here.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="pm-material-row-3">
+                      <label className="pm-field"><span>β1</span><input readOnly value={Number((kdsBlockParameters?.beta1 ?? (store.concrete.stressStrain.type === 'aci-whitney-block' ? store.concrete.stressStrain.beta1 : 0)).toFixed(4))} /></label>
+                      <label className="pm-field"><span>η</span><input readOnly value={Number((kdsBlockParameters?.eta ?? 1).toFixed(4))} /></label>
+                      <label className="pm-field"><span>εcu</span><input readOnly value={kdsBlockParameters?.extremeCompressionStrain ?? store.concrete.limits.epsCu} /></label>
+                    </div>
+                    <p className="pm-field-note">Concrete stress is uniform only over a = β1·c. Stress is zero between a and c and over the tension region.</p>
+                    {kdsBlockResolution.error && <p className="pm-field-error">{kdsBlockResolution.error}</p>}
+                  </>
+                )}
               </div>
             )}
 
-            {calculationProfileId === 'kds-2024-stress-strain' && (
+            {!isBlockMechanics && (
             <div className="pm-material-stress-box">
               <div className="pm-material-stress-title">Stress-Strain</div>
               {store.concrete.stressStrain.type !== 'user-curve' && (
@@ -571,56 +677,57 @@ export function MaterialPanel({
                     }
                   />
                 </label>
-                {store.concrete.stressStrain.type === 'aci-whitney-block' ? (
-                  <label className="pm-field">
-                    <span>β1</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min={0.65}
-                      max={0.85}
-                      value={store.concrete.stressStrain.beta1}
-                      onChange={(event) =>
-                        updateConcrete((material) =>
-                          material.stressStrain.type === 'aci-whitney-block'
-                            ? {
-                                ...material,
-                                stressStrain: {
-                                  ...material.stressStrain,
-                                  beta1: numberValue(event.target.value, material.stressStrain.beta1)
-                                }
+                <label className="pm-field">
+                  <span>n</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={0.1}
+                    value={
+                      store.concrete.stressStrain.type === 'kds-parabolic' ||
+                      store.concrete.stressStrain.type === 'ec2-parabolic-rectangular'
+                        ? Number(store.concrete.stressStrain.n.toFixed(4))
+                        : ''
+                    }
+                    onChange={(event) =>
+                      updateConcrete((material) =>
+                        material.stressStrain.type === 'kds-parabolic' ||
+                        material.stressStrain.type === 'ec2-parabolic-rectangular'
+                          ? {
+                              ...material,
+                              stressStrain: {
+                                ...material.stressStrain,
+                                n: numberValue(event.target.value, material.stressStrain.n)
                               }
-                            : material
-                        )
-                      }
-                    />
-                  </label>
-                ) : (
+                            }
+                          : material
+                      )
+                    }
+                  />
+                </label>
+                {/* A code profile derives alpha from its own table; only a Custom profile owns it. */}
+                {isCustomProfile && (
                   <label className="pm-field">
-                    <span>n</span>
+                    <span>α (σc,max/fck)</span>
                     <input
                       type="number"
                       step="0.01"
                       min={0.1}
                       value={
-                        store.concrete.stressStrain.type === 'kds-parabolic' ||
-                        store.concrete.stressStrain.type === 'ec2-parabolic-rectangular'
-                          ? Number(store.concrete.stressStrain.n.toFixed(4))
+                        'alpha' in store.concrete.stressStrain
+                          ? Number(store.concrete.stressStrain.alpha.toFixed(4))
                           : ''
                       }
                       onChange={(event) =>
-                        updateConcrete((material) =>
-                          material.stressStrain.type === 'kds-parabolic' ||
-                          material.stressStrain.type === 'ec2-parabolic-rectangular'
-                            ? {
-                                ...material,
-                                stressStrain: {
-                                  ...material.stressStrain,
-                                  n: numberValue(event.target.value, material.stressStrain.n)
-                                }
-                              }
-                            : material
-                        )
+                        updateConcrete((material) => {
+                          if (!('alpha' in material.stressStrain)) return material
+                          const alpha = numberValue(event.target.value, material.stressStrain.alpha)
+                          return {
+                            ...material,
+                            stressStrain: { ...material.stressStrain, alpha },
+                            factors: { ...material.factors, alpha }
+                          }
+                        })
                       }
                     />
                   </label>
@@ -781,24 +888,31 @@ export function MaterialPanel({
                     onChange={(event) => updateSteel(activeSteel.id, (material) => ({ ...material, name: event.target.value }))}
                   />
                 </label>
-                <label className="pm-field">
-                  <span>Standard</span>
-                  <select hidden aria-hidden="true"
-                    value={activeSteel.standard}
-                    onChange={(event) =>
-                      updateSteel(activeSteel.id, (material) =>
-                        steelStandardDefaults(material, event.target.value as SteelMaterial['standard'])
-                      )
-                    }
-                  >
-                    {(['KDS', 'ACI318', 'EC2', 'CUSTOM'] as const).map((standard) => (
-                      <option key={standard} value={standard}>
-                        {standardLabel(standard)}
-                      </option>
-                    ))}
-                  </select>
-                  <input readOnly value={standardLabel(activeSteel.standard)} />
-                </label>
+                {isCustomProfile ? (
+                  <label className="pm-field">
+                    <span>Steel model</span>
+                    <select
+                      value={activeSteel.stressStrain.type}
+                      onChange={(event) =>
+                        updateSteel(activeSteel.id, (material) =>
+                          steelModelDefaults(
+                            material,
+                            event.target.value as SteelMaterial['stressStrain']['type']
+                          )
+                        )
+                      }
+                    >
+                      {CUSTOM_STEEL_MODELS.map((type) => (
+                        <option key={type} value={type}>{modelName(type)}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <label className="pm-field">
+                    <span>Standard</span>
+                    <input readOnly value={standardLabel(activeSteel.standard)} />
+                  </label>
+                )}
               </div>
 
               <div className="pm-material-row-3">

@@ -9,8 +9,10 @@ export type DesignProfileId =
   | 'kds-basic-2021-2022'
   | 'aci-318-19-22'
   | 'en-1992-1-1-2004-default'
+  /** User-owned resistance rules; carries no clause traceability by construction. */
+  | 'custom-user-defined'
 
-export type ProfileVerificationStatus = 'draft' | 'reviewed' | 'verified'
+export type ProfileVerificationStatus = 'draft' | 'reviewed' | 'verified' | 'user-defined'
 export type TransverseReinforcementClass = 'other' | 'qualifying-spiral'
 
 export type DesignProfileIdentity = {
@@ -163,6 +165,45 @@ export const createAci318DesignBasis = (): GlobalStrengthReductionBasis => ({
   overrideReason: ''
 })
 
+/**
+ * Starting point for a user-owned resistance profile.
+ *
+ * The numbers below are a neutral, editable starting point, not a normative set: nothing here is
+ * traced to a clause, and `verificationStatus` says so. A Custom basis is therefore never
+ * "modified" relative to a code default, so it needs no override narrative — see
+ * {@link designBasisRequiresOverrideReason}.
+ */
+export const createCustomDesignBasis = (): GlobalStrengthReductionBasis => ({
+  basisVersion: DESIGN_BASIS_VERSION,
+  profileId: 'custom-user-defined',
+  identity: {
+    ...identity(
+      'User-defined',
+      'User-defined resistance profile',
+      'Project-specific',
+      'custom-user-defined-global-strength-reduction'
+    ),
+    jurisdiction: 'Declared by the project, not by this software'
+  },
+  verificationStatus: 'user-defined',
+  format: 'globalResultantFactor',
+  transverseReinforcement: 'other',
+  factors: {
+    phiCompressionOther: 0.65,
+    phiCompressionSpiral: 0.7,
+    phiTension: 0.85,
+    axialCapOther: 0.8,
+    axialCapSpiral: 0.85
+  },
+  transition: {
+    type: 'yield-plus-strain',
+    extraStrain: 0.003
+  },
+  axialCapEnabled: true,
+  modified: false,
+  overrideReason: ''
+})
+
 export const createEn1992DesignBasis = (): DesignMaterialBasis => ({
   basisVersion: DESIGN_BASIS_VERSION,
   profileId: 'en-1992-1-1-2004-default',
@@ -190,6 +231,7 @@ export const createEn1992DesignBasis = (): DesignMaterialBasis => ({
 export const createDefaultDesignBasisForStandard = (standard: MaterialStandard): DesignBasis => {
   if (standard === 'ACI318') return createAci318DesignBasis()
   if (standard === 'EC2') return createEn1992DesignBasis()
+  if (standard === 'CUSTOM') return createCustomDesignBasis()
   return createKdsBasicDesignBasis()
 }
 
@@ -333,6 +375,8 @@ const sameNumbers = <T extends Record<string, number>>(left: T, right: T) =>
  */
 export const designBasisRequiresOverrideReason = (basis: DesignBasis): boolean => {
   if (!basis.modified) return false
+  /** A user-defined profile has no code default to deviate from; every value is already the user's. */
+  if (basis.profileId === 'custom-user-defined') return false
   const defaults =
     basis.profileId === 'aci-318-19-22'
       ? createAci318DesignBasis()

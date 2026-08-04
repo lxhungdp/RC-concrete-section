@@ -1,11 +1,15 @@
 'use client'
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Eye, EyeOff, FileSpreadsheet, Loader2, Maximize2, RotateCw } from 'lucide-react'
+import { FileSpreadsheet, Loader2, RotateCw } from 'lucide-react'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
 import type { DesignBasis } from '@pm/design'
-import type { LoadCombination } from '@pm/project'
+import {
+  isEquivalentBlockProfileId,
+  type EquivalentBlockAnalysisOptions,
+  type LoadCombination
+} from '@pm/project'
 import {
   contourStrainAngleSamples,
   sliceFixedPContour,
@@ -17,13 +21,15 @@ import {
   type PreviewMomentPlanePath,
   type SectionFieldMap
 } from '@pm/analysis'
-import { ExcelExportError, sectionWorkbookFileName } from '@pm/report'
+import { ExcelExportError, equivalentBlockWorkbookFileName, sectionWorkbookFileName } from '@pm/report'
 import {
   buildSectionFieldMapAsync,
+  exportEquivalentBlockWorkbookAsync,
   exportSectionWorkbookAsync,
   isAnalysisAbort
 } from '../../lib/workers/pm-analysis-client'
 import { PlotlyChart, type PlotlyClickPayload } from './PlotlyChart'
+import type { DemandCheckView, SectionResultsView } from './results-view'
 import { SectionFieldChart } from './SectionFieldChart'
 import {
   lineAngleDifferenceDeg,
@@ -34,19 +40,14 @@ import {
 } from './section-field-angles'
 
 type ResultsViewMode = 'overview' | 'loadcase'
-type OverviewChartId = 'vertical' | 'surface3d' | 'fixedP'
-type LoadcaseChartId = 'heatmap' | 'fixedP' | 'vertical'
-type FieldMode = 'strain' | 'stress'
 type ResultsTheme = 'light' | 'dark'
-type SurfaceResistanceMode = 'nominal' | 'design'
 
-const OVERVIEW_CHARTS: OverviewChartId[] = ['vertical', 'surface3d', 'fixedP']
-const LOADCASE_CHARTS: LoadcaseChartId[] = ['heatmap', 'fixedP', 'vertical']
-const MAX_VISIBLE_CHARTS = 3
 
 type Props = {
   theme: ResultsTheme
   ready: boolean
+  /** A surface rebuild or a stage transition is in flight; the charts below are the previous ones. */
+  busy: boolean
   viewMode: ResultsViewMode
   surface: PreviewSurface | null
   section: SectionGeometry
@@ -58,7 +59,10 @@ type Props = {
   selectedLoadcaseId: number | null
   inverseResult: InversePreviewResult | null
   fixedP: number
-  onFixedPChange: (value: number) => void
+  view: SectionResultsView
+  demandView: DemandCheckView
+  /** Only the vertical-slice angle clamp writes back; every other control lives in the sidebar. */
+  onViewChange: (patch: Partial<SectionResultsView>) => void
   onSelectLoadcase: (id: number) => void
 }
 
@@ -233,112 +237,23 @@ const pickBetaCurve = (rows: ReturnType<typeof groupByBeta>, angleDeg: number) =
   return best.curve
 }
 
-const SyncedControl = ({
-  label,
-  value,
-  min,
-  max,
-  step,
-  unit,
-  disabled,
-  onChange
-}: {
-  label: string
-  value: number
-  min: number
-  max: number
-  step: number
-  unit: string
-  disabled?: boolean
-  onChange: (value: number) => void
-}) => (
-  <label className={`pm-synced-control${disabled ? ' is-locked' : ''}`}>
-    <span>{label}</span>
-    <input
-      type="range"
-      min={min}
-      max={max}
-      step={step}
-      value={Math.min(max, Math.max(min, value))}
-      disabled={disabled}
-      onChange={(event) => onChange(Number(event.target.value))}
-    />
-    <input
-      type="number"
-      min={min}
-      max={max}
-      step={step}
-      value={Number.isFinite(value) ? value : 0}
-      disabled={disabled}
-      onChange={(event) => onChange(Number(event.target.value) || 0)}
-    />
-    <em>{unit}</em>
-  </label>
-)
-
-const ResistanceVisibilityControls = ({
-  showDesign,
-  showNominal,
-  onShowDesign,
-  onShowNominal
-}: {
-  showDesign: boolean
-  showNominal: boolean
-  onShowDesign: (value: boolean) => void
-  onShowNominal: (value: boolean) => void
-}) => (
-  <>
-    <label className={`pm-field-check${showDesign ? ' is-on' : ''}`}>
-      <input
-        type="checkbox"
-        checked={showDesign}
-        onChange={(event) => {
-          const next = event.target.checked
-          if (next || showNominal) onShowDesign(next)
-        }}
-      />
-      Design
-    </label>
-    <label className={`pm-field-check${showNominal ? ' is-on' : ''}`}>
-      <input
-        type="checkbox"
-        checked={showNominal}
-        onChange={(event) => {
-          const next = event.target.checked
-          if (next || showDesign) onShowNominal(next)
-        }}
-      />
-      Nominal
-    </label>
-  </>
-)
-
-const SurfaceResistanceControl = ({
-  value,
-  onChange
-}: {
-  value: SurfaceResistanceMode
-  onChange: (value: SurfaceResistanceMode) => void
-}) => (
-  <fieldset className="pm-result-radio-group" aria-label="3D resistance surface">
-    {(['nominal', 'design'] as const).map((mode) => (
-      <label key={mode} className={value === mode ? 'is-active' : ''}>
-        <input
-          type="radio"
-          name="surface-resistance"
-          value={mode}
-          checked={value === mode}
-          onChange={() => onChange(mode)}
-        />
-        {mode === 'nominal' ? 'Nominal' : 'Design'}
-      </label>
-    ))}
-  </fieldset>
+/**
+ * Says plainly that the plots below are the previous surface.
+ *
+ * Keeping the old charts on screen during a rebuild is better than blanking them, but only if the
+ * user is told; otherwise a stale plot is indistinguishable from a fresh one.
+ */
+const StaleBanner = () => (
+  <div className="pm-results-stale" role="status">
+    <Loader2 size={13} className="pm-spin" />
+    <span>Recalculating — the charts below are the previous result.</span>
+  </div>
 )
 
 export function ResultsWorkspace({
   theme,
   ready,
+  busy,
   viewMode,
   surface,
   section,
@@ -350,35 +265,13 @@ export function ResultsWorkspace({
   selectedLoadcaseId,
   inverseResult,
   fixedP,
-  onFixedPChange,
+  view,
+  demandView,
+  onViewChange,
   onSelectLoadcase
 }: Props) {
-  const [sliceAngle, setSliceAngle] = useState(0)
-  const [includeOppositeMoment, setIncludeOppositeMoment] = useState(false)
-  const [showFixedPAngleRays, setShowFixedPAngleRays] = useState(false)
-  const [showDesignResistance, setShowDesignResistance] = useState(true)
-  const [showNominalReference, setShowNominalReference] = useState(true)
-  const [showSceneAxes, setShowSceneAxes] = useState(false)
-  const [surfaceResistanceMode, setSurfaceResistanceMode] =
-    useState<SurfaceResistanceMode>('design')
-  const [fieldMode, setFieldMode] = useState<FieldMode>('strain')
-  const [showNeutralAxis, setShowNeutralAxis] = useState(true)
-  const [showMoments, setShowMoments] = useState(true)
-  const [includeRebar, setIncludeRebar] = useState(false)
-  const [overviewPrimary, setOverviewPrimary] = useState<OverviewChartId>('vertical')
-  const [overviewVisible, setOverviewVisible] = useState<Record<OverviewChartId, boolean>>({
-    vertical: true,
-    surface3d: true,
-    fixedP: true
-  })
   const [exportState, setExportState] = useState<'idle' | 'working' | 'error'>('idle')
   const [exportMessage, setExportMessage] = useState('')
-  const [loadcasePrimary, setLoadcasePrimary] = useState<LoadcaseChartId>('heatmap')
-  const [loadcaseVisible, setLoadcaseVisible] = useState<Record<LoadcaseChartId, boolean>>({
-    heatmap: true,
-    fixedP: true,
-    vertical: true
-  })
   const [fieldMap, setFieldMap] = useState<SectionFieldMap | null>(null)
   const [fieldMapWorking, setFieldMapWorking] = useState(false)
   const plotPalette = plotPalettes[theme]
@@ -440,7 +333,7 @@ export function ResultsWorkspace({
   }, [designBasis, inverseResult, isLoadcaseMode, materialStore, rebars, section, surface])
 
   const activeFixedP = isLoadcaseMode ? selectedLoadcase.P : fixedP
-  const activeAngle = isLoadcaseMode ? loadcaseAngleDeg(selectedLoadcase) : sliceAngle
+  const activeAngle = isLoadcaseMode ? loadcaseAngleDeg(selectedLoadcase) : view.sliceAngle
   const demandProjection = useMemo(() => {
     if (!isLoadcaseMode || !selectedLoadcase) return null
     const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
@@ -453,9 +346,6 @@ export function ResultsWorkspace({
     }
   }, [activeAngle, isLoadcaseMode, selectedLoadcase])
 
-  const pRange = surface?.bounds.P ?? [0, 0]
-  const minPKn = Math.floor(kn(pRange[0]))
-  const maxPKn = Math.ceil(kn(pRange[1]))
   const activeFixedPKn = kn(activeFixedP)
 
   const contour = useMemo(
@@ -480,11 +370,11 @@ export function ResultsWorkspace({
   const surfacePoints3d = useMemo(
     () =>
       surface
-        ? surfaceResistanceMode === 'design'
+        ? view.surfaceResistanceMode === 'design'
           ? surface.points
           : surface.nominalPoints
         : [],
-    [surface, surfaceResistanceMode]
+    [surface, view.surfaceResistanceMode]
   )
   const surfaceGrid = useMemo(() => groupByBeta(surfacePoints3d), [surfacePoints3d])
   const surfaceBounds3d = useMemo(
@@ -495,18 +385,18 @@ export function ResultsWorkspace({
     () => sliceFixedPContour(
       surfacePoints3d,
       activeFixedP,
-      surfaceResistanceMode === 'design' ? surface?.triangles : surface?.nominalTriangles
+      view.surfaceResistanceMode === 'design' ? surface?.triangles : surface?.nominalTriangles
     ),
-    [activeFixedP, surface, surfacePoints3d, surfaceResistanceMode]
+    [activeFixedP, surface, surfacePoints3d, view.surfaceResistanceMode]
   )
 
+  /** Drawing the opposite half already covers 180°-345°, so the slider range halves with it. */
   useEffect(() => {
-    if (!includeOppositeMoment) return
-    const wrapped = normalizeAngleDeg(sliceAngle)
-    if (wrapped > 180) setSliceAngle(wrapped - 180)
-  }, [includeOppositeMoment, sliceAngle])
+    if (!view.includeOppositeMoment) return
+    const wrapped = normalizeAngleDeg(view.sliceAngle)
+    if (wrapped > 180) onViewChange({ sliceAngle: wrapped - 180 })
+  }, [onViewChange, view.includeOppositeMoment, view.sliceAngle])
 
-  const angleSliderMax = includeOppositeMoment ? 180 : 345
 
   const surfaceData = useMemo(() => {
     if (!surface || !surfaceBounds3d) return []
@@ -523,7 +413,7 @@ export function ResultsWorkspace({
     const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
     const c = Math.cos(theta)
     const s = Math.sin(theta)
-    const m0 = includeOppositeMoment ? -radius : 0
+    const m0 = view.includeOppositeMoment ? -radius : 0
     const m1 = radius
     const pPlane = activeFixedPKn
 
@@ -594,9 +484,9 @@ export function ResultsWorkspace({
         }
       : null
 
-    const activeTriangles = surfaceResistanceMode === 'design' ? surface.triangles : surface.nominalTriangles
+    const activeTriangles = view.surfaceResistanceMode === 'design' ? surface.triangles : surface.nominalTriangles
     const momentPlanePaths = sliceMomentPlane(surfacePoints3d, theta, activeTriangles)
-    const visibleMomentPaths = includeOppositeMoment
+    const visibleMomentPaths = view.includeOppositeMoment
       ? momentPlanePaths.map((path) => path.points)
       : clipMomentPlanePaths(momentPlanePaths, 'positive')
     const sliceTraces = visibleMomentPaths.map((path, index) => ({
@@ -613,7 +503,7 @@ export function ResultsWorkspace({
     const capacityTrace = activeTriangles
       ? {
         type: 'mesh3d',
-        name: surfaceResistanceMode === 'design' ? 'Design surface' : 'Nominal surface',
+        name: view.surfaceResistanceMode === 'design' ? 'Design surface' : 'Nominal surface',
         x: surfacePoints3d.map((point) => knm(point.Mx)),
         y: surfacePoints3d.map((point) => knm(point.My)),
         z: surfacePoints3d.map((point) => kn(point.P)),
@@ -632,12 +522,12 @@ export function ResultsWorkspace({
           tickfont: { size: 10 }
         },
         hovertemplate: `P=%{z:.1f} kN<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>${
-          surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'
+          view.surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'
         } surface</extra>`
       }
       : {
         type: 'surface',
-        name: surfaceResistanceMode === 'design' ? 'Design surface' : 'Nominal surface',
+        name: view.surfaceResistanceMode === 'design' ? 'Design surface' : 'Nominal surface',
         x,
         y,
         z,
@@ -645,7 +535,7 @@ export function ResultsWorkspace({
         colorscale: fieldColorscale,
         opacity: 0.72,
         colorbar: { title: 'P (kN)', thickness: 15, len: 0.72, x: 1.02, xpad: 4, tickfont: { size: 10 } },
-        hovertemplate: `P=%{z:.1f} kN<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>${surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'} surface</extra>`
+        hovertemplate: `P=%{z:.1f} kN<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>${view.surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'} surface</extra>`
       }
 
     return [
@@ -673,7 +563,7 @@ export function ResultsWorkspace({
   }, [
     activeAngle,
     activeFixedPKn,
-    includeOppositeMoment,
+    view.includeOppositeMoment,
     loadcases,
     selectedLoadcaseId,
     surface,
@@ -681,12 +571,12 @@ export function ResultsWorkspace({
     surfaceContour3d,
     surfaceGrid,
     surfacePoints3d,
-    surfaceResistanceMode
+    view.surfaceResistanceMode
   ])
 
   const surfaceLayout = useMemo(() => {
     const axis = (title: string) =>
-      showSceneAxes
+      view.showSceneAxes
         ? {
             title,
             showbackground: false,
@@ -709,7 +599,7 @@ export function ResultsWorkspace({
 
     return {
       ...plotTheme,
-      margin: { l: 0, r: showSceneAxes ? 28 : 8, t: 2, b: 0 },
+      margin: { l: 0, r: view.showSceneAxes ? 28 : 8, t: 2, b: 0 },
       showlegend: false,
       scene: {
         xaxis: axis('Mx (kN.m)'),
@@ -721,10 +611,10 @@ export function ResultsWorkspace({
       hovermode: 'closest',
       clickmode: 'event+select'
     }
-  }, [plotPalette, plotTheme, showSceneAxes])
+  }, [plotPalette, plotTheme, view.showSceneAxes])
 
   const contourData = useMemo(() => {
-    const nominalOnly = showNominalReference && !showDesignResistance
+    const nominalOnly = view.showNominalReference && !view.showDesignResistance
     const activeSamples = nominalOnly ? nominalStrainAngleSamples : strainAngleSamples
     const closedX = [...contour.map((point) => knm(point.Mx))]
     const closedY = [...contour.map((point) => knm(point.My))]
@@ -749,7 +639,7 @@ export function ResultsWorkspace({
       : []
 
     return [
-      ...(showFixedPAngleRays
+      ...(view.showFixedPAngleRays
         ? [
             {
               type: 'scatter',
@@ -775,7 +665,7 @@ export function ResultsWorkspace({
             }
           ]
         : []),
-      ...(showNominalReference
+      ...(view.showNominalReference
         ? [{
             type: 'scatter',
             name: 'Nominal reference',
@@ -790,7 +680,7 @@ export function ResultsWorkspace({
               'Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>Nominal reference</extra>'
           }]
         : []),
-      ...(showDesignResistance
+      ...(view.showDesignResistance
         ? [{
             type: 'scatter',
             name: `Design · P = ${fmt(activeFixedPKn, 1)} kN`,
@@ -803,7 +693,7 @@ export function ResultsWorkspace({
               'Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>Design resistance</extra>'
           }]
         : []),
-      ...(showDesignResistance || showNominalReference ? [{
+      ...(view.showDesignResistance || view.showNominalReference ? [{
         type: 'scatter',
         name: 'Strain-angle samples',
         mode: 'markers+text',
@@ -880,21 +770,21 @@ export function ResultsWorkspace({
     nominalContour,
     nominalStrainAngleSamples,
     plotPalette,
-    showDesignResistance,
-    showFixedPAngleRays,
-    showNominalReference,
+    view.showDesignResistance,
+    view.showFixedPAngleRays,
+    view.showNominalReference,
     strainAngleSamples
   ])
 
-  const displayedStrainAngleSamples = showDesignResistance
+  const displayedStrainAngleSamples = view.showDesignResistance
     ? strainAngleSamples
     : nominalStrainAngleSamples
 
   const contourAxisRange = useMemo(() => {
     const points = [
-      ...(showDesignResistance ? contour : []),
+      ...(view.showDesignResistance ? contour : []),
       ...displayedStrainAngleSamples,
-      ...(showNominalReference ? nominalContour : [])
+      ...(view.showNominalReference ? nominalContour : [])
     ]
     if (points.length === 0 && !demandProjection) return null
     const xs = points.map((point) => knm(point.Mx))
@@ -920,8 +810,8 @@ export function ResultsWorkspace({
     demandProjection,
     displayedStrainAngleSamples,
     nominalContour,
-    showDesignResistance,
-    showNominalReference
+    view.showDesignResistance,
+    view.showNominalReference
   ])
 
   const contourLayout = useMemo(
@@ -1001,11 +891,11 @@ export function ResultsWorkspace({
     })
 
     const primaryPaths = clipMomentPlanePaths(momentPlane, 'positive')
-    const oppositePaths = includeOppositeMoment ? clipMomentPlanePaths(momentPlane, 'negative') : []
+    const oppositePaths = view.includeOppositeMoment ? clipMomentPlanePaths(momentPlane, 'negative') : []
     const primaryPath = primaryPaths.flat().map(project)
     const oppositePath = oppositePaths.flat().map(project)
     const displayPaths = (
-      includeOppositeMoment ? momentPlane.map((path) => path.points) : primaryPaths
+      view.includeOppositeMoment ? momentPlane.map((path) => path.points) : primaryPaths
     ).map((path) => path.map(project))
 
     const pickKeys = (
@@ -1042,23 +932,23 @@ export function ResultsWorkspace({
 
     const keys = [
       ...pickKeys(primaryPath, 'primary'),
-      ...(includeOppositeMoment
+      ...(view.includeOppositeMoment
         ? pickKeys(oppositePath, 'opposite').filter((item) => Math.abs(item.m) > 1e-6)
         : [])
     ]
     const stations =
-      includeOppositeMoment && oppositePath.length > 0
+      view.includeOppositeMoment && oppositePath.length > 0
         ? [...pickStations(primaryPath), ...pickStations(oppositePath).filter((item) => Math.abs(item.m) > 1e-6)]
         : pickStations(primaryPath)
 
     return { primaryPath, oppositePath, displayPaths, closed: momentPlane.every((path) => path.closed), stations, keys }
-  }, [activeAngle, includeOppositeMoment, surface, surfaceGrid])
+  }, [activeAngle, view.includeOppositeMoment, surface, surfaceGrid])
 
   const nominalVerticalPaths = useMemo(() => {
     if (!surface) return [] as Array<Array<{ m: number; p: number; station: number }>>
     const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
     const momentPlane = sliceMomentPlane(surface.nominalPoints, theta, surface.nominalTriangles)
-    const visible = includeOppositeMoment
+    const visible = view.includeOppositeMoment
       ? momentPlane.map((path) => path.points)
       : clipMomentPlanePaths(momentPlane, 'positive')
     return visible.map((path) =>
@@ -1068,7 +958,7 @@ export function ResultsWorkspace({
         station: point.station ?? -1
       }))
     )
-  }, [activeAngle, includeOppositeMoment, surface])
+  }, [activeAngle, view.includeOppositeMoment, surface])
 
   const nominalVerticalAnnotations = useMemo(() => {
     const curve = nominalVerticalPaths.flat()
@@ -1103,7 +993,7 @@ export function ResultsWorkspace({
   }, [nominalVerticalPaths, surface])
 
   const verticalData = useMemo(() => {
-    const nominalOnly = showNominalReference && !showDesignResistance
+    const nominalOnly = view.showNominalReference && !view.showDesignResistance
     const selectedStations = nominalOnly ? nominalVerticalAnnotations.stations : verticalSlice.stations
     const selectedKeys = nominalOnly ? nominalVerticalAnnotations.keys : verticalSlice.keys
     const primaryKeys = selectedKeys.filter((point) => point.side === 'primary')
@@ -1142,7 +1032,7 @@ export function ResultsWorkspace({
             }
           ]
         : []),
-      ...(showNominalReference
+      ...(view.showNominalReference
         ? nominalVerticalPaths.map((path, index) => ({
             type: 'scatter',
             name: index === 0 ? 'Nominal reference' : `Nominal loop ${index + 1}`,
@@ -1156,11 +1046,11 @@ export function ResultsWorkspace({
             hovertemplate: 'M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra>Nominal reference</extra>'
           }))
         : []),
-      ...(showDesignResistance ? verticalSlice.displayPaths.map((path, index) => ({
+      ...(view.showDesignResistance ? verticalSlice.displayPaths.map((path, index) => ({
         type: 'scatter',
         name:
           index === 0
-            ? includeOppositeMoment
+            ? view.includeOppositeMoment
               ? `Plane ${fmt(activeAngle, 0)} / ${fmt(normalizeAngleDeg(activeAngle + 180), 0)} deg`
               : `Angle ${fmt(activeAngle, 0)} deg`
             : `Section loop ${index + 1}`,
@@ -1172,7 +1062,7 @@ export function ResultsWorkspace({
         marker: { size: 0 },
         hovertemplate: 'M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra>Design resistance</extra>'
       })) : []),
-      ...(showDesignResistance || showNominalReference ? [{
+      ...(view.showDesignResistance || view.showNominalReference ? [{
         type: 'scatter',
         name: 'Stations',
         mode: 'markers',
@@ -1187,7 +1077,7 @@ export function ResultsWorkspace({
         customdata: selectedStations.map((point) => point.station),
         hovertemplate: 'P%{customdata}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra>Station</extra>'
       }] : []),
-      ...(showDesignResistance || showNominalReference ? [{
+      ...(view.showDesignResistance || view.showNominalReference ? [{
         type: 'scatter',
         name: 'Key stations',
         mode: 'markers+text',
@@ -1208,7 +1098,7 @@ export function ResultsWorkspace({
         },
         hovertemplate: '%{text}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra></extra>'
       }] : []),
-      ...((showDesignResistance || showNominalReference) && oppositeKeys.length > 0
+      ...((view.showDesignResistance || view.showNominalReference) && oppositeKeys.length > 0
         ? [
             {
               type: 'scatter',
@@ -1260,8 +1150,8 @@ export function ResultsWorkspace({
     nominalVerticalAnnotations,
     nominalVerticalPaths,
     plotPalette,
-    showDesignResistance,
-    showNominalReference,
+    view.showDesignResistance,
+    view.showNominalReference,
     verticalSlice
   ])
 
@@ -1355,12 +1245,65 @@ export function ResultsWorkspace({
     [inverseResult]
   )
 
+  /**
+   * The block route has its own ledger workbook. It is a separate builder rather than a branch
+   * inside the fibre one because the two mechanics share inputs, not sheets: there is no
+   * integration mesh to audit here, and the concrete resultant comes from a clipped polygon.
+   */
+  const exportBlockWorkbook = async (analysisOptions: EquivalentBlockAnalysisOptions) => {
+    if (!selectedLoadcase || !surface) return
+    const profileId = surface.calculationProfileId
+    if (!profileId || !isEquivalentBlockProfileId(profileId)) {
+      setExportState('error')
+      setExportMessage('The current result was not produced by an equivalent-block profile, so the block workbook cannot describe it.')
+      return
+    }
+    setExportState('working')
+    setExportMessage('')
+    try {
+      // The block ledger audits a block-normal direction. Prefer the solved state's own direction
+      // so the exported stations bracket the governing one.
+      const thetaDeg = inverseResult?.equivalentBlock
+        ? normalizeAngleDeg((inverseResult.equivalentBlock.neutralAxisAngle * 180) / Math.PI)
+        : activeAngle
+      const payload = {
+        projectName,
+        sectionName: section.name,
+        calculationProfileId: profileId,
+        section,
+        rebars,
+        materialStore,
+        designBasis,
+        analysisOptions,
+        thetaDeg,
+        fixedP: activeFixedP,
+        loadcase: selectedLoadcase
+      }
+      const blob = await exportEquivalentBlockWorkbookAsync(payload)
+      const name = equivalentBlockWorkbookFileName(payload)
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = name
+      anchor.click()
+      URL.revokeObjectURL(url)
+      setExportState('idle')
+      setExportMessage(`Saved ${name}`)
+    } catch (error) {
+      setExportState('error')
+      setExportMessage(
+        error instanceof ExcelExportError
+          ? error.message
+          : `Export failed: ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
+  }
+
   const handleExcelExport = async () => {
     if (!selectedLoadcase || !surface) return
     const analysisOptions = surface.analysisOptions
     if (analysisOptions.methodId === 'equivalent-block-surface-v1') {
-      setExportState('error')
-      setExportMessage('Equivalent-block Excel audit export will use a dedicated block ledger; the fiber workbook is intentionally not reused.')
+      await exportBlockWorkbook(analysisOptions)
       return
     }
     setExportState('working')
@@ -1414,42 +1357,6 @@ export function ResultsWorkspace({
     if (typeof id === 'number') onSelectLoadcase(id)
   }
 
-  const toggleOverviewVisible = (id: OverviewChartId) => {
-    setOverviewVisible((current) => {
-      const next = { ...current, [id]: !current[id] }
-      if (Object.values(next).every((visible) => !visible)) return current
-      if (!current[id] && Object.values(current).filter(Boolean).length >= MAX_VISIBLE_CHARTS) {
-        const replacement = [...OVERVIEW_CHARTS]
-          .reverse()
-          .find((chartId) => chartId !== overviewPrimary && current[chartId])
-        if (replacement) next[replacement] = false
-      }
-      if (!next[overviewPrimary]) {
-        const fallback = OVERVIEW_CHARTS.find((key) => next[key])
-        if (fallback) setOverviewPrimary(fallback)
-      }
-      return next
-    })
-  }
-
-  const toggleLoadcaseVisible = (id: LoadcaseChartId) => {
-    setLoadcaseVisible((current) => {
-      const next = { ...current, [id]: !current[id] }
-      if (Object.values(next).every((visible) => !visible)) return current
-      if (!current[id] && Object.values(current).filter(Boolean).length >= MAX_VISIBLE_CHARTS) {
-        const replacement = [...LOADCASE_CHARTS]
-          .reverse()
-          .find((chartId) => chartId !== loadcasePrimary && current[chartId])
-        if (replacement) next[replacement] = false
-      }
-      if (!next[loadcasePrimary]) {
-        const fallback = LOADCASE_CHARTS.find((key) => next[key])
-        if (fallback) setLoadcasePrimary(fallback)
-      }
-      return next
-    })
-  }
-
   if (!ready) {
     return (
       <section className="pm-results-empty">
@@ -1460,15 +1367,16 @@ export function ResultsWorkspace({
     )
   }
 
+  /**
+   * Chart frame. Parameters and visibility live in the sidebar now, so the header carries only the
+   * chart's identity and whatever status the plot itself computes.
+   */
   const renderChartShell = ({
     id,
     title,
     meta,
     primary,
     visible,
-    onMakePrimary,
-    onToggleVisible,
-    controls,
     footer,
     children
   }: {
@@ -1477,9 +1385,6 @@ export function ResultsWorkspace({
     meta?: string
     primary: boolean
     visible: boolean
-    onMakePrimary: () => void
-    onToggleVisible: () => void
-    controls?: ReactNode
     footer?: ReactNode
     children: ReactNode
   }) => {
@@ -1491,20 +1396,6 @@ export function ResultsWorkspace({
             <span>{title}</span>
             {meta ? <strong>{meta}</strong> : null}
           </div>
-          <div className="pm-results-plot-actions">
-            {controls}
-            <button
-              type="button"
-              className={`pm-chart-tool${primary ? ' is-active' : ''}`}
-              title="Make this the large chart"
-              onClick={onMakePrimary}
-            >
-              <Maximize2 size={14} />
-            </button>
-            <button type="button" className="pm-chart-tool" title="Hide chart" onClick={onToggleVisible}>
-              <EyeOff size={14} />
-            </button>
-          </div>
         </div>
         <div className="pm-results-plot-body">
           <div className="pm-results-plot-canvas">{children}</div>
@@ -1514,31 +1405,29 @@ export function ResultsWorkspace({
     )
   }
 
-  const hiddenOverview = OVERVIEW_CHARTS.filter((id) => !overviewVisible[id])
-  const hiddenLoadcase = LOADCASE_CHARTS.filter((id) => !loadcaseVisible[id])
-
-  const overviewRestoreLabel = (id: OverviewChartId) =>
-    id === 'vertical' ? 'Vertical' : id === 'surface3d' ? '3D' : 'Fixed-P'
-  const loadcaseRestoreLabel = (id: LoadcaseChartId) =>
-    id === 'heatmap' ? 'Section field' : id === 'fixedP' ? 'Fixed-P' : 'Vertical'
-
-  const renderRestoreBar = (buttons: Array<{ id: string; label: string; onClick: () => void }>) => {
-    if (buttons.length === 0) return null
+  /**
+   * Demand Check with nothing selected must not fall through to the capacity charts: those belong
+   * to Section Results, and showing them here would make the sidebar's chart list describe plots
+   * that are not on screen.
+   */
+  if (viewMode === 'loadcase' && !selectedLoadcase) {
     return (
-      <div className="pm-chart-restore-bar" role="toolbar" aria-label="Show hidden charts">
-        {buttons.map((button) => (
-          <button key={button.id} type="button" className="pm-chart-restore" onClick={button.onClick}>
-            <Eye size={13} />
-            Show {button.label}
-          </button>
-        ))}
-      </div>
+      <section className="pm-results-empty">
+        <RotateCw size={28} />
+        <h2>Select a load combination</h2>
+        <p>
+          {loadcases.length === 0
+            ? 'Add a factored ULS combination in the sidebar to check it against the design surface.'
+            : 'Pick a combination from the list in the sidebar to solve and inspect its governing check.'}
+        </p>
+      </section>
     )
   }
 
   if (isLoadcaseMode && selectedLoadcase) {
     return (
       <section className="pm-results-stage pm-results-stage--charts-only">
+        {busy ? <StaleBanner /> : null}
         <div className="pm-results-toolbar">
           <div className="pm-results-export" role="toolbar" aria-label="Export results">
             <button
@@ -1559,71 +1448,18 @@ export function ResultsWorkspace({
           </div>
         </div>
 
-        {renderRestoreBar(
-          hiddenLoadcase.map((id) => ({
-            id,
-            label: loadcaseRestoreLabel(id),
-            onClick: () => toggleLoadcaseVisible(id)
-          }))
-        )}
 
         <div
-          className={`pm-results-grid pm-results-grid--dynamic primary-${loadcasePrimary} count-${
-            Object.values(loadcaseVisible).filter(Boolean).length
+          className={`pm-results-grid pm-results-grid--dynamic primary-${demandView.primaryChart} count-${
+            Object.values(demandView.visibleCharts).filter(Boolean).length
           }`}
         >
           {renderChartShell({
             id: 'heatmap',
             title: 'Section field',
             meta: inverseResult ? solverStatus(inverseResult).label : 'Solving…',
-            primary: loadcasePrimary === 'heatmap',
-            visible: loadcaseVisible.heatmap,
-            onMakePrimary: () => setLoadcasePrimary('heatmap'),
-            onToggleVisible: () => toggleLoadcaseVisible('heatmap'),
-            controls: (
-              <div className="pm-section-field-toolbar" role="group" aria-label="Section field options">
-                <div className="pm-field-mode-toggle" role="group" aria-label="Field mode">
-                  <button
-                    type="button"
-                    className={fieldMode === 'strain' ? 'is-active' : ''}
-                    onClick={() => setFieldMode('strain')}
-                  >
-                    Strain
-                  </button>
-                  <button
-                    type="button"
-                    className={fieldMode === 'stress' ? 'is-active' : ''}
-                    onClick={() => setFieldMode('stress')}
-                  >
-                    Stress
-                  </button>
-                </div>
-                <label className={`pm-field-check${showNeutralAxis ? ' is-on' : ''}`}>
-                  <input
-                    type="checkbox"
-                    checked={showNeutralAxis}
-                    onChange={(event) => setShowNeutralAxis(event.target.checked)}
-                  />
-                  N.A.
-                </label>
-                <label className={`pm-field-check${showMoments ? ' is-on' : ''}`}>
-                  <input
-                    type="checkbox"
-                    checked={showMoments}
-                    onChange={(event) => setShowMoments(event.target.checked)}
-                  />
-                  Resultant
-                </label>
-                <label className={`pm-field-check${includeRebar ? ' is-on' : ''}`}>
-                  <input
-                    type="checkbox"
-                    checked={includeRebar}
-                    onChange={(event) => setIncludeRebar(event.target.checked)}
-                  />
-                  Rebar
-                </label>
-              </div>
-            ),
+            primary: demandView.primaryChart === 'heatmap',
+            visible: demandView.visibleCharts.heatmap,
             footer: inverseResult ? (
               <div className="pm-section-field-metrics">
                 <article className="pm-field-metric-card">
@@ -1797,13 +1633,13 @@ export function ResultsWorkspace({
               <SectionFieldChart
                 fieldMap={fieldMap}
                 section={section}
-                fieldMode={fieldMode}
+                fieldMode={demandView.fieldMode}
                 state={inverseResult.state}
                 Mx={inverseResult.demand.Mx}
                 My={inverseResult.demand.My}
-                showNeutralAxis={showNeutralAxis}
-                showMoments={showMoments}
-                includeRebar={includeRebar}
+                showNeutralAxis={demandView.showNeutralAxis}
+                showMoments={demandView.showMoments}
+                includeRebar={demandView.includeRebar}
               />
             ) : (
               <div className="pm-results-plot-placeholder">
@@ -1816,38 +1652,8 @@ export function ResultsWorkspace({
             id: 'fixedP',
             title: 'Fixed-P Mx-My',
             meta: `${fmt(activeFixedPKn, 1)} kN`,
-            primary: loadcasePrimary === 'fixedP',
-            visible: loadcaseVisible.fixedP,
-            onMakePrimary: () => setLoadcasePrimary('fixedP'),
-            onToggleVisible: () => toggleLoadcaseVisible('fixedP'),
-            controls: (
-              <>
-                <SyncedControl
-                  label="P"
-                  value={Number(activeFixedPKn.toFixed(1))}
-                  min={minPKn}
-                  max={maxPKn}
-                  step={Math.max(1, Math.round((maxPKn - minPKn) / 240))}
-                  unit="kN"
-                  disabled
-                  onChange={() => undefined}
-                />
-                <label className={`pm-field-check${showFixedPAngleRays ? ' is-on' : ''}`}>
-                  <input
-                    type="checkbox"
-                    checked={showFixedPAngleRays}
-                    onChange={(event) => setShowFixedPAngleRays(event.target.checked)}
-                  />
-                  Angle rays
-                </label>
-                <ResistanceVisibilityControls
-                  showDesign={showDesignResistance}
-                  showNominal={showNominalReference}
-                  onShowDesign={setShowDesignResistance}
-                  onShowNominal={setShowNominalReference}
-                />
-              </>
-            ),
+            primary: demandView.primaryChart === 'fixedP',
+            visible: demandView.visibleCharts.fixedP,
             children: <PlotlyChart data={contourData} layout={contourLayout} config={plotConfig} />
           })}
 
@@ -1857,38 +1663,8 @@ export function ResultsWorkspace({
             meta: `${fmt(activeAngle, 0)}°${verticalSlice.closed ? '' : ' · OPEN'}${
               axialCapPKn == null ? '' : ` · axial cap ${fmt(axialCapPKn, 0)} kN`
             }`,
-            primary: loadcasePrimary === 'vertical',
-            visible: loadcaseVisible.vertical,
-            onMakePrimary: () => setLoadcasePrimary('vertical'),
-            onToggleVisible: () => toggleLoadcaseVisible('vertical'),
-            controls: (
-              <>
-                <SyncedControl
-                  label="Angle"
-                  value={Number(activeAngle.toFixed(0))}
-                  min={0}
-                  max={360}
-                  step={1}
-                  unit="deg"
-                  disabled
-                  onChange={() => undefined}
-                />
-                <label className={`pm-field-check${includeOppositeMoment ? ' is-on' : ''}`}>
-                  <input
-                    type="checkbox"
-                    checked={includeOppositeMoment}
-                    onChange={(event) => setIncludeOppositeMoment(event.target.checked)}
-                  />
-                  Opposite
-                </label>
-                <ResistanceVisibilityControls
-                  showDesign={showDesignResistance}
-                  showNominal={showNominalReference}
-                  onShowDesign={setShowDesignResistance}
-                  onShowNominal={setShowNominalReference}
-                />
-              </>
-            ),
+            primary: demandView.primaryChart === 'vertical',
+            visible: demandView.visibleCharts.vertical,
             children: <PlotlyChart data={verticalData} layout={verticalLayout} config={plotConfig} />
           })}
 
@@ -1899,83 +1675,30 @@ export function ResultsWorkspace({
 
   return (
     <section className="pm-results-stage pm-results-stage--charts-only">
-      {renderRestoreBar(
-        hiddenOverview.map((id) => ({
-          id,
-          label: overviewRestoreLabel(id),
-          onClick: () => toggleOverviewVisible(id)
-        }))
-      )}
+      {busy ? <StaleBanner /> : null}
 
       <div
-        className={`pm-results-grid pm-results-grid--dynamic primary-${overviewPrimary} count-${
-          Object.values(overviewVisible).filter(Boolean).length
+        className={`pm-results-grid pm-results-grid--dynamic primary-${view.primaryChart} count-${
+          Object.values(view.visibleCharts).filter(Boolean).length
         }`}
       >
         {renderChartShell({
           id: 'vertical',
           title: 'Vertical slice',
-          meta: `${fmt(sliceAngle, 0)}°${verticalSlice.closed ? '' : ' · OPEN'}${
+          meta: `${fmt(view.sliceAngle, 0)}°${verticalSlice.closed ? '' : ' · OPEN'}${
             axialCapPKn == null ? '' : ` · axial cap ${fmt(axialCapPKn, 0)} kN`
           }`,
-          primary: overviewPrimary === 'vertical',
-          visible: overviewVisible.vertical,
-          onMakePrimary: () => setOverviewPrimary('vertical'),
-          onToggleVisible: () => toggleOverviewVisible('vertical'),
-          controls: (
-            <>
-              <SyncedControl
-                label="Angle"
-                value={sliceAngle}
-                min={0}
-                max={angleSliderMax}
-                step={15}
-                unit="deg"
-                onChange={setSliceAngle}
-              />
-              <label className={`pm-field-check${includeOppositeMoment ? ' is-on' : ''}`}>
-                <input
-                  type="checkbox"
-                  checked={includeOppositeMoment}
-                  onChange={(event) => setIncludeOppositeMoment(event.target.checked)}
-                />
-                Opposite
-              </label>
-              <ResistanceVisibilityControls
-                showDesign={showDesignResistance}
-                showNominal={showNominalReference}
-                onShowDesign={setShowDesignResistance}
-                onShowNominal={setShowNominalReference}
-              />
-            </>
-          ),
+          primary: view.primaryChart === 'vertical',
+          visible: view.visibleCharts.vertical,
           children: <PlotlyChart data={verticalData} layout={verticalLayout} config={plotConfig} />
         })}
 
         {renderChartShell({
           id: 'surface3d',
           title: '3D P-Mx-My',
-          meta: `${surfacePoints3d.length} pts · ${surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'}`,
-          primary: overviewPrimary === 'surface3d',
-          visible: overviewVisible.surface3d,
-          onMakePrimary: () => setOverviewPrimary('surface3d'),
-          onToggleVisible: () => toggleOverviewVisible('surface3d'),
-          controls: (
-            <>
-              <SurfaceResistanceControl
-                value={surfaceResistanceMode}
-                onChange={setSurfaceResistanceMode}
-              />
-              <label className={`pm-field-check${showSceneAxes ? ' is-on' : ''}`}>
-                <input
-                  type="checkbox"
-                  checked={showSceneAxes}
-                  onChange={(event) => setShowSceneAxes(event.target.checked)}
-                />
-                Axes
-              </label>
-            </>
-          ),
+          meta: `${surfacePoints3d.length} pts · ${view.surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'}`,
+          primary: view.primaryChart === 'surface3d',
+          visible: view.visibleCharts.surface3d,
           children: <PlotlyChart data={surfaceData} layout={surfaceLayout} config={plotConfig} onClick={handle3dClick} />
         })}
 
@@ -1983,37 +1706,8 @@ export function ResultsWorkspace({
           id: 'fixedP',
           title: 'Fixed-P Mx-My',
           meta: `${fmt(kn(fixedP), 1)} kN`,
-          primary: overviewPrimary === 'fixedP',
-          visible: overviewVisible.fixedP,
-          onMakePrimary: () => setOverviewPrimary('fixedP'),
-          onToggleVisible: () => toggleOverviewVisible('fixedP'),
-          controls: (
-            <>
-              <SyncedControl
-                label="P"
-                value={Number(kn(fixedP).toFixed(1))}
-                min={minPKn}
-                max={maxPKn}
-                step={Math.max(1, Math.round((maxPKn - minPKn) / 240))}
-                unit="kN"
-                onChange={(value) => onFixedPChange(value * 1000)}
-              />
-              <label className={`pm-field-check${showFixedPAngleRays ? ' is-on' : ''}`}>
-                <input
-                  type="checkbox"
-                  checked={showFixedPAngleRays}
-                  onChange={(event) => setShowFixedPAngleRays(event.target.checked)}
-                />
-                Angle rays
-              </label>
-              <ResistanceVisibilityControls
-                showDesign={showDesignResistance}
-                showNominal={showNominalReference}
-                onShowDesign={setShowDesignResistance}
-                onShowNominal={setShowNominalReference}
-              />
-            </>
-          ),
+          primary: view.primaryChart === 'fixedP',
+          visible: view.visibleCharts.fixedP,
           children: <PlotlyChart data={contourData} layout={contourLayout} config={plotConfig} />
         })}
 

@@ -33,6 +33,12 @@ export const UNSUPPORTED_CONCRETE_MODELS: Partial<Record<ConcreteStressStrainMod
     reason:
       'The equivalent rectangular (Whitney) block cannot run in the local fibre kernel: β1 is not a pointwise stress-strain parameter. Select the ACI 318 equivalent-block calculation profile so a = β1·c is evaluated by the implemented resultant-level adapter.',
     reference: 'docs/12-calculation-models-defaults-and-workflows.md §3'
+  },
+  'user-block': {
+    modelType: 'user-block',
+    reason:
+      'A user-defined equivalent rectangular block is a resultant equivalence, not a pointwise σ(ε) law, so β1 would be discarded by the fibre kernel exactly as it is for the Whitney block. Select the Custom equivalent-block calculation profile so a = β1·c is evaluated by the resultant-level adapter.',
+    reference: 'docs/12-calculation-models-defaults-and-workflows.md §3'
   }
 }
 

@@ -17,17 +17,22 @@ The current stress-strain default is 25 stations with nine mandatory code-aware 
 default is independent: 37 initial neutral-axis states, bar-controlled code/rupture event stations,
 24 seed directions, and 0.75% adaptive station and direction refinement.
 
-KDS current-set and ACI 318-19(22) equivalent-block profiles are implemented as draft previews.
+KDS current-set and ACI 318-19(22) equivalent-block profiles are implemented as draft previews. Two
+`Custom` profiles — one per mechanics — let a project declare its own material laws, block
+parameters and resistance rules; they carry no clause traceability and report as `user-defined`
+rather than `draft`.
 Nominal, Design, and factored ULS Demand are separate result stages. See
 [`docs/12-calculation-models-defaults-and-workflows.md`](docs/12-calculation-models-defaults-and-workflows.md)
 for formulas, workflow, fields, defaults, and benchmark evidence.
 
-The current web app has four top-level workspaces: `Geometry`, `Materials`, `Results`, and
-`Analysis Options`. Report generation is not a separate workspace. The result-calculation Excel
-workbook currently supports the stress-strain pipeline only; equivalent-block results deliberately
-block that export until a dedicated block-ledger workbook exists. The Section-mesh Excel/DXF audit
-also applies only to stress-strain integration because the block kernel has no concrete integration
-mesh.
+The current web app has five top-level workspaces: `Geometry`, `Materials`, `Section Results`,
+`Demand Check`, and `Analysis Options`. `Section Results` owns the resistance surface and its
+presentation; `Demand Check` owns the load combinations checked against it. Report generation is not
+a separate workspace: `Demand Check` exports the PDF design report, choosing per combination which
+ones get a full worked calculation. Each mechanics has its own result-calculation Excel workbook — a fibre ledger
+for stress-strain integration and a block ledger for the equivalent block. The Section-mesh
+Excel/DXF audit applies only to stress-strain integration because the block kernel has no concrete
+integration mesh.
 
 ## Project structure
 
@@ -41,8 +46,9 @@ packages/pm-analysis/             Stress-strain forward/inverse/surface kernel
 packages/pm-equivalent-block/     Standard-independent rectangular-block kernel
 packages/pm-code-kds142020/       KDS 14 20 20 block adapter
 packages/pm-code-aci318/          ACI 318 Whitney-block adapter
+packages/pm-code-custom/          User-defined block adapter; derives nothing from a code table
 packages/pm-analysis-equivalent-block/  Project/result bridge for block profiles
-packages/pm-report/               Stress-strain result workbook and stress-strain mesh Excel/DXF
+packages/pm-report/               Result workbooks (both mechanics), mesh Excel/DXF, and the PDF report
 docs/engineering/                 Structural-engineering meaning and acceptance rules
 docs/development/                 Package, schema, UI, test, and release instructions
 ```
@@ -64,8 +70,16 @@ npm run bench:pipelines
 npm run bench:verify
 ```
 
+`npm run test:pdf-report` builds the PDF report for both mechanics and checks its structure, its
+agreement with the kernel, and that the same input produces byte-identical output.
+
+`npm run test:excel-block` recalculates the equivalent-block workbook in an independent formula
+engine and reconciles the shoelace recomputation of the clipped compression polygon, the ledger and
+the sheet's own φ interpolation against the block kernel.
+
 `npm test` runs typecheck, unit/integration suites, CAD tests, canonical schema-v1 round trip, the
-historical workbook regression fixture, and formula-recalculated Excel-export verification.
+historical workbook regression fixture, and formula-recalculated Excel-export verification for both
+the stress-strain and the equivalent-block workbook.
 
 `bench:equivalent-block` exercises the production KDS/ACI block configuration, exact inverse
 refinement, fixed-axial queries, topology, admissibility, and batch surface reuse.
@@ -96,6 +110,9 @@ not design-code authority.
 
 ## Current v1 conventions and known blocker
 
+- A `Custom` profile is not a code check. It is reported as `user-defined`, never `draft`, and
+  carries no clause traceability; whoever declares `beta1`, the block stress factor, `epsCu`, the
+  `phi` factors and the transition rule owns their justification.
 - The project DTO stores `My` but does not enforce a resultant sign formula. The stress-strain
   backend and its workbook use `My = sum(F*x)`; the equivalent-block backend uses
   `My = -sum(F*x)`. The bridge and UI pass `My` through unchanged. Nonzero-`My` block results,

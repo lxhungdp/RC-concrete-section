@@ -33,6 +33,8 @@
       "@pm/code-kds142020/*": ["./packages/pm-code-kds142020/src/*"],
       "@pm/code-aci318": ["./packages/pm-code-aci318/src"],
       "@pm/code-aci318/*": ["./packages/pm-code-aci318/src/*"],
+      "@pm/code-custom": ["./packages/pm-code-custom/src"],
+      "@pm/code-custom/*": ["./packages/pm-code-custom/src/*"],
       "@pm/report": ["./packages/pm-report/src"],
       "@pm/report/*": ["./packages/pm-report/src/*"]
     },

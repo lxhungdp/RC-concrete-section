@@ -5,6 +5,8 @@ import {
   createKdsRebarSteel
 } from '@pm/materials'
 import {
+  applyCalculationProfileToMaterials,
+  CONCRETE_MODELS_FOR_MECHANICS,
   createEmptyLoadingsInput,
   createEmptyProjectDocument,
   createLoadCombination,
@@ -108,6 +110,60 @@ const run = () => {
   const empty = createEmptyProjectDocument({ id: 1, name: 'Empty' })
   const emptyParsed = parseProjectDocument(serializeProjectDocument(empty))
   assert.equal(emptyParsed.ok, true)
+
+  /**
+   * Both custom profiles must survive a canonical round trip, and the profile/material/design
+   * coherence check must accept exactly the combination the profile itself produces.
+   */
+  for (const profileId of ['custom-stress-strain', 'custom-equivalent-block'] as const) {
+    const customMaterials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
+    const customDocument = createProjectDocument({
+      calculationProfileId: profileId,
+      geometry,
+      materials: customMaterials,
+      loadings,
+      meta: { id: 2, name: `Custom ${profileId}` }
+    })
+    const customParsed = parseProjectDocument(serializeProjectDocument(customDocument))
+    assert.equal(customParsed.ok, true, `${profileId} must round trip`)
+    if (!customParsed.ok) return
+    assert.equal(customParsed.document.inputs.calculationProfileId, profileId)
+    assert.equal(customParsed.document.inputs.materials.concrete.standard, 'CUSTOM')
+    assert.equal(customParsed.document.inputs.design.profileId, 'custom-user-defined')
+    assert.equal(customParsed.document.inputs.design.verificationStatus, 'user-defined')
+    /** The block profile must switch the law; the fibre profile keeps whatever fibre law it had. */
+    assert.ok(
+      CONCRETE_MODELS_FOR_MECHANICS[
+        profileId === 'custom-equivalent-block' ? 'equivalent-rectangular-block' : 'stress-strain-integration'
+      ].includes(customParsed.document.inputs.materials.concrete.stressStrain.type),
+      `${profileId} seeded an unevaluable concrete model`
+    )
+    assert.equal(
+      customParsed.document.inputs.analysis.methodId,
+      profileId === 'custom-equivalent-block' ? 'equivalent-block-surface-v1' : 'strain-domain-surface-v1'
+    )
+    /** Canonical form is the parser's output, so a second pass must be byte-identical. */
+    const canonical = serializeProjectDocument(customParsed.document)
+    const reparsed = parseProjectDocument(canonical)
+    assert.equal(reparsed.ok, true, `${profileId} canonical form must re-parse`)
+    if (!reparsed.ok) return
+    assert.equal(
+      serializeProjectDocument(reparsed.document),
+      canonical,
+      `${profileId} canonical form must be stable`
+    )
+  }
+
+  /** A block law must not be accepted by a fibre profile, and vice versa. */
+  const mismatched = JSON.parse(serializeProjectDocument(createProjectDocument({
+    calculationProfileId: 'custom-stress-strain',
+    geometry,
+    materials: applyCalculationProfileToMaterials(createDefaultMaterialStore(), 'custom-equivalent-block'),
+    loadings,
+    meta: { id: 3, name: 'Mismatched custom' }
+  }))) as Record<string, unknown>
+  const mismatchedParsed = parseProjectDocument(JSON.stringify(mismatched))
+  assert.equal(mismatchedParsed.ok, false, 'a user-block law must not reach the fibre kernel')
 
   console.log('pm-project roundtrip selftest: ok')
 }

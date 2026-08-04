@@ -117,10 +117,23 @@ Diagnostic partial data is a separate preview type. It cannot satisfy this contr
 
 ## 6. Target report capability
 
-There is no current top-level Report menu. The only calculation-result workbook is the
-stress-strain preview audit export, and the only mesh audit exports are the stress-strain Excel/DXF
-files under Analysis Options. Equivalent-block calculation export and released PDF output remain
-unimplemented.
+There is no current top-level Report menu. Each mechanics now has its own calculation-result
+workbook, the mesh audit exports remain the stress-strain Excel/DXF files under Analysis Options,
+and `Demand Check` exports a preview PDF design report. A **released** report — one generated from
+an accepted result — remains unimplemented.
+
+The implemented PDF follows the section order below: input (section drawing beside the section,
+material and resistance data), section capacity (Nominal and Design interaction diagrams per
+published direction), factored ULS demand (one row per combination with its utilization and
+verdict), and then a detailed calculation per combination the engineer selected — transverse
+section with the neutral axis and compression zone, longitudinal section with the strain and stress
+diagrams over the depth, the interaction diagram carrying the load point and the governing
+proportional ray, the concrete and resultant ledger, the per-bar ledger, and the solver evidence.
+Detail pages are opt-in per combination because which cases are worth working through is an
+engineering judgement, not a software default.
+
+Because no accepted-result contract exists yet, every page of that PDF is watermarked `PREVIEW` and
+states that it is not an accepted design result, as §"PDF output" below requires.
 
 Reports are generated only from an `acceptedResult`. The report layer formats existing engineering
 data and shall not apply a new factor, rounding decision, interpolation, or adequacy rule.

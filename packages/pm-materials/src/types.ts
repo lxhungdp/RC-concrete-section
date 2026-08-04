@@ -63,6 +63,18 @@ export type ConcreteStressStrainModel =
       interpolation: 'linear'
       zeroTension?: boolean
     }
+  /**
+   * User-owned equivalent rectangular block: sigma_block = alpha * fck over a = beta1 * c.
+   *
+   * It carries no standard. Like `aci-whitney-block` it is a resultant equivalence, so the fibre
+   * kernel refuses it (see `support.ts`) and only the equivalent-block adapter may consume it.
+   */
+  | {
+      type: 'user-block'
+      beta1: number
+      epsCu: number
+      alpha: number
+    }
 
 export type SteelMaterial = {
   id: number

@@ -12,6 +12,11 @@ import {
   type SurfaceStation
 } from '@pm/analysis'
 import { createAci318Model } from '@pm/code-aci318'
+import {
+  createCustomBlockModel,
+  type CustomBlockDefinition,
+  type CustomSteelLawDefinition
+} from '@pm/code-custom'
 import { createKds142020Model } from '@pm/code-kds142020'
 import type { DesignBasis, GlobalStrengthReductionBasis } from '@pm/design'
 import {
@@ -27,20 +32,25 @@ import {
   type PreparedEquivalentBlockSection
 } from '@pm/equivalent-block'
 import { buildConcreteMesh, netConcreteCentroid, type GeometryInputRebarView, type SectionGeometry } from '@pm/geometry'
-import type { MaterialStore } from '@pm/materials'
+import { userBlockCompressionStress, type MaterialStore } from '@pm/materials'
 import {
   cloneCalculationAnalysisOptions,
+  isEquivalentBlockProfileId,
   type CalculationProfileId,
+  type EquivalentBlockProfileId,
   type EquivalentBlockAnalysisOptions,
   type LoadCombination
 } from '@pm/project'
 
 export type PreparedBlockAnalysis = {
-  profileId: Exclude<CalculationProfileId, 'kds-2024-stress-strain'>
+  profileId: EquivalentBlockProfileId
   section: PreparedEquivalentBlockSection
   materialStore: MaterialStore
   designBasis: GlobalStrengthReductionBasis
-  model: ReturnType<typeof createAci318Model> | ReturnType<typeof createKds142020Model>
+  model:
+    | ReturnType<typeof createAci318Model>
+    | ReturnType<typeof createKds142020Model>
+    | ReturnType<typeof createCustomBlockModel>
   geometry: SectionGeometry
   rebars: GeometryInputRebarView[]
 }
@@ -58,6 +68,41 @@ const assertBlockBasis = (basis: DesignBasis): GlobalStrengthReductionBasis => {
   return basis
 }
 
+/**
+ * Read the user's block law off the concrete material.
+ *
+ * A custom block profile has no code table to fall back on, so a concrete model without `β1` is a
+ * typed input error rather than a silently defaulted one.
+ */
+const customBlockDefinition = (concrete: MaterialStore['concrete']): CustomBlockDefinition => {
+  if (concrete.stressStrain.type !== 'user-block') {
+    throw new Error(
+      `The custom equivalent-block profile requires a user-block concrete model; material ${concrete.id} is ${concrete.stressStrain.type}.`
+    )
+  }
+  return {
+    /**
+     * Through the material helper, not `stressStrain.alpha` directly, so the block stress the
+     * kernel integrates is the same number the Materials panel and the workbook display. The two
+     * differ whenever a partial factor is present.
+     */
+    stressFactor: userBlockCompressionStress(concrete) / concrete.fck,
+    depthFactor: concrete.stressStrain.beta1,
+    extremeCompressionStrain: concrete.stressStrain.epsCu,
+    subtractDisplacedConcrete: true
+  }
+}
+
+const customSteelLaw = (steel: MaterialStore['steel'][number]): CustomSteelLawDefinition => {
+  if (steel.stressStrain.type === 'bilinear') {
+    return { type: 'bilinear', hardeningRatio: steel.stressStrain.hardeningRatio }
+  }
+  if (steel.stressStrain.type === 'user-curve') {
+    return { type: 'user-curve', points: steel.stressStrain.points }
+  }
+  return { type: 'elastic-perfectly-plastic' }
+}
+
 export const prepareBlockAnalysis = (
   profileId: CalculationProfileId,
   section: SectionGeometry,
@@ -65,8 +110,8 @@ export const prepareBlockAnalysis = (
   materialStore: MaterialStore,
   designBasis: DesignBasis
 ): PreparedBlockAnalysis => {
-  if (profileId === 'kds-2024-stress-strain') {
-    throw new Error('The stress–strain profile cannot be routed to the equivalent-block backend.')
+  if (!isEquivalentBlockProfileId(profileId)) {
+    throw new Error(`The ${profileId} profile uses stress-strain integration and cannot be routed to the equivalent-block backend.`)
   }
   const origin = netConcreteCentroid(section)
   const preparedSection = prepareEquivalentBlockSection({
@@ -86,8 +131,14 @@ export const prepareBlockAnalysis = (
     signConvention: 'compression-positive'
   })
   const basis = assertBlockBasis(designBasis)
+  const isCustom = profileId === 'custom-equivalent-block'
   const steel = Object.fromEntries(materialStore.steel.map((item) => {
-    if (item.stressStrain.type !== 'elastic-perfectly-plastic') {
+    /**
+     * Only the custom profile may register a hardening or tabulated steel law. A published block
+     * profile is calibrated against the elastic-perfectly-plastic idealization, so accepting a
+     * different law there would silently change what the code check means.
+     */
+    if (!isCustom && item.stressStrain.type !== 'elastic-perfectly-plastic') {
       throw new Error(`Equivalent-block code profiles currently require elastic-perfectly-plastic steel; material ${item.id} is ${item.stressStrain.type}.`)
     }
     return [String(item.id), {
@@ -100,7 +151,21 @@ export const prepareBlockAnalysis = (
     concreteStrength: materialStore.concrete.fck,
     steel
   }
-  const model = profileId === 'aci-318-19-22-equivalent-block'
+  const model = profileId === 'custom-equivalent-block'
+    ? createCustomBlockModel({
+        concreteStrength: materialStore.concrete.fck,
+        block: customBlockDefinition(materialStore.concrete),
+        steel: Object.fromEntries(materialStore.steel.map((item) => [String(item.id), {
+          elasticModulus: item.elasticModulus,
+          yieldStress: item.fy,
+          ultimateStrain: item.limits?.epsU,
+          law: customSteelLaw(item)
+        }])),
+        resistanceFactors: basis.factors,
+        transitionRule: basis.transition,
+        transverseReinforcement: basis.transverseReinforcement
+      })
+    : profileId === 'aci-318-19-22-equivalent-block'
     ? (() => {
         if (basis.transition.type !== 'yield-plus-strain') {
           throw new Error('The ACI 318 profile requires a yield-plus-strain transition rule.')

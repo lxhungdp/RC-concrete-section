@@ -19,27 +19,35 @@ linked from the control map.
 ## 2. Product Workflow
 
 ```text
-Geometry -> Materials -> Results -> Analysis Options
+Geometry -> Materials -> Section Results -> Demand Check -> Analysis Options
 ```
 
 Current UI note:
 
-- `Results` owns loadcase entry in its sidebar for the current simple `Pu/Mux/Muy` workflow.
+- `Section Results` owns the resistance surface: its sidebar carries the section-capacity summary,
+  the sampling evidence, and every chart parameter, so the plot headers hold no controls.
+- `Demand Check` owns loadcase entry and the governing check for the current simple `Pu/Mux/Muy`
+  workflow. Selecting a combination anywhere — including a click on a demand marker in the Section
+  Results 3D plot — moves to this menu.
 - A separate `Loadings` workspace is intentionally avoided until source-load management becomes
   large enough to justify it.
-- `Analysis Options` is the fourth menu and separates its controls into `Points`, `Mesh`, and
+- `Analysis Options` is the last menu and separates its controls into `Points`, `Mesh`, and
   `Design Resistance` tabs. Points also owns direction sampling; Design Resistance applies valid
-  edits immediately without a separate action button. These settings are not edited in `Results`.
+  edits immediately without a separate action button. These settings are not edited in either
+  results menu — the results sidebars carry presentation state only, never a value that changes a
+  resultant.
 - There is no top-level `Report` menu. Export commands are actions in the relevant preview
-  workspace; an accepted-result report workflow has not been implemented.
+  workspace: `Demand Check` exports the PDF design report and the selected-result workbook. An
+  accepted-result report workflow has not been implemented, so every PDF carries a `PREVIEW`
+  watermark and states on every page that it is not an accepted design result.
 - For stress-strain integration, the `Section mesh` toolbar exports the exact prepared analysis mesh as either an Excel audit
   workbook or a DXF drawing. Excel includes Summary, Triangles, Quadrature, Boundaries, and Rebars
   sheets; DXF uses broadly compatible R12 ASCII records and separates the same geometry into named
   verification layers.
-- The selected-result Excel calculation workbook is available only for stress-strain integration.
-  Equivalent-block export is blocked with an explicit message until a dedicated block-ledger
-  workbook is implemented. Equivalent-block projects also show exact clipping in place of the
-  Section-mesh view because they do not use a concrete integration mesh.
+- The selected-result Excel calculation workbook exists for both mechanics: a fibre ledger for
+  stress-strain integration, and a block ledger (`Block_Clip` + `Block` in place of `Mesh` +
+  `Concrete`) for the equivalent block. Equivalent-block projects show exact clipping in place of
+  the Section-mesh view because they do not use a concrete integration mesh.
 
 ## 3. Current Implementation Status
 
@@ -48,8 +56,10 @@ As of 2026-08-04:
 - Geometry editor, material editor, rebar input, project JSON round trip, Results preview plots, and
   loadcase entry are implemented as **preview** capability.
 - The material editor uses one calculation-profile selector for KDS stress-strain integration, KDS
-  equivalent block, or ACI 318-19(22) equivalent block. It atomically updates mechanics, material
-  defaults, resistance basis, and model-specific analysis options.
+  equivalent block, ACI 318-19(22) equivalent block, or one of the two `Custom` profiles. It
+  atomically updates mechanics, material defaults, resistance basis, and model-specific analysis
+  options. A `Custom` profile additionally exposes the constitutive model itself: concrete law and
+  its parameters, steel law, block `beta1`/`alpha`/`epsCu`, and the tension-controlled limit rule.
 - The current Results charts use Plotly for interactive visualization, but the underlying
   calculation is still a preview kernel.
 - Two independent calculation kernels are implemented: stress-strain integration and the
@@ -64,7 +74,8 @@ As of 2026-08-04:
   governing 3D proportional check; Fixed-P utilization is a secondary diagnostic.
 - The KDS 2024 current-set profiles (with resistance clauses explicitly traced to KDS 14 20 10:2021
   and KDS 14 20 20:2022) and ACI 318-19(22) block profile are implemented as `draft` design
-  previews; no profile is approved for released engineering use. EN material/design helpers remain
+  previews; no profile is approved for released engineering use. The two `Custom` profiles are
+  `user-defined`: they invent no normative value, and they claim none. EN material/design helpers remain
   lower-level preview capability and are not exposed as a complete calculation profile.
 - The stress-strain Excel preview result export includes an explicit `Design_Check` audit sheet. The separate
   Section-mesh Excel export includes formula-based area and first-moment recomputation so the
@@ -91,6 +102,7 @@ The implemented resistance pipeline is documented in
 | `preview` | Useful for editing or visualization; prohibited from design acceptance/report release. |
 | `reviewed` | Requirements or implementation have received named discipline review. |
 | `verified` | Requirement traceability and prescribed verification evidence pass for a declared scope/version. |
+| `user-defined` | Values were declared by the project, not derived from a published clause. It is outside the review ladder, not a step on it, and can never be promoted by editing. |
 | `acceptedResult` | One run passed input, adapter, convergence, topology, and uncertainty gates. |
 | `releasedReport` | A report was generated from an immutable accepted result and carries provenance/hash. |
 

@@ -33,6 +33,87 @@ export const createElasticPerfectlyPlasticSteelLaw = (
   }
 }
 
+/**
+ * Bilinear steel with post-yield hardening.
+ *
+ * Standard-independent, like the elastic-perfectly-plastic law above: which law a profile is
+ * allowed to register stays with the code adapter, not with this kernel.
+ */
+export const createBilinearSteelLaw = (
+  elasticModulus: number,
+  yieldStress: number,
+  hardeningRatio: number,
+  ultimateStrain?: number
+): SteelLaw => {
+  if (!(elasticModulus > 0) || !(yieldStress > 0)) {
+    throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'Steel modulus and yield stress must be positive.')
+  }
+  if (!Number.isFinite(hardeningRatio) || hardeningRatio < 0) {
+    throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'Steel hardening ratio must be finite and nonnegative.')
+  }
+  const yieldStrain = yieldStress / elasticModulus
+  if (ultimateStrain !== undefined && (!Number.isFinite(ultimateStrain) || ultimateStrain <= yieldStrain)) {
+    throw new EquivalentBlockInputError(
+      'INVALID_BLOCK_LAW',
+      'Steel ultimate strain must be finite and greater than the yield strain.'
+    )
+  }
+  const hardening = hardeningRatio * elasticModulus
+  return {
+    yieldStrain,
+    ultimateStrain,
+    stressAt: (strain) => {
+      const magnitude = Math.abs(strain)
+      const stress = magnitude <= yieldStrain
+        ? elasticModulus * magnitude
+        : yieldStress + hardening * (magnitude - yieldStrain)
+      return Math.sign(strain) * stress
+    }
+  }
+}
+
+/**
+ * Linearly interpolated user table, clamped outside its own domain.
+ *
+ * The same first-matching-interval rule as the fibre kernel's tabulated law, so a user curve
+ * evaluated by either pipeline returns the same stress for the same strain.
+ */
+export const createTabulatedSteelLaw = (
+  points: ReadonlyArray<{ strain: number; stress: number }>,
+  yieldStrain?: number,
+  ultimateStrain?: number
+): SteelLaw => {
+  if (points.length < 2) {
+    throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'A tabulated steel law needs at least two points.')
+  }
+  for (const point of points) {
+    if (!Number.isFinite(point.strain) || !Number.isFinite(point.stress)) {
+      throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'Tabulated steel points must be finite.')
+    }
+  }
+  const sorted = [...points].sort((a, b) => a.strain - b.strain)
+  if (sorted[0].strain === sorted[sorted.length - 1].strain) {
+    throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'A tabulated steel law needs two distinct strains.')
+  }
+  return {
+    yieldStrain,
+    ultimateStrain,
+    stressAt: (strain) => {
+      if (strain <= sorted[0].strain) return sorted[0].stress
+      if (strain >= sorted[sorted.length - 1].strain) return sorted[sorted.length - 1].stress
+      for (let index = 0; index < sorted.length - 1; index += 1) {
+        const left = sorted[index]
+        const right = sorted[index + 1]
+        if (strain >= left.strain && strain <= right.strain) {
+          const fraction = (strain - left.strain) / Math.max(1e-12, right.strain - left.strain)
+          return left.stress + (right.stress - left.stress) * fraction
+        }
+      }
+      return 0
+    }
+  }
+}
+
 const assertLaw = (law: EquivalentBlockLaw) => {
   if (
     !(law.compressionStress > 0) ||

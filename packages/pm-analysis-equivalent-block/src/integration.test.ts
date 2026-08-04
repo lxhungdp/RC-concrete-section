@@ -12,8 +12,8 @@ import {
   createProjectDocument,
   parseProjectDocument,
   serializeProjectDocument,
-  type CalculationProfileId,
-  type EquivalentBlockAnalysisOptions
+  type EquivalentBlockAnalysisOptions,
+  type EquivalentBlockProfileId
 } from '@pm/project'
 import {
   buildEquivalentBlockDesignSurfaceFromPrepared,
@@ -39,7 +39,7 @@ const geometry: GeometryInput = {
   ].map(([x, y], index) => ({ id: index + 1, x, y, dia: 25, steelMaterialId: 1 }))
 }
 
-const build = (profileId: Exclude<CalculationProfileId, 'kds-2024-stress-strain'>) => {
+const build = (profileId: EquivalentBlockProfileId) => {
   const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
   const design = createDesignBasisForCalculationProfile(profileId)
   const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
@@ -156,7 +156,7 @@ test('docs/example equivalent-block projects parse and solve with their shipped 
   }
 })
 
-for (const profileId of ['kds-142020-equivalent-block', 'aci-318-19-22-equivalent-block'] as const) {
+for (const profileId of ['kds-142020-equivalent-block', 'aci-318-19-22-equivalent-block', 'custom-equivalent-block'] as const) {
   test(`${profileId}: surface, inverse and exact block field`, () => {
     const input = build(profileId)
     const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(input.prepared, input.options)

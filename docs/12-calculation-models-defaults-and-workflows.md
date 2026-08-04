@@ -12,7 +12,7 @@ concrete resistance kernel or their surface-station algorithm.
 | Item | Stress-strain integration | Equivalent rectangular stress block |
 |---|---|---|
 | Method ID | `strain-domain-surface-v1` | `equivalent-block-surface-v1` |
-| Calculation profile | `kds-2024-stress-strain` | `kds-142020-equivalent-block` or `aci-318-19-22-equivalent-block` |
+| Calculation profile | `kds-2024-stress-strain` or `custom-stress-strain` | `kds-142020-equivalent-block`, `aci-318-19-22-equivalent-block` or `custom-equivalent-block` |
 | Concrete state | stress is evaluated from strain at every integration point | constant compression stress acts only inside a clipped block of depth `a` |
 | Concrete discretization | verified triangle/quadrature mesh | exact polygon/half-plane clipping; no concrete fiber mesh |
 | Primary state variable | compatible strain plane `(eps0, kx, ky)` | block-normal angle and neutral-axis depth `c` |
@@ -30,6 +30,33 @@ The stress-strain backend and workbook compute `My = sum(F*x)`; `@pm/equivalent-
 backend returns without transformation. Cross-model comparison and nonzero-`My` block checks remain
 preview-only until one convention is selected or an explicit boundary transform is verified on
 asymmetric sections.
+
+### 1.1 Custom profiles
+
+Each mechanics has one `Custom` profile. It runs the same kernel as its published siblings and
+changes nothing about the mechanics; what it changes is where the parameters come from.
+
+| Item | Published profile | Custom profile |
+|---|---|---|
+| Concrete model | fixed by the standard | user-selected among the models that mechanics can evaluate |
+| `alpha`, `n`, `eps0`, `epsCu` | code table for `fck` | user input |
+| `beta1`, block stress factor | code table for `fck` | user input on the `user-block` concrete model |
+| Steel law | elastic-perfectly-plastic | elastic-perfectly-plastic, bilinear, or a user table |
+| `phi` factors, transition rule, axial cap | code defaults, deviations need a narrative | user input, no narrative required |
+| Status | `draft` pending named review | `user-defined`, outside the review ladder |
+
+Two guards keep this from becoming a way to smuggle an unevaluable state into a kernel:
+
+- persistence rejects a project whose concrete model the selected mechanics cannot evaluate — a
+  block law cannot reach the fibre kernel, and a fibre law carries no `beta1` for the block kernel;
+- a non-elastic-perfectly-plastic steel law is accepted only by the custom block profile. A
+  published block profile is calibrated against that idealization, so accepting another law there
+  would silently change what the code check means.
+
+`@pm/code-custom` derives nothing. Where the KDS adapter reads Table 4.1-2 and the ACI adapter
+computes `beta1` from `f'c`, the custom adapter validates ranges and uses what it was given. Its
+concentric reference stress defaults to the block stress — the ACI pattern — and only becomes a
+separate, unreachable `P0` reference point when the user raises it, which is the KDS pattern.
 
 ## 2. Stress-strain integration equations
 

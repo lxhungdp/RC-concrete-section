@@ -32,8 +32,9 @@ filesystem/network APIs, project UI state, or report libraries.
 | `@pm/equivalent-block` | standard-independent block preparation, clipping, forward/inverse solvers, surfaces, topology, and admissibility | no project schema, UI, or KDS/ACI constants |
 | `@pm/code-kds142020` | KDS block law, endpoints, phi transition, and cap | KDS policy only; no generic clipping or project state |
 | `@pm/code-aci318` | ACI 318-19(22) Whitney law, endpoints, phi transition, and cap | ACI policy only; no generic clipping or project state |
+| `@pm/code-custom` | user-declared block law, endpoints, phi transition, and cap | derives nothing from a code table; validates ranges and uses what the project gives it; never claims clause traceability |
 | `@pm/analysis-equivalent-block` | project/profile/result bridge for the block kernel and adapters | routing/normalization only; do not merge it into the stress-strain kernel |
-| `@pm/report` | current stress-strain result workbook and stress-strain mesh Excel/DXF | no accepted-result or PDF release contract; no block-ledger workbook yet |
+| `@pm/report` | result workbooks for both mechanics, stress-strain mesh Excel/DXF, the format-neutral `ReportModel`, and the PDF renderer on the `@pm/report/pdf` subpath | shared spine in `workbook-common.ts`; the PDF is deliberately not re-exported from the index so the analysis worker never bundles it; no accepted-result release contract yet |
 | `@structures/cad-drawing` | reusable view/navigation foundation | presentation only; never an analysis dependency |
 | `@pm/web` | current integrated editor | application composition only; move reusable domain/use-case logic into packages |
 

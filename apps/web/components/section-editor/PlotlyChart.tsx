@@ -32,6 +32,37 @@ type PlotlyApi = {
   Plots: { resize: (host: HTMLElement) => void }
 }
 
+let plotlyModule: Promise<PlotlyApi> | null = null
+
+/**
+ * One shared import promise for every chart on the page.
+ *
+ * `plotly.js-dist-min` is the heaviest dependency in the bundle. Importing it per chart made the
+ * first render of a three-plot stage wait on three separate module resolutions; sharing the promise
+ * means the second and third charts attach to the same download.
+ */
+const loadPlotly = (): Promise<PlotlyApi> => {
+  if (!plotlyModule) {
+    plotlyModule = import('plotly.js-dist-min').then(
+      (module) => (module.default ?? module) as unknown as PlotlyApi
+    )
+  }
+  return plotlyModule
+}
+
+/**
+ * Warm the Plotly chunk before a chart is mounted.
+ *
+ * Called when the user is about to open a results menu, so the download overlaps with the surface
+ * build instead of starting after it.
+ */
+export const preloadPlotly = () => {
+  void loadPlotly().catch(() => {
+    // A failed preload is not an error: the real mount will retry and surface it.
+    plotlyModule = null
+  })
+}
+
 export function PlotlyChart({ data, layout, config, onClick }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const plotlyRef = useRef<null | PlotlyApi>(null)
@@ -41,16 +72,12 @@ export function PlotlyChart({ data, layout, config, onClick }: Props) {
 
   useEffect(() => {
     let disposed = false
-    let resizeObserver: ResizeObserver | null = null
-    let resizeTimer: ReturnType<typeof setTimeout> | null = null
 
     const render = async () => {
       const host = hostRef.current
       if (!host) return
-      const module = plotlyRef.current ? null : await import('plotly.js-dist-min')
+      const Plotly = plotlyRef.current ?? (await loadPlotly())
       if (disposed) return
-      const Plotly = plotlyRef.current ?? (module?.default as PlotlyApi | undefined)
-      if (!Plotly) return
       plotlyRef.current = Plotly
 
       await Plotly.react(
@@ -74,6 +101,8 @@ export function PlotlyChart({ data, layout, config, onClick }: Props) {
       if (host.clientWidth > 8 && host.clientHeight > 8) Plotly.Plots.resize(host)
 
       if (!attachedClickRef.current) {
+        // The handler reads through a ref, so a new `onClick` identity never re-attaches it — and,
+        // more importantly, never re-runs this effect and redraws the whole plot.
         const clickHandler = (event: PlotlyClickPayload) => clickRef.current?.(event)
         ;(host as unknown as { on: (event: string, handler: typeof clickHandler) => void }).on(
           'plotly_click',
@@ -81,27 +110,38 @@ export function PlotlyChart({ data, layout, config, onClick }: Props) {
         )
         attachedClickRef.current = true
       }
-
-      resizeObserver = new ResizeObserver(() => {
-        if (resizeTimer) clearTimeout(resizeTimer)
-        resizeTimer = setTimeout(() => {
-          const node = hostRef.current
-          const api = plotlyRef.current
-          if (!node || !api || node.clientWidth < 8 || node.clientHeight < 8) return
-          api.Plots.resize(node)
-        }, 40)
-      })
-      resizeObserver.observe(host)
     }
 
-    render()
+    void render()
 
     return () => {
       disposed = true
-      if (resizeTimer) clearTimeout(resizeTimer)
-      resizeObserver?.disconnect()
     }
-  }, [config, data, layout, onClick])
+  }, [config, data, layout])
+
+  /**
+   * Resizing is independent of the data: observing the host once, rather than inside the render
+   * effect, keeps a container resize from being confused with a data change.
+   */
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const observer = new ResizeObserver(() => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        const node = hostRef.current
+        const api = plotlyRef.current
+        if (!node || !api || node.clientWidth < 8 || node.clientHeight < 8) return
+        api.Plots.resize(node)
+      }, 40)
+    })
+    observer.observe(host)
+    return () => {
+      if (timer) clearTimeout(timer)
+      observer.disconnect()
+    }
+  }, [])
 
   useEffect(
     () => () => {

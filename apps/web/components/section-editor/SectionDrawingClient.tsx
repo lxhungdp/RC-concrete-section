@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from 'react'
+import dynamic from 'next/dynamic'
 import {
   ChartLine,
   Circle,
@@ -8,6 +9,7 @@ import {
   EyeOff,
   FileInput,
   FileOutput,
+  Gauge,
   Lock,
   Minus,
   Moon,
@@ -71,14 +73,45 @@ import {
   buildPreviewSurfaceAsync,
   checkLoadcaseAsync,
   checkLoadcasesAsync,
+  exportColumnReportPdfAsync,
   isAnalysisAbort
 } from '../../lib/workers/pm-analysis-client'
 import { LoadingsPanel } from './LoadingsPanel'
-import { AnalysisMeshWorkspace } from './AnalysisMeshWorkspace'
+
+/**
+ * The results and mesh stages carry Plotly and the analysis kernels. Loading them on demand keeps
+ * them out of the first paint, and the `loading` placeholder is what makes the wait legible: the
+ * menu switches immediately and the stage says it is working.
+ */
+const ResultsWorkspace = dynamic(
+  () => import('./ResultsWorkspace').then((module) => module.ResultsWorkspace),
+  {
+    ssr: false,
+    loading: () => <WorkspaceLoading title="Loading result charts…" detail="Preparing the plotting engine." />
+  }
+)
+
+const AnalysisMeshWorkspace = dynamic(
+  () => import('./AnalysisMeshWorkspace').then((module) => module.AnalysisMeshWorkspace),
+  {
+    ssr: false,
+    loading: () => <WorkspaceLoading title="Loading the section mesh view…" charts={1} />
+  }
+)
 import { AnalysisOptionsPanel } from './AnalysisOptionsPanel'
 import { MaterialPanel } from './MaterialPanel'
 import { RebarPanel } from './RebarPanel'
-import { ResultsWorkspace } from './ResultsWorkspace'
+import { DemandCheckPanel } from './DemandCheckPanel'
+import { preloadPlotly } from './PlotlyChart'
+import { WorkspaceLoading } from './WorkspaceLoading'
+import { SectionResultsPanel, type SectionResultsSummary } from './SectionResultsPanel'
+import {
+  createDemandCheckView,
+  createSectionResultsView,
+  sliceAngleMax,
+  type DemandCheckView,
+  type SectionResultsView
+} from './results-view'
 import { DesignBasisPanel } from './DesignBasisPanel'
 import {
   downloadRebarWorkbook,
@@ -136,7 +169,15 @@ type ScreenPoint = {
 
 type Tool = 'select' | 'draw-rectangle' | 'draw-circle' | 'draw-polygon'
 type Theme = 'light' | 'dark'
-type WorkspaceModule = 'geometry' | 'materials' | 'analysis' | 'results'
+/**
+ * Section Results and Demand Check are separate menus because they answer different questions and
+ * need different sidebars: one owns the capacity surface and its presentation, the other owns the
+ * load combinations checked against it.
+ */
+type WorkspaceModule = 'geometry' | 'materials' | 'analysis' | 'section' | 'demand'
+
+/** Both result menus render the same stage component in different modes. */
+const isResultsModule = (module: WorkspaceModule) => module === 'section' || module === 'demand'
 type GeometrySubTab = 'concrete' | 'rebar'
 type AnalysisSubTab = 'points' | 'mesh' | 'design'
 type BuilderShape = 'rectangle' | 'circle' | 'capsule'
@@ -480,6 +521,7 @@ export function SectionDrawingClient() {
   const [theme, setTheme] = useState<Theme>('light')
   const [tool, setTool] = useState<Tool>('select')
   const [activeModule, setActiveModule] = useState<WorkspaceModule>('geometry')
+  const [moduleSwitching, startModuleTransition] = useTransition()
   const [geometrySubTab, setGeometrySubTab] = useState<GeometrySubTab>('concrete')
   const [selectedRebarId, setSelectedRebarId] = useState<number | null>(null)
   const [boundaries, setBoundaries] = useState<BoundaryObject[]>([])
@@ -501,7 +543,19 @@ export function SectionDrawingClient() {
     createDefaultDesignBasis(createDefaultMaterialStore())
   )
   const [selectedLoadcaseId, setSelectedLoadcaseId] = useState<number | null>(null)
-  const [resultsViewMode, setResultsViewMode] = useState<'overview' | 'loadcase'>('overview')
+  const [reportDetailIds, setReportDetailIds] = useState<number[]>([])
+  const [reportState, setReportState] = useState<'idle' | 'working' | 'error'>('idle')
+  const [reportMessage, setReportMessage] = useState('')
+  const [sectionResultsView, setSectionResultsView] = useState<SectionResultsView>(createSectionResultsView)
+  const [demandCheckView, setDemandCheckView] = useState<DemandCheckView>(createDemandCheckView)
+  const updateSectionResultsView = useCallback(
+    (patch: Partial<SectionResultsView>) => setSectionResultsView((current) => ({ ...current, ...patch })),
+    []
+  )
+  const updateDemandCheckView = useCallback(
+    (patch: Partial<DemandCheckView>) => setDemandCheckView((current) => ({ ...current, ...patch })),
+    []
+  )
   const [fixedResultP, setFixedResultP] = useState(0)
   const [resultSurface, setResultSurface] = useState<PreviewSurface | null>(null)
   const [surfaceStatus, setSurfaceStatus] = useState<'idle' | 'working' | 'error'>('idle')
@@ -537,7 +591,7 @@ export function SectionDrawingClient() {
   }, [theme])
 
   useLayoutEffect(() => {
-    if (activeModule === 'results') return
+    if (isResultsModule(activeModule)) return
     const svg = svgRef.current
     if (!svg) return
 
@@ -631,6 +685,52 @@ export function SectionDrawingClient() {
     if (!resultSurface) return 0
     return new Set(resultSurface.points.map((point) => point.station)).size
   }, [resultSurface])
+
+  /** Everything the Section Results sidebar reports, assembled once per surface. */
+  const sectionResultsSummary = useMemo<SectionResultsSummary>(() => ({
+    hasAppliedSection,
+    status: surfaceStatus,
+    message: surfaceMessage,
+    concreteArea: appliedSummary.area,
+    steelArea,
+    rebarCount: rebars.length,
+    meshCells: resultSurface?.mesh.cells ?? 0,
+    meshPoints: resultSurface?.mesh.points ?? 0,
+    surfacePoints: resultSurface?.points.length ?? 0,
+    directionCount: betaCount,
+    stationCount,
+    refinement: resultSurface
+      ? {
+          tolerance: resultSurface.directionError.tolerance,
+          maxRelative: Math.max(
+            resultSurface.directionError.maxRelativeP,
+            resultSurface.directionError.maxRelativeMoment
+          ),
+          withinTolerance: resultSurface.directionError.withinTolerance
+        }
+      : null,
+    warnings: resultSurface?.warnings ?? [],
+    mechanics: resultSurface?.mechanics ?? null
+  }), [
+    appliedSummary.area,
+    betaCount,
+    hasAppliedSection,
+    rebars.length,
+    resultSurface,
+    stationCount,
+    steelArea,
+    surfaceMessage,
+    surfaceStatus
+  ])
+
+  /** Slider bounds for the fixed-P contour; a missing surface collapses to a disabled range. */
+  const fixedPRange = useMemo(
+    () => ({
+      min: resultSurface ? resultSurface.bounds.P[0] : 0,
+      max: resultSurface ? resultSurface.bounds.P[1] : 0
+    }),
+    [resultSurface]
+  )
   const gridLines = useMemo(() => buildGridLines(camera, size), [camera, size])
   const activeCentroidScreen = useMemo(
     () => worldToScreen(camera, activeSummary.centroid, size),
@@ -753,13 +853,7 @@ export function SectionDrawingClient() {
     setFixedResultP(mid)
   }, [fixedResultP, resultSurface])
 
-  const selectResultsOverview = () => {
-    setResultsViewMode('overview')
-    setSelectedLoadcaseId(null)
-  }
-
   const calculateInverseForLoadcase = (loadcase: LoadCombination, force = false) => {
-    setResultsViewMode('loadcase')
     setSelectedLoadcaseId(loadcase.id)
     if (!hasAppliedSection || !resultSurface) return
     if (!force && inverseResults[loadcase.id]) return
@@ -792,11 +886,57 @@ export function SectionDrawingClient() {
       })
   }
 
+  /**
+   * Build the PDF from the surface already on screen.
+   *
+   * The report re-solves each selected combination rather than reading the UI's cache, so a report
+   * can never publish a check the current surface would not reproduce.
+   */
+  const exportPdfReport = async () => {
+    if (!resultSurface || !hasAppliedSection) {
+      setReportState('error')
+      setReportMessage('Build the section resistance surface before exporting a report.')
+      return
+    }
+    setReportState('working')
+    setReportMessage('')
+    try {
+      const { blob, fileName } = await exportColumnReportPdfAsync({
+        projectName: projectMeta.name || appliedGeometryInput.name || 'Column project',
+        sectionName: appliedGeometryInput.name || 'Section',
+        calculationProfileId,
+        section: finalSection,
+        rebars,
+        materialStore,
+        designBasis,
+        analysisOptions,
+        surface: resultSurface,
+        loadcases: loadingsInput.combinations,
+        detailLoadcaseIds: reportDetailIds
+      })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = fileName
+      anchor.click()
+      URL.revokeObjectURL(url)
+      setReportState('idle')
+      setReportMessage(`Saved ${fileName}`)
+    } catch (error) {
+      setReportState('error')
+      setReportMessage(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  /**
+   * Selecting a combination is a demand-check action wherever it comes from — including a click on
+   * a demand marker in the Section Results 3D plot — so it also moves the user to that menu.
+   */
   const runInverseForLoadcase = (id: number) => {
+    setActiveModule('demand')
     const loadcase = loadingsInput.combinations.find((item) => item.id === id)
     if (!loadcase) {
       setSelectedLoadcaseId(id)
-      setResultsViewMode('loadcase')
       return
     }
     calculateInverseForLoadcase(loadcase)
@@ -806,10 +946,10 @@ export function SectionDrawingClient() {
   // The latter matters when a new row is created: selection can be emitted before React has committed
   // the new loadcase to parent state, so the first direct lookup legitimately finds no row yet.
   useEffect(() => {
-    if (!resultSurface || resultsViewMode !== 'loadcase' || selectedLoadcaseId == null) return
+    if (!resultSurface || activeModule !== 'demand' || selectedLoadcaseId == null) return
     const loadcase = loadingsInput.combinations.find((item) => item.id === selectedLoadcaseId)
     if (loadcase) calculateInverseForLoadcase(loadcase, true)
-  }, [loadingsInput.combinations, resultSurface, resultsViewMode, selectedLoadcaseId])
+  }, [activeModule, loadingsInput.combinations, resultSurface, selectedLoadcaseId])
 
   const draftRing = useMemo(() => {
     if (!drawingDraft) return []
@@ -1691,15 +1831,32 @@ export function SectionDrawingClient() {
     dragRef.current = null
   }
 
+  /**
+   * Start the results chunk download on intent, not on click.
+   *
+   * Hover or keyboard focus gives the browser a head start of a few hundred milliseconds, which is
+   * usually the whole perceived delay of opening a results menu for the first time.
+   */
+  const preloadModule = (module: WorkspaceModule) => {
+    if (isResultsModule(module)) {
+      preloadPlotly()
+      void import('./ResultsWorkspace')
+      return
+    }
+    if (module === 'analysis') void import('./AnalysisMeshWorkspace')
+  }
+
   const switchModule = (nextModule: WorkspaceModule) => {
     if (nextModule === activeModule) return
-    if (activeModule !== 'results' && nextModule === 'results') {
+    if (!isResultsModule(activeModule) && isResultsModule(nextModule)) {
       setIsDrawingMeasured(false)
     }
     if (nextModule === 'geometry') {
       pendingFitOnGeometryModuleRef.current = true
     }
-    setActiveModule(nextModule)
+    preloadModule(nextModule)
+    // The nav highlight updates immediately; mounting the new stage is the non-urgent part.
+    startModuleTransition(() => setActiveModule(nextModule))
   }
 
   return (
@@ -1722,11 +1879,30 @@ export function SectionDrawingClient() {
             <SteelStressStrainIcon size={16} />
             <span>Materials</span>
           </button>
-          <button className={activeModule === 'results' ? 'is-active' : ''} onClick={() => switchModule('results')}>
+          <button
+            className={activeModule === 'section' ? 'is-active' : ''}
+            onMouseEnter={() => preloadModule('section')}
+            onFocus={() => preloadModule('section')}
+            onClick={() => switchModule('section')}
+          >
             <ChartLine size={16} />
-            <span>Results</span>
+            <span>Section Results</span>
           </button>
-          <button className={activeModule === 'analysis' ? 'is-active' : ''} onClick={() => switchModule('analysis')}>
+          <button
+            className={activeModule === 'demand' ? 'is-active' : ''}
+            onMouseEnter={() => preloadModule('demand')}
+            onFocus={() => preloadModule('demand')}
+            onClick={() => switchModule('demand')}
+          >
+            <Gauge size={16} />
+            <span>Demand Check</span>
+          </button>
+          <button
+            className={activeModule === 'analysis' ? 'is-active' : ''}
+            onMouseEnter={() => preloadModule('analysis')}
+            onFocus={() => preloadModule('analysis')}
+            onClick={() => switchModule('analysis')}
+          >
             <Settings size={16} />
             <span>Analysis Options</span>
           </button>
@@ -2373,77 +2549,52 @@ export function SectionDrawingClient() {
           </>
         )}
 
-        {activeModule === 'results' && (
+        {activeModule === 'section' && (
+          <SectionResultsPanel
+            summary={sectionResultsSummary}
+            view={sectionResultsView}
+            onViewChange={updateSectionResultsView}
+            angleSliderMax={sliceAngleMax(sectionResultsView)}
+            fixedP={fixedResultP}
+            fixedPRange={fixedPRange}
+            onFixedPChange={setFixedResultP}
+          />
+        )}
+
+        {activeModule === 'demand' && (
           <>
-            <section className="pm-panel-section">
-              <div className="pm-section-title">
-                <h2>Result Status</h2>
-              </div>
-              <button
-                type="button"
-                className={`pm-result-status-card${resultsViewMode === 'overview' ? ' is-selected' : ''}`}
-                onClick={selectResultsOverview}
-              >
-                <div className="pm-result-status-list">
-                  <span>Applied section</span>
-                  <strong>{hasAppliedSection ? 'Ready' : 'Missing'}</strong>
-                  <span>Analysis</span>
-                  <strong>
-                    {surfaceStatus === 'working' ? 'Calculating...' : surfaceStatus === 'error' ? 'Error' : 'Ready'}
-                  </strong>
-                  <span>Ac</span>
-                  <strong>{hasAppliedSection ? `${Math.round(appliedSummary.area).toLocaleString('en-US')} mm²` : '—'}</strong>
-                  <span>As</span>
-                  <strong>{`${Math.round(steelArea).toLocaleString('en-US')} mm²`}</strong>
-                  <span>Rebars</span>
-                  <strong>{rebars.length}</strong>
-                  <span>Mesh cells</span>
-                  <strong>{resultSurface?.mesh.cells ?? 0}</strong>
-                  <span>Mesh points</span>
-                  <strong>{resultSurface?.mesh.points ?? 0}</strong>
-                  <span>Surface points</span>
-                  <strong>{resultSurface?.points.length ?? 0}</strong>
-                  <span>Angles (β)</span>
-                  <strong>{betaCount}</strong>
-                  <span>Stations</span>
-                  <strong>{stationCount}</strong>
-                  <span>Loadcases</span>
-                  <strong>{loadingsInput.combinations.length}</strong>
-                  <span>Quick UR</span>
-                  <strong>
-                    {quickCheckWorking
-                      ? 'Checking...'
-                      : `${Object.keys(quickChecksById).length}/${loadingsInput.combinations.length}`}
-                  </strong>
-                </div>
-                <span className="pm-result-status-hint">
-                  {surfaceMessage || 'Select to view section overview charts'}
-                </span>
-              </button>
-            </section>
+            <DemandCheckPanel
+              view={demandCheckView}
+              onViewChange={updateDemandCheckView}
+              inverseResult={selectedLoadcaseId == null ? null : inverseResults[selectedLoadcaseId] ?? null}
+              working={selectedLoadcaseId != null && Boolean(inverseWorkingById[selectedLoadcaseId])}
+              surfaceReady={Boolean(resultSurface)}
+              quickCheck={{
+                working: quickCheckWorking,
+                checked: Object.keys(quickChecksById).length,
+                total: loadingsInput.combinations.length
+              }}
+              loadcases={loadingsInput.combinations}
+              reportDetailIds={reportDetailIds}
+              onReportDetailIdsChange={setReportDetailIds}
+              onExportReport={exportPdfReport}
+              reportState={reportState}
+              reportMessage={reportMessage}
+            />
             <LoadingsPanel
               input={loadingsInput}
-              selectedLoadcaseId={resultsViewMode === 'loadcase' ? selectedLoadcaseId : null}
+              selectedLoadcaseId={selectedLoadcaseId}
               utilizationById={Object.fromEntries(
                 Object.entries(quickChecksById).map(([id, result]) => [Number(id), result.utilization])
               )}
               onSelectLoadcase={(id) => {
                 if (id == null) {
-                  selectResultsOverview()
+                  setSelectedLoadcaseId(null)
                   return
                 }
                 runInverseForLoadcase(id)
               }}
               onDemandChanged={(loadcase) => {
-                if (!hasAppliedSection || !resultSurface) {
-                  setInverseResults((current) => {
-                    if (!(loadcase.id in current)) return current
-                    const next = { ...current }
-                    delete next[loadcase.id]
-                    return next
-                  })
-                  return
-                }
                 setInverseResults((current) => {
                   if (!(loadcase.id in current)) return current
                   const next = { ...current }
@@ -2462,18 +2613,26 @@ export function SectionDrawingClient() {
       <section
         className="pm-drawing-stage"
         aria-label={
-          activeModule === 'results'
-            ? 'Analysis results'
+          activeModule === 'section'
+            ? 'Section capacity results'
+            : activeModule === 'demand'
+              ? 'Demand check results'
             : activeModule === 'analysis'
               ? 'Analysis section mesh'
               : 'Section drawing'
         }
       >
-        {activeModule === 'results' ? (
+        {isResultsModule(activeModule) && hasAppliedSection && !resultSurface && surfaceStatus !== 'error' ? (
+          <WorkspaceLoading
+            title="Building the resistance surface…"
+            detail="Sampling stations and directions in a background worker."
+          />
+        ) : isResultsModule(activeModule) ? (
           <ResultsWorkspace
+            busy={surfaceStatus === 'working' || moduleSwitching}
             theme={theme}
             ready={hasAppliedSection}
-            viewMode={resultsViewMode}
+            viewMode={activeModule === 'demand' ? 'loadcase' : 'overview'}
             surface={resultSurface}
             section={finalSection}
             rebars={rebars}
@@ -2484,7 +2643,9 @@ export function SectionDrawingClient() {
             selectedLoadcaseId={selectedLoadcaseId}
             inverseResult={selectedLoadcaseId == null ? null : inverseResults[selectedLoadcaseId] ?? null}
             fixedP={fixedResultP}
-            onFixedPChange={setFixedResultP}
+            view={sectionResultsView}
+            demandView={demandCheckView}
+            onViewChange={updateSectionResultsView}
             onSelectLoadcase={runInverseForLoadcase}
           />
         ) : activeModule === 'analysis' ? (

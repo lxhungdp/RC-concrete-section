@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, RotateCcw } from 'lucide-react'
 import {
   createAci318DesignBasis,
+  createCustomDesignBasis,
   createEn1992DesignBasis,
   createKdsBasicDesignBasis,
   designBasisIssues,
@@ -22,6 +23,7 @@ const clone = <T,>(value: T): T => structuredClone(value)
 const profileDefaults = (profileId: DesignProfileId): DesignBasis => {
   if (profileId === 'aci-318-19-22') return createAci318DesignBasis()
   if (profileId === 'en-1992-1-1-2004-default') return createEn1992DesignBasis()
+  if (profileId === 'custom-user-defined') return createCustomDesignBasis()
   return createKdsBasicDesignBasis()
 }
 
@@ -95,11 +97,18 @@ export function DesignBasisPanel({ value, onChange }: Props) {
     if (designBasisIssues(next).length === 0) onChange(clone(next))
   }
 
+  const isUserDefinedProfile = draft.profileId === 'custom-user-defined'
+
   const update = (mutate: (next: DesignBasis) => void) => {
     const next = clone(draft)
     mutate(next)
     next.modified = true
-    next.verificationStatus = 'draft'
+    /**
+     * Editing a code profile demotes it to `draft`. A user-defined profile is already outside the
+     * review ladder, and `user-defined` is the status the project schema pairs with it, so editing
+     * must not relabel it as a code profile awaiting review.
+     */
+    next.verificationStatus = isUserDefinedProfile ? 'user-defined' : 'draft'
     publishIfValid(next)
   }
 
@@ -154,6 +163,31 @@ export function DesignBasisPanel({ value, onChange }: Props) {
               <strong>Strength reduction</strong>
               <span>Applied to the complete P-Mx-My resultant</span>
             </div>
+            {/* A code profile owns its transition shape; a user-defined profile chooses one. */}
+            {isUserDefinedProfile && (
+              <DesignSelect
+                label="Tension-controlled limit rule"
+                value={draft.transition.type}
+                onChange={(type) =>
+                  update((next) => {
+                    if (next.format !== 'globalResultantFactor') return
+                    if (type === 'yield-plus-strain') {
+                      next.transition = { type: 'yield-plus-strain', extraStrain: 0.003 }
+                    } else {
+                      next.transition = {
+                        type: 'fixed-or-yield-multiple',
+                        yieldStressThreshold: 400,
+                        fixedStrainLimit: 0.005,
+                        highStrengthYieldMultiple: 2.5
+                      }
+                    }
+                  })
+                }
+              >
+                <option value="yield-plus-strain">εt,limit = εy + Δεt</option>
+                <option value="fixed-or-yield-multiple">εt,limit = fixed, or a multiple of εy above a grade threshold</option>
+              </DesignSelect>
+            )}
             <div className="pm-design-factor-grid">
               <NumericFactor
                 label="φc · ties"

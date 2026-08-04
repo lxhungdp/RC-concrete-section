@@ -27,11 +27,14 @@ import {
   type DesignBasis
 } from '@pm/design'
 import {
+  exportEquivalentBlockWorkbook,
   exportMeshAuditDxf,
   exportMeshAuditWorkbook,
   exportSectionWorkbook,
+  type EquivalentBlockExcelInput,
   type ExcelExportInput
 } from '@pm/report'
+import type { ReportInput } from '@pm/report/report-model'
 import { analysisMeshKernelOptions, isEquivalentBlockAnalysisOptions, type AnalysisOptions } from '@pm/project'
 import { packSectionMeshView, type SectionMeshView } from '../section-mesh-view'
 import type {
@@ -343,6 +346,45 @@ export const exportSectionWorkbookAsync = async (payload: ExcelExportInput, sign
   return new Blob([result], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   })
+}
+
+export const exportEquivalentBlockWorkbookAsync = async (
+  payload: EquivalentBlockExcelInput,
+  signal?: AbortSignal
+): Promise<Blob> => {
+  const result = await runWorkerOrFallback<ArrayBuffer>(
+    { type: 'exportBlockExcel', payload },
+    async () => {
+      const blob = await exportEquivalentBlockWorkbook(payload)
+      return blob.arrayBuffer()
+    },
+    signal
+  )
+  return new Blob([result], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  })
+}
+
+export const exportColumnReportPdfAsync = async (
+  payload: ReportInput,
+  signal?: AbortSignal
+): Promise<{ blob: Blob; fileName: string }> => {
+  const result = await runWorkerOrFallback<{ bytes: ArrayBuffer; fileName: string }>(
+    { type: 'exportPdfReport', payload },
+    async () => {
+      const { buildColumnReportPdf } = await import('@pm/report/pdf')
+      const report = buildColumnReportPdf(payload)
+      return {
+        bytes: report.bytes.buffer.slice(
+          report.bytes.byteOffset,
+          report.bytes.byteOffset + report.bytes.byteLength
+        ) as ArrayBuffer,
+        fileName: report.fileName
+      }
+    },
+    signal
+  )
+  return { blob: new Blob([result.bytes], { type: 'application/pdf' }), fileName: result.fileName }
 }
 
 /** Re-exported so callers can present a kernel input rejection instead of a generic failure. */

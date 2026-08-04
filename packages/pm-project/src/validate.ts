@@ -29,7 +29,7 @@ import {
   type EquivalentBlockAnalysisOptions,
   type DirectionProbe
 } from './analysis-options'
-import { calculationProfile, isCalculationProfileId } from './calculation-profiles'
+import { CONCRETE_MODELS_FOR_MECHANICS, calculationProfile, isCalculationProfileId } from './calculation-profiles'
 import {
   PM_PROJECT_SCHEMA,
   PM_PROJECT_VERSION,
@@ -190,6 +190,16 @@ const parseConcrete = (value: unknown): ConcreteMaterial => {
       n: value.stressStrain.n,
       epsC2: value.stressStrain.epsC2,
       epsCu2: value.stressStrain.epsCu2,
+      alpha: value.stressStrain.alpha
+    }
+  } else if (modelType === 'user-block') {
+    assert(isFiniteNumber(value.stressStrain.beta1), 'concrete.stressStrain.beta1 must be a finite number')
+    assert(isFiniteNumber(value.stressStrain.epsCu), 'concrete.stressStrain.epsCu must be a finite number')
+    assert(isFiniteNumber(value.stressStrain.alpha), 'concrete.stressStrain.alpha must be a finite number')
+    stressStrain = {
+      type: 'user-block',
+      beta1: value.stressStrain.beta1,
+      epsCu: value.stressStrain.epsCu,
       alpha: value.stressStrain.alpha
     }
   } else if (modelType === 'user-curve') {
@@ -685,14 +695,20 @@ const parseDesignBasis = (value: unknown | undefined, materials: MaterialStore):
     value.profileId === 'kds-2024-current-set' ||
       value.profileId === 'kds-basic-2021-2022' ||
       value.profileId === 'aci-318-19-22' ||
-      value.profileId === 'en-1992-1-1-2004-default',
+      value.profileId === 'en-1992-1-1-2004-default' ||
+      value.profileId === 'custom-user-defined',
     'inputs.design.profileId is unsupported'
   )
   assert(
     value.verificationStatus === 'draft' ||
       value.verificationStatus === 'reviewed' ||
-      value.verificationStatus === 'verified',
+      value.verificationStatus === 'verified' ||
+      value.verificationStatus === 'user-defined',
     'inputs.design.verificationStatus is invalid'
+  )
+  assert(
+    (value.profileId === 'custom-user-defined') === (value.verificationStatus === 'user-defined'),
+    'inputs.design.verificationStatus "user-defined" is reserved for the custom resistance profile'
   )
   assert(typeof value.modified === 'boolean', 'inputs.design.modified must be boolean')
   assert(isString(value.overrideReason), 'inputs.design.overrideReason must be a string')
@@ -819,17 +835,26 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
       (analysis.methodId === EQUIVALENT_BLOCK_SURFACE_METHOD),
     'inputs.calculationProfileId and inputs.analysis.methodId select different mechanics'
   )
-  const expectsAci = value.inputs.calculationProfileId === 'aci-318-19-22-equivalent-block'
   assert(
-    design.format === 'globalResultantFactor' &&
-      design.profileId === (expectsAci ? 'aci-318-19-22' : 'kds-2024-current-set'),
+    design.format === 'globalResultantFactor' && design.profileId === profile.designProfileId,
     'inputs.calculationProfileId and inputs.design select different standards or resistance formats'
   )
   assert(
-    materials.concrete.standard === (expectsAci ? 'ACI318' : 'KDS') &&
-      materials.steel.every((steel) => steel.standard === (expectsAci ? 'ACI318' : 'KDS')),
+    materials.concrete.standard === profile.materialStandard &&
+      materials.steel.every((steel) => steel.standard === profile.materialStandard),
     'inputs.calculationProfileId and inputs.materials select different standards'
   )
+  /**
+   * A code profile pins its concrete model through the standard above. A custom profile does not,
+   * so the model has to be checked against the mechanics that will evaluate it: a block law cannot
+   * reach the fibre kernel, and a fibre law carries no `β1` for the block kernel.
+   */
+  if (profile.materialStandard === 'CUSTOM') {
+    assert(
+      CONCRETE_MODELS_FOR_MECHANICS[profile.mechanics].includes(materials.concrete.stressStrain.type),
+      `inputs.materials.concrete.stressStrain.type "${materials.concrete.stressStrain.type}" cannot be evaluated by the ${profile.mechanics} mechanics`
+    )
+  }
   return {
     schema: PM_PROJECT_SCHEMA,
     version: PM_PROJECT_VERSION,

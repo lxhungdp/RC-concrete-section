@@ -10,17 +10,18 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 | Area | Implemented now | Remaining gate |
 |---|---|---|
 | Project | every persisted calculation contract is v1; canonical exports contain profile, geometry, materials, factored loadings, model-specific options, and DesignBasis; exact canonical round trip; documented parser-v1 defaults | accepted-result artifact and signed release metadata |
-| Profile selection | one Materials selection atomically binds KDS stress-strain, KDS block, or ACI block mechanics and defaults | add only edition-scoped profiles with independent review evidence |
+| Profile selection | one Materials selection atomically binds KDS stress-strain, KDS block, ACI block, or either `Custom` mechanics and defaults; the profile table is the single owner of mechanics/material-standard/resistance-profile coherence | add only edition-scoped profiles with independent review evidence |
 | Geometry | multiple solids/holes, rebars, exact properties, clipping, triangle/quadrature mesh | complete production topology/cover acceptance UX |
 | Materials | persisted concrete/steel definitions, compiled stress/tangent laws, material support gates | finish independent curve verification for every declared scope |
 | Stress-strain kernel | prepared mesh, 25-state default, nine code-aware transition nodes, 36-direction seed, adaptive angular refinement, full fields, inverse Newton | accepted-result numerical-uncertainty gate and larger independent oracle set |
 | Equivalent-block kernel | standard-independent exact clipping, forward evaluator, exact-refined inverse solvers, bar-event/adaptive surface, rupture/admissibility, block field | independent clause calculations and additional commercial cross-checks |
 | KDS block adapter | KDS 14 20 20 parameter table, `a=beta1 c`, block stress, KDS phi transition and axial cap | named structural-code review and release status above draft |
 | ACI block adapter | ACI 318-19(22) beta1, Whitney stress, phi transition and axial cap | named structural-code review and release status above draft |
+| Custom block adapter | user-declared beta1/block stress/epsCu, either transition rule shape, elastic-perfectly-plastic, bilinear or tabulated steel; unit-tested to reproduce the ACI and KDS adapters exactly when given their parameters | none — it is `user-defined` by construction and is never promoted |
 | Resistance | Nominal/Design separation, global-factor and design-material formats, single ledger scaling, axial cap | accepted-result/profile certification workflow |
 | Demand | explicit `factoredULS`, governing 3D proportional ray, secondary fixed-P diagnostic | immutable accepted check artifact and batch governance |
 | Results | 3D surface, fixed-P and vertical slices, model-specific fields/evidence | final accepted-result-only presentation rules |
-| Report/export | stress-strain formula-audited result workbook; stress-strain mesh Excel/DXF | equivalent-block result ledger, immutable accepted result, released PDF, and cryptographic result identity |
+| Report/export | stress-strain and equivalent-block formula-audited result workbooks; stress-strain mesh Excel/DXF; a format-neutral `ReportModel` and a deterministic, vector, watermarked preview PDF with per-combination detail selection | immutable accepted result, **released** PDF, and cryptographic result identity |
 | Performance | worker protocol, prepared-analysis and block Design-surface caches, mesh/sampling/pipeline benchmarks | memory budgets, larger batches, cooperative cancellation checkpoints |
 
 ## 2. Closed hazards
@@ -45,6 +46,11 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
   residuals are computed from the exact response rather than reconstructed by identity.
 - Validated maximum sampling sizes and imported polygon extents use reduction loops rather than
   argument-spread extrema, avoiding engine stack limits.
+- The equivalent-block backend is selected by mechanics, not by excluding one profile id, so a newly
+  added fibre profile can no longer fall through to a block adapter.
+- Both result surfaces declare their `mechanics`, so a consumer never re-derives it from a method id.
+- The governing design check is composed onto an inverse state in one place, so a second consumer
+  cannot publish the fixed-P diagnostic where the governing utilization belongs.
 
 ## 3. Open consistency hazards found by the documentation audit
 
@@ -52,9 +58,10 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
   formula. Stress-strain uses `My = +sum(F*x)`, block uses `My = -sum(F*x)`, and the bridge/UI pass
   both through unchanged. Nonzero-`My` block checks, especially asymmetric sections, remain
   blocking preview output until one convention or an explicit transform is regression-tested.
-- **Equivalent-block workbook:** Results blocks Excel export for the block route because the current
-  workbook is a fiber/stress-strain ledger. A dedicated block area/centroid, `c`, `a`, `beta1`,
-  steel, resistance-stage, admissibility, and solver-evidence workbook remains required.
+- **Equivalent-block workbook:** closed. `@pm/report/equivalent-block.ts` publishes the block
+  ledger — clipped polygon with a shoelace reconciliation, `c`, `a`, `beta1`, block area/centroid,
+  the bar ledger, the resistance stage and the solver evidence — and `npm run test:excel-block`
+  recalculates it in an independent formula engine against the kernel.
 
 ## 4. Numerical evidence for the new stress-strain default
 
@@ -83,9 +90,10 @@ result fingerprints and convergence evidence.
    product does not yet prevent report release after a missed tolerance or unresolved cap.
 5. **Geometry/material verification matrix is incomplete.** More topology, high-strength,
    multi-material, and property-based cases are required.
-6. **Final report release is incomplete.** Stress-strain Excel is an audit preview; block Excel,
-   accepted-result-only PDF,
-   provenance signature, and render verification remain open.
+6. **Final report release is incomplete.** Both Excel workbooks and the PDF are audit previews. The
+   PDF is deterministic and structurally verified, which is what a result-identity hash over it
+   would need, but it is generated from a preview result: the accepted-result gate, the provenance
+   signature and the approval fields remain open, and the watermark says so on every page.
 
 ## 6. P1 engineering and architecture work
 
@@ -96,6 +104,7 @@ result fingerprints and convergence evidence.
 - extend independent analytical and commercial-program comparison fixtures for both mechanics;
 - finish model-specific Results field presentation and report tables without duplicating formulas in
   React or workbook code;
+- drive a second output format from the existing `ReportModel` rather than a second renderer;
 - reduce large editor components without moving engineering ownership into UI helpers.
 
 ## 7. Rules that remain fixed

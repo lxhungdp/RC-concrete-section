@@ -1557,6 +1557,9 @@ export const buildPreviewSurfaceFromPrepared = (
   }
 
   return {
+    // The block bridge labels its own surface; labelling this one too means a consumer never has
+    // to re-derive the mechanics from the method id.
+    mechanics: 'stress-strain-integration',
     points,
     nominalPoints: points,
     bounds: {
@@ -2356,6 +2359,27 @@ export const checkLoadcasesUtilizationFromSurface = (
   surface: PreviewSurface,
   loadcases: LoadCombination[]
 ): LoadcaseQuickCheckResult[] => loadcases.map((loadcase) => checkLoadcaseUtilizationFromSurface(surface, loadcase))
+
+/**
+ * Attach the governing design check to a converged inverse state.
+ *
+ * The inverse solve answers "what strain plane balances this demand"; it does not answer "is the
+ * section adequate". Adequacy is the proportional 3D ray against the **design** surface, and the
+ * inverse's own `utilization` is a fixed-P estimate on the contour it was handed. Composing them in
+ * one place stops a second consumer — a report, a batch check — from publishing the diagnostic
+ * where the governing number belongs.
+ */
+export const applyDesignCheckToInverse = (
+  inverse: InversePreviewResult,
+  check: LoadcaseQuickCheckResult
+): InversePreviewResult => ({
+  ...inverse,
+  utilization: check.proportionalUtilization,
+  proportionalUtilization: check.proportionalUtilization,
+  fixedPUtilization: check.fixedPUtilization,
+  designCapacityPoint: check.capacityPoint,
+  resistance: check.resistance
+})
 
 export const solveInversePreviewFromPrepared = (
   prepared: PreparedAnalysis,

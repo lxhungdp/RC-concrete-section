@@ -72,8 +72,40 @@ replace dependent defaults:
 | `kds-2024-stress-strain` | stress-strain integration | `strain-domain-surface-v1` | KDS global resultant factor |
 | `kds-142020-equivalent-block` | equivalent rectangular block | `equivalent-block-surface-v1` | KDS global resultant factor |
 | `aci-318-19-22-equivalent-block` | equivalent rectangular block | `equivalent-block-surface-v1` | ACI global resultant factor |
+| `custom-stress-strain` | stress-strain integration | `strain-domain-surface-v1` | user-defined global resultant factor |
+| `custom-equivalent-block` | equivalent rectangular block | `equivalent-block-surface-v1` | user-defined global resultant factor |
 
 Downstream packages switch on these IDs. They must not infer mechanics from concrete material text.
+
+`CALCULATION_PROFILES` in `packages/pm-project/src/calculation-profiles.ts` is the single owner of
+this binding: each entry names its `mechanics`, `materialStandard` and `designProfileId`, and both
+the parser's coherence assertions and the atomic Materials apply read that table rather than
+re-deriving the answer from the profile id. Narrow by mechanics, never by excluding one id — that is
+how a newly added profile silently reaches the wrong kernel.
+
+### 3.1 Custom profiles
+
+A `Custom` profile persists `materialStandard: 'CUSTOM'` and a DesignBasis with
+`profileId: 'custom-user-defined'`. Two v1 rules make it safe to carry alongside the code profiles:
+
+- `verificationStatus: 'user-defined'` is reserved for, and required by, that profile id. The parser
+  asserts the pairing in both directions, so a code profile cannot borrow the status and a custom
+  profile cannot masquerade as `draft`.
+- The concrete `stressStrain.type` is checked against the mechanics that will evaluate it. A fibre
+  profile rejects `user-block`; a block profile accepts only `user-block`. A code profile needs no
+  such check because its material standard already pins the model.
+
+### 3.2 `user-block` concrete model
+
+```ts
+{ type: 'user-block'; beta1: number; alpha: number; epsCu: number }
+```
+
+`sigma_block = alpha * fck` over `a = beta1 * c`. Like `aci-whitney-block` it is a resultant
+equivalence rather than a pointwise law, so `UNSUPPORTED_CONCRETE_MODELS` blocks it from the fibre
+kernel and only the equivalent-block adapter consumes it. The stress the kernel integrates comes
+from `userBlockCompressionStress`, which is also what the Materials panel and the workbook display,
+so the three cannot diverge.
 
 ## 4. Stress-strain analysis options v1
 

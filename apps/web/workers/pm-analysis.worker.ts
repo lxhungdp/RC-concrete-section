@@ -1,6 +1,7 @@
 import {
   AnalysisInputError,
   analysisInputKey,
+  applyDesignCheckToInverse,
   buildDesignPreviewSurfaceFromPrepared,
   buildSectionFieldMapFromPrepared,
   checkLoadcaseUtilizationFromSurface,
@@ -31,11 +32,14 @@ import {
   type DesignBasis
 } from '@pm/design'
 import {
+  exportEquivalentBlockWorkbook,
   exportMeshAuditDxf,
   exportMeshAuditWorkbook,
   exportSectionWorkbook,
+  type EquivalentBlockExcelInput,
   type ExcelExportInput
 } from '@pm/report'
+import type { ReportInput } from '@pm/report/report-model'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
 import {
@@ -108,6 +112,8 @@ export type AnalysisWorkerJob =
   | { type: 'exportMeshDxf'; jobId: string; payload: MeshAuditExportPayload }
   | { type: 'buildFieldMap'; jobId: string; payload: BuildFieldMapPayload }
   | { type: 'exportExcel'; jobId: string; payload: ExcelExportInput }
+  | { type: 'exportBlockExcel'; jobId: string; payload: EquivalentBlockExcelInput }
+  | { type: 'exportPdfReport'; jobId: string; payload: ReportInput }
 
 /** Withdraws a job. Effective while it is still queued; a running job is left to finish. */
 export type AnalysisWorkerCancel = { type: 'cancel'; jobId: string }
@@ -123,6 +129,8 @@ export type AnalysisWorkerResultMap = {
   exportMeshDxf: ArrayBuffer
   buildFieldMap: SectionFieldMap
   exportExcel: ArrayBuffer
+  exportBlockExcel: ArrayBuffer
+  exportPdfReport: { bytes: ArrayBuffer; fileName: string }
 }
 
 export type AnalysisWorkerResponse =
@@ -316,14 +324,7 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
         surfaceCache?.key === key ? surfaceCache.value : surface,
         loadcase
       )
-      const result = {
-        ...inverse,
-        utilization: designCheck.proportionalUtilization,
-        proportionalUtilization: designCheck.proportionalUtilization,
-        fixedPUtilization: designCheck.fixedPUtilization,
-        designCapacityPoint: designCheck.capacityPoint,
-        resistance: designCheck.resistance
-      }
+      const result = applyDesignCheckToInverse(inverse, designCheck)
       workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
       return
     }
@@ -373,6 +374,37 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
       workerSelf.postMessage(
         { type: 'success', jobId: request.jobId, requestType: request.type, result },
         [result]
+      )
+      return
+    }
+
+    if (request.type === 'exportPdfReport') {
+      // Imported here rather than at module scope so the drawing code stays out of the worker
+      // bundle until a report is actually asked for.
+      const { buildColumnReportPdf } = await import('@pm/report/pdf')
+      const report = buildColumnReportPdf(request.payload)
+      const buffer = report.bytes.buffer.slice(
+        report.bytes.byteOffset,
+        report.bytes.byteOffset + report.bytes.byteLength
+      ) as ArrayBuffer
+      workerSelf.postMessage(
+        {
+          type: 'success',
+          jobId: request.jobId,
+          requestType: request.type,
+          result: { bytes: buffer, fileName: report.fileName }
+        },
+        [buffer]
+      )
+      return
+    }
+
+    if (request.type === 'exportBlockExcel') {
+      const blockBlob = await exportEquivalentBlockWorkbook(request.payload)
+      const blockResult = await blockBlob.arrayBuffer()
+      workerSelf.postMessage(
+        { type: 'success', jobId: request.jobId, requestType: request.type, result: blockResult },
+        [blockResult]
       )
       return
     }

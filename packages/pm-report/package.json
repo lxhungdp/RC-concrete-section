@@ -5,14 +5,18 @@
   "type": "module",
   "main": "src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./pdf": "./src/pdf/index.ts",
+    "./report-model": "./src/report-model.ts"
   },
   "scripts": {
     "test": "tsx src/excel.selftest.ts"
   },
   "dependencies": {
     "@pm/analysis": "0.1.0",
+    "@pm/analysis-equivalent-block": "0.1.0",
     "@pm/design": "0.1.0",
+    "@pm/equivalent-block": "0.1.0",
     "@pm/geometry": "0.1.0",
     "@pm/materials": "0.1.0",
     "@pm/project": "0.1.0",

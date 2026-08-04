@@ -1,6 +1,7 @@
 import { compileAciWhitneyConcrete } from './concrete/aci-whitney'
 import { compileEc2ParabolicRectangularConcrete } from './concrete/ec2-parabolic-rectangular'
 import { compileKdsParabolicConcrete } from './concrete/kds-parabolic'
+import { compileUserBlockConcrete } from './concrete/user-block'
 import { compileBilinearSteel } from './steel/bilinear'
 import { compileElasticPerfectlyPlasticSteel } from './steel/elastic-perfectly-plastic'
 import { compileConcreteUserCurve, compileSteelUserCurve } from './user-curve'
@@ -18,6 +19,8 @@ export const compileConcreteMaterial = (material: ConcreteMaterial): CompiledMat
       return compileKdsParabolicConcrete(material)
     case 'aci-whitney-block':
       return compileAciWhitneyConcrete(material)
+    case 'user-block':
+      return compileUserBlockConcrete(material)
     case 'ec2-parabolic-rectangular':
       return compileEc2ParabolicRectangularConcrete(material)
     case 'user-curve':
