@@ -1,4 +1,4 @@
-# 10 — References, Traceability, and v1→v2 Decision Record
+# 10 — References, Traceability, and Current-v1 Decision Record
 
 Access review date: **2026-07-23**.
 
@@ -97,16 +97,19 @@ Pin actual package versions in the project lockfile and record them in result pr
 
 1. Governing law/adopted design code and project-specific design basis.
 2. Verified design-code adapter traceability and approved interpretations.
-3. This generic v2 engineering specification.
+3. This current schema-v1 engineering specification.
 4. Architecture decision records and implementation documentation.
 5. Examples, notebooks, plots, and UI help.
 
 When a conflict is found, stop certification, record it, and resolve it at the highest applicable
 level. Do not silently change a formula to match an existing regression output.
 
-## 6. Major v1→v2 decisions
+## 6. Legacy-preview decisions incorporated into current v1
 
-| v1 decision/problem | v2 resolution |
+These are algorithm/product decisions inside schema v1. They do not imply a project-file v2 or a
+migration layer.
+
+| Historical preview problem | Current v1 resolution |
 |---|---|
 | Historical 24×19 grid declared the full surface | Retired: stress-strain production now uses 25 stations, 36 seed directions, and 0.5% adaptive angular refinement; block sampling remains independently adaptive. |
 | Strain direction `beta` or derived N.A. line angle reused as demand moment angle | Demand checks use `thetaLoad = atan2(Muy, Mux)` and geometric ray/plane intersections on the finished `P-Mx-My` surface. |
@@ -128,17 +131,18 @@ level. Do not silently change a formula to match an existing regression output.
 | Warning after non-convergence | Typed fail-closed result; partial output branded preview-only. |
 | Random Monte Carlo and inverse round-trip as primary QA | Analytical, invariant, differential, reference-optimizer, code-example, and validation matrix. |
 
-## 7. Open decisions before implementation begins
+## 7. Open decisions before engineering release
 
 Create architecture/design records for:
 
-- first supported normative adapter and exact edition;
-- runtime schema library;
+- explicit conversion of the equivalent-block kernel's local `My = -sum(F*x)` convention to the
+  project `My = sum(F*x)` convention, with asymmetric-section cross-kernel tests;
+- removal or formal retention of the parser's remaining v1 omitted-field/default repair behavior;
+- runtime schema strategy and unknown-property policy;
 - polygon self-intersection/robust-predicate implementation;
 - triangle intersection and generalized winding implementation;
-- internal vs third-party pivoted 3×3 solver;
-- independent reference solver technology/language;
-- certified-result signing/hash format;
+- accepted-result signing/hash format and immutable result identity;
+- dedicated equivalent-block audit workbook and common report model;
 - browser performance budgets and supported runtimes;
 - acceptance margin ownership and certification workflow.
 
@@ -155,7 +159,7 @@ Engineering rationale:
 Expected numerical/result impact:
 Tests/evidence rerun:
 Independent reviewers:
-Migration/provenance implications:
+Schema-v1 normalization, future migration, and provenance implications:
 Approval and release version:
 ```
 

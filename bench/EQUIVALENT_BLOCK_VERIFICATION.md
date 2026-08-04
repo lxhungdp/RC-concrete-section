@@ -3,8 +3,10 @@
 Date: 2026-08-04  
 Runtime: Node.js 22.22.2, Windows  
 Scope: independent equivalent-block mechanics, KDS 14 20 20:2022 and ACI 318-19(22) adapters,
-strict schema v1, worker routing, UI configuration, and result visualization. The stress-strain
-pipeline remains independent.
+version-locked schema v1, worker routing, UI configuration, and result visualization. The parser's
+limited v1 defaulting/repair behavior is documented separately; this record does not claim that
+every omitted optional field or unknown property is rejected. The stress-strain pipeline remains
+independent.
 
 ## Verification strategy
 
@@ -58,19 +60,19 @@ observations, not contractual speed limits.
 
 | Metric | Observed range / worst case |
 |---|---:|
-| Exact forward evaluation | 174.5-518.8 thousand evaluations/s |
-| Controlled surface | 24.33-40.47 ms |
-| Coupled-adaptive production surface | 205.41-366.49 ms |
+| Exact forward evaluation | 177.7-492.2 thousand evaluations/s |
+| Controlled surface | 25.28-37.18 ms |
+| Coupled-adaptive production surface | 231.46-384.45 ms |
 | Adaptive directions / points | 104-148 / 4,100-6,495 |
 | Direction and station convergence | 8/8 and 8/8 |
-| Surface ray query | 4,202-16,050 queries/s; 100% hits |
+| Surface ray query | 3,564-17,495 queries/s; 100% hits |
 | Coarse 36-direction ray error | at most 2.622% |
 | Production surface to exact LM correction | at most 0.918% |
-| Exact proportional inverse | 0.28-1.11 ms/solve |
+| Exact proportional inverse | 0.32-1.01 ms/solve |
 | Exact proportional inverse residual | at most 7.39e-10 |
-| Fixed-axial inverse, production 96x96 + events | 34.15-53.65 ms/solve |
+| Fixed-axial inverse, production 96x96 + events | 34.33-59.44 ms/solve |
 | Fixed-axial relative error | at most 1.21e-13 |
-| Estimated 20-loadcase cache speedup | 5.15x-6.80x |
+| Estimated 20-loadcase cache speedup | 4.98x-6.76x |
 | Surface topology | zero degenerate triangles; all closed |
 
 ## Sampling benchmark against a high-resolution reference

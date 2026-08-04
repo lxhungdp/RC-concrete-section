@@ -2,6 +2,9 @@
 
 ACI CODE-318-19(22) adapter for the independent equivalent-block kernel.
 
+Status: implemented draft preview. It is not a released or independently approved code-compliance
+profile.
+
 Implemented basis:
 
 - Whitney block: `epsilon_cu = 0.003`, uniform stress `0.85*f'c`, and `a = beta1*c`.

@@ -55,6 +55,11 @@ RawDefinition
 Do not bypass stages. Do not send editor state directly to the kernel or compiled functions into
 persistence.
 
+This is the target accepted-product pipeline. The current preview implements persisted definitions,
+validation/preparation, numerical surfaces/checks, UI view models, a stress-strain result workbook,
+and stress-strain mesh Excel/DXF. It does not yet implement immutable `AcceptedResult`, a shared
+format-neutral `ReportModel`, an equivalent-block result workbook, or PDF release.
+
 ## 4. Definition Of Done
 
 A development slice is complete only when:

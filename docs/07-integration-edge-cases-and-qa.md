@@ -1,7 +1,13 @@
 # 07 — Demand Checks, Utilization, and End-to-End Orchestration
 
-This file defines the authoritative ULS check. It replaces v1's axial screen plus fixed-P radial
-moment ratio.
+This file defines the target authoritative ULS check. It replaces the historical preview's axial
+screen plus fixed-P radial moment ratio; both the current project format and options remain schema
+version 1.
+
+Current preview status: proportional 3D ray utilization and triangle-based Fixed-P/vertical slices
+are implemented. The complete point-in-domain brand, star-shaped certification, combined numerical
+uncertainty interval, immutable `EngineeringResult`, and accepted-result gate described below are
+not yet implemented.
 
 Classic biaxial-bending pitfall: the sampled strain-gradient direction `beta` used to generate the
 `P-Mx-My` surface—and the derived neutral-axis line angle—are not the moment direction of a demand.
@@ -127,7 +133,7 @@ function classify(interval:[number,number], margin:number) {
 Project/design-code policy may define whether equality is permitted, but numeric rounding must not
 decide it.
 
-## 6. End-to-end ULS orchestration
+## 6. Target end-to-end ULS orchestration
 
 ```ts
 export async function analyzeUls(
@@ -157,7 +163,7 @@ export async function analyzeUls(
 Surface refinement occurs inside every compared mesh level. Comparing a fine mesh with an
 under-resolved surface confounds error sources and is prohibited.
 
-## 7. Public result model
+## 7. Target public result model
 
 ```ts
 export type EngineeringResult<T> =
@@ -230,3 +236,7 @@ triangle queries.
 
 Batch checks preserve input order and isolate per-demand geometric ambiguity while sharing global
 surface convergence evidence.
+
+Current implementation note: the equivalent-block worker caches one Design surface by profile,
+geometry, rebars, materials, DesignBasis, and analysis options, excluding load combination. A
+triangle acceleration structure and immutable accepted-domain cache remain future optimizations.

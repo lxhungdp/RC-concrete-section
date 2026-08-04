@@ -16,6 +16,12 @@ The current project model calls the region collection `outers[]`. The target ana
 `concreteRegions[]`. This naming difference is resolved by an explicit adapter, not by duplicating
 the data in application state.
 
+Current schema-v1 reinforcement is one flat `geometry.rebars[]` array and does not persist a parent
+outer/region ID; the UI-only `solidIndex` view currently defaults to zero. Therefore the accepted
+multi-region bar-assignment requirement below is not yet satisfied even though preview kernels can
+evaluate disconnected concrete solids. This is a geometry-contract gap, not permission to infer a
+bar's parent silently.
+
 Support for multiple disconnected regions is capability-gated. An editor may store them while a
 particular analysis profile rejects them as out of scope.
 

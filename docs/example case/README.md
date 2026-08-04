@@ -9,7 +9,9 @@ Files in this directory are evidence fixtures, not declarations of current defau
   with the application default.
 - `P16_Column_ULS.pm-project.json` is an archived pre-profile EC2/UMD comparison snapshot. EC2 is
   not a complete current calculation profile, so this file is evidence data and is not expected to
-  pass the strict current schema-v1 profile-consistency parser. It is not an import template.
+  pass the current schema-v1 profile-consistency checks. It is not an import template. The current
+  parser is version-locked to v1 but still performs the limited defaults/repairs listed in
+  [`../development/02-data-contracts-persistence-and-versioning.md`](../development/02-data-contracts-persistence-and-versioning.md).
 - UMD comparison JSON/XLSX files record external comparison data and the assumptions of that run.
 - Generated Excel workbooks are audit artifacts and may be overwritten only by the explicit fixture
   update workflow after test review. Their main sheets reproduce the historical oracle; a separate

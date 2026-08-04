@@ -9,7 +9,7 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 
 | Area | Implemented now | Remaining gate |
 |---|---|---|
-| Project | strict schema v1; profile, geometry, materials, factored loadings, model-specific analysis options, DesignBasis; exact round trip | accepted-result artifact and signed release metadata |
+| Project | version-locked schema v1; canonical exports contain profile, geometry, materials, factored loadings, model-specific options, and DesignBasis; exact canonical round trip | remove/formalize limited parser defaults; accepted-result artifact and signed release metadata |
 | Profile selection | one Materials selection atomically binds KDS stress-strain, KDS block, or ACI block mechanics and defaults | add only edition-scoped profiles with independent review evidence |
 | Geometry | multiple solids/holes, rebars, exact properties, clipping, triangle/quadrature mesh | complete production topology/cover acceptance UX |
 | Materials | persisted concrete/steel definitions, compiled stress/tangent laws, material support gates | finish independent curve verification for every declared scope |
@@ -20,7 +20,7 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 | Resistance | Nominal/Design separation, global-factor and design-material formats, single ledger scaling, axial cap | accepted-result/profile certification workflow |
 | Demand | explicit `factoredULS`, governing 3D proportional ray, secondary fixed-P diagnostic | immutable accepted check artifact and batch governance |
 | Results | 3D surface, fixed-P and vertical slices, model-specific fields/evidence | final accepted-result-only presentation rules |
-| Report | formula-audited Excel result and mesh exports | released PDF and cryptographic result identity |
+| Report/export | stress-strain formula-audited result workbook; stress-strain mesh Excel/DXF | equivalent-block result ledger, immutable accepted result, released PDF, and cryptographic result identity |
 | Performance | worker protocol, prepared-analysis and block Design-surface caches, mesh/sampling/pipeline benchmarks | memory budgets, larger batches, cooperative cancellation checkpoints |
 
 ## 2. Closed hazards
@@ -33,8 +33,9 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
   directions and adaptively refines all 25 stations to a 0.5% angular chord target.
 - The sparse design-factor transition was replaced by nine code-aware nodes. ACI and KDS transition
   limits are stored as different discriminated rules rather than one ambiguous increment.
-- Project versioning was reset to the intended pre-release schema v1. No migration or compatibility
-  work is carried in the active parser.
+- Project versioning was reset to the intended pre-release schema v1 and no version-migration work
+  is carried. Limited omitted-field/default normalization remains in the active parser and is now an
+  explicit cleanup decision rather than hidden compatibility behavior.
 - Nominal resistance, Design resistance, and factored Demand are different DTO stages and UI terms.
 - KDS `P0` is now a code reference point; the high-strength flexural surface closes on its
   eta-reduced physical compression limit, eliminating an unsupported interpolation band.
@@ -45,7 +46,21 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 - Validated maximum sampling sizes and imported polygon extents use reduction loops rather than
   argument-spread extrema, avoiding engine stack limits.
 
-## 3. Numerical evidence for the new stress-strain default
+## 3. Open consistency hazards found by the documentation audit
+
+- **Equivalent-block `My` sign boundary:** project/stress-strain resultants use `My = sum(F*x)`;
+  `@pm/equivalent-block` uses the local convention `My = -sum(F*x)`. The bridge currently does not
+  transform it. Nonzero-`My` block checks, especially asymmetric sections, remain blocking preview
+  output until a single explicit convention map and cross-kernel regression tests are implemented.
+- **Schema-v1 strictness gap:** there is no version migration, but the parser currently defaults an
+  omitted DesignBasis, stress-strain mesh, and concrete density; it also repairs an invalid default
+  steel ID and ignores unknown extra properties. Canonical exports are complete. Decide whether to
+  remove these paths for strict pre-release v1 or formally retain/document them as normalization.
+- **Equivalent-block workbook:** Results blocks Excel export for the block route because the current
+  workbook is a fiber/stress-strain ledger. A dedicated block area/centroid, `c`, `a`, `beta1`,
+  steel, resistance-stage, admissibility, and solver-evidence workbook remains required.
+
+## 4. Numerical evidence for the new stress-strain default
 
 The permanent `bench:strain-sampling` harness uses five structural geometries and a
 144-direction/33-transition-node reference:
@@ -60,20 +75,24 @@ All production runs reached the configured angular tolerance and found every sam
 intersection. The dense tall section exposes the cost clearly; performance work must preserve the
 result fingerprints and convergence evidence.
 
-## 4. Current P0 blockers before engineering release
+## 5. Current P0 blockers before engineering release
 
-1. **No accepted-result contract.** Preview surface/check DTOs are not a signed, immutable design
+1. **Cross-kernel sign contract is unresolved.** The equivalent-block `My` convention is not yet
+   mapped to the project convention.
+2. **No accepted-result contract.** Preview surface/check DTOs are not a signed, immutable design
    artifact with complete input and implementation hashes.
-2. **Profiles remain draft for release purposes.** Clause-level unit tests exist, but independent
+3. **Profiles remain draft for release purposes.** Clause-level unit tests exist, but independent
    calculations and named discipline review are not complete.
-3. **Numerical uncertainty is not yet an acceptance gate.** Surfaces expose evidence, but the
+4. **Numerical uncertainty is not yet an acceptance gate.** Surfaces expose evidence, but the
    product does not yet prevent report release after a missed tolerance or unresolved cap.
-4. **Geometry/material verification matrix is incomplete.** More topology, high-strength,
+5. **Geometry/material verification matrix is incomplete.** More topology, high-strength,
    multi-material, and property-based cases are required.
-5. **Final report release is incomplete.** Excel is an audit preview; accepted-result-only PDF,
+6. **Schema-v1 parsing is not fully strict.** Limited omitted-field/default repair paths remain.
+7. **Final report release is incomplete.** Stress-strain Excel is an audit preview; block Excel,
+   accepted-result-only PDF,
    provenance signature, and render verification remain open.
 
-## 5. P1 engineering and architecture work
+## 6. P1 engineering and architecture work
 
 - add progress/cooperative-cancellation checkpoints to expensive production builds;
 - add targeted refinement around the governing demand intersection and report utilization drift;
@@ -84,7 +103,7 @@ result fingerprints and convergence evidence.
   React or workbook code;
 - reduce large editor components without moving engineering ownership into UI helpers.
 
-## 6. Rules that remain fixed
+## 7. Rules that remain fixed
 
 - one calculation-profile selection in Materials owns model/code/default coherence;
 - the two numerical kernels remain independent and communicate only through common input/result
@@ -96,13 +115,14 @@ result fingerprints and convergence evidence.
 - every result-affecting default change updates code, tests, benchmarks, schema documentation, UI
   help, and report evidence in one change set.
 
-## 7. Verification commands
+## 8. Verification commands
 
 ```text
 npm run typecheck
 npm run test
 npm run build
 npm run bench:strain-sampling
+npm run bench:equivalent-block
 npm run bench:pipelines
 npm run bench:verify
 ```

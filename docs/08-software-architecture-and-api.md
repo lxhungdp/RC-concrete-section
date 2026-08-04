@@ -34,7 +34,11 @@ parallel execution so production and verification implementations can differ.
 - No global mutable material registry or implicit "current standard".
 - No hidden defaults after normalization; expanded options are stored in provenance.
 
-## 3. Public API separation
+## 3. Target public API separation
+
+The interface below is a release architecture requirement, not an API exported by the current
+repository. Current preview orchestration uses `@pm/analysis`,
+`@pm/analysis-equivalent-block`, and the web worker/client directly.
 
 ```ts
 export interface PmEngine {
@@ -111,7 +115,7 @@ CPU-heavy meshing and surface evaluation run outside the UI thread. Worker proto
 versioned and contain only serializable data; compiled material evaluators are reconstructed inside
 the worker from definitions.
 
-Required capabilities:
+Required release capabilities:
 
 - cancellation through `AbortSignal`;
 - monotone progress stages (`validate`, `mesh`, `surface`, `refine`, `check`, `finalize`);
@@ -121,6 +125,10 @@ Required capabilities:
 - deterministic merge order for parallel batches.
 
 Parallelism is optional and must produce tolerance-equivalent results to single-thread execution.
+
+Current behavior is narrower: aborting a client request drops its late result, but a synchronous job
+already executing in the worker or main-thread fallback is not interrupted. Monotone progress,
+time/memory budgets for every job, and cooperative checkpoints are still open.
 
 ## 8. Performance budgets
 
@@ -199,7 +207,11 @@ on unit tests alone.
 - Avoid embedding full sensitive project data in telemetry or exception messages.
 - Sign or hash certified result packages so downstream systems can detect modification.
 
-## 11. Reporting boundary
+## 11. Target reporting boundary
+
+The current `@pm/report` output is a preview stress-strain calculation workbook plus stress-strain
+mesh Excel/DXF. It does not consume a certified result DTO, does not render PDF, and does not yet
+provide an equivalent-block ledger workbook.
 
 Reports consume only certified result DTOs and must show:
 

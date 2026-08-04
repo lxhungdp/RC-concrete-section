@@ -80,9 +80,9 @@ do not call it Richardson extrapolation.
 Refinement stops successfully only when all required quantities meet `tolMesh`. Hitting `maxLevels`,
 `maxFibers`, time, or memory limits returns `MESH_NOT_CONVERGED`/`RESOURCE_LIMIT`.
 
-### 4.1 Mesh inspection in Results
+### 4.1 Mesh inspection in Analysis Options
 
-The optional **Section mesh** chart is a zoomable traceability view of the exact `ConcreteMesh` used
+For the stress-strain route, **Analysis Options > Mesh** is a zoomable traceability view of the exact `ConcreteMesh` used
 by the analysis revision. It is loaded lazily. At inspection zoom it draws all clipped triangles in
 the visible viewport; optional Gauss-point markers are the actual quadrature locations derived from
 the same exported degree-2 barycentric rule, not a new display sampling.
@@ -103,6 +103,10 @@ engineering result.
 The chart's `Verified` badge means only that the mesh passed the area/first-moment sanity checks in
 file `02` §8. Visual inspection and those invariants do **not** establish integration convergence.
 Only the refinement comparison in this section controls `emesh`.
+
+Equivalent-block projects do not show this mesh because their concrete block is integrated by exact
+polygon clipping. The workspace displays that distinction explicitly; a display mesh created only
+for coloring the field is not an equivalent-block integration mesh.
 
 ### 4.2 Measured discretization error of the current seed rule
 
@@ -149,9 +153,10 @@ export interface SurfaceDiscretizationReport {
 }
 ```
 
-After the surface passes its local chord test, recompute demand utilization with one additional
-targeted refinement around the intersected triangles. The utilization difference must satisfy
-`tolUtilization`.
+For accepted results, after the surface passes its local chord test, recompute demand utilization
+with one additional targeted refinement around the intersected triangles. The utilization
+difference must satisfy `tolUtilization`. This demand-targeted utilization refinement and its
+accepted-result gate are not yet implemented in the preview application.
 
 The intersected triangles are found by the demand ray or demand-direction plane, not by locating the
 nearest strain-plane sample angle. A regression that passes only when `thetaLoad` equals a sampled
@@ -180,8 +185,9 @@ to explain why that default was retired; it is not the current production config
 The direction grid, not the integration mesh, is the governing numerical error: one to sixteen
 percent in moment, against one tenth of a percent from the mesh.
 
-The capacity change is **always positive**. Chord interpolation across a convex fixed-P contour cuts
-the corner, so a coarse fixed direction grid systematically under-reports capacity. The current
+The capacity change was positive for every case in that historical table. For a locally convex
+fixed-P contour, chord interpolation cuts the corner and under-reports capacity, but the measured
+sign is not a universal theorem for arbitrary non-convex or multi-loop slices. The current
 stress-strain default starts from 36 directions and adaptively probes all 25 stations at 0.5%
 relative tolerance. The effective direction count and convergence evidence are recorded with every
 surface. The equivalent-block model retains its independent 24-direction seed and 0.75% adaptive
@@ -230,7 +236,11 @@ otherwise                            -> indeterminate
 The design code or project quality plan defines `acceptanceMargin`. Numerical uncertainty shall not
 be hidden by rounding.
 
-## 8. Analysis options and result
+## 8. Target accepted-result accuracy contract
+
+The following interfaces are specification shapes, not current exported TypeScript. Current v1
+inputs are `AnalysisOptions` and `EquivalentBlockAnalysisOptions`; preview surfaces expose
+model-specific direction/station evidence but not the complete combined uncertainty object below.
 
 ```ts
 export interface AccuracyOptions {
@@ -269,8 +279,9 @@ evaluated `(meshLevel,β,t)` states. A finer mesh changes all integrated resulta
 coarse resultants as fine results. Reuse only topology/parameter scheduling where mathematically
 valid.
 
-Run refinement in a worker with progress stages and cancellation. Cancellation returns `CANCELLED`,
-not a partially accepted result.
+Run refinement in a worker with progress stages and cooperative cancellation before release.
+Currently an abort drops the client result but a running synchronous worker/fallback calculation may
+finish in the background. It still cannot be accepted or displayed after cancellation.
 
 ## 10. Diagnosing non-convergence
 

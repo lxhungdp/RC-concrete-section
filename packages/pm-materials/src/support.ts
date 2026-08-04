@@ -23,15 +23,16 @@ export type ModelSupportIssue = {
  * A strain threshold at `(1 - beta1)*epsCu` would reproduce the block while the extreme fibre sits
  * exactly at `epsCu`, but that condition does not hold for the inverse solver, and the equivalent
  * block is a resultant equivalence rather than a pointwise law: it has no normative basis for a
- * non-rectangular compression zone under biaxial bending. The model therefore needs a
- * resultant-level adapter, not a patched sigma(eps).
+ * non-rectangular compression zone under biaxial bending. The implemented ACI calculation profile
+ * therefore routes to the resultant-level adapter in `@pm/code-aci318` through
+ * `@pm/analysis-equivalent-block`; this guard remains for any attempted local-fibre route.
  */
 export const UNSUPPORTED_CONCRETE_MODELS: Partial<Record<ConcreteStressStrainModel['type'], ModelSupportIssue>> = {
   'aci-whitney-block': {
     modelType: 'aci-whitney-block',
     reason:
-      'The equivalent rectangular (Whitney) block is not evaluated correctly by the local fibre kernel: β1 is stored but unused, so the uniform stress covers the whole compression zone instead of a = β1·c and the concrete force is overstated by 1/β1. It needs a resultant-level adapter.',
-    reference: 'docs/development/06-current-state-and-roadmap.md §3 P0.3'
+      'The equivalent rectangular (Whitney) block cannot run in the local fibre kernel: β1 is not a pointwise stress-strain parameter. Select the ACI 318 equivalent-block calculation profile so a = β1·c is evaluated by the implemented resultant-level adapter.',
+    reference: 'docs/12-calculation-models-defaults-and-workflows.md §3'
   }
 }
 

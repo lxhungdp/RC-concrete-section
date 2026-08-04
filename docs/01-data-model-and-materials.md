@@ -54,9 +54,11 @@ export interface SectionGeometryInput {
 }
 ```
 
-The first release supports exactly one concrete outer region with holes. Disconnected concrete
-regions require an explicit future `MultiRegionSection` model; they must not be smuggled in through
-self-crossing rings.
+The current project/preview kernels can represent multiple concrete solids with holes, and the
+equivalent-block robustness matrix includes disconnected islands. The first accepted release may
+still restrict that capability until the complete topology and validation matrix passes. A
+disconnected region must be represented explicitly; it must never be smuggled in through a
+self-crossing ring.
 
 ## 3. Material definitions are data, not arbitrary callbacks
 

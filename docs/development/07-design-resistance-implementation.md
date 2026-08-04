@@ -17,9 +17,10 @@ resistance used for a factored ULS check. The engineering requirements remain au
 - construction of reference, state and design material sets;
 - state-dependent global-strength-reduction evaluation.
 
-`@pm/project` persists `inputs.design` directly in strict project schema version 1. There is no
-migration or profile inference layer; `calculationProfileId`, materials, analysis options, and the
-DesignBasis must be mutually consistent in the v1 document.
+`@pm/project` writes `inputs.design` directly in canonical project schema version 1. There is no
+version migration. The current parser can synthesize a missing basis as a limited compatibility
+default, but canonical exports always contain it; `calculationProfileId`, materials, analysis
+options, and the DesignBasis must be mutually consistent after parsing.
 Every load combination is explicitly tagged `actionBasis: "factoredULS"`.
 
 `@pm/analysis` owns the immutable calculation pipeline and never reads factors from UI controls
@@ -94,11 +95,13 @@ stability, load generation, accidental eccentricity, seismic detailing, or servi
 
 ## 4. UI behavior
 
-The Results sidebar contains `Design resistance` directly below `Result Status`.
+`Design Resistance` is the third tab in the top-level `Analysis Options` workspace. It is not
+duplicated in Results.
 
 - Selecting a profile restores its declared defaults.
 - Editing any factor marks the profile `modified` and `draft`.
-- A modified profile cannot be applied without an override reason.
+- A modified coefficient or reinforcement classification is not published to canonical state until
+  an override reason makes it valid; disabling only the optional axial cap does not require one.
 - The selected profile is persisted and invalidates/rebuilds the result surface.
 - Fixed-P and Vertical Slice charts show `Design` and `Nominal` layers. Both are independently
   switchable; Design is on by default.
@@ -108,7 +111,8 @@ The Results sidebar contains `Design resistance` directly below `Result Status`.
 
 ## 5. Workbook audit trail
 
-Excel export uses the same design basis and design surface as the UI. `Design_Check` records:
+For the stress-strain pipeline, Excel export uses the same design basis and design surface as the
+UI. `Design_Check` records:
 
 - exact profile identity and status;
 - all active factors and classifications;
@@ -122,13 +126,17 @@ Detailed fibre/bar sheets audit the constitutive evaluation. For a global-result
 remain the nominal/reference ledger and `Design_Check` records the separate global factor. For a
 design-material method they evaluate the design material laws directly.
 
+Equivalent-block result export is intentionally unavailable. It requires a dedicated block ledger
+based on clipped area/centroid, `c`, `a`, `beta1`, block stress, compatible bar strains, resistance
+stages, admissibility, and exact-refinement evidence; the fiber workbook must not be reused.
+
 ## 6. Implemented profiles and release status
 
 | Profile | Format | Software status |
 |---|---|---|
 | KDS 2024 current set; resistance clauses KDS 14 20 10:2021 + KDS 14 20 20:2022 | global resultant factor | `draft` preview |
 | ACI 318-19, reapproved 2022 | global resultant factor | `draft` preview |
-| EN 1992-1-1:2004 default recommended factors, no National Annex | design-material reevaluation | `draft` preview |
+| EN 1992-1-1:2004 default recommended factors, no National Annex | design-material reevaluation helper only; not a calculation-profile selector item | `draft` preview |
 
 No profile is marked `reviewed` or `verified`. Results and workbooks must not be represented as
 certified or released design output
@@ -147,7 +155,8 @@ engineer approves the exact project jurisdiction and code edition.
 - 3D proportional demand-ray utilization.
 
 The project round-trip test covers schema version 1, factored ULS action basis and design-profile
-persistence. Full project verification is `npm test`, followed by `npm run build`.
+persistence. Full regression is `npm test`, followed by `npm run build`; block-specific verification
+also runs through `npm run bench:equivalent-block` and `npm run bench:pipelines`.
 
 ## 8. UI ownership and display contract
 

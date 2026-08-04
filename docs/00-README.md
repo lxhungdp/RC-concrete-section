@@ -19,7 +19,7 @@ linked from the control map.
 ## 2. Product Workflow
 
 ```text
-Geometry -> Materials -> Results -> Analysis Options -> Report
+Geometry -> Materials -> Results -> Analysis Options
 ```
 
 Current UI note:
@@ -30,11 +30,16 @@ Current UI note:
 - `Analysis Options` is the fourth menu and separates its controls into `Points`, `Mesh`, and
   `Design Resistance` tabs. Points also owns direction sampling; Design Resistance applies valid
   edits immediately without a separate action button. These settings are not edited in `Results`.
-- The `Section mesh` toolbar exports the exact prepared analysis mesh as either an Excel audit
+- There is no top-level `Report` menu. Export commands are actions in the relevant preview
+  workspace; an accepted-result report workflow has not been implemented.
+- For stress-strain integration, the `Section mesh` toolbar exports the exact prepared analysis mesh as either an Excel audit
   workbook or a DXF drawing. Excel includes Summary, Triangles, Quadrature, Boundaries, and Rebars
   sheets; DXF uses broadly compatible R12 ASCII records and separates the same geometry into named
   verification layers.
-- Excel export is available from a selected result as a preview audit workbook.
+- The selected-result Excel calculation workbook is available only for stress-strain integration.
+  Equivalent-block export is blocked with an explicit message until a dedicated block-ledger
+  workbook is implemented. Equivalent-block projects also show exact clipping in place of the
+  Section-mesh view because they do not use a concrete integration mesh.
 
 ## 3. Current Implementation Status
 
@@ -61,12 +66,17 @@ As of 2026-08-04:
   and KDS 14 20 20:2022) and ACI 318-19(22) block profile are implemented as `draft` design
   previews; no profile is approved for released engineering use. EN material/design helpers remain
   lower-level preview capability and are not exposed as a complete calculation profile.
-- Excel preview result export includes an explicit `Design_Check` audit sheet. The separate
+- The stress-strain Excel preview result export includes an explicit `Design_Check` audit sheet. The separate
   Section-mesh Excel export includes formula-based area and first-moment recomputation so the
   integration mesh can be independently inspected.
 - Accepted engineering analysis, verified design-code profiles, certified result DTOs, and
   released PDF reports are not complete.
 - Preview data cannot be promoted to accepted design output.
+- Two implementation/documentation discrepancies remain explicit release blockers: the standalone
+  block kernel uses the opposite local `My` sign from the project convention and its bridge has no
+  sign map yet; the schema-v1 parser has limited omitted-field/default repair behavior even though
+  no version migration is allowed. See
+  [`development/06-current-state-and-roadmap.md`](development/06-current-state-and-roadmap.md).
 
 The detailed status and roadmap live in
 [`development/06-current-state-and-roadmap.md`](development/06-current-state-and-roadmap.md).

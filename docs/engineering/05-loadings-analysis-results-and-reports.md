@@ -12,7 +12,7 @@ The current web workflow embeds loadcase creation and editing in the Results sid
 top-level Loadings menu is intentionally avoided until source-load management grows beyond simple
 Pu/Mux/Muy combinations.
 
-Every demand records:
+The accepted-product target is that every demand records:
 
 - stable ID/name and optional source-case trace;
 - `P`, `Mx`, `My` in canonical units;
@@ -21,6 +21,8 @@ Every demand records:
 - combination rule/version and governing design situation where applicable.
 
 Factored ULS combinations and service actions shall not share an untyped table or solver request.
+The current schema-v1/UI implements only `factoredULS`; `service` is a future typed extension, not a
+currently selectable action basis.
 
 ## 2. Loading validation
 
@@ -66,7 +68,11 @@ Classification uses a numerical uncertainty interval and approved margin:
 - `inadequate` only when the entire interval is above the rejection boundary;
 - otherwise `indeterminate`.
 
-## 4. Required Results menu
+## 4. Accepted-product Results contract
+
+The current Results workspace implements preview plots, load-combination editing/checks, and
+model-specific field views. It does not yet satisfy the immutable accepted-result identity,
+uncertainty interval, result history, or release gates required by this section.
 
 The Results module consumes an immutable result DTO; it does not recalculate material factors or
 capacity. It provides:
@@ -104,7 +110,12 @@ Every successful engineering result includes:
 
 Diagnostic partial data is a separate preview type. It cannot satisfy this contract.
 
-## 6. Required Report menu
+## 6. Target report capability
+
+There is no current top-level Report menu. The only calculation-result workbook is the
+stress-strain preview audit export, and the only mesh audit exports are the stress-strain Excel/DXF
+files under Analysis Options. Equivalent-block calculation export and released PDF output remain
+unimplemented.
 
 Reports are generated only from an `acceptedResult`. The report layer formats existing engineering
 data and shall not apply a new factor, rounding decision, interpolation, or adequacy rule.

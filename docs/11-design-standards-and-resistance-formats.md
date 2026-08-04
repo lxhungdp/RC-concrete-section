@@ -280,8 +280,10 @@ Current material UI support for `KDS`, `ACI318`, `EC2`, and `CUSTOM` is not this
 serializable material-source layer that chooses stress-strain families and stores their parameters.
 For EN 1992 preview, `alpha_cc`, `gamma_c`, and `gamma_s` are applied inside the material laws, so a
 later EN resistance profile must recognize that it is using a design-material reevaluation path and
-must not apply another global ACI/KDS-style factor. For ACI preview, material definitions store a
-Whitney/block-family helper, but `phi` remains a future design-code profile operation.
+must not apply another global ACI/KDS-style factor. For the implemented ACI 318-19(22)
+equivalent-block preview, material definitions store Whitney/block-family data while
+`@pm/code-aci318` and `@pm/design` evaluate state-dependent `phi` and the axial cap. An ACI
+stress-strain/fiber calculation profile is not implemented.
 
 ## 8. ACI 318-19(22) transition example
 
@@ -401,7 +403,9 @@ The repository implements two independent mechanics and the common resistance fo
 - a `designMaterialReevaluation` basis exists for EN 1992-1-1:2004 preview work, but EC2 is not yet
   exposed as a complete calculation profile in the main selector.
 
-Strict project schema v1 persists the complete basis and loadcases are explicitly factored ULS actions.
+Canonical project schema-v1 exports persist the complete basis and loadcases are explicitly
+factored ULS actions. The parser's remaining omitted-field defaults are listed as pre-release debt
+in `development/02` and `development/06`.
 The result DTO contains both `nominalPoints` and governing design `points`. Analysis Options owns
 the model-specific sampling controls, factors, transverse-reinforcement class, and optional axial cap.
 The single calculation-profile selection itself lives in Materials and updates these defaults atomically.
@@ -411,7 +415,14 @@ nominal is a faint dashed reference, while a single visible curve receives the p
 and red diagnostic points. All Mx-My point connections use explicit straight-line segments.
 The loadcase table uses
 the three-dimensional proportional demand-ray intersection with the design surface; the Fixed-P
-ratio is diagnostic only. Excel export records the exact profile and check in `Design_Check`.
+ratio is diagnostic only. The stress-strain Excel export records the exact profile and check in
+`Design_Check`. Equivalent-block result export is currently blocked until a dedicated block-ledger
+workbook is implemented.
+
+One cross-kernel convention issue remains open: the project/stress-strain convention is
+`My = sum(F*x)`, whereas the standalone block kernel currently returns `My = -sum(F*x)` and the
+application bridge has no explicit conversion. This blocks accepted use of equivalent-block results
+with nonzero `My` until corrected and independently tested.
 
 Implementation details and automated evidence are in
 [`development/07-design-resistance-implementation.md`](development/07-design-resistance-implementation.md).

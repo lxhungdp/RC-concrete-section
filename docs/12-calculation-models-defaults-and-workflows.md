@@ -24,6 +24,12 @@ The models are separate packages because `sigma_c = f(eps_c)` and a code-equival
 different constitutive statements. Sampling one with the other's equations would produce a smooth
 number but not the resistance defined by the selected method.
 
+Current blocking convention note: the common project/stress-strain DTO uses
+`My = sum(F*x)`, while `@pm/equivalent-block` currently emits its package-local
+`My = -sum(F*x)` and the bridge does not transform it. This is not a permitted difference between
+the two models. Equivalent-block checks with nonzero `My` remain preview-only until the mapping is
+fixed and verified on asymmetric sections.
+
 ## 2. Stress-strain integration equations
 
 For reference origin `(x0,y0)` and compression-positive strain,
@@ -45,6 +51,11 @@ My = integral_A sigma_c (x-x0) dA + sum_i sigma_si Asi (xi-x0) - correction
 The inverse solver seeks a compatible strain plane whose three resultants match the three factored
 demand components. It uses the consistent tangent/Jacobian, scaling, line search, admissibility
 checks, and bounded fallback described in `03` and `04`.
+
+In the current ULS UI this inverse state is a diagnostic source for the selected section field; it
+does not determine adequacy. Governing utilization still comes from the factored-demand ray against
+the Design surface. Convergence of this diagnostic Newton solve must not be presented as proof that
+an interior ULS demand has a unique physical failure state.
 
 ### 2.1 Production sampling default
 
@@ -189,12 +200,17 @@ Geometry + rebars
   -> apply/re-evaluate Design resistance and axial cap
   -> intersect factored Demand ray
   -> expose state, convergence, factors, ledgers, and field map
-  -> export the same immutable calculation inputs and sampled evidence
+  -> expose preview export actions supported by that model
 ```
 
 The code/model selection is made once in Materials and resolves the calculation profile, material
 definitions, resistance basis, and matching analysis-options DTO. Downstream code switches on the
 profile/method ID; it does not infer a model from UI text.
+
+Current export support is intentionally asymmetric: stress-strain projects can export the
+calculation workbook and the concrete-mesh Excel/DXF audits. Equivalent-block projects can display
+their block field and solver trace, but the calculation workbook is blocked until a dedicated
+clipped-block ledger is implemented; they have no concrete integration-mesh export.
 
 ### 5.1 Inverse acceptance, diagnostics, and reuse
 

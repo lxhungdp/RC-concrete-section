@@ -2,6 +2,9 @@
 
 KDS adapter for the independent equivalent-block kernel.
 
+Status: implemented draft preview. It is not a released or independently approved code-compliance
+profile.
+
 Implemented basis:
 
 - KDS 14 20 20:2022, 4.1.1(8), Table 4.1-2: `a = beta1*c`, uniform stress `eta*0.85*fck`, and strength-dependent `epsilon_cu`.

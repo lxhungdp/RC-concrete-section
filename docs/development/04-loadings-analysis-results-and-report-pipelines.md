@@ -45,8 +45,10 @@ table/import
   -> persist definition / send immutable snapshot to engine
 ```
 
-The UI supports add/edit/delete/duplicate/import, but validation and transformation live in
-`@pm/loadings`. Results retain input order while using stable IDs.
+The current UI supports add/edit/delete and CSV import/export in `LoadingsPanel`, embedded in the
+Results sidebar. The current persistence helpers live in `@pm/project`; a future `@pm/loadings`
+extraction will own richer source-case validation and transformations. Results retain input order
+while using stable IDs.
 
 Current web UI keeps loadcase entry inside the Results sidebar rather than exposing a separate
 top-level Loadings module. This keeps the user workflow direct: add or edit Pu/Mux/Muy, click a
@@ -69,7 +71,10 @@ The orchestration may normalize both outputs to common Nominal/Design/Demand res
 must never pass stress-strain mesh options into the block kernel or emulate a code block with fiber
 stress. Model-specific fields remain attached to each result. See `../12` for the exact workflows.
 
-`@pm/engine` owns use-case sequencing, not mathematical formulas:
+The target orchestration boundary below is not yet a standalone `@pm/engine` package. Today,
+`SectionDrawingClient.tsx`, the analysis client, and `pm-analysis.worker.ts` route requests to the
+two analysis packages. A later engine extraction may own the same sequence without moving formulas
+out of their kernels:
 
 ```text
 Project input snapshot
@@ -86,7 +91,7 @@ Project input snapshot
 Surface refinement occurs inside each compared integration level so error sources are not
 confounded. Cancellation returns a failure/diagnostic state, never an accepted partial result.
 
-Suggested engine API:
+Target engine API, not a current exported interface:
 
 ```ts
 interface PmEngine {
@@ -99,7 +104,7 @@ interface PmEngine {
 `checkDemands` may reuse an accepted design domain only when the geometry/material/profile/options
 hash matches and the new demands use the same reference frame/action basis.
 
-### Implemented sampling-options pipeline
+### Implemented stress-strain sampling-options pipeline
 
 ```text
 AnalysisOptions editor
@@ -113,6 +118,21 @@ AnalysisOptions editor
   -> PreviewSurface { requested options, resolved stations, actual directions, error evidence }
   -> plots / inverse queries / Excel
 ```
+
+Equivalent-block options use a separate path:
+
+```text
+EquivalentBlockAnalysisOptions editor
+  -> project v1 JSON / worker message
+  -> structural validation in @pm/project
+  -> @pm/analysis-equivalent-block profile bridge
+  -> @pm/equivalent-block + selected KDS/ACI adapter
+  -> 37 baseline states + transient controlling-bar code/rupture events
+  -> adaptive station and direction refinement
+  -> common PreviewSurface and model-specific block fields
+```
+
+No concrete integration-mesh option enters the second path.
 
 There is one authoritative options object. The UI, worker, fallback execution, export/import, cache
 identity, plots, and Excel renderer do not maintain parallel station or angle constants. Geometry
@@ -140,8 +160,10 @@ multiplies factors or chooses strain limits.
 
 ## 4. Results package
 
-`@pm/results` owns immutable result schemas and pure query/presentation adapters. It does not own
-mechanics. Separate brands/types are required:
+A future `@pm/results` package will own immutable accepted-result schemas and pure
+query/presentation adapters. It does not exist today. Current preview surface/check/field DTOs and
+query helpers are exported by `@pm/analysis`, with the block bridge normalizing into those types.
+The accepted product still requires separate brands/types:
 
 ```ts
 type PreviewResult = { kind: 'preview'; inputHash: string; issues: readonly EngineeringIssue[] }
@@ -172,14 +194,19 @@ chosen over hand-authored SVG because the result views require built-in pan/zoom
 modebar controls, click events, and filled 3D surfaces. Current preview implementation loads
 `plotly.js-dist-min` only in client components and uses:
 
-- `surface` for the preview `P-Mx-My` interaction surface from the strain-plane-angle/station grid;
+- explicit `mesh3d` with stored triangle indices for current `P-Mx-My` resistance surfaces; a
+  Plotly `surface` trace is retained only as a fallback when triangle connectivity is absent and for
+  the translucent slicing planes;
 - `scatter3d` for demand/loadcase points that can be clicked to trigger lazy inverse evaluation;
 - `scatter` for fixed-`P` `Mx-My` contours and vertical `P-Mtheta` slices;
-- a dedicated interactive canvas renderer for the clipped-cell section mesh, because drawing every
-  triangle and optional quadrature point as individual Plotly traces is unnecessary overhead;
+- a dedicated interactive canvas renderer for the clipped-cell section mesh under **Analysis
+  Options > Mesh**, because drawing every triangle and optional quadrature point as individual
+  Plotly traces is unnecessary overhead;
 - app-level range sliders for quickly changing fixed `P` and the slice rotation angle.
 
-The section-mesh chart is an inspector, not a duplicate of the static section drawing. It supports
+The section-mesh chart is available only to the stress-strain route. Equivalent-block projects show
+an exact-clipping explanation instead because they have no concrete integration mesh. The chart is
+an inspector, not a duplicate of the static section drawing. It supports
 cursor-centred wheel zoom, drag pan, keyboard/button zoom, fit, a physical scale bar and per-triangle
 hover information. The worker packs the same `ConcreteMesh` owned by `PreparedAnalysis` into
 cell-ordered transferable typed arrays. React must not regenerate a display mesh from the section
@@ -206,12 +233,16 @@ fixed-`P` checks intersect the `P = Pu` contour with the ray
 `Mx*sin(thetaLoad) - My*cos(thetaLoad) = 0`. It must not select the strain-plane sample row whose
 angle happens to be nearest `thetaLoad`.
 
-When the accepted engine returns a verified triangulated surface, the 3D chart must switch to an
-explicit `mesh3d` trace with stored `i/j/k` triangle indices. Do not use Plotly `alphahull` for
-resistance domains. Plotly remains a presentation adapter only: it must display values already
-stored in the result DTO and must not perform mechanics, resistance reduction, or adequacy logic.
+The current preview already uses explicit `mesh3d` whenever stored `i/j/k` triangle indices are
+available. Do not use Plotly `alphahull` for resistance domains. Plotly remains a presentation
+adapter only: it must display values already stored in the result DTO and must not perform
+mechanics, resistance reduction, or adequacy logic.
 
 ## 5. Results UI state
+
+The table below is the target accepted-result lifecycle. The current application implements
+missing/ready/working/error preview states and invalidates derived surface/check/field data, but it
+does not yet persist immutable accepted/stale result history or enable released-report actions.
 
 | State | UI behavior |
 |---|---|
@@ -219,36 +250,31 @@ stored in the result DTO and must not perform mechanics, resistance reduction, o
 | ready | Run enabled; prior results shown only as stale/history |
 | running | progress stages and cancel; input editing either locks or clearly cancels/stales job |
 | failed/cancelled | diagnostics and optional branded preview; no acceptance/report action |
-| accepted/current | tables, plots, evidence, and report action enabled |
+| accepted/current | target only: tables, plots, evidence, and report action enabled |
 
-Results exposes a calculation **Options** dialog backed by the same canonical `AnalysisOptions`
-contract as the Analysis module. The dialog edits an isolated draft:
+Analysis settings are edited in the separate top-level **Analysis Options** workspace, not in a
+Results dialog. Its three tabs are `Points`, `Mesh`, and `Design Resistance`. Valid option changes
+update the canonical project state, invalidate the surface and derived inverse/field/quick-check
+data, then trigger worker recomputation. Design Resistance auto-publishes valid edits; factor or
+reinforcement-class changes that depart from defaults are withheld until an override reason makes
+the draft valid. Disabling only the axial cap does not require that reason.
 
-- Cancel, Escape, backdrop click, and the close button discard the draft without invalidating the
-  current result;
-- Apply replaces the canonical options once, aborts/stales every surface, inverse solve, field map,
-  and quick check from the prior revision, then rebuilds the surface in the worker;
-- overview plots and loadcase quick checks update from the new surface automatically;
-- if a loadcase detail is open, its inverse solve is rerun automatically after the new surface
-  arrives;
-- the dialog never owns a second persisted options object.
-
-Each Results mode offers four chart choices. Three are visible by default and **Section mesh** is
-off, so its potentially large geometry DTO is not transferred to the UI until requested. The chart
-workspace has exactly three visual slots: one primary chart spanning both rows and two secondary
-charts. Restoring a fourth choice replaces a visible secondary chart rather than silently changing
-the established layout; the displaced chart remains available in the restore toolbar. Hiding the
-primary promotes the first remaining visible chart, and the last visible chart cannot be hidden.
-
-Mesh-chart visibility is presentation state, not analysis input and not project engineering data.
-Changing it must not invalidate the surface, inverse solutions, or quick checks. A geometry/material
-revision still invalidates the lazy worker payload so an old mesh is never shown as current.
+Results overview has exactly three charts: Vertical slice, 3D P-Mx-My, and Fixed-P Mx-My. Loadcase
+detail has Section field, Fixed-P Mx-My, and Vertical slice. Each mode allows one large primary chart
+and two secondary charts; hidden charts can be restored, but there is no fourth Section-mesh chart
+inside Results.
 
 | accepted/stale | view/compare allowed; report release disabled for current project |
 
 Results are keyed by input hash and result ID, not by the currently selected row name.
 
 ## 6. Report package
+
+This section is target architecture. The current `@pm/report` package generates the stress-strain
+calculation workbook and stress-strain mesh Excel/DXF audit files from preview inputs. It does not
+yet consume an `AcceptedResult`, build a format-neutral `ReportModel`, render PDF, or export an
+equivalent-block calculation ledger. The UI explicitly blocks the latter instead of passing a block
+state into the fiber workbook.
 
 The report pipeline is deliberately downstream:
 
@@ -303,6 +329,10 @@ change produces a different key and rebuilds it.
 
 ## 8. Pipeline tests
 
+This is the required release test set. Current `npm test` covers the numerical packages,
+schema-v1 round trip, UI helper logic, CAD, mesh workbook, and stress-strain workbook formulas; it
+does not yet cover accepted-result hashing, PDF rendering, or true cooperative cancellation.
+
 - ULS/service request types cannot be interchanged;
 - demand frame/unit transformations and round-trip invariants;
 - deterministic batch order and duplicate-ID failures;
@@ -314,13 +344,15 @@ change produces a different key and rebuilds it.
 - Excel/PDF outputs contain required identity, units, warnings, tables, and plot data;
 - renderers cannot accept preview/stale result brands as released reports.
 
-## 9. Recommended vertical delivery order
+## 9. Delivery status and remaining order
 
-1. Results-sidebar loadcase entry, project round-trip, and typed seed validation.
-2. Shared typed issues, canonical hashing, and stale-state graph.
-3. Geometry/material production validation gateways.
-4. Minimal verified forward mechanics fixture without design-code claims.
-5. One complete draft design-profile pipeline behind preview status.
-6. Adaptive accepted result surface/checks after V&V gates.
-7. Results UI driven only by result DTOs.
-8. Format-neutral report model, Excel renderer, then PDF renderer with visual/data verification.
+1. **Implemented preview:** Results-sidebar combinations, project round trip, analysis-option
+   validation, two independent mechanics, three draft calculation profiles, adaptive preview
+   surfaces/checks, model-specific fields, stress-strain Excel, and mesh Excel/DXF.
+2. **Next integrity work:** resolve the block/project `My` sign boundary, remove or formally approve
+   the remaining v1 parser compatibility defaults, add shared typed issues, canonical hashing, and
+   a complete stale-state graph.
+3. **Production gates:** finish geometry/material validation gateways, accepted-result numerical
+   uncertainty and topology gates, independent code-profile review, and cooperative cancellation.
+4. **Reporting:** make Results consume an immutable accepted DTO, implement the equivalent-block
+   ledger export, add a format-neutral report model, then release-tested Excel/PDF renderers.

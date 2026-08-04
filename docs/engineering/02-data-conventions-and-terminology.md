@@ -3,7 +3,8 @@
 ## 1. Canonical units
 
 The current `pm-column-project` schema version 1 uses one fixed canonical system. The pre-release
-project has no migration or compatibility layer:
+project has no version-migration layer; limited omitted-field/default normalization in the current
+parser is documented separately and does not change these units:
 
 | Quantity | Canonical unit |
 |---|---|
@@ -15,7 +16,7 @@ project has no migration or compatibility layer:
 | strain | dimensionless |
 | angle | rad internally |
 
-These units are explicit through the schema contract even though v2 does not repeat unit fields in
+These units are explicit through the schema contract even though schema v1 does not repeat unit fields in
 every object. External import/UI adapters may accept other units only when the source unit is
 declared and converted once at the boundary. Values must never be interpreted by magnitude.
 
@@ -59,6 +60,15 @@ If the new origin is offset by `(Δx, Δy)` from the old origin, with new coordi
 This convention is authoritative. Import adapters must transform external sign conventions and
 record the mapping rather than changing the kernel convention.
 
+### Current implementation discrepancy: equivalent-block `My`
+
+The stress-strain pipeline follows the authoritative `My = sum(F*x)` convention. The standalone
+`@pm/equivalent-block` package currently defines its local result as `My = -sum(F*x)`, and
+`@pm/analysis-equivalent-block` does not yet perform an explicit local-to-project sign transform.
+This is a code discrepancy, not an alternate project convention. Until the bridge is corrected and
+verified on asymmetric sections with nonzero `My`, equivalent-block output is preview-only and
+must not be used to claim cross-model sign agreement.
+
 ## 3. Required terminology
 
 | Term | Meaning |
@@ -90,7 +100,7 @@ have separate namespaces unless a schema explicitly declares otherwise.
 Every accepted calculation preserves:
 
 - original input snapshot and normalized representation;
-- schema and migration versions;
+- schema version and any explicit parser normalization/repair warnings;
 - profile, method, adapter, and material-model versions;
 - entity IDs needed to trace warnings and contributions;
 - expanded options and tolerances;

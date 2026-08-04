@@ -26,15 +26,24 @@ filesystem/network APIs, project UI state, or report libraries.
 | `@pm/ids` | positive integer allocation/gap fill | identity utilities only; no engineering meaning |
 | `@pm/geometry` | editor DTO, primitives/booleans, properties, rebar helpers | split public submodules for definitions, validation, normalization, exact properties, rebar validation, and analysis adapters |
 | `@pm/materials` | material DTOs, stores, model compilers, KDS helpers | definitions/validation/compilation only; no complete design-code claim in a material tag |
-| `@pm/project` | strict project v1 DTO, JSON parse/serialize, warnings, round-trip | persistence envelope and profile/options registry; no numerical analysis or UI behavior; no migration layer in the pre-release v1 project |
+| `@pm/project` | version-locked project v1 DTO, JSON parse/serialize, warnings, round-trip | persistence envelope and profile/options registry; no numerical analysis or UI behavior; limited parser defaults are tracked debt, not a migration layer |
+| `@pm/design` | DesignBasis identity, resistance formats/factors, transition rules, and material-set preparation | generic resistance sequencing; no geometry solving or UI state |
+| `@pm/analysis` | stress-strain preparation, forward/inverse mechanics, adaptive surface, slices, demand checks, and field maps | stress-strain route only; no equivalent-block emulation |
+| `@pm/equivalent-block` | standard-independent block preparation, clipping, forward/inverse solvers, surfaces, topology, and admissibility | no project schema, UI, or KDS/ACI constants |
+| `@pm/code-kds142020` | KDS block law, endpoints, phi transition, and cap | KDS policy only; no generic clipping or project state |
+| `@pm/code-aci318` | ACI 318-19(22) Whitney law, endpoints, phi transition, and cap | ACI policy only; no generic clipping or project state |
+| `@pm/analysis-equivalent-block` | project/profile/result bridge for the block kernel and adapters | routing/normalization only; do not merge it into the stress-strain kernel |
+| `@pm/report` | current stress-strain result workbook and stress-strain mesh Excel/DXF | no accepted-result or PDF release contract; no block-ledger workbook yet |
 | `@structures/cad-drawing` | reusable view/navigation foundation | presentation only; never an analysis dependency |
 | `@pm/web` | current integrated editor | application composition only; move reusable domain/use-case logic into packages |
 
 The current packages are the starting boundaries. Do not rewrite them into one application module.
 
-## 3. Target packages
+## 3. Possible future extractions — not current package names
 
-Add packages only when their contract is exercised by a real slice. Target responsibilities are:
+The following names describe possible later ownership boundaries. They are not import targets in
+the current repository and must not be cited as if they already own runtime behavior. Add one only
+when its contract is exercised by a real slice and migration from the current owners is explicit.
 
 | Package | Owns | Must not own |
 |---|---|---|
@@ -44,11 +53,13 @@ Add packages only when their contract is exercised by a real slice. Target respo
 | `@pm/design-codes` | registry and versioned profile adapters with clause trace | global current standard, UI state, generic geometry editing |
 | `@pm/engine` | validate/normalize/compile/orchestrate/check/cancel/progress/cache protocol | presentation rendering |
 | `@pm/results` | immutable result DTOs, query helpers, plot/report-neutral view models | recomputation of material/resistance rules |
-| `@pm/report` | report model plus Excel/PDF adapters | acceptance decisions or hidden recalculation |
+| `@pm/report` extension | accepted-result report model plus Excel/PDF adapters | acceptance decisions or hidden recalculation |
 
-`@pm/project` may depend on serializable definition types, but it does not depend on compiled
-evaluators or the analysis engine. `@pm/report` depends on accepted result contracts, never the other
-way around.
+In the current repository, `@pm/analysis` and `@pm/analysis-equivalent-block` provide most engine/
+result functions and the web worker orchestrates them. `@pm/project` may depend on serializable
+definition types, but it does not depend on compiled evaluators or the analysis engine. The current
+`@pm/report` still accepts preview calculation inputs; the target dependency direction is for its
+release renderers to consume accepted result contracts, never the other way around.
 
 ## 4. Dependency rules
 
@@ -112,11 +123,16 @@ options. When it changes, any result with a different hash is `stale`; report re
 
 ## 8. Workers, performance, and determinism
 
-CPU-heavy validation, meshing, surface generation, and batch checks run outside the UI thread when
-needed. Worker messages contain serializable versioned definitions and results. Compiled material
-functions are rebuilt inside the worker.
+CPU-heavy meshing, surface generation, demand checks, field maps, and exports currently run in a Web
+Worker when available. Worker messages contain serializable definitions and results; compiled
+material functions are rebuilt inside the worker. A main-thread fallback exists.
 
-All loops have resource/time limits, cancellation, progress stages, and deterministic merge order.
+Current abort behavior is boundary cancellation: the client stops waiting and drops a late worker
+result, but a synchronous job already executing in the worker or fallback is not cooperatively
+interrupted. Progress stages, time budgets, and inner-loop cancellation checkpoints remain release
+requirements rather than implemented behavior.
+
+All loops must ultimately have resource/time limits, cooperative cancellation, progress stages, and deterministic merge order.
 Single-thread and parallel paths must be tolerance-equivalent. Performance work follows profiling
 and may not silently loosen engineering tolerances.
 

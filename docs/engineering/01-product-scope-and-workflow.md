@@ -37,7 +37,11 @@ strength-reduction factors are not applied.
 A slower and algorithmically independent path checks production algorithms and selected fixtures.
 It must not reuse the production surface interpolation/search logic as its oracle.
 
-## 3. Included target scope
+## 3. Product target scope
+
+This section is the accepted-product target, not a statement that every item is available in the
+current preview. The implemented boundary is summarized in section 5 and in
+[`../development/06-current-state-and-roadmap.md`](../development/06-current-state-and-roadmap.md).
 
 - one or more polygonal concrete regions, each with zero or more holes, when the selected analysis
   capability explicitly supports that topology;
@@ -75,26 +79,28 @@ not be titled “column design complete” when member-level checks are excluded
 Current UI workflow:
 
 ```text
-Geometry -> Materials -> Results -> Analysis Options -> Report
+Geometry -> Materials -> Results -> Analysis Options
 ```
 
 Loadcases remain engineering input, but simple `Pu/Mux/Muy` entry belongs inside the Results
 workspace until source-load management becomes large enough to justify a separate module. Analysis
-is an internal pipeline behind Results, not a top-level menu.
+is an internal pipeline behind Results, not a top-level menu. There is no current Report workspace;
+preview export buttons live in Results or Analysis Options as described below.
 
 | Workflow area | Engineering input | Required output gate |
 |---|---|---|
 | Geometry | concrete boundaries, holes, bars, origin/axes | valid normalized topology and reinforcement references |
 | Materials | concrete/steel definitions and sources | validated material definitions and compatible selected profile |
-| Results | loadcases/combinations, normalized scenario, profile, immutable result package | finite compatible demands, converged accepted result or typed failure, plots/tables derived without recomputing engineering rules |
+| Results | loadcases/combinations, current preview surface/checks, plots, and field views | finite compatible demands, explicit convergence/admissibility status, plots/tables derived without recomputing engineering rules |
 | Analysis Options | model-specific stations/directions, integration mesh where applicable, and Design resistance parameters | validated version-1 options matched to the selected calculation profile |
-| Report | accepted result plus presentation options | released Excel/PDF carrying result identity and limitations |
+| Export actions | stress-strain result workbook; stress-strain mesh Excel/DXF | preview audit artifacts only; block-result workbook and accepted Excel/PDF reporting are not implemented |
 
 The user may edit modules in any order, but analysis starts only after all prerequisite gates pass.
-Changing Geometry, Materials, loadcases, design basis, or analysis options makes downstream Results
-and Report stale.
+Changing Geometry, Materials, loadcases, design basis, or analysis options invalidates the affected
+surface, quick checks, inverse/field result, and export input. A formal immutable result-history and
+released-report stale-state graph is still target architecture.
 
-## 6. Result-state lifecycle
+## 6. Target result-state lifecycle
 
 ```text
 draft inputs
@@ -108,6 +114,9 @@ draft inputs
 
 No state may be skipped. A cancelled or non-converged calculation may retain explicitly branded
 diagnostic preview data, but it cannot enter acceptance or report-release APIs.
+
+The current application stops at preview calculation/result data. It does not yet construct the
+`accepted result` or `released report` states shown above.
 
 ## 7. Product success criteria
 

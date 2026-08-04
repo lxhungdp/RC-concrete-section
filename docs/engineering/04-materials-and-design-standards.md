@@ -89,8 +89,8 @@ same strain state is reevaluated with design material strengths instead of apply
 
 ## 7. Persisted and reported evidence
 
-Project schema v1 stores the selected calculation profile, complete material definitions,
-model-specific analysis options, and complete DesignBasis. Reports expose:
+Project schema v1 stores the selected calculation profile, material definitions, model-specific
+analysis options, and DesignBasis. The target accepted-result/report contract exposes:
 
 - characteristic/input and effective material values;
 - calculation profile, standard document/edition, method ID, and verification status;
@@ -99,7 +99,14 @@ model-specific analysis options, and complete DesignBasis. Reports expose:
 - phi classification, controlling tensile/yield strains, and tension-controlled limit;
 - axial-cap status and actual surface refinement evidence.
 
-There is no schema migration or profile inference layer in the pre-release v1 project.
+There is no version-migration layer. The current parser can still derive a missing DesignBasis from
+material source and has other limited v1 defaults; these are documented implementation debt, not an
+approved profile-selection workflow.
+
+Current export boundary: the stress-strain result workbook exposes a subset of this evidence,
+including `Design_Check`; the equivalent-block result workbook is not implemented and the UI blocks
+that export rather than reusing the fiber ledger. Mesh Excel/DXF exports are likewise specific to
+stress-strain integration.
 
 ## 8. Current status
 
@@ -112,7 +119,7 @@ and report-release evidence remain required.
 
 | ID | Gate |
 |---|---|
-| `ENG-MAT-001` | strict schema, finite/range, reference, and model/profile consistency validation passes |
+| `ENG-MAT-001` | canonical schema/version, finite/range, reference, and model/profile consistency validation passes; any permitted v1 parser normalization is reported and tested |
 | `ENG-MAT-002` | compiled evaluators are deterministic over their declared domains and expose tangents/limits |
 | `ENG-MAT-003` | stress-strain and equivalent-block routes cannot be mixed |
 | `ENG-MAT-004` | standard identity, edition, applicability, parameters, transition rule, and cap are traceable |

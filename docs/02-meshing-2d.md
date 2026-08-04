@@ -16,7 +16,8 @@ Apply these steps in order and return typed issues with ring/bar IDs:
 1. Validate finite coordinates and minimum three distinct vertices per ring.
 2. Remove only consecutive duplicate points within a scale-aware tolerance.
 3. Reject zero-length edges and near-zero-area rings.
-4. Detect self-intersections and self-touching ambiguity; reject them in v2.
+4. Detect self-intersections and self-touching ambiguity; the accepted-product validator must reject
+   them. Current preview validation remains incomplete and is tracked in `development/03`.
 5. Verify every hole is strictly inside the outer ring.
 6. Reject overlapping/touching holes unless a future topology policy explicitly supports them.
 7. Normalize outer winding CCW and holes CW.
@@ -195,7 +196,10 @@ Before clipping, estimate `nx·ny`, expected fibers, surface evaluations, and me
 limits. If the requested verification tolerance is likely to exceed browser resources, return a
 typed `RESOURCE_LIMIT` result with suggested actions; do not silently loosen tolerances.
 
-Long meshing operations run in a worker and accept `AbortSignal` plus progress reporting.
+Long meshing operations run in a worker when available and the client accepts `AbortSignal`.
+Current cancellation stops awaiting the request and discards a late result; it does not
+cooperatively interrupt a synchronous meshing loop already running. Progress stages and inner-loop
+cancellation checkpoints remain release work.
 
 ## 8. Mesh sanity checks
 

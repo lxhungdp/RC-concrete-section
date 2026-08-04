@@ -22,20 +22,27 @@ Nominal, Design, and factored ULS Demand are separate result stages. See
 [`docs/12-calculation-models-defaults-and-workflows.md`](docs/12-calculation-models-defaults-and-workflows.md)
 for formulas, workflow, fields, defaults, and benchmark evidence.
 
+The current web app has four top-level workspaces: `Geometry`, `Materials`, `Results`, and
+`Analysis Options`. Report generation is not a separate workspace. The result-calculation Excel
+workbook currently supports the stress-strain pipeline only; equivalent-block results deliberately
+block that export until a dedicated block-ledger workbook exists. The Section-mesh Excel/DXF audit
+also applies only to stress-strain integration because the block kernel has no concrete integration
+mesh.
+
 ## Project structure
 
 ```text
 apps/web/                         Next.js application and section editor
 packages/pm-geometry/             Geometry, clipping, and integration mesh
 packages/pm-materials/            Persisted material definitions and compiled laws
-packages/pm-project/              Strict project schema v1 and analysis/profile DTOs
+packages/pm-project/              Version-locked project schema v1 and analysis/profile DTOs
 packages/pm-design/               Resistance profile identity, factors, and transition rules
 packages/pm-analysis/             Stress-strain forward/inverse/surface kernel
 packages/pm-equivalent-block/     Standard-independent rectangular-block kernel
 packages/pm-code-kds142020/       KDS 14 20 20 block adapter
 packages/pm-code-aci318/          ACI 318 Whitney-block adapter
 packages/pm-analysis-equivalent-block/  Project/result bridge for block profiles
-packages/pm-report/               Excel and mesh-audit exports
+packages/pm-report/               Stress-strain result workbook and stress-strain mesh Excel/DXF
 docs/engineering/                 Structural-engineering meaning and acceptance rules
 docs/development/                 Package, schema, UI, test, and release instructions
 ```
@@ -52,12 +59,16 @@ npm run typecheck
 npm run test
 npm run build
 npm run bench:strain-sampling
+npm run bench:equivalent-block
 npm run bench:pipelines
 npm run bench:verify
 ```
 
-`npm test` runs typecheck, unit/integration suites, CAD tests, strict schema-v1 round trip, the
+`npm test` runs typecheck, unit/integration suites, CAD tests, canonical schema-v1 round trip, the
 historical workbook regression fixture, and formula-recalculated Excel-export verification.
+
+`bench:equivalent-block` exercises the production KDS/ACI block configuration, exact inverse
+refinement, fixed-axial queries, topology, admissibility, and batch surface reuse.
 
 `bench:strain-sampling` compares the legacy 19 x 24 fixed grid, the new 25 x 36 fixed grid, and the
 production adaptive configuration against a 144-direction/33-transition-node reference. On the
@@ -82,3 +93,14 @@ converged and every sampled demand ray intersected the surface.
 
 Every dependency is pinned and CI uses the lockfile. Reference workbooks are regression oracles,
 not design-code authority.
+
+## Known pre-release consistency blockers
+
+- The project-wide moment convention is `My = sum(F*x)`, while the standalone
+  `@pm/equivalent-block` kernel currently returns `My = -sum(F*x)`. The application bridge does not
+  yet apply an explicit sign transformation. Equivalent-block results with nonzero `My`, especially
+  for asymmetric sections, remain preview-only until that mapping is corrected and regression-tested.
+- Project documents are version-locked to schema v1 and there is no version-migration layer, but
+  the current parser still supplies a few omitted-field defaults (`design`, stress-strain `mesh`,
+  concrete density) and repairs an invalid default steel ID on open. These compatibility behaviors
+  are documented as current implementation debt; they are not a second schema version.

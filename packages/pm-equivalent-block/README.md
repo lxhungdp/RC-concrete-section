@@ -33,3 +33,8 @@ steel/resultant evaluation; no state-dependent resistance is cached.
 `componentForceResidual` and the two component-moment residuals audit assembly of the concrete and steel ledgers only. They are not equilibrium residuals. Inverse equilibrium diagnostics are computed independently as the exact evaluated response minus the scaled demand, with a separately normalized residual norm.
 
 The package deliberately contains no KDS or ACI constants. Standard adapters supply the block law, endpoints, strength factors, and axial cap.
+
+The package-local moment convention is `My = -F(x-xref)`. The project/stress-strain DTO currently
+uses `My = +F(x-xref)`, and the application bridge has not yet implemented the required explicit
+sign conversion. Consumers of the project bridge must treat nonzero-`My` equivalent-block output as
+preview-only until that boundary is corrected and regression-tested.

@@ -17,7 +17,7 @@ geometry
     id
     points[]
     holes[] -> points[]
-    rebars[] -> id, steelMaterialId?, dia, x, y
+  rebars[] -> id, steelMaterialId?, dia, x, y
 ```
 
 The UI keeps additional draft `BoundaryObject` data. Pressing Apply converts one active boundary to
@@ -180,8 +180,10 @@ src/
   embedded/     full-steel and displaced-concrete composition
 ```
 
-Complete design-code resistance adapters live in `@pm/design-codes`, not in a generic material
-dropdown or model filename.
+Generic resistance basis and sequencing live in `@pm/design`; implemented equivalent-block code
+policy lives in `@pm/code-kds142020` and `@pm/code-aci318`. The application bridge is
+`@pm/analysis-equivalent-block`. None of these rules belongs in a generic material dropdown or model
+filename.
 
 ### Required compiled evaluator
 
