@@ -2,9 +2,10 @@
 
 ## 1. Canonical units
 
-The current `pm-column-project` schema version 1 uses one fixed canonical system. The pre-release
-project has no version-migration layer; limited omitted-field/default normalization in the current
-parser is documented separately and does not change these units:
+The current codebase uses only persisted calculation contract version 1: project version 1,
+design-basis version 1, analysis-options version 1, both `*-surface-v1` method IDs, and v1 station
+schedules. There is no migration or backward-compatibility layer. The parser's documented v1
+defaults do not change these units:
 
 | Quantity | Canonical unit |
 |---|---|
@@ -37,37 +38,43 @@ changes shall not rerun or alter resistance calculations.
   boundary states used to generate the surface; demand angles are computed from the action vector as
   `thetaLoad = atan2(My, Mx)` and are used only for geometric queries of the finished surface.
 
-The physical section view and the `Mx-My` action-space view do not use the same plotted vector.
-Under the authoritative resultant convention below, the bending-action direction overlaid on
-section coordinates `(x,y)` has components `(My,Mx)`. The reference section line perpendicular to
-that direction has tangent `(-Mx,My)`. Compare the actual neutral-axis tangent `(-kx,ky)` with this
-perpendicular reference line, treating both as undirected axes modulo 180 degrees. Do not compare
-the neutral-axis angle directly with `thetaLoad = atan2(My,Mx)`, which lives in `Mx-My` action space.
+The physical section view and the `Mx-My` action-space view do not use the same plotted vector. The
+mapping also depends on the backend's implemented `My` sign, as documented below. Do not compare a
+neutral-axis angle directly with `thetaLoad = atan2(My,Mx)`, which lives in `Mx-My` action space.
 
 The generalized strain plane is:
 
 `ε(x,y) = ε0 + κx·y + κy·x`
 
-The resultants about the declared origin are:
+The stress-strain backend `@pm/analysis` computes resultants about the declared origin as:
 
 `P = ∫σ dA`, `Mx = ∫σ y dA`, `My = ∫σ x dA`.
 
-If the new origin is offset by `(Δx, Δy)` from the old origin, with new coordinates
+For that stress-strain convention, if the new origin is offset by `(Δx, Δy)` from the old origin,
+with new coordinates
 `x' = x - Δx`, `y' = y - Δy`:
 
 `Mx' = Mx - P·Δy`, `My' = My - P·Δx`.
 
-This convention is authoritative. Import adapters must transform external sign conventions and
-record the mapping rather than changing the kernel convention.
+The section-coordinate direction associated with a stress-strain resultant is `(My,Mx)` and its
+perpendicular reference line is `(-Mx,My)`. The current section-angle UI implements this mapping.
 
-### Current implementation discrepancy: equivalent-block `My`
+### Current equivalent-block convention
 
-The stress-strain pipeline follows the authoritative `My = sum(F*x)` convention. The standalone
-`@pm/equivalent-block` package currently defines its local result as `My = -sum(F*x)`, and
-`@pm/analysis-equivalent-block` does not yet perform an explicit local-to-project sign transform.
-This is a code discrepancy, not an alternate project convention. Until the bridge is corrected and
-verified on asymmetric sections with nonzero `My`, equivalent-block output is preview-only and
-must not be used to claim cross-model sign agreement.
+`@pm/equivalent-block` computes:
+
+`P = ∫σ dA`, `Mx = ∫σ y dA`, `My = -∫σ x dA`.
+
+Its origin shift is therefore `Mx' = Mx - P·Δy`, `My' = My + P·Δx`. Under that convention, the
+section-coordinate force direction is `(-My,Mx)`, not `(My,Mx)`.
+
+The project-v1 `LoadCombination`/result DTO only stores fields named `Mx` and `My`; it does not
+declare or enforce either formula. `@pm/analysis-equivalent-block`, the demand solvers, plots, and
+field UI pass the block value unchanged. The field-angle utility still assumes the stress-strain
+mapping. Thus two implemented `My` conventions currently coexist. This is a cross-model code
+discrepancy, not a schema-version distinction. Until one convention is selected or an explicit
+boundary transform is added and tested on asymmetric sections, nonzero-`My` block output is
+preview-only and must not be used to claim cross-model sign agreement.
 
 ## 3. Required terminology
 
@@ -118,4 +125,4 @@ moduli, strengths, limits, and resource counts must satisfy model-specific range
 Validation returns issues with stable code, severity, path/entity ID, safe message, and technical
 context. A warning cannot override an error. Automatic repairs are allowed only in an explicit
 import-repair preview and must be disclosed; accepted analysis uses the repaired snapshot as a new
-versioned input, never an invisible mutation.
+v1 input snapshot, never an invisible mutation.

@@ -59,20 +59,21 @@ or downstream adequacy APIs. Preview surfaces use a different type.
 
 ## 4. Runtime schemas and current v1 policy
 
-Compile-time types do not validate JSON. Use a pinned runtime-schema package or an equivalent local
-validator for every public DTO. The current pre-release project contract is strict version 1:
+Compile-time types do not validate JSON. Use the current local runtime parser for the project
+boundary. Every persisted calculation contract in the repository is v1:
 
 ```ts
-interface VersionedRequest {
-  schemaVersion: 1;
-  engineRequestId: string;
-}
+PM_PROJECT_VERSION = 1
+DESIGN_BASIS_VERSION = 1
+ANALYSIS_OPTIONS_VERSION = 1
+STRAIN_DOMAIN_SURFACE_METHOD = 'strain-domain-surface-v1'
+EQUIVALENT_BLOCK_SURFACE_METHOD = 'equivalent-block-surface-v1'
 ```
 
-No migration or backward-compatibility layer is implemented for the current project schema v1.
-Unsupported versions fail. If a future public version needs migration, it must be approved and
-implemented as an explicit, fixture-tested change; an old standard edition or unit convention may
-never be reinterpreted silently.
+All current persisted calculation code is v1. No migration or backward-compatibility layer is
+implemented or required, and unsupported versions fail. The parser's limited defaults are rules
+inside v1. A different schema version is outside the current project scope; an old standard edition
+or unit convention may never be reinterpreted silently.
 
 ## 5. Errors, warnings, and fail-closed behavior
 

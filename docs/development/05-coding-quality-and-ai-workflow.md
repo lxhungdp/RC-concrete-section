@@ -157,7 +157,7 @@ Create an ADR/engineering decision record for choices involving:
 - geometry topology/tolerance/offset/triangulation algorithm;
 - material law or design-code interpretation;
 - utilization, convergence, uncertainty, or acceptance;
-- public schema/migration;
+- public schema-v1 contract or parser-v1 behavior;
 - numerically relevant dependency;
 - result/report integrity and release workflow.
 

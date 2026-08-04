@@ -99,8 +99,9 @@ analysis options, and DesignBasis. The target accepted-result/report contract ex
 - phi classification, controlling tensile/yield strains, and tension-controlled limit;
 - axial-cap status and actual surface refinement evidence.
 
-There is no version-migration layer. The current parser can still derive a missing DesignBasis from
-material source and has other limited v1 defaults; these are documented implementation debt, not an
+All current persisted calculation code is v1 and there is no migration/backward-compatibility
+layer. Within v1, the parser can derive a missing DesignBasis from material source and apply the
+other defaults documented in the parser contract. This does not create another schema version or an
 approved profile-selection workflow.
 
 Current export boundary: the stress-strain result workbook exposes a subset of this evidence,

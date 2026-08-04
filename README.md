@@ -94,13 +94,15 @@ converged and every sampled demand ray intersected the surface.
 Every dependency is pinned and CI uses the lockfile. Reference workbooks are regression oracles,
 not design-code authority.
 
-## Known pre-release consistency blockers
+## Current v1 conventions and known blocker
 
-- The project-wide moment convention is `My = sum(F*x)`, while the standalone
-  `@pm/equivalent-block` kernel currently returns `My = -sum(F*x)`. The application bridge does not
-  yet apply an explicit sign transformation. Equivalent-block results with nonzero `My`, especially
-  for asymmetric sections, remain preview-only until that mapping is corrected and regression-tested.
-- Project documents are version-locked to schema v1 and there is no version-migration layer, but
-  the current parser still supplies a few omitted-field defaults (`design`, stress-strain `mesh`,
-  concrete density) and repairs an invalid default steel ID on open. These compatibility behaviors
-  are documented as current implementation debt; they are not a second schema version.
+- The project DTO stores `My` but does not enforce a resultant sign formula. The stress-strain
+  backend and its workbook use `My = sum(F*x)`; the equivalent-block backend uses
+  `My = -sum(F*x)`. The bridge and UI pass `My` through unchanged. Nonzero-`My` block results,
+  especially for asymmetric sections, therefore remain preview-only until one convention is chosen
+  or an explicit boundary transform is implemented and regression-tested.
+- All current persisted calculation contracts are v1: project version 1, design-basis version 1,
+  analysis-options version 1, `strain-domain-surface-v1`, `equivalent-block-surface-v1`, and v1
+  station schedules. There is
+  no migration or backward-compatibility layer. Omitted-field defaults and steel-ID repair are
+  documented as parser behavior within v1.

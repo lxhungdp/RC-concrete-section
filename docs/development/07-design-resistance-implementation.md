@@ -17,9 +17,9 @@ resistance used for a factored ULS check. The engineering requirements remain au
 - construction of reference, state and design material sets;
 - state-dependent global-strength-reduction evaluation.
 
-`@pm/project` writes `inputs.design` directly in canonical project schema version 1. There is no
-version migration. The current parser can synthesize a missing basis as a limited compatibility
-default, but canonical exports always contain it; `calculationProfileId`, materials, analysis
+`@pm/project` writes `inputs.design` directly in the sole current project schema version 1. There is
+no migration or backward-compatibility layer. As a parser-v1 rule, a missing basis is synthesized;
+canonical exports always contain it. `calculationProfileId`, materials, analysis
 options, and the DesignBasis must be mutually consistent after parsing.
 Every load combination is explicitly tagged `actionBasis: "factoredULS"`.
 

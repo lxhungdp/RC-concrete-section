@@ -26,7 +26,7 @@ filesystem/network APIs, project UI state, or report libraries.
 | `@pm/ids` | positive integer allocation/gap fill | identity utilities only; no engineering meaning |
 | `@pm/geometry` | editor DTO, primitives/booleans, properties, rebar helpers | split public submodules for definitions, validation, normalization, exact properties, rebar validation, and analysis adapters |
 | `@pm/materials` | material DTOs, stores, model compilers, KDS helpers | definitions/validation/compilation only; no complete design-code claim in a material tag |
-| `@pm/project` | version-locked project v1 DTO, JSON parse/serialize, warnings, round-trip | persistence envelope and profile/options registry; no numerical analysis or UI behavior; limited parser defaults are tracked debt, not a migration layer |
+| `@pm/project` | project-v1 DTO, JSON parse/serialize, warnings, round-trip | persistence envelope and profile/options registry; no numerical analysis or UI behavior; documented defaults are parser-v1 behavior, not migration/backward compatibility |
 | `@pm/design` | DesignBasis identity, resistance formats/factors, transition rules, and material-set preparation | generic resistance sequencing; no geometry solving or UI state |
 | `@pm/analysis` | stress-strain preparation, forward/inverse mechanics, adaptive surface, slices, demand checks, and field maps | stress-strain route only; no equivalent-block emulation |
 | `@pm/equivalent-block` | standard-independent block preparation, clipping, forward/inverse solvers, surfaces, topology, and admissibility | no project schema, UI, or KDS/ACI constants |
@@ -43,7 +43,7 @@ The current packages are the starting boundaries. Do not rewrite them into one a
 
 The following names describe possible later ownership boundaries. They are not import targets in
 the current repository and must not be cited as if they already own runtime behavior. Add one only
-when its contract is exercised by a real slice and migration from the current owners is explicit.
+when its contract is exercised by a real slice and movement from the current owners is explicit.
 
 | Package | Owns | Must not own |
 |---|---|---|

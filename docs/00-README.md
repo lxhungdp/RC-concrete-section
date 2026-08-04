@@ -72,10 +72,10 @@ As of 2026-08-04:
 - Accepted engineering analysis, verified design-code profiles, certified result DTOs, and
   released PDF reports are not complete.
 - Preview data cannot be promoted to accepted design output.
-- Two implementation/documentation discrepancies remain explicit release blockers: the standalone
-  block kernel uses the opposite local `My` sign from the project convention and its bridge has no
-  sign map yet; the schema-v1 parser has limited omitted-field/default repair behavior even though
-  no version migration is allowed. See
+- One cross-model implementation discrepancy remains an explicit release blocker: stress-strain
+  uses `My = +sum(F*x)`, equivalent-block uses `My = -sum(F*x)`, and the v1 project DTO/bridge/UI do
+  not define or apply a conversion. All current persisted calculation contracts are v1; parser
+  defaults are v1 behavior, not migration or backward compatibility. See
   [`development/06-current-state-and-roadmap.md`](development/06-current-state-and-roadmap.md).
 
 The detailed status and roadmap live in

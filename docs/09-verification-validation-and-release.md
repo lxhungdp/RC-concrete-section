@@ -226,7 +226,8 @@ but it must not claim to predict physical failure beyond that model's scope.
 
 - full regression on supported runtimes;
 - known limitations and residual risks accepted by named approver;
-- semantic version, migration notes, evidence bundle, and rollback plan published.
+- semantic/software version, statement that v1 is the sole schema, evidence bundle, and rollback
+  plan published.
 
 Failure of any required gate blocks production certification.
 

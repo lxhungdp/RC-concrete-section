@@ -106,8 +106,8 @@ level. Do not silently change a formula to match an existing regression output.
 
 ## 6. Legacy-preview decisions incorporated into current v1
 
-These are algorithm/product decisions inside schema v1. They do not imply a project-file v2 or a
-migration layer.
+These are algorithm/product decisions inside the sole current project schema, v1. They do not
+introduce another schema version or a migration layer.
 
 | Historical preview problem | Current v1 resolution |
 |---|---|
@@ -135,9 +135,10 @@ migration layer.
 
 Create architecture/design records for:
 
-- explicit conversion of the equivalent-block kernel's local `My = -sum(F*x)` convention to the
-  project `My = sum(F*x)` convention, with asymmetric-section cross-kernel tests;
-- removal or formal retention of the parser's remaining v1 omitted-field/default repair behavior;
+- selection of one cross-kernel `My` convention, or an explicit transform between stress-strain
+  `My = +sum(F*x)` and equivalent-block `My = -sum(F*x)`, with asymmetric-section tests; the
+  project-v1 DTO currently enforces neither formula;
+- formal confirmation of the parser's v1 omitted-field/default behavior;
 - runtime schema strategy and unknown-property policy;
 - polygon self-intersection/robust-predicate implementation;
 - triangle intersection and generalized winding implementation;
@@ -159,7 +160,7 @@ Engineering rationale:
 Expected numerical/result impact:
 Tests/evidence rerun:
 Independent reviewers:
-Schema-v1 normalization, future migration, and provenance implications:
+Schema-v1 parser/provenance implications (no current migration layer):
 Approval and release version:
 ```
 

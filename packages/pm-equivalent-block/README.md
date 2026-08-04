@@ -34,7 +34,8 @@ steel/resultant evaluation; no state-dependent resistance is cached.
 
 The package deliberately contains no KDS or ACI constants. Standard adapters supply the block law, endpoints, strength factors, and axial cap.
 
-The package-local moment convention is `My = -F(x-xref)`. The project/stress-strain DTO currently
-uses `My = +F(x-xref)`, and the application bridge has not yet implemented the required explicit
-sign conversion. Consumers of the project bridge must treat nonzero-`My` equivalent-block output as
-preview-only until that boundary is corrected and regression-tested.
+The package-local moment convention is `My = -F(x-xref)`. The project DTO only stores a field named
+`My`; it does not define a formula or convert signs. The stress-strain backend and workbook use
+`My = +F(x-xref)`, while the application bridge and UI pass the block value through unchanged.
+Consumers comparing the two backends must therefore treat nonzero-`My` equivalent-block output as
+preview-only until a common convention or an explicit boundary transform is implemented and tested.

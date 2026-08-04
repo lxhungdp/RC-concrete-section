@@ -1,8 +1,15 @@
 # Data Contracts, Persistence, and Versioning
 
-## 1. Current rule: version-locked schema v1, no migration layer
+## 1. Current rule: every persisted calculation contract is v1
 
-The project is pre-release and every persisted schema in the active calculation path is version 1.
+The project is pre-release and all current persisted calculation code is v1:
+
+- project document `version: 1`;
+- design basis `basisVersion: 1`;
+- analysis `optionsVersion: 1`;
+- `strain-domain-surface-v1` and `equivalent-block-surface-v1` method IDs;
+- `transition-aware-p0-p24-v1`, `legacy-p0-p18-v1`, and `verified-37-v1` schedule IDs.
+
 The project parser accepts only:
 
 ```text
@@ -10,9 +17,9 @@ schema  = "pm-column-project"
 version = 1
 ```
 
-There is no v2/v3/v4 document and no version-to-version migration. Unsupported schema, version,
-profile, method, and options discriminants fail. However, the current field-by-field parser still
-contains limited compatibility normalization inside v1:
+No other persisted calculation version exists. There is no migration or backward-compatibility
+layer. Unsupported schema, version, profile, method, and options discriminants fail. Within v1, the
+field-by-field parser applies these documented defaults/repairs:
 
 - omitted `inputs.design` receives a material-derived default;
 - omitted stress-strain `analysis.mesh` receives the current default mesh object;
@@ -20,10 +27,9 @@ contains limited compatibility normalization inside v1:
 - an invalid default steel-material ID is warned and replaced by the first steel material on open;
 - unknown extra object properties are not globally rejected.
 
-These behaviors are current implementation debt, not a second schema version. New project exports
-write all canonical fields explicitly. Removing the compatibility paths requires fixture/test
-review but does not require a migration framework. When a future public release requires a new
-schema, migration design must be approved as a separate change.
+These are parser-v1 rules, not compatibility with another project version. New project exports
+write all canonical fields explicitly. Changing any of these rules requires fixture and round-trip
+test review, but no migration framework is part of the current project.
 
 ## 2. Canonical project document
 

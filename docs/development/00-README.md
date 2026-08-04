@@ -10,7 +10,7 @@ behavior, or package ownership.
 | Step | Document | Use it for |
 |---|---|---|
 | 1 | [`01-architecture-and-package-boundaries.md`](01-architecture-and-package-boundaries.md) | Package ownership, dependency direction, runtime separation. |
-| 2 | [`02-data-contracts-persistence-and-versioning.md`](02-data-contracts-persistence-and-versioning.md) | Strict pre-release schema v1, persisted definitions, profile/options contracts, result identity; no migration layer. |
+| 2 | [`02-data-contracts-persistence-and-versioning.md`](02-data-contracts-persistence-and-versioning.md) | Sole current v1 project/options/method/schedule contracts and parser-v1 behavior; no migration/backward-compatibility layer. |
 | 3 | [`03-geometry-and-material-pipelines.md`](03-geometry-and-material-pipelines.md) | Validation, normalization, compilation, UI-to-domain boundaries. |
 | 4 | [`04-loadings-analysis-results-and-report-pipelines.md`](04-loadings-analysis-results-and-report-pipelines.md) | Loadcase data, engine orchestration, results, Plotly adapter, reports. |
 | 5 | [`05-coding-quality-and-ai-workflow.md`](05-coding-quality-and-ai-workflow.md) | Testing discipline, review workflow, AI coding constraints. |

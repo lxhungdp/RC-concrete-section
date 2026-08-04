@@ -104,13 +104,21 @@ export type ResultantLedger = {
   total: Resultant
 }
 
+export type PreviewSurfacePointRole =
+  | 'physical-state'
+  | 'pure-tension'
+  | 'pure-compression'
+  | 'axial-cap'
+
 export type PreviewSurfacePoint = Resultant & {
   id: string
   beta: number
-  /** Zero-based display/topology order within one direction row. */
+  /** Zero-based display order within one physical direction row; −1 for a synthetic face point. */
   station: number
-  /** Stable persisted station identity; poles use reserved string ids. */
-  stationId: SurfaceStationId
+  /** Stable physical station identity; null for a synthetic face that is not a strain station. */
+  stationId: SurfaceStationId | null
+  /** Structural/topological meaning; never infer this from numeric station order. */
+  surfaceRole: PreviewSurfacePointRole
   state: StrainState
   ledger: ResultantLedger
   resistance?: DesignResistanceTrace
@@ -1119,15 +1127,19 @@ const previewSurfaceTriangles = (
   topology?: readonly SurfaceIndexTriangle[]
 ): SurfaceTriangle[] => {
   if (topology) {
+    const samePhysicalDirection = (left: PreviewSurfacePoint, right: PreviewSurfacePoint) =>
+      left.surfaceRole !== 'axial-cap' &&
+      right.surfaceRole !== 'axial-cap' &&
+      left.beta === right.beta
     return topology.flatMap(({ a, b, c }) => {
       const vertices = [points[a], points[b], points[c]] as const
       if (vertices.some((point) => point === undefined)) return []
       return [{
         vertices: [vertices[0], vertices[1], vertices[2]],
         sameDirectionEdge: [
-          vertices[0].beta === vertices[1].beta,
-          vertices[1].beta === vertices[2].beta,
-          vertices[2].beta === vertices[0].beta
+          samePhysicalDirection(vertices[0], vertices[1]),
+          samePhysicalDirection(vertices[1], vertices[2]),
+          samePhysicalDirection(vertices[2], vertices[0])
         ]
       }]
     })
@@ -1416,6 +1428,11 @@ export const buildPreviewSurfaceFromPrepared = (
         beta,
         station,
         stationId: descriptor.id,
+        surfaceRole: descriptor.id === 'pure-compression'
+          ? 'pure-compression'
+          : descriptor.id === 'pure-tension'
+            ? 'pure-tension'
+            : 'physical-state',
         state,
         ledger,
         ...ledger.total
@@ -1915,7 +1932,9 @@ export const sliceFixedPContour = (
  * Each triangle contributes a segment. The segments are stitched by their shared surface-edge or
  * surface-vertex identity, not by sorting the resulting point cloud by `P`. This preserves loops,
  * non-monotone branches and multiple connected components. Pure-compression/pure-tension vertices
- * are welded by station because every beta row contains a duplicate copy of the same pole.
+ * are welded by their reserved station identity because every beta row contains a duplicate copy
+ * of the same pole. Numeric station order is not an identity: synthetic faces may deliberately sit
+ * outside the physical station schedule.
  *
  * The preview surface is still the coarse beta/station grid. This is a geometric section of that
  * surface; it does not assume the sampled strain-plane angle equals the moment direction.
@@ -1939,15 +1958,14 @@ export const sliceMomentPlane = (
   const planeTol = momentScale * 1e-12
   const vertexIndex = new WeakMap<PreviewSurfacePoint, number>()
   points.forEach((point, index) => vertexIndex.set(point, index))
-  const maxStation = Math.max(...points.map((point) => point.station))
 
   type GraphNode = { point: PreviewMomentPlanePoint; neighbours: Set<string> }
   const graph = new Map<string, GraphNode>()
   const graphEdges = new Set<string>()
 
   const vertexKey = (point: PreviewSurfacePoint) =>
-    point.station === 0 || point.station === maxStation
-      ? `pole:${point.station}`
+    point.stationId === 'pure-tension' || point.stationId === 'pure-compression'
+      ? `pole:${point.stationId}`
       : `vertex:${vertexIndex.get(point)!}`
 
   const projected = (point: PreviewContourPoint): PreviewMomentPlanePoint => ({

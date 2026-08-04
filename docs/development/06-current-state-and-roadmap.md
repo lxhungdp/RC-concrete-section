@@ -9,7 +9,7 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 
 | Area | Implemented now | Remaining gate |
 |---|---|---|
-| Project | version-locked schema v1; canonical exports contain profile, geometry, materials, factored loadings, model-specific options, and DesignBasis; exact canonical round trip | remove/formalize limited parser defaults; accepted-result artifact and signed release metadata |
+| Project | every persisted calculation contract is v1; canonical exports contain profile, geometry, materials, factored loadings, model-specific options, and DesignBasis; exact canonical round trip; documented parser-v1 defaults | accepted-result artifact and signed release metadata |
 | Profile selection | one Materials selection atomically binds KDS stress-strain, KDS block, or ACI block mechanics and defaults | add only edition-scoped profiles with independent review evidence |
 | Geometry | multiple solids/holes, rebars, exact properties, clipping, triangle/quadrature mesh | complete production topology/cover acceptance UX |
 | Materials | persisted concrete/steel definitions, compiled stress/tangent laws, material support gates | finish independent curve verification for every declared scope |
@@ -33,9 +33,9 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
   directions and adaptively refines all 25 stations to a 0.5% angular chord target.
 - The sparse design-factor transition was replaced by nine code-aware nodes. ACI and KDS transition
   limits are stored as different discriminated rules rather than one ambiguous increment.
-- Project versioning was reset to the intended pre-release schema v1 and no version-migration work
-  is carried. Limited omitted-field/default normalization remains in the active parser and is now an
-  explicit cleanup decision rather than hidden compatibility behavior.
+- Project versioning is the single pre-release v1 family: document, DesignBasis, analysis options,
+  methods, and named schedules are all v1. No migration or backward-compatibility work is carried.
+  Omitted-field defaults are explicit parser-v1 behavior.
 - Nominal resistance, Design resistance, and factored Demand are different DTO stages and UI terms.
 - KDS `P0` is now a code reference point; the high-strength flexural surface closes on its
   eta-reduced physical compression limit, eliminating an unsupported interpolation band.
@@ -48,14 +48,10 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 
 ## 3. Open consistency hazards found by the documentation audit
 
-- **Equivalent-block `My` sign boundary:** project/stress-strain resultants use `My = sum(F*x)`;
-  `@pm/equivalent-block` uses the local convention `My = -sum(F*x)`. The bridge currently does not
-  transform it. Nonzero-`My` block checks, especially asymmetric sections, remain blocking preview
-  output until a single explicit convention map and cross-kernel regression tests are implemented.
-- **Schema-v1 strictness gap:** there is no version migration, but the parser currently defaults an
-  omitted DesignBasis, stress-strain mesh, and concrete density; it also repairs an invalid default
-  steel ID and ignores unknown extra properties. Canonical exports are complete. Decide whether to
-  remove these paths for strict pre-release v1 or formally retain/document them as normalization.
+- **Equivalent-block `My` sign boundary:** the project-v1 DTO only names `My`; it enforces no
+  formula. Stress-strain uses `My = +sum(F*x)`, block uses `My = -sum(F*x)`, and the bridge/UI pass
+  both through unchanged. Nonzero-`My` block checks, especially asymmetric sections, remain
+  blocking preview output until one convention or an explicit transform is regression-tested.
 - **Equivalent-block workbook:** Results blocks Excel export for the block route because the current
   workbook is a fiber/stress-strain ledger. A dedicated block area/centroid, `c`, `a`, `beta1`,
   steel, resistance-stage, admissibility, and solver-evidence workbook remains required.
@@ -77,8 +73,8 @@ result fingerprints and convergence evidence.
 
 ## 5. Current P0 blockers before engineering release
 
-1. **Cross-kernel sign contract is unresolved.** The equivalent-block `My` convention is not yet
-   mapped to the project convention.
+1. **Cross-kernel sign contract is unresolved.** Stress-strain and block use opposite `My` signs;
+   the neutral v1 project DTO/bridge does not map between them.
 2. **No accepted-result contract.** Preview surface/check DTOs are not a signed, immutable design
    artifact with complete input and implementation hashes.
 3. **Profiles remain draft for release purposes.** Clause-level unit tests exist, but independent
@@ -87,8 +83,7 @@ result fingerprints and convergence evidence.
    product does not yet prevent report release after a missed tolerance or unresolved cap.
 5. **Geometry/material verification matrix is incomplete.** More topology, high-strength,
    multi-material, and property-based cases are required.
-6. **Schema-v1 parsing is not fully strict.** Limited omitted-field/default repair paths remain.
-7. **Final report release is incomplete.** Stress-strain Excel is an audit preview; block Excel,
+6. **Final report release is incomplete.** Stress-strain Excel is an audit preview; block Excel,
    accepted-result-only PDF,
    provenance signature, and render verification remain open.
 

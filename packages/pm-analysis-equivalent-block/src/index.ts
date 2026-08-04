@@ -273,6 +273,15 @@ const convertSurfacePoints = (
   includeResistance = false
 ): PreviewSurfacePoint[] => surface.points.map((point) => {
   const state = strainState(section, point.state, epsCu)
+  const surfaceRole = point.kind === 'state'
+    ? 'physical-state'
+    : point.kind === 'tension-pole'
+      ? 'pure-tension'
+      : point.kind === 'compression-pole'
+        ? 'pure-compression'
+        : point.kind
+  // Poles and the synthetic axial-cap face have no unique neutral-axis direction. The zero value is
+  // only a finite plotting placeholder; topology and station diagnostics must use surfaceRole.
   const beta = point.state ? wrap(Math.PI / 2 - point.state.neutralAxisAngle) : 0
   const resultants = point.resultants
   const station = nearestStation(surface, section, point, epsCu)
@@ -283,12 +292,17 @@ const convertSurfacePoints = (
       ? 0
       : point.kind === 'compression-pole'
         ? surface.stations.length + 1
-        : station,
+        : point.kind === 'axial-cap'
+          ? -1
+          : station,
     stationId: point.kind === 'tension-pole'
       ? 'pure-tension'
       : point.kind === 'compression-pole'
         ? 'pure-compression'
-        : `station-${station}`,
+        : point.kind === 'axial-cap'
+          ? null
+          : `station-${station}`,
+    surfaceRole,
     state,
     ledger: zeroLedger(resultants),
     ...resultants,

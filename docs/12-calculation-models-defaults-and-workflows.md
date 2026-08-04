@@ -24,11 +24,12 @@ The models are separate packages because `sigma_c = f(eps_c)` and a code-equival
 different constitutive statements. Sampling one with the other's equations would produce a smooth
 number but not the resistance defined by the selected method.
 
-Current blocking convention note: the common project/stress-strain DTO uses
-`My = sum(F*x)`, while `@pm/equivalent-block` currently emits its package-local
-`My = -sum(F*x)` and the bridge does not transform it. This is not a permitted difference between
-the two models. Equivalent-block checks with nonzero `My` remain preview-only until the mapping is
-fixed and verified on asymmetric sections.
+Current blocking convention note: the project DTO only stores `My` and does not enforce its sign.
+The stress-strain backend and workbook compute `My = sum(F*x)`; `@pm/equivalent-block` computes
+`My = -sum(F*x)`. The bridge, demand solver, plots, and field UI pass whichever value the selected
+backend returns without transformation. Cross-model comparison and nonzero-`My` block checks remain
+preview-only until one convention is selected or an explicit boundary transform is verified on
+asymmetric sections.
 
 ## 2. Stress-strain integration equations
 

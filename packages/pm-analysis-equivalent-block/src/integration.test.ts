@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import test from 'node:test'
+import { sliceMomentPlane } from '@pm/analysis'
 import { geometryInputRebars, sectionGeometryFromGeometryInput, type GeometryInput } from '@pm/geometry'
 import { createDefaultMaterialStore } from '@pm/materials'
 import {
@@ -49,6 +52,73 @@ const build = (profileId: Exclude<CalculationProfileId, 'kds-2024-stress-strain'
   return { materials, design, options, prepared }
 }
 
+const assertCardinalSlicesHaveNoCapToTensionChord = (
+  surface: ReturnType<typeof buildEquivalentBlockPreviewSurfaceFromPrepared>,
+  label: string
+) => {
+  const syntheticCapPoints = surface.points.filter((point) => point.surfaceRole === 'axial-cap')
+  assert.ok(syntheticCapPoints.length > 2, `${label}: expected a triangulated axial-cap face`)
+  assert.ok(
+    syntheticCapPoints.every((point) => point.station === -1 && point.stationId === null),
+    `${label}: axial-cap points must not masquerade as physical strain stations`
+  )
+  const capP = syntheticCapPoints[0].P
+  const tensionP = Math.min(...surface.points.map((point) => point.P))
+  const forceTolerance = Math.max(1, Math.abs(capP), Math.abs(tensionP)) * 1e-9
+  const near = (value: number, target: number) => Math.abs(value - target) <= forceTolerance
+  const epsilon = 1e-6
+  const angles = [
+    0, epsilon,
+    90 - epsilon, 90, 90 + epsilon,
+    180 - epsilon, 180, 180 + epsilon,
+    270 - epsilon, 270, 270 + epsilon
+  ]
+
+  for (const degrees of angles) {
+    const paths = sliceMomentPlane(surface.points, degrees * Math.PI / 180, surface.triangles)
+    assert.ok(paths.length > 0, `${label} ${degrees} deg: expected a vertical slice`)
+    assert.ok(paths.every((path) => path.closed), `${label} ${degrees} deg: full-plane slice must be closed`)
+    for (const [pathIndex, path] of paths.entries()) {
+      for (let index = 1; index < path.points.length; index += 1) {
+        const left = path.points[index - 1]
+        const right = path.points[index]
+        const capToTension =
+          (near(left.P, capP) && near(right.P, tensionP)) ||
+          (near(right.P, capP) && near(left.P, tensionP))
+        assert.equal(
+          capToTension,
+          false,
+          `${label} ${degrees} deg path ${pathIndex}: axial cap must not connect to the tension pole`
+        )
+      }
+    }
+  }
+}
+
+test('KDS block cardinal slices do not weld the axial cap to the tension pole', () => {
+  const parsed = parseProjectDocument(readFileSync(
+    resolve(process.cwd(), 'docs/example case/PM-advanced (7) 2D.pm-project.json'),
+    'utf8'
+  ))
+  assert.ok(parsed.ok, 'PM-advanced (7) 2D fixture must parse')
+  if (!parsed.ok) return
+
+  const profileId = 'kds-142020-equivalent-block' as const
+  const projectGeometry = parsed.document.inputs.geometry
+  const materials = applyCalculationProfileToMaterials(parsed.document.inputs.materials, profileId)
+  const design = createDesignBasisForCalculationProfile(profileId)
+  const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
+  const prepared = prepareBlockAnalysis(
+    profileId,
+    sectionGeometryFromGeometryInput(projectGeometry),
+    geometryInputRebars(projectGeometry),
+    materials,
+    design
+  )
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+  assertCardinalSlicesHaveNoCapToTensionChord(surface, 'KDS PM-advanced (7) 2D')
+})
+
 for (const profileId of ['kds-142020-equivalent-block', 'aci-318-19-22-equivalent-block'] as const) {
   test(`${profileId}: surface, inverse and exact block field`, () => {
     const input = build(profileId)
@@ -57,6 +127,7 @@ for (const profileId of ['kds-142020-equivalent-block', 'aci-318-19-22-equivalen
     assert.ok(surface.points.length > 100)
     assert.ok(surface.triangles && surface.triangles.length > 100)
     assert.ok(surface.points.every((point) => Number.isFinite(point.P + point.Mx + point.My)))
+    assertCardinalSlicesHaveNoCapToTensionChord(surface, profileId)
     assert.ok(
       surface.stations.some((station) => station.definition.kind === 'bar-tension-strain'),
       'code transition events must retain controlling-bar semantics in the shared result DTO'

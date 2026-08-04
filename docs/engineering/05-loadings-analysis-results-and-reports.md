@@ -12,6 +12,11 @@ The current web workflow embeds loadcase creation and editing in the Results sid
 top-level Loadings menu is intentionally avoided until source-load management grows beyond simple
 Pu/Mux/Muy combinations.
 
+Current v1 sign caveat: `LoadCombination.My` carries no convention discriminator and is passed
+unchanged to the selected backend. Stress-strain interprets it against `My = +sum(F*x)`; the block
+backend produces/checks `My = -sum(F*x)`. Nonzero-`My` block demand remains preview-only until the
+two-backend boundary is unified or explicitly transformed.
+
 The accepted-product target is that every demand records:
 
 - stable ID/name and optional source-case trace;

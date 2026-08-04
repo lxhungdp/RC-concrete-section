@@ -419,10 +419,10 @@ ratio is diagnostic only. The stress-strain Excel export records the exact profi
 `Design_Check`. Equivalent-block result export is currently blocked until a dedicated block-ledger
 workbook is implemented.
 
-One cross-kernel convention issue remains open: the project/stress-strain convention is
-`My = sum(F*x)`, whereas the standalone block kernel currently returns `My = -sum(F*x)` and the
-application bridge has no explicit conversion. This blocks accepted use of equivalent-block results
-with nonzero `My` until corrected and independently tested.
+One cross-kernel convention issue remains open. The project DTO does not define a sign formula;
+stress-strain computes `My = sum(F*x)`, block computes `My = -sum(F*x)`, and the bridge/UI perform
+no conversion. This blocks accepted cross-model comparison and accepted equivalent-block use with
+nonzero `My` until a common convention or explicit transform is independently tested.
 
 Implementation details and automated evidence are in
 [`development/07-design-resistance-implementation.md`](development/07-design-resistance-implementation.md).
