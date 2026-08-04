@@ -12,6 +12,40 @@ const BASE_TOLERANCE = 1e-10
 
 const finitePoint = (point: Point2) => Number.isFinite(point.x) && Number.isFinite(point.y)
 
+const pointBounds = (points: readonly Point2[]) => {
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  for (const point of points) {
+    if (point.x < minX) minX = point.x
+    if (point.x > maxX) maxX = point.x
+    if (point.y < minY) minY = point.y
+    if (point.y > maxY) maxY = point.y
+  }
+  return { minX, maxX, minY, maxY }
+}
+
+/** Allocation-free extrema of the concrete outer boundary along a unit vector. */
+export type ProjectedOuterExtents = { minimum: number; maximum: number; depth: number }
+
+export const projectedOuterExtents = (
+  section: PreparedEquivalentBlockSection,
+  normalX: number,
+  normalY: number
+): ProjectedOuterExtents => {
+  let minimum = Number.POSITIVE_INFINITY
+  let maximum = Number.NEGATIVE_INFINITY
+  for (const solid of section.solids) {
+    for (const point of solid.outer) {
+      const projection = normalX * point.x + normalY * point.y
+      if (projection < minimum) minimum = projection
+      if (projection > maximum) maximum = projection
+    }
+  }
+  return { minimum, maximum, depth: maximum - minimum }
+}
+
 const distance = (a: Point2, b: Point2) => Math.hypot(b.x - a.x, b.y - a.y)
 
 export const signedRingArea = (ring: readonly Point2[]) => {
@@ -189,10 +223,7 @@ export const prepareEquivalentBlockSection = (
   }
 
   const rawPoints = input.solids.flatMap((solid) => [solid.outer, ...(solid.holes ?? [])]).flat()
-  const rawMinX = Math.min(...rawPoints.map((point) => point.x))
-  const rawMaxX = Math.max(...rawPoints.map((point) => point.x))
-  const rawMinY = Math.min(...rawPoints.map((point) => point.y))
-  const rawMaxY = Math.max(...rawPoints.map((point) => point.y))
+  const { minX: rawMinX, maxX: rawMaxX, minY: rawMinY, maxY: rawMaxY } = pointBounds(rawPoints)
   const initialLength = Math.max(rawMaxX - rawMinX, rawMaxY - rawMinY, 1)
   const tolerance = BASE_TOLERANCE * initialLength
 
@@ -243,10 +274,7 @@ export const prepareEquivalentBlockSection = (
     throw new EquivalentBlockInputError('INVALID_GEOMETRY', 'Net concrete area must be positive.')
   }
   const allOuterPoints = solids.flatMap((solid) => solid.outer)
-  const minX = Math.min(...allOuterPoints.map((point) => point.x))
-  const maxX = Math.max(...allOuterPoints.map((point) => point.x))
-  const minY = Math.min(...allOuterPoints.map((point) => point.y))
-  const maxY = Math.max(...allOuterPoints.map((point) => point.y))
+  const { minX, maxX, minY, maxY } = pointBounds(allOuterPoints)
   const bounds = {
     minX,
     maxX,

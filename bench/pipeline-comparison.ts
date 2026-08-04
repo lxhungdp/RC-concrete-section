@@ -65,7 +65,7 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
   const candidates = [
     { name: 'block-19x24-fixed', options: fixedBlockOptions(19, 24) },
     { name: 'block-37x24-fixed', options: fixedBlockOptions(37, 24) },
-    { name: 'block-37x24-adaptive-1pct', options: createDefaultEquivalentBlockAnalysisOptions() }
+    { name: 'block-37x24-adaptive-0.75pct', options: createDefaultEquivalentBlockAnalysisOptions() }
   ]
   for (const candidate of candidates) {
     const built = timed(() => buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, candidate.options))
@@ -95,7 +95,7 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
       highResolutionBlockMs: reference.ms
     })
     if (hits !== referenceSamples.length) failures.push(`${fixture.key}/${candidate.name}: missing demand-ray intersections`)
-    if (candidate.name.includes('adaptive') && maxRayError > 0.015) {
+    if (candidate.name.includes('adaptive') && maxRayError > 0.01) {
       failures.push(`${fixture.key}/${candidate.name}: ${maxRayError} ray error exceeds 1.5% acceptance`)
     }
   }

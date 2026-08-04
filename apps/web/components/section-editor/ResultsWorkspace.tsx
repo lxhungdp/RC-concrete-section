@@ -1703,8 +1703,8 @@ export function ResultsWorkspace({
                       <div><span>Concrete block stress</span><strong>{fmt(inverseResult.equivalentBlock.compressionStress, 3)} MPa</strong></div>
                       <div><span>Ac,block / Cc</span><strong>{inverseResult.equivalentBlock.concreteBlockArea == null ? 'n/a' : `${fmt(inverseResult.equivalentBlock.concreteBlockArea, 1)} mm²`} · {inverseResult.equivalentBlock.concreteForce == null ? 'n/a' : `${fmt(kn(inverseResult.equivalentBlock.concreteForce), 1)} kN`}</strong></div>
                       <div><span>εt / controlling bar</span><strong>{inverseResult.equivalentBlock.controllingTensileStrain == null ? 'n/a' : fmt(inverseResult.equivalentBlock.controllingTensileStrain, 6)} · {inverseResult.equivalentBlock.controllingBarId ?? 'n/a'}</strong></div>
-                      <div><span>Force closure</span><strong>{inverseResult.equivalentBlock.forceClosure == null ? 'n/a' : sci(inverseResult.equivalentBlock.forceClosure, 2)}</strong></div>
-                      <div><span>Mx / My closure</span><strong>{inverseResult.equivalentBlock.momentXClosure == null ? 'n/a' : sci(inverseResult.equivalentBlock.momentXClosure, 2)} / {inverseResult.equivalentBlock.momentYClosure == null ? 'n/a' : sci(inverseResult.equivalentBlock.momentYClosure, 2)}</strong></div>
+                      <div><span>Component assembly residual</span><strong>{inverseResult.equivalentBlock.componentForceResidual == null ? 'n/a' : sci(inverseResult.equivalentBlock.componentForceResidual, 2)}</strong></div>
+                      <div><span>Component Mx / My residual</span><strong>{inverseResult.equivalentBlock.componentMomentXResidual == null ? 'n/a' : sci(inverseResult.equivalentBlock.componentMomentXResidual, 2)} / {inverseResult.equivalentBlock.componentMomentYResidual == null ? 'n/a' : sci(inverseResult.equivalentBlock.componentMomentYResidual, 2)}</strong></div>
                     </div>
                   </article>
                 )}

@@ -104,7 +104,7 @@ hash matches and the new demands use the same reference frame/action basis.
 ```text
 AnalysisOptions editor
   -> immutable canonical DTO in React state
-  -> project v3 JSON / worker message
+  -> project v1 JSON / worker message
   -> structural validation in @pm/project
   -> material- and geometry-aware resolution in @pm/analysis
   -> prepared mesh/material evaluators reused
@@ -295,6 +295,11 @@ invalidates the analysis domain.
 
 Cache entries never upgrade preview data to accepted data and include numerically relevant
 dependency versions.
+
+The equivalent-block worker implements this rule directly: its core Design surface key includes the
+profile, geometry, rebars, materials, analysis options, and DesignBasis, but excludes the load
+combination. Repeated demand checks reuse that immutable core surface; any resistance-domain input
+change produces a different key and rebuilds it.
 
 ## 8. Pipeline tests
 

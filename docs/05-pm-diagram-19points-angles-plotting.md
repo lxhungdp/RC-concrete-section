@@ -42,7 +42,9 @@ It is a deliberately named 19-station compatibility oracle and is not the projec
 The state coordinate is physical neutral-axis depth `c`, represented by extreme-tension-strain or
 `c/D` landmarks. The code adapter supplies `a = beta1 c`, constant block stress, and the extreme
 compression strain. The default starts with 37 neutral-axis states plus two exact poles and refines
-stations independently to a 1% chord target.
+stations independently to a 0.75% chord target. The code adapter also inserts nine yield-to-phi
+transition events at the controlling longitudinal bar in every direction, plus a declared steel
+rupture event. These events are not approximated from the concrete tension edge.
 
 The two station systems must not be merged. A stress-strain station does not define a rectangular
 block, and a block `c/D` sample does not define a concrete stress-strain integration state.
@@ -72,7 +74,7 @@ Equivalent-block production default:
 ```text
 24 uniform seed directions
 adaptive midpoint refinement
-relative tolerance 0.01; max passes 6; max directions 360
+relative tolerance 0.0075; max passes 6; max directions 360
 ```
 
 The final direction count is therefore geometry-dependent. In the 2026-08-04 stress-strain

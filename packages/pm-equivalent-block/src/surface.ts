@@ -1,9 +1,11 @@
 import type {
   BlockSectionState,
   CapacityResultants,
-  PreparedEquivalentBlockSection
+  PreparedEquivalentBlockSection,
+  SteelLawRegistry
 } from './types'
 import { EquivalentBlockInputError } from './types'
+import { projectedOuterExtents } from './geometry'
 
 export type CapacityEvaluation<TSource = unknown> = {
   resultants: CapacityResultants
@@ -23,12 +25,15 @@ export type CapacityEvaluator<TSource = unknown> = (
 
 export type CapacityStation =
   | { type: 'extreme-tension-strain'; strain: number }
+  | { type: 'bar-tension-strain'; strain: number }
   | { type: 'depth-ratio'; ratio: number }
 
 export type CapacitySurfacePoint = {
   id: number
   resultants: CapacityResultants
   state?: BlockSectionState
+  /** Source station for physical state points; absent for poles and synthetic cap points. */
+  station?: CapacityStation
   kind: 'tension-pole' | 'state' | 'compression-pole' | 'axial-cap'
   metadata?: Record<string, unknown>
 }
@@ -74,6 +79,10 @@ export type BuildCapacitySurfaceOptions = {
   maxStationRefinementPasses?: number
   maxStations?: number
   normalization?: Partial<CapacityResultants>
+  /** Enables bar-based strain stations and clamps them to declared rupture limits. */
+  steelLaws?: SteelLawRegistry
+  /** Mandatory material-event layers evaluated against the actual extreme bar. */
+  barStrainEvents?: readonly number[]
 }
 
 const TAU = Math.PI * 2
@@ -126,20 +135,27 @@ export const createDefaultCapacityStations = (): CapacityStation[] => [
   { type: 'depth-ratio', ratio: 50 }
 ]
 
-const projectedDepthAt = (section: PreparedEquivalentBlockSection, angle: number) => {
-  const normalX = Math.cos(angle)
-  const normalY = Math.sin(angle)
-  const projections = section.solids.flatMap((solid) => solid.outer.map((point) => normalX * point.x + normalY * point.y))
-  return Math.max(...projections) - Math.min(...projections)
-}
-
 const stationDepth = (
   station: CapacityStation,
   projectedDepth: number,
-  extremeCompressionStrain: number
+  extremeCompressionStrain: number,
+  barDepths?: Array<{ depth: number; yieldStrain?: number; ultimateStrain?: number }>
 ) => station.type === 'depth-ratio'
   ? projectedDepth * station.ratio
-  : projectedDepth / (1 + station.strain / extremeCompressionStrain)
+  : (() => {
+      const controllingBar = barDepths?.reduce<(typeof barDepths)[number] | undefined>(
+        (current, bar) => !current || bar.depth > current.depth ? bar : current,
+        undefined
+      )
+      const controllingBarDepth = station.type === 'bar-tension-strain' && controllingBar
+        ? controllingBar.depth
+        : projectedDepth
+      const requestedDepth = controllingBarDepth / (1 + station.strain / extremeCompressionStrain)
+      const ruptureDepth = (barDepths ?? []).reduce((minimum, bar) => bar.ultimateStrain === undefined
+        ? minimum
+        : Math.max(minimum, bar.depth / (1 + bar.ultimateStrain / extremeCompressionStrain)), 0)
+      return Math.max(requestedDepth, ruptureDepth)
+    })()
 
 const stationDepthRatio = (station: CapacityStation, extremeCompressionStrain: number) =>
   station.type === 'depth-ratio'
@@ -151,15 +167,19 @@ const capacityScales = (
   endpoints: CapacityEndpoint[],
   requested?: Partial<CapacityResultants>
 ): CapacityResultants => {
-  const values = [
-    ...evaluations.flatMap((direction) => direction.map((evaluation) => evaluation.resultants)),
-    ...endpoints.map((endpoint) => endpoint.resultants)
-  ]
-  const scale = (key: keyof CapacityResultants) =>
-    requested?.[key] && requested[key]! > 0
-      ? requested[key]!
-      : Math.max(1, ...values.map((value) => Math.abs(value[key])))
-  return { P: scale('P'), Mx: scale('Mx'), My: scale('My') }
+  const maximum = { P: 1, Mx: 1, My: 1 }
+  const include = (value: CapacityResultants) => {
+    maximum.P = Math.max(maximum.P, Math.abs(value.P))
+    maximum.Mx = Math.max(maximum.Mx, Math.abs(value.Mx))
+    maximum.My = Math.max(maximum.My, Math.abs(value.My))
+  }
+  for (const direction of evaluations) for (const evaluation of direction) include(evaluation.resultants)
+  for (const endpoint of endpoints) include(endpoint.resultants)
+  return {
+    P: requested?.P && requested.P > 0 ? requested.P : maximum.P,
+    Mx: requested?.Mx && requested.Mx > 0 ? requested.Mx : maximum.Mx,
+    My: requested?.My && requested.My > 0 ? requested.My : maximum.My
+  }
 }
 
 const normalizedDistance = (
@@ -294,17 +314,61 @@ export const buildCapacitySurface = <TSource>(
       throw new EquivalentBlockInputError('SOLVER_INPUT', 'Capacity stations must be ordered by strictly increasing neutral-axis depth.')
     }
   }
+  const barEventStations: CapacityStation[] = [...new Set(options.barStrainEvents ?? [])]
+    .filter((strain) => Number.isFinite(strain) && strain > 0)
+    .sort((left, right) => right - left)
+    .map((strain) => ({ type: 'bar-tension-strain', strain }))
+  if (barEventStations.length > 0 && !options.steelLaws) {
+    throw new EquivalentBlockInputError('SOLVER_INPUT', 'Bar-strain event stations require registered steel laws.')
+  }
 
   const seedDirections = Math.max(4, Math.round(options.seedDirections ?? 24))
   const startAngle = wrapAngle(options.startAngle ?? 0)
   let directions = Array.from({ length: seedDirections }, (_, index) => wrapAngle(startAngle + TAU * index / seedDirections))
     .sort((left, right) => left - right)
   const cache = new Map<string, CapacityEvaluation<TSource>[]>()
+  const eventCache = new Map<string, CapacityEvaluation<TSource>[]>()
+  const useBarBasedStrainStations = options.steelLaws !== undefined
+  const directionGeometryCache = new Map<string, {
+    projectedDepth: number
+    barDepths?: Array<{ depth: number; yieldStrain?: number; ultimateStrain?: number }>
+  }>()
+  const directionGeometry = (angle: number) => {
+    const key = angle.toPrecision(15)
+    const cached = directionGeometryCache.get(key)
+    if (cached) return cached
+    const normalX = Math.cos(angle)
+    const normalY = Math.sin(angle)
+    const extents = projectedOuterExtents(section, normalX, normalY)
+    const edge = extents.maximum
+    const geometry = {
+      projectedDepth: extents.depth,
+      barDepths: useBarBasedStrainStations ? section.rebars.map((bar) => {
+        const steelLaw = options.steelLaws![bar.steelLawId]
+        if (!steelLaw) {
+          throw new EquivalentBlockInputError('MISSING_STEEL_LAW', `Steel law ${bar.steelLawId} is not registered.`)
+        }
+        return {
+          depth: edge - (normalX * bar.x + normalY * bar.y),
+          yieldStrain: steelLaw.yieldStrain,
+          ultimateStrain: steelLaw.ultimateStrain
+        }
+      }) : undefined
+    }
+    directionGeometryCache.set(key, geometry)
+    return geometry
+  }
   const evaluateStation = (angle: number, station: CapacityStation) => {
     const wrapped = wrapAngle(angle)
+    const geometry = directionGeometry(wrapped)
     const evaluation = evaluator({
       neutralAxisAngle: wrapped,
-      neutralAxisDepth: stationDepth(station, projectedDepthAt(section, wrapped), options.extremeCompressionStrain)
+      neutralAxisDepth: stationDepth(
+        station,
+        geometry.projectedDepth,
+        options.extremeCompressionStrain,
+        geometry.barDepths
+      )
     })
     if (!finiteResultants(evaluation.resultants)) {
       throw new EquivalentBlockInputError('SOLVER_INPUT', 'The capacity evaluator returned non-finite resultants.')
@@ -320,8 +384,22 @@ export const buildCapacitySurface = <TSource>(
     cache.set(key, evaluations)
     return evaluations
   }
+  const evaluateEventDirection = (angle: number) => {
+    const wrapped = wrapAngle(angle)
+    const key = wrapped.toPrecision(15)
+    const cached = eventCache.get(key)
+    if (cached) return cached
+    const evaluations = barEventStations.map((station) => evaluateStation(wrapped, station))
+    eventCache.set(key, evaluations)
+    return evaluations
+  }
   directions.forEach(evaluateDirection)
-  let scales = capacityScales([...cache.values()], [options.tensionPole, options.compressionPole], options.normalization)
+  directions.forEach(evaluateEventDirection)
+  const scaleEvaluations = () => [
+    ...directions.map(evaluateDirection),
+    ...directions.map(evaluateEventDirection)
+  ]
+  let scales = capacityScales(scaleEvaluations(), [options.tensionPole, options.compressionPole], options.normalization)
   const stationTolerance = Math.max(0, options.stationTolerance ?? 0.01)
   const maxStationPasses = Math.max(0, Math.round(options.maxStationRefinementPasses ?? 5))
   const maxStations = Math.max(stations.length, Math.round(options.maxStations ?? 128))
@@ -390,7 +468,7 @@ export const buildCapacitySurface = <TSource>(
       ) > 1e-12)
     cache.clear()
     directions.forEach(evaluateDirection)
-    scales = capacityScales([...cache.values()], [options.tensionPole, options.compressionPole], options.normalization)
+    scales = capacityScales(scaleEvaluations(), [options.tensionPole, options.compressionPole], options.normalization)
     return true
   }
 
@@ -404,11 +482,21 @@ export const buildCapacitySurface = <TSource>(
       const left = evaluateDirection(leftAngle)
       const right = evaluateDirection(rightAngle)
       const middle = evaluateDirection(midAngle)
+      const leftEvents = evaluateEventDirection(leftAngle)
+      const rightEvents = evaluateEventDirection(rightAngle)
+      const middleEvents = evaluateEventDirection(midAngle)
       let error = 0
       for (let stationIndex = 0; stationIndex < stations.length; stationIndex += 1) {
         error = Math.max(error, normalizedDistance(
           middle[stationIndex].resultants,
           midpointResultants(left[stationIndex].resultants, right[stationIndex].resultants),
+          scales
+        ))
+      }
+      for (let eventIndex = 0; eventIndex < barEventStations.length; eventIndex += 1) {
+        error = Math.max(error, normalizedDistance(
+          middleEvents[eventIndex].resultants,
+          midpointResultants(leftEvents[eventIndex].resultants, rightEvents[eventIndex].resultants),
           scales
         ))
       }
@@ -422,7 +510,7 @@ export const buildCapacitySurface = <TSource>(
     directions = [...directions, ...inserts.slice(0, available).map((insert) => insert.angle)]
       .sort((left, right) => left - right)
       .filter((angle, index, values) => index === 0 || Math.abs(angle - values[index - 1]) > 1e-12)
-    scales = capacityScales(directions.map(evaluateDirection), [options.tensionPole, options.compressionPole], options.normalization)
+    scales = capacityScales(scaleEvaluations(), [options.tensionPole, options.compressionPole], options.normalization)
     return true
   }
 
@@ -442,10 +530,20 @@ export const buildCapacitySurface = <TSource>(
     const left = evaluateDirection(leftAngle)
     const right = evaluateDirection(rightAngle)
     const middle = evaluateDirection(wrapAngle((leftAngle + rightAngle) / 2))
+    const leftEvents = evaluateEventDirection(leftAngle)
+    const rightEvents = evaluateEventDirection(rightAngle)
+    const middleEvents = evaluateEventDirection(wrapAngle((leftAngle + rightAngle) / 2))
     for (let stationIndex = 0; stationIndex < stations.length; stationIndex += 1) {
       maxDirectionalInterpolationError = Math.max(maxDirectionalInterpolationError, normalizedDistance(
         middle[stationIndex].resultants,
         midpointResultants(left[stationIndex].resultants, right[stationIndex].resultants),
+        scales
+      ))
+    }
+    for (let eventIndex = 0; eventIndex < barEventStations.length; eventIndex += 1) {
+      maxDirectionalInterpolationError = Math.max(maxDirectionalInterpolationError, normalizedDistance(
+        middleEvents[eventIndex].resultants,
+        midpointResultants(leftEvents[eventIndex].resultants, rightEvents[eventIndex].resultants),
         scales
       ))
     }
@@ -490,22 +588,51 @@ export const buildCapacitySurface = <TSource>(
     kind: 'tension-pole',
     metadata: options.tensionPole.metadata
   }]
-  const grid: number[][] = []
+  const grid: Array<{ ids: number[]; ratios: number[] }> = []
   for (const angle of directions) {
     const evaluations = evaluateDirection(angle)
-    const row = activeStationIndices.map((stationIndex) => {
-      const evaluation = evaluations[stationIndex]
+    const entries = [
+      ...activeStationIndices.map((stationIndex) => ({
+        evaluation: evaluations[stationIndex],
+        station: stations[stationIndex],
+        event: false
+      })),
+      ...evaluateEventDirection(angle).map((evaluation, eventIndex) => ({
+        evaluation,
+        station: barEventStations[eventIndex],
+        event: true
+      }))
+    ].sort((left, right) =>
+      left.evaluation.state.neutralAxisDepth - right.evaluation.state.neutralAxisDepth
+    )
+    const unique: typeof entries = []
+    for (const entry of entries) {
+      const previous = unique.at(-1)
+      if (previous && Math.abs(
+        Math.log(entry.evaluation.state.neutralAxisDepth / previous.evaluation.state.neutralAxisDepth)
+      ) <= 1e-12) {
+        if (entry.event) unique[unique.length - 1] = entry
+        continue
+      }
+      unique.push(entry)
+    }
+    const projectedDepth = directionGeometry(angle).projectedDepth
+    const ids = unique.map(({ evaluation, station }) => {
       const id = points.length
       points.push({
         id,
         resultants: { ...evaluation.resultants },
         state: { ...evaluation.state },
+        station: { ...station },
         kind: 'state',
         metadata: evaluation.metadata
       })
       return id
     })
-    grid.push(row)
+    grid.push({
+      ids,
+      ratios: unique.map(({ evaluation }) => evaluation.state.neutralAxisDepth / projectedDepth)
+    })
   }
   const compressionPoleIndex = points.length
   points.push({
@@ -518,19 +645,36 @@ export const buildCapacitySurface = <TSource>(
   const triangles: CapacitySurfaceTriangle[] = []
   for (let directionIndex = 0; directionIndex < directions.length; directionIndex += 1) {
     const nextDirection = (directionIndex + 1) % directions.length
-    triangles.push({ a: 0, b: grid[directionIndex][0], c: grid[nextDirection][0] })
-    for (let stationIndex = 0; stationIndex < activeStations.length - 1; stationIndex += 1) {
-      const lowerLeft = grid[directionIndex][stationIndex]
-      const lowerRight = grid[nextDirection][stationIndex]
-      const upperLeft = grid[directionIndex][stationIndex + 1]
-      const upperRight = grid[nextDirection][stationIndex + 1]
-      triangles.push({ a: lowerLeft, b: upperLeft, c: upperRight })
-      triangles.push({ a: lowerLeft, b: upperRight, c: lowerRight })
+    const left = grid[directionIndex]
+    const right = grid[nextDirection]
+    triangles.push({ a: 0, b: left.ids[0], c: right.ids[0] })
+    let leftIndex = 0
+    let rightIndex = 0
+    while (leftIndex < left.ids.length - 1 || rightIndex < right.ids.length - 1) {
+      const advanceLeft = rightIndex === right.ids.length - 1 || (
+        leftIndex < left.ids.length - 1 &&
+        left.ratios[leftIndex + 1] <= right.ratios[rightIndex + 1]
+      )
+      if (advanceLeft) {
+        triangles.push({
+          a: left.ids[leftIndex],
+          b: left.ids[leftIndex + 1],
+          c: right.ids[rightIndex]
+        })
+        leftIndex += 1
+      } else {
+        triangles.push({
+          a: left.ids[leftIndex],
+          b: right.ids[rightIndex + 1],
+          c: right.ids[rightIndex]
+        })
+        rightIndex += 1
+      }
     }
     triangles.push({
-      a: grid[directionIndex][activeStations.length - 1],
+      a: left.ids[left.ids.length - 1],
       b: compressionPoleIndex,
-      c: grid[nextDirection][activeStations.length - 1]
+      c: right.ids[right.ids.length - 1]
     })
   }
   const oriented = orientTrianglesOutward(triangles, points)
@@ -539,7 +683,10 @@ export const buildCapacitySurface = <TSource>(
     points,
     triangles: oriented,
     directions,
-    stations: activeStations,
+    stations: [...activeStations, ...barEventStations].sort((left, right) =>
+      stationDepthRatio(left, options.extremeCompressionStrain) -
+      stationDepthRatio(right, options.extremeCompressionStrain)
+    ),
     normalization: scales,
     maxDirectionalInterpolationError,
     maxStationInterpolationError,
@@ -637,7 +784,9 @@ const pointInMomentTriangle = (
   const ab = cross2(a, b, point)
   const bc = cross2(b, c, point)
   const ca = cross2(c, a, point)
-  return ab >= -tolerance && bc >= -tolerance && ca >= -tolerance
+  // Only a point strictly inside blocks an ear. Treating points on an ear edge as
+  // interior can leave a numerically collinear final polygon with no selectable ear.
+  return ab > tolerance && bc > tolerance && ca > tolerance
 }
 
 const triangulateCapLoop = (
@@ -645,7 +794,49 @@ const triangulateCapLoop = (
   points: CapacitySurfacePoint[],
   tolerance: number
 ): CapacitySurfaceTriangle[] => {
-  const loop = signedAreaInMomentPlane(source, points) >= 0 ? [...source] : [...source].reverse()
+  let momentScale = 1
+  for (const index of source) {
+    momentScale = Math.max(
+      momentScale,
+      Math.abs(points[index].resultants.Mx),
+      Math.abs(points[index].resultants.My)
+    )
+  }
+  const distanceTolerance = Math.max(1e-12 * momentScale, tolerance)
+  const crossTolerance = Math.max(1e-12 * momentScale ** 2, tolerance ** 2)
+  const cleaned = source.filter((index, position, values) => {
+    if (position === 0) return true
+    const current = points[index].resultants
+    const previous = points[values[position - 1]].resultants
+    return Math.hypot(current.Mx - previous.Mx, current.My - previous.My) > distanceTolerance
+  })
+  if (cleaned.length > 1) {
+    const first = points[cleaned[0]].resultants
+    const last = points[cleaned[cleaned.length - 1]].resultants
+    if (Math.hypot(first.Mx - last.Mx, first.My - last.My) <= distanceTolerance) cleaned.pop()
+  }
+  let removed = true
+  while (removed && cleaned.length > 3) {
+    removed = false
+    for (let index = 0; index < cleaned.length; index += 1) {
+      const previous = points[cleaned[(index - 1 + cleaned.length) % cleaned.length]].resultants
+      const current = points[cleaned[index]].resultants
+      const next = points[cleaned[(index + 1) % cleaned.length]].resultants
+      const leftX = current.Mx - previous.Mx
+      const leftY = current.My - previous.My
+      const rightX = next.Mx - current.Mx
+      const rightY = next.My - current.My
+      const cross = leftX * rightY - leftY * rightX
+      if (Math.abs(cross) > crossTolerance || leftX * rightX + leftY * rightY < 0) continue
+      cleaned.splice(index, 1)
+      removed = true
+      break
+    }
+  }
+  if (cleaned.length < 3) {
+    throw new EquivalentBlockInputError('SOLVER_INPUT', 'The axial-cap contour collapsed below three distinct moment points.')
+  }
+  const loop = signedAreaInMomentPlane(cleaned, points) >= 0 ? [...cleaned] : [...cleaned].reverse()
   const remaining = [...loop]
   const triangles: CapacitySurfaceTriangle[] = []
   let guard = 0
@@ -661,10 +852,10 @@ const triangulateCapLoop = (
       const convex =
         (current.Mx - previous.Mx) * (next.My - current.My) -
         (current.My - previous.My) * (next.Mx - current.Mx)
-      if (convex <= tolerance) continue
+      if (convex <= crossTolerance) continue
       const contains = remaining.some((candidateIndex) =>
         candidateIndex !== previousIndex && candidateIndex !== currentIndex && candidateIndex !== nextIndex &&
-        pointInMomentTriangle(points[candidateIndex].resultants, previous, current, next, tolerance)
+        pointInMomentTriangle(points[candidateIndex].resultants, previous, current, next, crossTolerance)
       )
       if (contains) continue
       triangles.push({ a: previousIndex, b: currentIndex, c: nextIndex })
@@ -677,7 +868,10 @@ const triangulateCapLoop = (
   }
   if (remaining.length === 3) triangles.push({ a: remaining[0], b: remaining[1], c: remaining[2] })
   if (triangles.length !== loop.length - 2) {
-    throw new EquivalentBlockInputError('SOLVER_INPUT', 'The axial-cap contour could not be triangulated reliably.')
+    throw new EquivalentBlockInputError(
+      'SOLVER_INPUT',
+      `The axial-cap contour could not be triangulated reliably (${loop.length} vertices, ${remaining.length} unresolved).`
+    )
   }
   return triangles
 }
@@ -688,8 +882,12 @@ export const clipCapacitySurfaceByAxialCap = (
   tolerance = 1e-9
 ): CapacitySurface => {
   if (!Number.isFinite(axialCap)) throw new EquivalentBlockInputError('SOLVER_INPUT', 'Axial cap must be finite.')
-  const maximum = Math.max(...surface.points.map((point) => point.resultants.P))
-  const minimum = Math.min(...surface.points.map((point) => point.resultants.P))
+  let maximum = Number.NEGATIVE_INFINITY
+  let minimum = Number.POSITIVE_INFINITY
+  for (const point of surface.points) {
+    maximum = Math.max(maximum, point.resultants.P)
+    minimum = Math.min(minimum, point.resultants.P)
+  }
   const absoluteTolerance = tolerance * Math.max(1, Math.abs(maximum), Math.abs(minimum), Math.abs(axialCap))
   if (axialCap >= maximum - absoluteTolerance) return { ...surface, axialCap }
   if (axialCap <= minimum + absoluteTolerance) {
@@ -709,7 +907,7 @@ export const clipCapacitySurfaceByAxialCap = (
       ...old,
       id,
       resultants: { ...old.resultants, ...(onCap ? { P: axialCap } : {}) },
-      ...(onCap ? { state: undefined, kind: 'axial-cap' as const } : {})
+      ...(onCap ? { state: undefined, station: undefined, kind: 'axial-cap' as const } : {})
     })
     oldPointMap.set(oldIndex, id)
     return id

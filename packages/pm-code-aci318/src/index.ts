@@ -1,10 +1,11 @@
 import {
   EquivalentBlockInputError,
+  bindEquivalentBlockForwardEvaluator,
   buildCapacitySurface,
   clipCapacitySurfaceByAxialCap,
   createElasticPerfectlyPlasticSteelLaw,
-  evaluateEquivalentBlock,
   evaluateUniformSectionState,
+  uniformSteelEndpointStrain,
   type BlockSectionState,
   type BuildCapacitySurfaceOptions,
   type CapacityEndpoint,
@@ -96,10 +97,11 @@ export const evaluateAci318StrengthReduction = (
   const tensionControlledLimit = yieldStrain + factors.transitionExtraStrain
   const compressionPhi = transverseReinforcement === 'qualifying-spiral' ? factors.phiCompressionSpiral : factors.phiCompressionOther
   const tensionPhi = factors.phiTension
-  if (tensileStrain <= yieldStrain) {
+  const strainTolerance = 1e-12 * Math.max(1, tensionControlledLimit)
+  if (tensileStrain <= yieldStrain + strainTolerance) {
     return { phi: compressionPhi, classification: 'compression-controlled', tensileStrain, yieldStrain, tensionControlledLimit }
   }
-  if (tensileStrain >= tensionControlledLimit) {
+  if (tensileStrain >= tensionControlledLimit - strainTolerance) {
     return { phi: tensionPhi, classification: 'tension-controlled', tensileStrain, yieldStrain, tensionControlledLimit }
   }
   const fraction = (tensileStrain - yieldStrain) / (tensionControlledLimit - yieldStrain)
@@ -171,46 +173,63 @@ export const createAci318Model = (input: CreateAci318ModelInput) => {
     extremeCompressionStrain: 0.003,
     subtractDisplacedConcrete: true
   }
+  const barStrainEvents = Object.values(input.steel).flatMap((definition) => {
+    const yieldStrain = definition.yieldStress / definition.elasticModulus
+    const tensionLimit = yieldStrain + resistanceFactors.transitionExtraStrain
+    return [
+      ...Array.from({ length: 9 }, (_, index) =>
+        yieldStrain + index / 8 * (tensionLimit - yieldStrain)
+      ),
+      ...(definition.ultimateStrain === undefined ? [] : [definition.ultimateStrain])
+    ]
+  })
   const compressionPhi = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.phiCompressionSpiral : resistanceFactors.phiCompressionOther
   const axialCapRatio = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.axialCapSpiral : resistanceFactors.axialCapOther
 
-  const bindNominalEvaluator = (section: PreparedEquivalentBlockSection): CapacityEvaluator<NominalBlockEvaluation> => (state: BlockSectionState) => {
-    const nominal = evaluateEquivalentBlock(section, blockLaw, steelLaws, state)
-    return { state, resultants: nominal.resultants, source: nominal }
-  }
-  const bindDesignEvaluator = (section: PreparedEquivalentBlockSection): CapacityEvaluator<AciDesignEvaluationSource> => (state: BlockSectionState) => {
-    const nominal = evaluateEquivalentBlock(section, blockLaw, steelLaws, state)
-    const controllingBar = nominal.bars.find((bar) => bar.id === nominal.controllingBarId)
-    if (!controllingBar) {
-      throw new EquivalentBlockInputError('INVALID_REBAR', 'ACI design resistance requires at least one controlling longitudinal bar.')
+  const bindNominalEvaluator = (section: PreparedEquivalentBlockSection): CapacityEvaluator<NominalBlockEvaluation> => {
+    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws)
+    return (state: BlockSectionState) => {
+      const nominal = evaluate(state)
+      return { state, resultants: nominal.resultants, source: nominal }
     }
-    const definition = input.steel[controllingBar.steelLawId]
-    const resistance = evaluateAci318StrengthReduction(
-      nominal.controllingTensileStrain,
-      definition,
-      input.transverseReinforcement,
-      resistanceFactors
-    )
-    return {
-      state,
-      resultants: scaleResultants(nominal.resultants, resistance.phi),
-      source: { nominal, resistance },
-      metadata: {
-        phi: resistance.phi,
-        classification: resistance.classification,
-        controllingBarId: nominal.controllingBarId
+  }
+  const bindDesignEvaluator = (section: PreparedEquivalentBlockSection): CapacityEvaluator<AciDesignEvaluationSource> => {
+    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws)
+    return (state: BlockSectionState) => {
+      const nominal = evaluate(state)
+      const controllingBar = nominal.bars.find((bar) => bar.id === nominal.controllingBarId)
+      if (!controllingBar) {
+        throw new EquivalentBlockInputError('INVALID_REBAR', 'ACI design resistance requires at least one controlling longitudinal bar.')
+      }
+      const definition = input.steel[controllingBar.steelLawId]
+      const resistance = evaluateAci318StrengthReduction(
+        nominal.controllingTensileStrain,
+        definition,
+        input.transverseReinforcement,
+        resistanceFactors
+      )
+      return {
+        state,
+        resultants: scaleResultants(nominal.resultants, resistance.phi),
+        source: { nominal, resistance },
+        metadata: {
+          phi: resistance.phi,
+          classification: resistance.classification,
+          controllingBarId: nominal.controllingBarId
+        }
       }
     }
   }
   const nominalEndpoints = (section: PreparedEquivalentBlockSection) => {
+    const endpointStrain = uniformSteelEndpointStrain(section, steelLaws)
     const tension = evaluateUniformSectionState(section, steelLaws, {
       concreteStress: 0,
-      steelStrain: -1,
+      steelStrain: -endpointStrain,
       subtractDisplacedConcrete: false
     })
     const compression = evaluateUniformSectionState(section, steelLaws, {
       concreteStress: 0.85 * input.concreteStrength,
-      steelStrain: 1,
+      steelStrain: endpointStrain,
       subtractDisplacedConcrete: true
     })
     return {
@@ -237,6 +256,8 @@ export const createAci318Model = (input: CreateAci318ModelInput) => {
     const endpoints = nominalEndpoints(section)
     return buildCapacitySurface(section, bindNominalEvaluator(section), {
       ...options,
+      steelLaws,
+      barStrainEvents,
       extremeCompressionStrain: blockLaw.extremeCompressionStrain,
       tensionPole: endpoints.tension,
       compressionPole: endpoints.compression
@@ -250,6 +271,8 @@ export const createAci318Model = (input: CreateAci318ModelInput) => {
     const endpoints = designEndpoints(section)
     const surface = buildCapacitySurface(section, bindDesignEvaluator(section), {
       ...surfaceOptions,
+      steelLaws,
+      barStrainEvents,
       extremeCompressionStrain: blockLaw.extremeCompressionStrain,
       tensionPole: endpoints.tension,
       compressionPole: endpoints.compression

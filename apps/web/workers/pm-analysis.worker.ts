@@ -17,10 +17,12 @@ import {
   type SectionFieldMap
 } from '@pm/analysis'
 import {
+  buildEquivalentBlockDesignSurfaceFromPrepared,
   buildEquivalentBlockPreviewSurfaceFromPrepared,
   buildEquivalentBlockFieldMapFromPrepared,
   prepareBlockAnalysis,
   solveEquivalentBlockDemandFromPrepared,
+  type EquivalentBlockDesignSurface,
   type PreparedBlockAnalysis
 } from '@pm/analysis-equivalent-block'
 import {
@@ -156,6 +158,20 @@ const cancelled = new Set<string>()
 let preparedCache: { key: string; value: PreparedAnalysis } | null = null
 let preparedBlockCache: { key: string; value: PreparedBlockAnalysis } | null = null
 let surfaceCache: { key: string; value: PreviewSurface } | null = null
+let blockSurfaceCache: {
+  key: string
+  core: EquivalentBlockDesignSurface
+} | null = null
+
+const blockSurfaceInputKey = (payload: Pick<BuildSurfacePayload,
+  'calculationProfileId' | 'section' | 'rebars' | 'materialStore' | 'analysisOptions' | 'designBasis'>) => JSON.stringify({
+  calculationProfileId: payload.calculationProfileId,
+  section: payload.section,
+  rebars: payload.rebars,
+  materialStore: payload.materialStore,
+  analysisOptions: payload.analysisOptions,
+  designBasis: payload.designBasis
+})
 
 const preparedFor = (
   payload: Pick<BuildSurfacePayload, 'section' | 'rebars' | 'materialStore'> & { analysisOptions: AnalysisOptions } & {
@@ -203,12 +219,18 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
   try {
     if (request.type === 'buildSurface') {
       if (isEquivalentBlockAnalysisOptions(request.payload.analysisOptions)) {
-        const result = buildEquivalentBlockPreviewSurfaceFromPrepared(
-          preparedBlockFor(request.payload),
+        const prepared = preparedBlockFor(request.payload)
+        const core = buildEquivalentBlockDesignSurfaceFromPrepared(
+          prepared,
           request.payload.analysisOptions
         )
+        const result = buildEquivalentBlockPreviewSurfaceFromPrepared(
+          prepared,
+          request.payload.analysisOptions,
+          core
+        )
         result.calculationProfileId = request.payload.calculationProfileId
-        surfaceCache = { key: JSON.stringify(request.payload), value: result }
+        blockSurfaceCache = { key: blockSurfaceInputKey(request.payload), core }
         workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
         return
       }
@@ -243,16 +265,32 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
     if (request.type === 'checkLoadcase') {
       const { section, rebars, materialStore, loadcase, surface } = request.payload
       if (isEquivalentBlockAnalysisOptions(surface.analysisOptions)) {
+        const key = blockSurfaceInputKey({
+          calculationProfileId: request.payload.calculationProfileId,
+          section,
+          rebars,
+          materialStore,
+          analysisOptions: surface.analysisOptions,
+          designBasis: request.payload.designBasis
+        })
+        const prepared = preparedBlockFor({
+          calculationProfileId: request.payload.calculationProfileId,
+          section,
+          rebars,
+          materialStore,
+          designBasis: request.payload.designBasis
+        })
+        const core = blockSurfaceCache?.key === key
+          ? blockSurfaceCache.core
+          : buildEquivalentBlockDesignSurfaceFromPrepared(prepared, surface.analysisOptions)
+        if (blockSurfaceCache?.key !== key) {
+          blockSurfaceCache = { key, core }
+        }
         const result = solveEquivalentBlockDemandFromPrepared(
-          preparedBlockFor({
-            calculationProfileId: request.payload.calculationProfileId,
-            section,
-            rebars,
-            materialStore,
-            designBasis: request.payload.designBasis
-          }),
+          prepared,
           surface.analysisOptions,
-          loadcase
+          loadcase,
+          core
         )
         workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
         return

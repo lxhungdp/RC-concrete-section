@@ -7,6 +7,7 @@ import {
   type PreviewSurfacePoint,
   type ResultantLedger,
   type SectionFieldMap,
+  type StrainAdmissibility,
   type StrainState,
   type SurfaceStation
 } from '@pm/analysis'
@@ -15,6 +16,7 @@ import { createKds142020Model } from '@pm/code-kds142020'
 import type { DesignBasis, GlobalStrengthReductionBasis } from '@pm/design'
 import {
   prepareEquivalentBlockSection,
+  projectedOuterExtents,
   solveFixedAxialCapacity,
   solveProportionalRayCapacity,
   type BlockSectionState,
@@ -42,6 +44,9 @@ export type PreparedBlockAnalysis = {
   geometry: SectionGeometry
   rebars: GeometryInputRebarView[]
 }
+
+/** Worker-cacheable core surface. It is independent of any load combination. */
+export type EquivalentBlockDesignSurface = CapacitySurface
 
 const TAU = 2 * Math.PI
 const wrap = (angle: number) => ((angle % TAU) + TAU) % TAU
@@ -156,8 +161,7 @@ const surfaceOptions = (options: EquivalentBlockAnalysisOptions) => ({
 const projectedDepth = (section: PreparedEquivalentBlockSection, angle: number) => {
   const nx = Math.cos(angle)
   const ny = Math.sin(angle)
-  const projections = section.solids.flatMap((solid) => solid.outer.map((point) => nx * point.x + ny * point.y))
-  return Math.max(...projections) - Math.min(...projections)
+  return projectedOuterExtents(section, nx, ny).depth
 }
 
 const strainState = (
@@ -168,7 +172,7 @@ const strainState = (
   if (!state) return { e0: 0, kx: 0, ky: 0 }
   const nx = Math.cos(state.neutralAxisAngle)
   const ny = Math.sin(state.neutralAxisAngle)
-  const edge = Math.max(...section.solids.flatMap((solid) => solid.outer.map((point) => nx * point.x + ny * point.y)))
+  const edge = projectedOuterExtents(section, nx, ny).maximum
   const neutralAxis = edge - state.neutralAxisDepth
   const scale = extremeCompressionStrain / state.neutralAxisDepth
   return {
@@ -232,10 +236,23 @@ const blockTrace = (
 const nearestStation = (
   surface: CapacitySurface,
   section: PreparedEquivalentBlockSection,
-  state: BlockSectionState | undefined,
+  point: CapacitySurface['points'][number],
   epsCu: number
 ) => {
+  const state = point.state
   if (!state) return 0
+  if (point.station) {
+    const sourceKey = point.station.type === 'depth-ratio'
+      ? `${point.station.type}:${point.station.ratio}`
+      : `${point.station.type}:${point.station.strain}`
+    const exactIndex = surface.stations.findIndex((station) => {
+      const key = station.type === 'depth-ratio'
+        ? `${station.type}:${station.ratio}`
+        : `${station.type}:${station.strain}`
+      return key === sourceKey
+    })
+    if (exactIndex >= 0) return exactIndex + 1
+  }
   const ratio = state.neutralAxisDepth / projectedDepth(section, state.neutralAxisAngle)
   const stationRatio = (station: CapacitySurface['stations'][number]) => station.type === 'depth-ratio'
     ? station.ratio
@@ -258,6 +275,7 @@ const convertSurfacePoints = (
   const state = strainState(section, point.state, epsCu)
   const beta = point.state ? wrap(Math.PI / 2 - point.state.neutralAxisAngle) : 0
   const resultants = point.resultants
+  const station = nearestStation(surface, section, point, epsCu)
   return {
     id: `block-${point.kind}-${point.id}`,
     beta,
@@ -265,12 +283,12 @@ const convertSurfacePoints = (
       ? 0
       : point.kind === 'compression-pole'
         ? surface.stations.length + 1
-        : nearestStation(surface, section, point.state, epsCu),
+        : station,
     stationId: point.kind === 'tension-pole'
       ? 'pure-tension'
       : point.kind === 'compression-pole'
         ? 'pure-compression'
-        : `station-${nearestStation(surface, section, point.state, epsCu)}`,
+        : `station-${station}`,
     state,
     ledger: zeroLedger(resultants),
     ...resultants,
@@ -284,33 +302,53 @@ const blockStations = (surface: CapacitySurface): SurfaceStation[] => [
   ...surface.stations.map((station, index) => {
     const definition = station.type === 'depth-ratio'
       ? { kind: 'block-depth-ratio' as const, ratio: station.ratio }
-      : { kind: 'extreme-tension-strain' as const, strain: station.strain }
+      : station.type === 'bar-tension-strain'
+        ? { kind: 'bar-tension-strain' as const, strain: station.strain }
+        : { kind: 'extreme-tension-strain' as const, strain: station.strain }
     return { id: `station-${index + 1}` as const, label: stationDefinitionLabel(definition), definition }
   }),
   { id: 'pure-compression', label: 'Pure compression', definition: { kind: 'pure-compression' } }
 ]
 
-const bounds = (points: PreviewSurfacePoint[]) => ({
-  P: [Math.min(...points.map((point) => point.P)), Math.max(...points.map((point) => point.P))] as [number, number],
-  Mx: [Math.min(...points.map((point) => point.Mx)), Math.max(...points.map((point) => point.Mx))] as [number, number],
-  My: [Math.min(...points.map((point) => point.My)), Math.max(...points.map((point) => point.My))] as [number, number]
+const bounds = (points: PreviewSurfacePoint[]) => {
+  const result = {
+    P: [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY] as [number, number],
+    Mx: [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY] as [number, number],
+    My: [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY] as [number, number]
+  }
+  for (const point of points) {
+    result.P[0] = Math.min(result.P[0], point.P)
+    result.P[1] = Math.max(result.P[1], point.P)
+    result.Mx[0] = Math.min(result.Mx[0], point.Mx)
+    result.Mx[1] = Math.max(result.Mx[1], point.Mx)
+    result.My[0] = Math.min(result.My[0], point.My)
+    result.My[1] = Math.max(result.My[1], point.My)
+  }
+  return result
+}
+
+export const buildEquivalentBlockDesignSurfaceFromPrepared = (
+  prepared: PreparedBlockAnalysis,
+  options: EquivalentBlockAnalysisOptions
+): EquivalentBlockDesignSurface => prepared.model.buildDesignSurface(prepared.section, {
+  ...surfaceOptions(options),
+  applyAxialCap: prepared.designBasis.axialCapEnabled
 })
 
 export const buildEquivalentBlockPreviewSurfaceFromPrepared = (
   prepared: PreparedBlockAnalysis,
-  options: EquivalentBlockAnalysisOptions
+  options: EquivalentBlockAnalysisOptions,
+  preparedDesignSurface?: EquivalentBlockDesignSurface
 ): PreviewSurface => {
   const settings = surfaceOptions(options)
   const nominal = prepared.model.buildNominalSurface(prepared.section, settings)
-  const design = prepared.model.buildDesignSurface(prepared.section, {
-    ...settings,
-    applyAxialCap: prepared.designBasis.axialCapEnabled
-  })
+  const design = preparedDesignSurface ?? buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
   const epsCu = prepared.model.blockLaw.extremeCompressionStrain
   const beta1 = prepared.model.blockLaw.depthFactor
   const compressionStress = prepared.model.blockLaw.compressionStress
   const nominalPoints = convertSurfacePoints(nominal, prepared.section, epsCu, beta1, compressionStress)
   const points = convertSurfacePoints(design, prepared.section, epsCu, beta1, compressionStress, true)
+  const nominalP0 = prepared.model.nominalEndpoints(prepared.section).compression.resultants
   const warnings = [
     ...(!design.directionRefinementConverged ? ['Equivalent-block direction refinement did not reach its requested tolerance.'] : []),
     ...(!design.stationRefinementConverged ? ['Equivalent-block neutral-axis refinement did not reach its requested tolerance.'] : []),
@@ -325,6 +363,12 @@ export const buildEquivalentBlockPreviewSurfaceFromPrepared = (
     nominalPoints,
     triangles: design.triangles,
     nominalTriangles: nominal.triangles,
+    codeReferencePoints: [{
+      id: 'nominal-p0',
+      label: 'Nominal concentric compression P0',
+      kind: 'code-endpoint',
+      ...nominalP0
+    }],
     bounds: bounds(points),
     comparison: {
       workbook: 'Independent exact polygon-clipping equivalent-block backend',
@@ -399,21 +443,88 @@ const evaluationTrace = (
     concreteForce: nominal.concrete.force,
     controllingTensileStrain: nominal.controllingTensileStrain,
     controllingBarId: nominal.controllingBarId,
-    forceClosure: nominal.diagnostics.forceClosure,
-    momentXClosure: nominal.diagnostics.momentXClosure,
-    momentYClosure: nominal.diagnostics.momentYClosure
+    componentForceResidual: nominal.diagnostics.componentForceResidual,
+    componentMomentXResidual: nominal.diagnostics.componentMomentXResidual,
+    componentMomentYResidual: nominal.diagnostics.componentMomentYResidual
   } : base
+}
+
+const nominalEvaluationFrom = (evaluation: CapacityEvaluation | undefined) => {
+  const source = evaluation?.source as { nominal?: NominalBlockEvaluation } | NominalBlockEvaluation | undefined
+  return source && 'nominal' in source ? source.nominal : source as NominalBlockEvaluation | undefined
+}
+
+const evaluateBlockAdmissibility = (
+  prepared: PreparedBlockAnalysis,
+  state: BlockSectionState | undefined,
+  nominal: NominalBlockEvaluation | undefined,
+  codeEnvelopeAccepted: boolean
+): StrainAdmissibility => {
+  const concreteLimit = prepared.model.blockLaw.extremeCompressionStrain
+  if (!state || !nominal) {
+    return {
+      evaluated: false,
+      ok: codeEnvelopeAccepted,
+      maxConcreteCompression: 0,
+      concreteLimit,
+      maxSteelTension: 0,
+      steelTensionLimit: null,
+      violations: []
+    }
+  }
+  const strain = strainState(prepared.section, state, concreteLimit)
+  let maxConcreteCompression = 0
+  for (const solid of prepared.section.solids) {
+    for (const point of solid.outer) {
+      maxConcreteCompression = Math.max(
+        maxConcreteCompression,
+        strain.e0 + strain.kx * point.y + strain.ky * point.x
+      )
+    }
+  }
+  let maxSteelTension = 0
+  let steelTensionLimit: number | null = null
+  const violations: StrainAdmissibility['violations'] = []
+  for (const bar of nominal.bars) {
+    maxSteelTension = Math.max(maxSteelTension, Math.max(0, -bar.strain))
+    if (bar.ultimateStrain === undefined) continue
+    steelTensionLimit = steelTensionLimit === null
+      ? bar.ultimateStrain
+      : Math.min(steelTensionLimit, bar.ultimateStrain)
+    if (Math.abs(bar.strain) <= bar.ultimateStrain * (1 + 1e-9)) continue
+    const sourceBar = prepared.rebars.find((candidate) => String(candidate.id) === bar.id)
+    violations.push({
+      code: 'STEEL_STRAIN_EXCEEDS_ULTIMATE',
+      rebarId: sourceBar?.id ?? Number(bar.id),
+      value: bar.strain,
+      limit: bar.ultimateStrain
+    })
+  }
+  if (maxConcreteCompression > concreteLimit * (1 + 1e-9)) {
+    violations.unshift({
+      code: 'CONCRETE_STRAIN_EXCEEDS_ULTIMATE',
+      value: maxConcreteCompression,
+      limit: concreteLimit
+    })
+  }
+  return {
+    evaluated: true,
+    ok: violations.length === 0,
+    maxConcreteCompression,
+    concreteLimit,
+    maxSteelTension,
+    steelTensionLimit,
+    violations
+  }
 }
 
 export const solveEquivalentBlockDemandFromPrepared = (
   prepared: PreparedBlockAnalysis,
   options: EquivalentBlockAnalysisOptions,
-  loadcase: LoadCombination
+  loadcase: LoadCombination,
+  preparedDesignSurface?: EquivalentBlockDesignSurface
 ): InversePreviewResult => {
-  const designSurface = prepared.model.buildDesignSurface(prepared.section, {
-    ...surfaceOptions(options),
-    applyAxialCap: prepared.designBasis.axialCapEnabled
-  })
+  const designSurface = preparedDesignSurface ?? buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
   const evaluator = prepared.model.bindDesignEvaluator(prepared.section) as CapacityEvaluator
   const solved = solveProportionalRayCapacity(designSurface, loadcase, evaluator)
   const fixedAxial = Math.hypot(loadcase.Mx, loadcase.My) > 0
@@ -425,22 +536,35 @@ export const solveEquivalentBlockDemandFromPrepared = (
         {
           axialCap: designSurface.axialCap,
           eventStations: designSurface.stations,
-          extremeCompressionStrain: prepared.model.blockLaw.extremeCompressionStrain
+          extremeCompressionStrain: prepared.model.blockLaw.extremeCompressionStrain,
+          steelLaws: prepared.model.steelLaws
         }
       )
     : null
-  const state = solved.state
-  const response = solved.capacity ?? { P: 0, Mx: 0, My: 0 }
-  const lambda = solved.loadFactor ?? 0
+  const diagnostic = solved.refinement
+  const state = diagnostic?.state ?? solved.state
+  const response = diagnostic?.capacity ?? solved.capacity ?? { P: 0, Mx: 0, My: 0 }
+  const lambda = diagnostic?.loadFactor ?? solved.loadFactor ?? 0
   const target = { P: lambda * loadcase.P, Mx: lambda * loadcase.Mx, My: lambda * loadcase.My }
-  const residual = { P: response.P - target.P, Mx: response.Mx - target.Mx, My: response.My - target.My }
+  const residual = diagnostic?.residual ?? {
+    P: response.P - target.P,
+    Mx: response.Mx - target.Mx,
+    My: response.My - target.My
+  }
   const strain = strainState(prepared.section, state, prepared.model.blockLaw.extremeCompressionStrain)
   const exact = state ? evaluator(state) : undefined
+  const nominal = nominalEvaluationFrom(exact)
   const metadata = exact?.metadata
   const factor = typeof metadata?.phi === 'number' ? metadata.phi : null
   const equivalentBlock = state && exact ? evaluationTrace(prepared, state, exact) : null
   const utilization = solved.utilization ?? null
-  const converged = solved.status === 'converged' || solved.status === 'cap-face-governed' || solved.status === 'surface-converged'
+  const converged = solved.status === 'converged' || solved.status === 'cap-face-governed'
+  const admissibility = evaluateBlockAdmissibility(
+    prepared,
+    state,
+    nominal,
+    solved.status === 'cap-face-governed'
+  )
   const resistance: DesignResistanceTrace | null = converged ? {
     nominalReference: exact && factor ? {
       P: exact.resultants.P / factor,
@@ -458,16 +582,9 @@ export const solveEquivalentBlockDemandFromPrepared = (
       : ['Nominal equivalent block', 'Code strength reduction']
   } : null
   return {
-    ok: converged && utilization !== null,
+    ok: converged && utilization !== null && admissibility.ok,
     converged,
-    admissibility: {
-      ok: converged,
-      maxConcreteCompression: prepared.model.blockLaw.extremeCompressionStrain,
-      concreteLimit: prepared.model.blockLaw.extremeCompressionStrain,
-      maxSteelTension: equivalentBlock?.controllingTensileStrain ?? 0,
-      steelTensionLimit: null,
-      violations: []
-    },
+    admissibility,
     loadcaseId: loadcase.id,
     demand: loadcase,
     state: strain,
@@ -484,6 +601,8 @@ export const solveEquivalentBlockDemandFromPrepared = (
     contourPoint: null,
     message: solved.status === 'cap-face-governed'
       ? 'Factored ULS demand is governed by the code axial-cap face; no unique physical neutral-axis state exists on that face.'
+      : solved.status === 'mesh-fallback'
+        ? 'An approximate capacity was found on the faceted surface, but exact equilibrium refinement did not converge. The result is not accepted as an equilibrium state.'
       : converged
         ? 'Factored ULS demand checked by the equivalent-block proportional-ray solver.'
         : 'No intersection was found on the equivalent-block design surface.'
@@ -507,7 +626,7 @@ export const buildEquivalentBlockFieldMapFromPrepared = (
   const concreteStressAt = (x: number, y: number) => {
     const nx = Math.cos(state.neutralAxisAngle)
     const ny = Math.sin(state.neutralAxisAngle)
-    const edge = Math.max(...prepared.section.solids.flatMap((solid) => solid.outer.map((point) => nx * point.x + ny * point.y)))
+    const edge = projectedOuterExtents(prepared.section, nx, ny).maximum
     const blockBoundary = edge - prepared.model.blockLaw.depthFactor * state.neutralAxisDepth
     return nx * x + ny * y >= blockBoundary ? prepared.model.blockLaw.compressionStress : 0
   }

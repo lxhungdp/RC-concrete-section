@@ -718,7 +718,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
               value={options.neutralAxisStations.refinement.type}
               onChange={(event) => commit((draft) => {
                 draft.neutralAxisStations.refinement = event.target.value === 'adaptive'
-                  ? { type: 'adaptive', tolerance: 0.01, maxPasses: 6, maxStations: Math.max(128, stationCount) }
+                  ? { type: 'adaptive', tolerance: 0.0075, maxPasses: 6, maxStations: Math.max(128, stationCount) }
                   : { type: 'fixed' }
               })}
             >
@@ -750,7 +750,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
             <span>Direction refinement</span>
             <select value={options.directions.refinement.type} onChange={(event) => commit((draft) => {
               draft.directions.refinement = event.target.value === 'adaptive'
-                ? { type: 'adaptive', tolerance: 0.01, maxPasses: 6, maxDirections: Math.max(360, options.directions.seedCount) }
+                ? { type: 'adaptive', tolerance: 0.0075, maxPasses: 6, maxDirections: Math.max(360, options.directions.seedCount) }
                 : { type: 'fixed' }
             })}>
               <option value="fixed">Fixed directions</option>

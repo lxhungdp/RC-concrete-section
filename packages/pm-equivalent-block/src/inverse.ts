@@ -1,4 +1,10 @@
-import { EquivalentBlockInputError, type BlockSectionState, type CapacityResultants, type PreparedEquivalentBlockSection } from './types'
+import {
+  EquivalentBlockInputError,
+  type BlockSectionState,
+  type CapacityResultants,
+  type PreparedEquivalentBlockSection,
+  type SteelLawRegistry
+} from './types'
 import {
   intersectCapacitySurfaceWithRay,
   type CapacityEvaluator,
@@ -6,6 +12,7 @@ import {
   type CapacitySurface,
   type SurfaceRayIntersection
 } from './surface'
+import { projectedOuterExtents } from './geometry'
 
 const TAU = Math.PI * 2
 
@@ -90,13 +97,6 @@ export const brentRoot = (
   return { root: b, value: fb, iterations: maxIterations }
 }
 
-const projectedDepthAt = (section: PreparedEquivalentBlockSection, angle: number) => {
-  const nx = Math.cos(angle)
-  const ny = Math.sin(angle)
-  const values = section.solids.flatMap((solid) => solid.outer.map((point) => nx * point.x + ny * point.y))
-  return Math.max(...values) - Math.min(...values)
-}
-
 export type FixedAxialSolverOptions = {
   angleSamples?: number
   depthSamples?: number
@@ -108,6 +108,7 @@ export type FixedAxialSolverOptions = {
   axialCap?: number
   eventStations?: CapacityStation[]
   extremeCompressionStrain?: number
+  steelLaws?: SteelLawRegistry
 }
 
 type AxialRoot = {
@@ -166,11 +167,37 @@ export const solveFixedAxialCapacity = (
 
   const rootsAt = (sourceAngle: number): AxialRoot[] => {
     const angle = wrapAngle(sourceAngle)
-    const depth = projectedDepthAt(section, angle)
+    const normalX = Math.cos(angle)
+    const normalY = Math.sin(angle)
+    const extents = projectedOuterExtents(section, normalX, normalY)
+    const depth = extents.depth
     const ratios = logSpace(minDepthRatio, maxDepthRatio, depthSamples)
-    const eventDepths = (options.eventStations ?? []).map((station) => station.type === 'depth-ratio'
-      ? station.ratio * depth
-      : depth / (1 + station.strain / extremeCompressionStrain))
+    const barDepths = options.steelLaws ? section.rebars.map((bar) => {
+      const steelLaw = options.steelLaws![bar.steelLawId]
+      if (!steelLaw) {
+        throw new EquivalentBlockInputError('MISSING_STEEL_LAW', `Steel law ${bar.steelLawId} is not registered.`)
+      }
+      return {
+        depth: extents.maximum - (normalX * bar.x + normalY * bar.y),
+        yieldStrain: steelLaw.yieldStrain,
+        ultimateStrain: steelLaw.ultimateStrain
+      }
+    }) : []
+    const eventDepths = (options.eventStations ?? []).map((station) => {
+      if (station.type === 'depth-ratio') return station.ratio * depth
+      const controllingBar = barDepths.reduce<(typeof barDepths)[number] | undefined>(
+        (current, bar) => !current || bar.depth > current.depth ? bar : current,
+        undefined
+      )
+      const controllingDepth = station.type === 'bar-tension-strain' && controllingBar
+        ? controllingBar.depth
+        : depth
+      const requestedDepth = controllingDepth / (1 + station.strain / extremeCompressionStrain)
+      const ruptureDepth = barDepths.reduce((minimum, bar) => bar.ultimateStrain === undefined
+        ? minimum
+        : Math.max(minimum, bar.depth / (1 + bar.ultimateStrain / extremeCompressionStrain)), 0)
+      return Math.max(requestedDepth, ruptureDepth)
+    })
     const depths = [...ratios.map((ratio) => ratio * depth), ...eventDepths]
       .filter((value) => value > 0 && Number.isFinite(value))
       .sort((left, right) => left - right)
@@ -351,7 +378,7 @@ export type ProportionalRaySolverOptions = {
 }
 
 export type ProportionalRayCapacityResult = {
-  status: 'converged' | 'surface-converged' | 'no-intersection' | 'cap-face-governed'
+  status: 'converged' | 'mesh-fallback' | 'no-intersection' | 'cap-face-governed'
   loadFactor?: number
   utilization?: number
   capacity?: CapacityResultants
@@ -359,6 +386,14 @@ export type ProportionalRayCapacityResult = {
   residualNorm?: number
   iterations: number
   surfaceIntersection?: SurfaceRayIntersection
+  /** Last coherent physical evaluation from an unsuccessful exact refinement. */
+  refinement?: {
+    state: BlockSectionState
+    loadFactor: number
+    capacity: CapacityResultants
+    residual: CapacityResultants
+    residualNorm: number
+  }
 }
 
 const seedStateFromIntersection = (surface: CapacitySurface, intersection: SurfaceRayIntersection) => {
@@ -405,7 +440,7 @@ export const solveProportionalRayCapacity = (
   const seed = seedStateFromIntersection(surface, intersection)
   if (!seed) {
     return {
-      status: 'surface-converged',
+      status: 'mesh-fallback',
       loadFactor: intersection.loadFactor,
       utilization: 1 / intersection.loadFactor,
       capacity: intersection.point,
@@ -415,7 +450,7 @@ export const solveProportionalRayCapacity = (
   }
   if (!evaluator) {
     return {
-      status: 'surface-converged',
+      status: 'mesh-fallback',
       loadFactor: intersection.loadFactor,
       utilization: 1 / intersection.loadFactor,
       capacity: intersection.point,
@@ -501,13 +536,23 @@ export const solveProportionalRayCapacity = (
     }
   }
   return {
-    status: 'surface-converged',
+    status: 'mesh-fallback',
     loadFactor: intersection.loadFactor,
     utilization: 1 / intersection.loadFactor,
     capacity: intersection.point,
-    state: seed,
     residualNorm: norm,
     iterations: maxIterations,
-    surfaceIntersection: intersection
+    surfaceIntersection: intersection,
+    refinement: {
+      state: current.state,
+      loadFactor: values[2],
+      capacity: current.evaluation.resultants,
+      residual: {
+        P: current.evaluation.resultants.P - values[2] * demand.P,
+        Mx: current.evaluation.resultants.Mx - values[2] * demand.Mx,
+        My: current.evaluation.resultants.My - values[2] * demand.My
+      },
+      residualNorm: norm
+    }
   }
 }

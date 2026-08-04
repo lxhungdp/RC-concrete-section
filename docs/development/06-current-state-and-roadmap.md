@@ -14,14 +14,14 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 | Geometry | multiple solids/holes, rebars, exact properties, clipping, triangle/quadrature mesh | complete production topology/cover acceptance UX |
 | Materials | persisted concrete/steel definitions, compiled stress/tangent laws, material support gates | finish independent curve verification for every declared scope |
 | Stress-strain kernel | prepared mesh, 25-state default, nine code-aware transition nodes, 36-direction seed, adaptive angular refinement, full fields, inverse Newton | accepted-result numerical-uncertainty gate and larger independent oracle set |
-| Equivalent-block kernel | standard-independent exact clipping, forward evaluator, inverse solvers, adaptive station/direction surface, block field | independent clause calculations and additional commercial cross-checks |
+| Equivalent-block kernel | standard-independent exact clipping, forward evaluator, exact-refined inverse solvers, bar-event/adaptive surface, rupture/admissibility, block field | independent clause calculations and additional commercial cross-checks |
 | KDS block adapter | KDS 14 20 20 parameter table, `a=beta1 c`, block stress, KDS phi transition and axial cap | named structural-code review and release status above draft |
 | ACI block adapter | ACI 318-19(22) beta1, Whitney stress, phi transition and axial cap | named structural-code review and release status above draft |
 | Resistance | Nominal/Design separation, global-factor and design-material formats, single ledger scaling, axial cap | accepted-result/profile certification workflow |
 | Demand | explicit `factoredULS`, governing 3D proportional ray, secondary fixed-P diagnostic | immutable accepted check artifact and batch governance |
 | Results | 3D surface, fixed-P and vertical slices, model-specific fields/evidence | final accepted-result-only presentation rules |
 | Report | formula-audited Excel result and mesh exports | released PDF and cryptographic result identity |
-| Performance | worker protocol, prepared-analysis cache, mesh benchmarks, sampling and pipeline benchmarks | memory budgets, larger batches, cooperative cancellation checkpoints |
+| Performance | worker protocol, prepared-analysis and block Design-surface caches, mesh/sampling/pipeline benchmarks | memory budgets, larger batches, cooperative cancellation checkpoints |
 
 ## 2. Closed hazards
 
@@ -36,6 +36,14 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 - Project versioning was reset to the intended pre-release schema v1. No migration or compatibility
   work is carried in the active parser.
 - Nominal resistance, Design resistance, and factored Demand are different DTO stages and UI terms.
+- KDS `P0` is now a code reference point; the high-strength flexural surface closes on its
+  eta-reduced physical compression limit, eliminating an unsupported interpolation band.
+- Declared steel rupture strain is enforced in the block surface and inverse result; cap-face states
+  are explicitly marked strain-unevaluated.
+- Failed exact block refinement is `mesh-fallback`, never reported as converged, and equilibrium
+  residuals are computed from the exact response rather than reconstructed by identity.
+- Validated maximum sampling sizes and imported polygon extents use reduction loops rather than
+  argument-spread extrema, avoiding engine stack limits.
 
 ## 3. Numerical evidence for the new stress-strain default
 
@@ -67,7 +75,7 @@ result fingerprints and convergence evidence.
 
 ## 5. P1 engineering and architecture work
 
-- move expensive production builds fully behind worker/cache/progress controls;
+- add progress/cooperative-cancellation checkpoints to expensive production builds;
 - add targeted refinement around the governing demand intersection and report utilization drift;
 - define an immutable result identity covering canonical inputs, options, profile, package versions,
   effective sampling, warnings, and solver evidence;

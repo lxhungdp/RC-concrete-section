@@ -134,14 +134,30 @@ The equivalent-block pipeline intentionally has different controls:
 
 ```text
 initial neutral-axis states = 37, plus two exact poles
-station refinement          = adaptive, tolerance 0.01, max 6 passes, max 128 states
+bar events                  = 9 yield-to-phi nodes per steel definition, plus declared eps_u
+station refinement          = adaptive, tolerance 0.0075, max 6 passes, max 128 states
 seed directions             = 24
-direction refinement        = adaptive, tolerance 0.01, max 6 passes, max 360 directions
+direction refinement        = adaptive, tolerance 0.0075, max 6 passes, max 360 directions
 ```
 
 Those defaults were verified for the block kernel and must not be relabeled as the stress-strain
 25-station/36-direction schedule. Both models expose their own station and direction controls on the
 same Analysis Options page.
+
+The 37 user-controlled states remain a concrete-edge/depth schedule. Code and rupture events are a
+separate transient layer: for every direction the engine solves `c` so the controlling longitudinal
+bar is exactly at the requested strain. Rows can therefore have different station counts. A monotone
+zipper triangulation connects adjacent rows without warping the baseline states or moving a phi kink
+back to the concrete tension edge.
+
+### 3.2 Physical compression closure and code reference points
+
+ACI uses the same `0.85 f'c` block stress for the flexural compression limit and its concentric
+reference. KDS high-strength concrete is different: the flexural block is `eta 0.85 fck`, while the
+literal concentric `P0` expression uses `0.85 fck`. The KDS surface closes at the physically reachable
+`eta`-reduced limit. `P0` remains available as a named code reference point but is never connected to
+the surface by triangles. This prevents interpolation through a capacity band that no neutral-axis
+state can produce.
 
 ## 4. Nominal, Design, and factored Demand
 
@@ -180,6 +196,28 @@ The code/model selection is made once in Materials and resolves the calculation 
 definitions, resistance basis, and matching analysis-options DTO. Downstream code switches on the
 profile/method ID; it does not infer a model from UI text.
 
+### 5.1 Inverse acceptance, diagnostics, and reuse
+
+The proportional block solver first intersects the faceted Design surface, then uses that branch as
+the seed for exact clipped-polygon equilibrium refinement. Only `converged` and a code-defined
+`cap-face-governed` result can be accepted. If the exact solve exhausts its iterations, status is
+`mesh-fallback`: the approximate faceted capacity is retained for diagnosis, but `converged=false`
+and `ok=false`.
+
+The reported equilibrium vector is `R_exact(state) - lambda D`, not a reconstructed zero. Ledger
+assembly diagnostics are named `componentForceResidual` and component moment residuals; they only
+check that concrete and steel components add to the stored resultant and are not presented as an
+equilibrium proof.
+
+When a physical state exists, admissibility evaluates maximum concrete compression and every bar
+strain against the actual code/material limits. Declared steel `eps_u` bounds surface construction
+and is enforced by the inverse result. An axial-cap face has no unique compatible strain state, so it
+is explicitly marked `evaluated=false` rather than assigned a fabricated `eps_c=eps_cu` check.
+
+The worker caches the immutable core Design surface by profile, geometry, rebars, materials,
+DesignBasis, and analysis options. Load combinations are deliberately absent from that key, so a
+batch reuses one surface; changing any resistance-domain input invalidates it.
+
 ## 6. Verification and benchmark evidence
 
 `npm run bench:strain-sampling` compares three stress-strain configurations against a
@@ -202,14 +240,22 @@ prepared-analysis caching, and result-staleness rules are therefore part of the 
 
 | Equivalent-block configuration | Points | Worst ray error | Build-time range |
 |---|---:|---:|---:|
-| 19 initial states x 24 fixed | 265 | 6.271% | 27-144 ms |
-| 37 initial states x 24 fixed | 457-481 | 3.205% | 91-267 ms |
-| production 37-state/24-seed adaptive | 865-2,744 | **0.590%** | 314-1,814 ms |
+| 19 initial states x 24 fixed | 481 | 4.988% | 37-117 ms |
+| 37 initial states x 24 fixed | 673-697 | 2.079% | 61-189 ms |
+| production 37-state/24-seed adaptive at 0.75% | 1,633-4,267 | **0.601%** | 249-2,271 ms |
 
-The production block pipeline found every ray and reached its 1% station/direction targets. Its
-0.590% worst error and the stress-strain pipeline's 0.521% worst error place the two independent
+The production block pipeline found every ray and reached its 0.75% station/direction targets. Its
+0.601% worst error and the stress-strain pipeline's 0.521% worst error place the two independent
 models at comparable sampling quality for this fixture set; equality of point counts is neither
 required nor technically meaningful because the underlying state variables differ.
+
+The production-faithful `bench:equivalent-block` matrix adds KDS and ACI versions of rectangle,
+hollow, L-shaped, and disconnected-island sections. Across those eight cases, the worst faceted
+surface-to-exact correction was 0.918%, all topologies were closed, all station/direction refinements
+converged, exact residuals were below `7.4e-10`, and fixed-axial relative error was at most
+`1.21e-13`. The fixed-axial benchmark uses the production 96x96 defaults plus event depths and took
+34-54 ms/solve on the recorded machine. Reusing one surface for 20 load combinations gave an
+estimated measured-component speedup of 5.15x-6.80x over rebuilding it for every combination.
 
 The benchmark is a regression gate, not design-code validation. Code validation still requires
 independent clause calculations, analytical sections, commercial-program comparisons with matched

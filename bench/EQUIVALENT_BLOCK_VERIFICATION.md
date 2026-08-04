@@ -20,12 +20,31 @@ pipeline remains independent.
   strain-dependent `phi`, nominal `P0`, and tied/spiral caps.
 - Integration checks cover schema-v1 round trip, the separate worker branch, exact block-field
   geometry, one profile selection in Materials, Nominal/Design surfaces, and factored ULS demand.
+- Limit checks cover declared steel rupture, actual concrete/bar strain admissibility, and an
+  explicitly unevaluated code axial-cap face.
+- Resource checks build the validator-maximum 198-station by 720-direction surface without
+  argument-spread extrema or stack overflow.
+
+## Review-finding closure
+
+| Finding | Resolution and permanent evidence |
+|---|---|
+| KDS high-strength `P0` gap | flexural surfaces close at the eta-reduced physical limit; `P0` is a separate non-triangulated code reference; strengths 40-90 MPa are tested |
+| steel `ultimateStrain` ignored | EPP construction validates `eps_u > eps_y`; surfaces, poles, fixed-axial events, and inverse admissibility honor it |
+| KDS SD300/SD400 ambiguity | `0.005` is used through 400 MPa and `2.5 eps_y` above; SD300, SD400, and SD500 boundary tests are present |
+| tautological closure diagnostic | renamed to component-assembly residual; equilibrium residual is independently evaluated as response minus scaled demand |
+| admissibility stub | physical inverse states evaluate concrete vertices and every bar; violations carry values, limits, and bar IDs |
+| phi kinks missed | nine code events are solved at the controlling longitudinal bar and merged with the independent baseline station grid |
+| argument-spread overflow | extrema/scales use loops; the maximum validated surface and large polygon paths are stress-tested |
+| surface rebuilt per loadcase | worker caches a core Design surface with a complete resistance-domain key; integration test proves four checks cause one build |
+| benchmark used 48x72 | fixed-axial benchmark now uses production 96x96 defaults plus event depths, `eps_cu`, and steel laws |
+| failed LM reported converged | status is `mesh-fallback`, `converged=false`, `ok=false`; the raw last exact state and residual remain auditable |
 
 ## Commands and outcome
 
 | Command | Outcome |
 |---|---|
-| `npm.cmd test` | Passed: 125 unit tests, 11 CAD tests, and every repository self-test |
+| `npm.cmd test` | Passed: full unit/integration, CAD, schema round-trip, station, and Excel self-test suite |
 | `npm.cmd run build` | Production Next.js build passed; static application generated |
 | `npm.cmd run bench:equivalent-block` | 8/8 standard/geometry combinations; no failures |
 | `npm.cmd run bench:pipelines` | 5/5 fixtures and 15 candidate surfaces; 100% ray hits |
@@ -39,18 +58,19 @@ observations, not contractual speed limits.
 
 | Metric | Observed range / worst case |
 |---|---:|
-| Exact forward evaluation | 130.8-478.4 thousand evaluations/s |
-| Controlled surface | 22.59-42.58 ms |
-| Coupled-adaptive surface | 149.24-276.55 ms |
-| Adaptive directions / points | 92-108 / 2,409-3,443 |
+| Exact forward evaluation | 174.5-518.8 thousand evaluations/s |
+| Controlled surface | 24.33-40.47 ms |
+| Coupled-adaptive production surface | 205.41-366.49 ms |
+| Adaptive directions / points | 104-148 / 4,100-6,495 |
 | Direction and station convergence | 8/8 and 8/8 |
-| Surface ray query | 6,251-27,280 queries/s; 100% hits |
-| Coarse ray error | at most 3.527% |
-| Adaptive seed to exact LM correction | at most 0.940% |
-| Exact proportional inverse | 0.19-0.87 ms/solve |
-| Exact proportional inverse residual | at most 9.91e-10 |
-| Fixed-axial inverse | 16.60-29.40 ms/solve |
-| Fixed-axial relative error | at most 8.22e-15 |
+| Surface ray query | 4,202-16,050 queries/s; 100% hits |
+| Coarse 36-direction ray error | at most 2.622% |
+| Production surface to exact LM correction | at most 0.918% |
+| Exact proportional inverse | 0.28-1.11 ms/solve |
+| Exact proportional inverse residual | at most 7.39e-10 |
+| Fixed-axial inverse, production 96x96 + events | 34.15-53.65 ms/solve |
+| Fixed-axial relative error | at most 1.21e-13 |
+| Estimated 20-loadcase cache speedup | 5.15x-6.80x |
 | Surface topology | zero degenerate triangles; all closed |
 
 ## Sampling benchmark against a high-resolution reference
@@ -61,15 +81,14 @@ equivalent-block reference. The block candidates were evaluated independently fr
 
 | Block sampling policy | Worst ray error | Interpretation |
 |---|---:|---|
-| 19 initial states, 24 fixed directions | 6.271% | Too coarse as a general default |
-| 37 initial states, 24 fixed directions | 3.205% | Better, but not uniformly sufficient |
-| 37 initial states, 24 seed directions, adaptive 1% | **0.590%** | Accepted default; 100% ray hits |
+| 19 initial states, 24 fixed directions | 4.988% | Too coarse as a general default |
+| 37 initial states, 24 fixed directions | 2.079% | Better, but not uniformly sufficient |
+| 37 initial states, 24 seed directions, adaptive 0.75% | **0.601%** | Accepted default; 100% ray hits |
 
-The accepted adaptive block profile produced 32-100 directions, 32-40 effective station
-definitions, and 865-2,744 surface points, depending on geometry. In the 2026-08-04 pipeline run,
-its build took 314-1,814 ms. The current adaptive stress-strain pipeline took 573-8,285 ms, and the
-high-resolution block reference took 936-4,078 ms. The adaptive block is accuracy-controlled; it is
-not forced to copy the other model's point count.
+The accepted adaptive block profile produced 48-112 directions, 41-51 effective station
+definitions, and 1,633-4,267 surface points, depending on geometry. In the 2026-08-04 pipeline run,
+its build took 249-2,271 ms. The current adaptive stress-strain pipeline took 419-7,149 ms. The
+adaptive block is accuracy-controlled; it is not forced to copy the other model's point count.
 
 The corresponding stress-strain benchmark, using its own 144-direction/33-transition-node
 reference, reported a worst production ray error of 0.521%. The two production pipelines therefore
@@ -78,20 +97,22 @@ mixing their mechanics or controls.
 
 ## UI engineering check
 
-For a 400 mm square ACI column with eight D20 bars, the UI generated 2,999 design-surface states
-from 104 refined directions and 29 effective stations without a concrete integration mesh. A
-factored demand of `Pu = 1000 kN`, `Mux = 100 kN*m`, `Muy = 0` converged in two inverse iterations,
-with utilization 0.532 and normalized residual `1.70e-11`. The result exposed `c = 301.26 mm`,
-`a = 251.76 mm`, `beta1 = 0.836`, exact block area, and the concrete resultant. Switching back
-restored the independent KDS stress-strain controls: 25 stations, 36 seed directions, and adaptive
-refinement.
+The integration fixture verifies that the UI bridge exposes `c`, `a`, `beta1`, exact block area,
+block polygon, controlling bar/strain, resistance evidence, component-assembly residuals, and actual
+admissibility. Switching profiles restores the independent KDS stress-strain controls: 25 stations,
+36 seed directions, and adaptive refinement. The block result never paints constant concrete stress
+outside `0 <= depth <= a`.
 
 ## Acceptance interpretation
 
 The block surface is a branch locator and visualization object, not the final numerical authority.
-Its 1% normalized-chord target drives adaptive sampling; final proportional capacity is reevaluated
+Its 0.75% normalized-chord target drives adaptive sampling; final proportional capacity is reevaluated
 by exact clipping and damped LM. Fixed-axial capacity uses bracketed roots directly. This is why
 final equilibrium residuals are many orders of magnitude smaller than interpolation error.
+
+A faceted value remains available when LM fails, but it is diagnostic only: `mesh-fallback` is not
+converged or admissible acceptance. Similarly, component-assembly closure is not presented as an
+equilibrium audit.
 
 This evidence supports implementation readiness, not third-party certification. Design release
 still requires independently reviewed licensed-code examples and commercial-software golden files;

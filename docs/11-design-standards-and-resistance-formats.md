@@ -216,6 +216,12 @@ compression value to `0.85` between `eps_y` and that limit. Both calculation mec
 controlling tensile strain, yield strain/stress, resolved limit, and transverse-reinforcement class.
 Applicable axial caps are separate domain operations.
 
+For high-strength KDS concrete, the flexural equivalent block uses `eta 0.85 fck`, while the code
+concentric-compression reference `P0` uses `0.85 fck`. These are retained as two different objects:
+the physical `eta`-reduced compression limit closes the Nominal/Design surfaces, and `P0` is exposed
+as a named code reference point only. No triangle interpolates through the otherwise unsupported
+band between them.
+
 This method follows the literal nominal-then-global-factor pipeline. It does **not** apply `0.90`
 to reinforcement and `0.65` to concrete.
 

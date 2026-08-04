@@ -1,4 +1,4 @@
-import { clipPreparedSectionToHalfPlane } from './geometry'
+import { clipPreparedSectionToHalfPlane, projectedOuterExtents, type ProjectedOuterExtents } from './geometry'
 import {
   EquivalentBlockInputError,
   type BlockSectionState,
@@ -18,6 +18,14 @@ export const createElasticPerfectlyPlasticSteelLaw = (
     throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'Steel modulus and yield stress must be positive.')
   }
   const yieldStrain = yieldStress / elasticModulus
+  if (ultimateStrain !== undefined && (
+    !Number.isFinite(ultimateStrain) || ultimateStrain <= yieldStrain
+  )) {
+    throw new EquivalentBlockInputError(
+      'INVALID_BLOCK_LAW',
+      'Steel ultimate strain must be finite and greater than the yield strain.'
+    )
+  }
   return {
     yieldStrain,
     ultimateStrain,
@@ -42,7 +50,8 @@ export const evaluateEquivalentBlock = (
   section: PreparedEquivalentBlockSection,
   law: EquivalentBlockLaw,
   steelLaws: SteelLawRegistry,
-  state: BlockSectionState
+  state: BlockSectionState,
+  preparedExtents?: ProjectedOuterExtents
 ): NominalBlockEvaluation => {
   assertLaw(law)
   if (
@@ -54,10 +63,9 @@ export const evaluateEquivalentBlock = (
   }
   const normalX = Math.cos(state.neutralAxisAngle)
   const normalY = Math.sin(state.neutralAxisAngle)
-  const projections = section.solids.flatMap((solid) => solid.outer.map((point) => normalX * point.x + normalY * point.y))
-  const compressionEdgeProjection = Math.max(...projections)
-  const tensionEdgeProjection = Math.min(...projections)
-  const projectedSectionDepth = compressionEdgeProjection - tensionEdgeProjection
+  const extents = preparedExtents ?? projectedOuterExtents(section, normalX, normalY)
+  const compressionEdgeProjection = extents.maximum
+  const projectedSectionDepth = extents.depth
   const neutralAxisProjection = compressionEdgeProjection - state.neutralAxisDepth
   const blockDepth = law.depthFactor * state.neutralAxisDepth
   const blockBoundaryProjection = compressionEdgeProjection - blockDepth
@@ -93,6 +101,7 @@ export const evaluateEquivalentBlock = (
       strain,
       tensileStrain: Math.max(0, -strain),
       yieldStrain: steelLaw.yieldStrain,
+      ultimateStrain: steelLaw.ultimateStrain,
       steelStress,
       displacedConcreteStress,
       netStress,
@@ -136,9 +145,31 @@ export const evaluateEquivalentBlock = (
       compressionEdgeProjection,
       neutralAxisProjection,
       blockBoundaryProjection,
-      forceClosure: resultants.P - concreteForce - steelP,
-      momentXClosure: resultants.Mx - concreteMx - steelMx,
-      momentYClosure: resultants.My - concreteMy - steelMy
+      componentForceResidual: resultants.P - concreteForce - steelP,
+      componentMomentXResidual: resultants.Mx - concreteMx - steelMx,
+      componentMomentYResidual: resultants.My - concreteMy - steelMy
     }
+  }
+}
+
+/**
+ * Reuses the angle-only concrete projection while a surface/fixed-P solver evaluates many depths
+ * at the same direction. The exact clipping and every state-dependent quantity remain uncached.
+ */
+export const bindEquivalentBlockForwardEvaluator = (
+  section: PreparedEquivalentBlockSection,
+  law: EquivalentBlockLaw,
+  steelLaws: SteelLawRegistry
+) => {
+  let cachedAngle = Number.NaN
+  let cachedExtents: ProjectedOuterExtents | undefined
+  return (state: BlockSectionState): NominalBlockEvaluation => {
+    if (state.neutralAxisAngle !== cachedAngle || cachedExtents === undefined) {
+      const normalX = Math.cos(state.neutralAxisAngle)
+      const normalY = Math.sin(state.neutralAxisAngle)
+      cachedExtents = projectedOuterExtents(section, normalX, normalY)
+      cachedAngle = state.neutralAxisAngle
+    }
+    return evaluateEquivalentBlock(section, law, steelLaws, state, cachedExtents)
   }
 }

@@ -110,7 +110,9 @@ type EquivalentBlockAnalysisOptions = {
 
 This DTO intentionally contains no concrete integration-mesh settings. The equivalent-block kernel
 uses exact polygon clipping. Its production defaults are 37 initial neutral-axis states, 24 seed
-directions, and 1% adaptive station/direction refinement.
+directions, and 0.75% adaptive station/direction refinement. Code-owned bar-strain events are
+resolved transiently from the selected profile and steel grades; they are not duplicated in the
+project DTO.
 
 ## 6. Design basis v1
 

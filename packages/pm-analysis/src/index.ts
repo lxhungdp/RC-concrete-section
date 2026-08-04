@@ -129,9 +129,10 @@ export type EquivalentBlockStateTrace = {
   concreteForce?: number
   controllingTensileStrain?: number
   controllingBarId?: string
-  forceClosure?: number
-  momentXClosure?: number
-  momentYClosure?: number
+  /** Component reconstruction roundoff; not an inverse-equilibrium residual. */
+  componentForceResidual?: number
+  componentMomentXResidual?: number
+  componentMomentYResidual?: number
 }
 
 export type SurfaceIndexTriangle = { a: number; b: number; c: number }
@@ -192,6 +193,12 @@ export type PreviewSurface = {
   /** Explicit connectivity is authoritative for independently triangulated/capped surfaces. */
   triangles?: SurfaceIndexTriangle[]
   nominalTriangles?: SurfaceIndexTriangle[]
+  /** Discrete code values for reporting only; never triangulated as equilibrium states. */
+  codeReferencePoints?: Array<Resultant & {
+    id: string
+    label: string
+    kind: 'code-endpoint'
+  }>
   bounds: {
     P: [number, number]
     Mx: [number, number]
@@ -258,6 +265,8 @@ export type AdmissibilityViolation =
  * that balances the demand outside this domain is not an equilibrium state the section can reach.
  */
 export type StrainAdmissibility = {
+  /** False for a code-envelope face that has no unique material strain state. */
+  evaluated: boolean
   ok: boolean
   /** Peak compressive strain anywhere in the concrete region (compression positive). */
   maxConcreteCompression: number
@@ -373,6 +382,7 @@ export type StationDefinition =
   | { kind: 'strength-reduction-transition-ratio'; ratio: number }
   | { kind: 'strength-reduction-post-transition'; extraStrain: number }
   | { kind: 'extreme-tension-strain'; strain: number }
+  | { kind: 'bar-tension-strain'; strain: number }
   | { kind: 'block-depth-ratio'; ratio: number }
   | { kind: 'pure-tension' }
 
@@ -408,6 +418,7 @@ export const stationDefinitionLabel = (station: StationDefinition): string => {
   if (station.kind === 'pure-tension') return 'Pure tension'
   if (station.kind === 'block-depth-ratio') return `c/D = ${station.ratio}`
   if (station.kind === 'extreme-tension-strain') return `εt = ${station.strain}`
+  if (station.kind === 'bar-tension-strain') return `controlling bar εt = ${station.strain}`
   if (station.kind === 'neutral-axis-ratio') return `c = ${station.cOverC1.toFixed(1)}·c₁`
   if (station.kind === 'steel-stress-ratio') {
     if (station.ratio === 0) return 'fs = 0'
@@ -801,6 +812,7 @@ const evaluateAdmissibility = (
   }
 
   return {
+    evaluated: true,
     ok: violations.length === 0,
     maxConcreteCompression,
     concreteLimit,
@@ -811,6 +823,7 @@ const evaluateAdmissibility = (
 }
 
 export const describeAdmissibility = (admissibility: StrainAdmissibility): string => {
+  if (!admissibility.evaluated) return 'Material-strain admissibility is not applicable to this code-envelope face.'
   if (admissibility.ok) return 'Strain plane is inside the declared material domain.'
   return admissibility.violations
     .map((violation) =>

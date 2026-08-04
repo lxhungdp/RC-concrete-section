@@ -2,9 +2,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   EquivalentBlockInputError,
+  bindEquivalentBlockForwardEvaluator,
   createElasticPerfectlyPlasticSteelLaw,
   evaluateEquivalentBlock,
   prepareEquivalentBlockSection,
+  uniformSteelEndpointStrain,
   type EquivalentBlockSection,
   type Point2
 } from './index'
@@ -30,6 +32,15 @@ const section = (patch: Partial<EquivalentBlockSection> = {}): EquivalentBlockSe
   ...patch
 })
 
+test('declared steel rupture strain is validated and governs the finite axial endpoint', () => {
+  assert.throws(() => createElasticPerfectlyPlasticSteelLaw(200_000, 400, 0.001))
+  const prepared = prepareEquivalentBlockSection(section({
+    rebars: [{ id: 'b1', x: 0, y: 200, area: 400, steelLawId: 'steel' }]
+  }))
+  const steel = createElasticPerfectlyPlasticSteelLaw(200_000, 400, 0.02)
+  close(uniformSteelEndpointStrain(prepared, { steel }), 0.02)
+})
+
 const law = {
   compressionStress: 0.85 * 30,
   depthFactor: 0.8,
@@ -52,8 +63,28 @@ test('forward evaluator reproduces the analytical rectangular concrete block', (
   close(result.resultants.P, force)
   close(result.resultants.Mx, force * 170)
   close(result.resultants.My, 0)
-  close(result.diagnostics.forceClosure, 0)
-  close(result.diagnostics.momentXClosure, 0)
+  close(result.diagnostics.componentForceResidual, 0)
+  close(result.diagnostics.componentMomentXResidual, 0)
+})
+
+test('bound forward evaluator preserves exact results while reusing angle-only projection data', () => {
+  const prepared = prepareEquivalentBlockSection(section())
+  const bound = bindEquivalentBlockForwardEvaluator(prepared, law, {})
+  const states = [
+    { neutralAxisAngle: 0.37, neutralAxisDepth: 80 },
+    { neutralAxisAngle: 0.37, neutralAxisDepth: 200 },
+    { neutralAxisAngle: 0.37, neutralAxisDepth: 700 },
+    { neutralAxisAngle: 1.21, neutralAxisDepth: 175 }
+  ]
+  for (const state of states) {
+    const direct = evaluateEquivalentBlock(prepared, law, {}, state)
+    const cached = bound(state)
+    close(cached.resultants.P, direct.resultants.P)
+    close(cached.resultants.Mx, direct.resultants.Mx)
+    close(cached.resultants.My, direct.resultants.My)
+    close(cached.diagnostics.projectedSectionDepth, direct.diagnostics.projectedSectionDepth)
+    close(cached.diagnostics.compressionEdgeProjection, direct.diagnostics.compressionEdgeProjection)
+  }
 })
 
 test('forward evaluator applies strain compatibility and displaced-concrete correction to bars', () => {

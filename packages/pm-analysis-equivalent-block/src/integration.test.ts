@@ -13,6 +13,7 @@ import {
   type EquivalentBlockAnalysisOptions
 } from '@pm/project'
 import {
+  buildEquivalentBlockDesignSurfaceFromPrepared,
   buildEquivalentBlockFieldMapFromPrepared,
   buildEquivalentBlockPreviewSurfaceFromPrepared,
   prepareBlockAnalysis,
@@ -56,6 +57,10 @@ for (const profileId of ['kds-142020-equivalent-block', 'aci-318-19-22-equivalen
     assert.ok(surface.points.length > 100)
     assert.ok(surface.triangles && surface.triangles.length > 100)
     assert.ok(surface.points.every((point) => Number.isFinite(point.P + point.Mx + point.My)))
+    assert.ok(
+      surface.stations.some((station) => station.definition.kind === 'bar-tension-strain'),
+      'code transition events must retain controlling-bar semantics in the shared result DTO'
+    )
     const reduced = surface.points.find((point) => point.resistance?.factor && point.equivalentBlock)
     assert.ok(reduced?.resistance?.factor)
     assert.ok(Math.abs(reduced.P - reduced.resistance.factor * reduced.resistance.nominalReference.P) < 1e-8)
@@ -125,4 +130,70 @@ test('ACI default adaptive profile solves a practical factored demand without a 
   assert.ok(surface.points.length > 500)
   assert.equal(inverse.ok, true)
   assert.ok(inverse.equivalentBlock)
+})
+
+test('equivalent-block inverse reports evaluated steel admissibility and honours epsU', () => {
+  const profileId = 'aci-318-19-22-equivalent-block' as const
+  const base = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
+  const materials = {
+    ...base,
+    steel: base.steel.map((steel) => ({
+      ...steel,
+      limits: { ...steel.limits, epsU: 0.02 }
+    }))
+  }
+  const design = createDesignBasisForCalculationProfile(profileId)
+  const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
+  options.directions.seedCount = 12
+  options.directions.refinement = { type: 'fixed' }
+  options.neutralAxisStations.refinement = { type: 'fixed' }
+  const prepared = prepareBlockAnalysis(
+    profileId,
+    sectionGeometryFromGeometryInput(geometry),
+    geometryInputRebars(geometry),
+    materials,
+    design
+  )
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+  const source = surface.points.find((point) => point.equivalentBlock && point.P > 0 && Math.hypot(point.Mx, point.My) > 1e6)
+  assert.ok(source)
+  const inverse = solveEquivalentBlockDemandFromPrepared(prepared, options, {
+    id: 17,
+    name: 'epsU admissibility ray',
+    actionBasis: 'factoredULS',
+    P: 0.6 * source.P,
+    Mx: 0.6 * source.Mx,
+    My: 0.6 * source.My
+  })
+  assert.equal(inverse.ok, true, inverse.message)
+  assert.equal(inverse.admissibility.evaluated, true)
+  assert.equal(inverse.admissibility.ok, true)
+  assert.equal(inverse.admissibility.steelTensionLimit, 0.02)
+  assert.ok(inverse.admissibility.maxSteelTension <= 0.02 * (1 + 1e-9))
+  assert.deepEqual(inverse.admissibility.violations, [])
+})
+
+test('a prepared design surface is reused across inverse load combinations', () => {
+  const input = build('aci-318-19-22-equivalent-block')
+  const original = input.prepared.model.buildDesignSurface
+  let builds = 0
+  input.prepared.model.buildDesignSurface = (...args) => {
+    builds += 1
+    return original(...args)
+  }
+  const designSurface = buildEquivalentBlockDesignSurfaceFromPrepared(input.prepared, input.options)
+  assert.equal(builds, 1)
+
+  for (let index = 0; index < 4; index += 1) {
+    const inverse = solveEquivalentBlockDemandFromPrepared(input.prepared, input.options, {
+      id: 100 + index,
+      name: `cached demand ${index + 1}`,
+      actionBasis: 'factoredULS',
+      P: 300_000 + index * 50_000,
+      Mx: 80_000_000,
+      My: 20_000_000
+    }, designSurface)
+    assert.ok(inverse.utilization !== null)
+  }
+  assert.equal(builds, 1, 'inverse checks must not rebuild a supplied loadcase-independent surface')
 })

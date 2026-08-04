@@ -16,6 +16,7 @@ import {
   type CapacityEvaluator,
   type CapacitySurface,
   type EquivalentBlockSection,
+  type NominalBlockEvaluation,
   type Point2
 } from './index'
 
@@ -97,6 +98,39 @@ test('surface meshing is closed and adaptive direction checks remain bounded', (
   assert.ok(Number.isFinite(surface.maxStationInterpolationError))
 })
 
+test('validated 198 by 720 surface limit does not overflow JavaScript argument limits', () => {
+  const section = prepareEquivalentBlockSection({
+    solids: [{ outer: rectangle(1, 1) }],
+    rebars: [],
+    referencePoint: { x: 0, y: 0 },
+    units: 'N-mm-MPa',
+    signConvention: 'compression-positive'
+  })
+  const stations = Array.from({ length: 198 }, (_, index) => ({
+    type: 'depth-ratio' as const,
+    ratio: 0.01 * (index + 1)
+  }))
+  const surface = buildCapacitySurface(section, (state) => ({
+    state,
+    resultants: {
+      P: state.neutralAxisDepth,
+      Mx: (1 + state.neutralAxisDepth) * Math.cos(state.neutralAxisAngle),
+      My: (1 + state.neutralAxisDepth) * Math.sin(state.neutralAxisAngle)
+    }
+  }), {
+    extremeCompressionStrain: 0.003,
+    tensionPole: { resultants: { P: -1, Mx: 0, My: 0 } },
+    compressionPole: { resultants: { P: 3, Mx: 0, My: 0 } },
+    stations,
+    seedDirections: 720,
+    maxDirections: 720,
+    maxRefinementPasses: 0,
+    maxStationRefinementPasses: 0
+  })
+  assert.equal(surface.points.length, 720 * 198 + 2)
+  assert.equal(surface.topology.closed, true)
+})
+
 test('station refinement lowers the measured capacity-curve chord error', () => {
   const fixture = createFixture()
   const common = {
@@ -119,6 +153,31 @@ test('station refinement lowers the measured capacity-curve chord error', () => 
   assert.ok(refined.stations.length >= coarse.stations.length)
   assert.ok(refined.maxStationInterpolationError <= coarse.maxStationInterpolationError + 1e-12)
   assert.equal(refined.topology.closed, true)
+})
+
+test('bar-based tension stations never cross a declared steel rupture strain', () => {
+  const fixture = createFixture()
+  const steel = createElasticPerfectlyPlasticSteelLaw(200_000, 400, 0.02)
+  const evaluator: CapacityEvaluator<NominalBlockEvaluation> = (state) => {
+    const source = evaluateEquivalentBlock(fixture.prepared, fixture.law, { steel }, state)
+    return { state, resultants: source.resultants, source }
+  }
+  const surface = buildCapacitySurface(fixture.prepared, evaluator, {
+    extremeCompressionStrain: fixture.law.extremeCompressionStrain,
+    tensionPole: fixture.tensionPole,
+    compressionPole: fixture.compressionPole,
+    steelLaws: { steel },
+    seedDirections: 24,
+    maxRefinementPasses: 0,
+    maxStationRefinementPasses: 0
+  })
+  for (const point of surface.points) {
+    if (!point.state) continue
+    const evaluation = evaluator(point.state).source!
+    for (const bar of evaluation.bars) {
+      assert.ok(Math.abs(bar.strain) <= 0.02 * (1 + 1e-9), `${bar.id}: ${bar.strain}`)
+    }
+  }
 })
 
 test('surface builder rejects a station schedule that reverses neutral-axis depth', () => {
@@ -214,7 +273,7 @@ test('a clipped side triangle is not misclassified as an axial-cap face', () => 
     axialCap: 1
   }
   const solved = solveProportionalRayCapacity(surface, { P: 0.2, Mx: 0.2, My: 0.2 })
-  assert.equal(solved.status, 'surface-converged')
+  assert.equal(solved.status, 'mesh-fallback')
   close(solved.loadFactor!, 5 / 3, 1e-12)
   assert.ok(solved.state)
 })
@@ -239,6 +298,34 @@ test('proportional inverse refines a meshed seed back to the forward solution', 
   assert.equal(result.status, 'converged')
   close(result.loadFactor!, expectedFactor, 1e-6)
   assert.ok(result.residualNorm! < 1e-8)
+})
+
+test('a failed exact refinement is a coherent mesh fallback, never a converged state', () => {
+  const fixture = createFixture()
+  const surface = buildCapacitySurface(fixture.prepared, fixture.evaluator, {
+    extremeCompressionStrain: fixture.law.extremeCompressionStrain,
+    tensionPole: fixture.tensionPole,
+    compressionPole: fixture.compressionPole,
+    seedDirections: 12,
+    maxRefinementPasses: 0
+  })
+  const known = fixture.evaluator({ neutralAxisAngle: 0.431, neutralAxisDepth: 237 })
+  const demand = {
+    P: known.resultants.P / 1.7,
+    Mx: known.resultants.Mx / 1.7,
+    My: known.resultants.My / 1.7
+  }
+  const result = solveProportionalRayCapacity(surface, demand, fixture.evaluator, {
+    maxIterations: 1,
+    residualTolerance: 1e-16
+  })
+  assert.equal(result.status, 'mesh-fallback')
+  assert.ok(result.refinement)
+  assert.equal(result.state, undefined)
+  assert.ok(result.residualNorm! > 1e-16)
+  close(result.refinement!.residual.P, result.refinement!.capacity.P - result.refinement!.loadFactor * demand.P)
+  close(result.refinement!.residual.Mx, result.refinement!.capacity.Mx - result.refinement!.loadFactor * demand.Mx)
+  close(result.refinement!.residual.My, result.refinement!.capacity.My - result.refinement!.loadFactor * demand.My)
 })
 
 test('fixed-axial inverse recovers a known biaxial boundary point', () => {

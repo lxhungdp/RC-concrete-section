@@ -14,8 +14,8 @@ The project contains two independent numerical pipelines:
 
 The current stress-strain default is 25 stations with nine mandatory code-aware transition nodes,
 36 uniform seed directions, and adaptive angular refinement to a 0.5% target. The equivalent-block
-default is independent: 37 initial neutral-axis states, 24 seed directions, and 1% adaptive station
-and direction refinement.
+default is independent: 37 initial neutral-axis states, bar-controlled code/rupture event stations,
+24 seed directions, and 0.75% adaptive station and direction refinement.
 
 KDS current-set and ACI 318-19(22) equivalent-block profiles are implemented as draft previews.
 Nominal, Design, and factored ULS Demand are separate result stages. See
@@ -73,6 +73,8 @@ converged and every sampled demand ray intersected the surface.
 - Mesh resource limits, empty concrete, and failed area/first-moment self-checks cannot produce a
   stress-strain surface.
 - Inverse convergence and strain admissibility are reported separately; success requires both.
+- A faceted-surface fallback is explicitly approximate and is never promoted to a converged
+  equilibrium state.
 - Adaptive surfaces record effective directions, passes, error estimate, tolerance status, and any
   cap reached.
 - A global resistance factor is applied once to the complete resultant ledger; factored demand is

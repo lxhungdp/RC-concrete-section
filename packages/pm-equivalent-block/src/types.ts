@@ -107,6 +107,7 @@ export type BarBlockEvaluation = {
   strain: number
   tensileStrain: number
   yieldStrain?: number
+  ultimateStrain?: number
   steelStress: number
   displacedConcreteStress: number
   netStress: number
@@ -121,9 +122,10 @@ export type BlockEvaluationDiagnostics = {
   compressionEdgeProjection: number
   neutralAxisProjection: number
   blockBoundaryProjection: number
-  forceClosure: number
-  momentXClosure: number
-  momentYClosure: number
+  /** Floating-point component reconstruction check; not an equilibrium residual. */
+  componentForceResidual: number
+  componentMomentXResidual: number
+  componentMomentYResidual: number
 }
 
 export type NominalBlockEvaluation = {

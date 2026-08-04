@@ -66,7 +66,13 @@ KDS current profile:
 
 These are persisted as discriminated rules, not one shared `transitionExtraStrain`. The stress-strain
 surface samples nine points from yield through the active rule's upper limit. Both block adapters use
-the same profile-owned limits for phi evaluation.
+the same profile-owned limits for phi evaluation and insert those nine events at the controlling
+longitudinal bar for each neutral-axis direction.
+
+For the block pipeline, a declared steel ultimate strain is a mechanical boundary, not descriptive
+metadata. It must exceed yield strain, bounds surface/end-point states, and is checked against every
+bar in an exact inverse result. A code axial-cap face is identified as strain-unevaluated because it
+does not correspond to one unique neutral-axis state.
 
 ## 6. Nominal and Design resistance
 

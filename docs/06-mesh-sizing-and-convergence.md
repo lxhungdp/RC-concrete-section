@@ -184,8 +184,9 @@ The capacity change is **always positive**. Chord interpolation across a convex 
 the corner, so a coarse fixed direction grid systematically under-reports capacity. The current
 stress-strain default starts from 36 directions and adaptively probes all 25 stations at 0.5%
 relative tolerance. The effective direction count and convergence evidence are recorded with every
-surface. The equivalent-block model retains its independent 24-direction seed and 1% adaptive
-default because its station coordinate and exact clipped-block kernel are different.
+surface. The equivalent-block model retains its independent 24-direction seed and 0.75% adaptive
+default because its station coordinate and exact clipped-block kernel are different. Its code-factor
+kinks are inserted as controlling-bar events before adaptive error refinement.
 
 The permanent post-change benchmark is `npm run bench:strain-sampling`. Against a 144-direction,
 33-transition-node reference, worst 3D ray error over five fixtures fell from 7.800% for the legacy

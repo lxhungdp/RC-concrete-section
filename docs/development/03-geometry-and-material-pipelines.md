@@ -207,7 +207,7 @@ precompute curve segments once; use binary search or indexed segment traversal.
 |---|---|---|
 | blocking | material forms can create invalid/inconsistent combinations | strict discriminated validation and authoritative derivation |
 | blocking | silent fallback/default model selection | exhaustive switch and typed unsupported-model error |
-| blocking | no explicit extrapolation/admissibility | add policies, rupture/domain behavior, and fatal out-of-domain path |
+| partial | generic curve extrapolation/admissibility is incomplete | the equivalent-block EPP law now enforces declared rupture strain; finish equivalent policies for every generic curve family |
 | closed routing hazard | ACI Whitney `beta1` cannot be used as a local fiber law | local-law path rejects it; the ACI calculation profile routes to `@pm/code-aci318`, where `a = beta1 c` is evaluated by exact block clipping |
 | high | numerical tangents and unspecified kink side | analytical tangents and documented deterministic kink convention |
 | high | no stress contribution ledger | expose concrete/steel/displaced-concrete components |

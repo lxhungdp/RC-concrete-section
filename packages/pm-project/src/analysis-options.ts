@@ -237,12 +237,12 @@ export const createDefaultEquivalentBlockAnalysisOptions = (): EquivalentBlockAn
         ratio
       }))
     ],
-    refinement: { type: 'adaptive', tolerance: 0.01, maxPasses: 6, maxStations: 128 }
+    refinement: { type: 'adaptive', tolerance: 0.0075, maxPasses: 6, maxStations: 128 }
   },
   directions: {
     seedCount: 24,
     startDeg: 0,
-    refinement: { type: 'adaptive', tolerance: 0.01, maxPasses: 6, maxDirections: 360 }
+    refinement: { type: 'adaptive', tolerance: 0.0075, maxPasses: 6, maxDirections: 360 }
   }
 })
 

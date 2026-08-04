@@ -10,7 +10,8 @@ import {
   type CapacitySurface,
   type EquivalentBlockSection,
   type Point2,
-  type PreparedEquivalentBlockSection
+  type PreparedEquivalentBlockSection,
+  type SteelLawRegistry
 } from '@pm/equivalent-block'
 
 type BenchModel = {
@@ -19,12 +20,18 @@ type BenchModel = {
     section: PreparedEquivalentBlockSection,
     options: {
       seedDirections?: number
+      directionTolerance?: number
       maxRefinementPasses?: number
+      maxDirections?: number
+      stationTolerance?: number
       maxStationRefinementPasses?: number
+      maxStations?: number
       applyAxialCap?: boolean
     }
   ) => CapacitySurface
   axialCap: (section: PreparedEquivalentBlockSection) => number
+  blockLaw: { extremeCompressionStrain: number }
+  steelLaws: SteelLawRegistry
   nominalEndpoints: (section: PreparedEquivalentBlockSection) => {
     compression: { resultants: { P: number; Mx: number; My: number } }
   }
@@ -124,6 +131,15 @@ const relativeError = (actual: number, expected: number) =>
 
 const results: Array<Record<string, string | number>> = []
 const verificationFailures: string[] = []
+const productionSurfaceOptions = {
+  seedDirections: 24,
+  directionTolerance: 0.0075,
+  maxRefinementPasses: 6,
+  maxDirections: 360,
+  stationTolerance: 0.0075,
+  maxStationRefinementPasses: 6,
+  maxStations: 128
+} as const
 
 for (const { standard, model } of models) {
   for (const item of cases) {
@@ -153,7 +169,7 @@ for (const { standard, model } of models) {
     }
     if (!surface.topology.closed) verificationFailures.push(`${standard}/${item.name}: open surface`)
     const adaptiveStarted = performance.now()
-    const adaptiveSurface = model.buildDesignSurface(item.section, {})
+    const adaptiveSurface = model.buildDesignSurface(item.section, productionSurfaceOptions)
     const adaptiveSurfaceMs = performance.now() - adaptiveStarted
     if (!adaptiveSurface.topology.closed) verificationFailures.push(`${standard}/${item.name}: open adaptive surface`)
     if (!adaptiveSurface.directionRefinementConverged) {
@@ -223,12 +239,20 @@ for (const { standard, model } of models) {
       evaluator,
       fixedKnown.resultants.P,
       { Mx: fixedKnown.resultants.Mx, My: fixedKnown.resultants.My },
-      { angleSamples: 48, depthSamples: 72, axialCap: model.axialCap(item.section) }
+      {
+        axialCap: model.axialCap(item.section),
+        eventStations: adaptiveSurface.stations,
+        extremeCompressionStrain: model.blockLaw.extremeCompressionStrain,
+        steelLaws: model.steelLaws
+      }
     )
     const fixedMs = performance.now() - fixedStarted
     const fixedError = fixed.capacityFactor === undefined ? Number.POSITIVE_INFINITY : relativeError(fixed.capacityFactor, 1)
     if (maxResidual > 1e-7) {
       verificationFailures.push(`${standard}/${item.name}: refined inverse accuracy`)
+    }
+    if (maxAdaptiveToRefinedError > 0.01) {
+      verificationFailures.push(`${standard}/${item.name}: production surface differs from exact inverse by more than 1%`)
     }
     if (rayHits !== raySamples.length) {
       verificationFailures.push(`${standard}/${item.name}: missing ray intersections`)
@@ -237,6 +261,10 @@ for (const { standard, model } of models) {
       verificationFailures.push(`${standard}/${item.name}: fixed-P accuracy/status ${fixed.status}`)
     }
 
+    const cachedDemandMs = inverseMs / inverseCount + fixedMs
+    const uncachedDemandMs = adaptiveSurfaceMs + cachedDemandMs
+    const cachedBatch20Ms = adaptiveSurfaceMs + 20 * cachedDemandMs
+    const uncachedBatch20Ms = 20 * uncachedDemandMs
     results.push({
       standard,
       case: item.name,
@@ -262,6 +290,11 @@ for (const { standard, model } of models) {
       capFaceSolutions,
       fixedMs,
       fixedRelError: fixedError,
+      cachedDemandMs,
+      uncachedDemandMs,
+      cachedBatch20Ms,
+      uncachedBatch20Ms,
+      batch20CacheSpeedup: uncachedBatch20Ms / cachedBatch20Ms,
       nominalP0: model.nominalEndpoints(item.section).compression.resultants.P,
       axialCap: model.axialCap(item.section),
       checksum
@@ -283,7 +316,8 @@ console.table(results.map((result) => ({
   'adaptive→LM': Number(result.maxAdaptiveToRefinedError).toExponential(2),
   'cap hits': result.capFaceSolutions,
   'fixed ms': Number(result.fixedMs).toFixed(2),
-  'fixed err': Number(result.fixedRelError).toExponential(2)
+  'fixed err': Number(result.fixedRelError).toExponential(2),
+  '20LC cache x': Number(result.batch20CacheSpeedup).toFixed(2)
 })))
 console.log(JSON.stringify({ generatedAt: new Date().toISOString(), results, verificationFailures }, null, 2))
 

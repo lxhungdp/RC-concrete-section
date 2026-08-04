@@ -104,9 +104,9 @@ test('forward resultants remain finite and exactly assembled for difficult geome
         assert.ok(Number.isFinite(source.resultants.P), item.name)
         assert.ok(Number.isFinite(source.resultants.Mx), item.name)
         assert.ok(Number.isFinite(source.resultants.My), item.name)
-        assert.ok(Math.abs(source.diagnostics.forceClosure) < 1e-7, item.name)
-        assert.ok(Math.abs(source.diagnostics.momentXClosure) < 1e-5, item.name)
-        assert.ok(Math.abs(source.diagnostics.momentYClosure) < 1e-5, item.name)
+        assert.ok(Math.abs(source.diagnostics.componentForceResidual) < 1e-7, item.name)
+        assert.ok(Math.abs(source.diagnostics.componentMomentXResidual) < 1e-5, item.name)
+        assert.ok(Math.abs(source.diagnostics.componentMomentYResidual) < 1e-5, item.name)
       }
     }
   }

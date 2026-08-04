@@ -1,10 +1,11 @@
 import {
   EquivalentBlockInputError,
+  bindEquivalentBlockForwardEvaluator,
   buildCapacitySurface,
   clipCapacitySurfaceByAxialCap,
   createElasticPerfectlyPlasticSteelLaw,
-  evaluateEquivalentBlock,
   evaluateUniformSectionState,
+  uniformSteelEndpointStrain,
   type BlockSectionState,
   type BuildCapacitySurfaceOptions,
   type CapacityEndpoint,
@@ -184,10 +185,11 @@ export const evaluateKds142010StrengthReduction = (
     : transitionRule.highStrengthYieldMultiple * yieldStrain
   const compressionPhi = transverseReinforcement === 'qualifying-spiral' ? factors.phiCompressionSpiral : factors.phiCompressionOther
   const tensionPhi = factors.phiTension
-  if (tensileStrain <= yieldStrain) {
+  const strainTolerance = 1e-12 * Math.max(1, tensionControlledLimit)
+  if (tensileStrain <= yieldStrain + strainTolerance) {
     return { phi: compressionPhi, classification: 'compression-controlled', tensileStrain, yieldStrain, tensionControlledLimit }
   }
-  if (tensileStrain >= tensionControlledLimit) {
+  if (tensileStrain >= tensionControlledLimit - strainTolerance) {
     return { phi: tensionPhi, classification: 'tension-controlled', tensileStrain, yieldStrain, tensionControlledLimit }
   }
   const fraction = (tensileStrain - yieldStrain) / (tensionControlledLimit - yieldStrain)
@@ -263,52 +265,87 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
     extremeCompressionStrain: parameters.extremeCompressionStrain,
     subtractDisplacedConcrete: true
   }
+  const barStrainEvents = Object.values(input.steel).flatMap((definition) => {
+    const yieldStrain = definition.yieldStress / definition.elasticModulus
+    const tensionLimit = definition.yieldStress <= transitionLimitRule.yieldStressThreshold
+      ? transitionLimitRule.fixedStrainLimit
+      : transitionLimitRule.highStrengthYieldMultiple * yieldStrain
+    return [
+      ...Array.from({ length: 9 }, (_, index) =>
+        yieldStrain + index / 8 * (tensionLimit - yieldStrain)
+      ),
+      ...(definition.ultimateStrain === undefined ? [] : [definition.ultimateStrain])
+    ]
+  })
   const compressionPhi = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.phiCompressionSpiral : resistanceFactors.phiCompressionOther
   const axialCapRatio = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.axialCapSpiral : resistanceFactors.axialCapOther
 
-  const bindNominalEvaluator = (section: PreparedEquivalentBlockSection): CapacityEvaluator<NominalBlockEvaluation> => (state) => {
-    const nominal = evaluateEquivalentBlock(section, blockLaw, steelLaws, state)
-    return { state, resultants: nominal.resultants, source: nominal }
-  }
-  const bindDesignEvaluator = (section: PreparedEquivalentBlockSection): CapacityEvaluator<KdsDesignEvaluationSource> => (state) => {
-    const nominal = evaluateEquivalentBlock(section, blockLaw, steelLaws, state)
-    const controllingBar = nominal.bars.find((bar) => bar.id === nominal.controllingBarId)
-    if (!controllingBar) {
-      throw new EquivalentBlockInputError('INVALID_REBAR', 'KDS design resistance requires at least one controlling longitudinal bar.')
+  const bindNominalEvaluator = (section: PreparedEquivalentBlockSection): CapacityEvaluator<NominalBlockEvaluation> => {
+    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws)
+    return (state) => {
+      const nominal = evaluate(state)
+      return { state, resultants: nominal.resultants, source: nominal }
     }
-    const definition = input.steel[controllingBar.steelLawId]
-    const resistance = evaluateKds142010StrengthReduction(
-      nominal.controllingTensileStrain,
-      definition,
-      input.transverseReinforcement,
-      resistanceFactors,
-      transitionLimitRule
-    )
-    return {
-      state,
-      resultants: scaleResultants(nominal.resultants, resistance.phi),
-      source: { nominal, resistance },
-      metadata: {
-        phi: resistance.phi,
-        classification: resistance.classification,
-        controllingBarId: nominal.controllingBarId
+  }
+  const bindDesignEvaluator = (section: PreparedEquivalentBlockSection): CapacityEvaluator<KdsDesignEvaluationSource> => {
+    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws)
+    return (state) => {
+      const nominal = evaluate(state)
+      const controllingBar = nominal.bars.find((bar) => bar.id === nominal.controllingBarId)
+      if (!controllingBar) {
+        throw new EquivalentBlockInputError('INVALID_REBAR', 'KDS design resistance requires at least one controlling longitudinal bar.')
+      }
+      const definition = input.steel[controllingBar.steelLawId]
+      const resistance = evaluateKds142010StrengthReduction(
+        nominal.controllingTensileStrain,
+        definition,
+        input.transverseReinforcement,
+        resistanceFactors,
+        transitionLimitRule
+      )
+      return {
+        state,
+        resultants: scaleResultants(nominal.resultants, resistance.phi),
+        source: { nominal, resistance },
+        metadata: {
+          phi: resistance.phi,
+          classification: resistance.classification,
+          controllingBarId: nominal.controllingBarId
+        }
       }
     }
   }
   const nominalEndpoints = (section: PreparedEquivalentBlockSection) => {
+    const endpointStrain = uniformSteelEndpointStrain(section, steelLaws)
     const tension = evaluateUniformSectionState(section, steelLaws, {
       concreteStress: 0,
-      steelStrain: -1,
+      steelStrain: -endpointStrain,
       subtractDisplacedConcrete: false
     })
     const compression = evaluateUniformSectionState(section, steelLaws, {
       concreteStress: 0.85 * input.concreteStrength,
-      steelStrain: 1,
+      steelStrain: endpointStrain,
       subtractDisplacedConcrete: true
     })
     return {
       tension: { resultants: tension.resultants, metadata: { state: 'pure-tension', standard: KDS_142020_PROVENANCE.methodId } } as CapacityEndpoint,
       compression: { resultants: compression.resultants, metadata: { state: 'pure-compression-P0', standard: KDS_142020_PROVENANCE.methodId } } as CapacityEndpoint
+    }
+  }
+  const physicalCompressionEndpoint = (section: PreparedEquivalentBlockSection): CapacityEndpoint => {
+    const endpointStrain = uniformSteelEndpointStrain(section, steelLaws)
+    const compression = evaluateUniformSectionState(section, steelLaws, {
+      concreteStress: blockLaw.compressionStress,
+      steelStrain: endpointStrain,
+      subtractDisplacedConcrete: true
+    })
+    return {
+      resultants: compression.resultants,
+      metadata: {
+        state: 'equivalent-block-compression-limit',
+        standard: KDS_142020_PROVENANCE.methodId,
+        eta: parameters.eta
+      }
     }
   }
   const designEndpoints = (section: PreparedEquivalentBlockSection) => {
@@ -330,9 +367,11 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
     const endpoints = nominalEndpoints(section)
     return buildCapacitySurface(section, bindNominalEvaluator(section), {
       ...options,
+      steelLaws,
+      barStrainEvents,
       extremeCompressionStrain: parameters.extremeCompressionStrain,
       tensionPole: endpoints.tension,
-      compressionPole: endpoints.compression
+      compressionPole: physicalCompressionEndpoint(section)
     })
   }
   const buildDesignSurface = (
@@ -341,11 +380,17 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
   ): CapacitySurface => {
     const { applyAxialCap = true, ...surfaceOptions } = options
     const endpoints = designEndpoints(section)
+    const physicalCompression = physicalCompressionEndpoint(section)
     const surface = buildCapacitySurface(section, bindDesignEvaluator(section), {
       ...surfaceOptions,
+      steelLaws,
+      barStrainEvents,
       extremeCompressionStrain: parameters.extremeCompressionStrain,
       tensionPole: endpoints.tension,
-      compressionPole: endpoints.compression
+      compressionPole: {
+        resultants: scaleResultants(physicalCompression.resultants, compressionPhi),
+        metadata: { ...physicalCompression.metadata, phi: compressionPhi }
+      }
     })
     return applyAxialCap ? clipCapacitySurfaceByAxialCap(surface, axialCap(section)) : surface
   }
@@ -359,6 +404,7 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
     bindNominalEvaluator,
     bindDesignEvaluator,
     nominalEndpoints,
+    physicalCompressionEndpoint,
     designEndpoints,
     axialCap,
     buildNominalSurface,
