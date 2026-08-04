@@ -155,7 +155,7 @@ export const evaluateEquivalentBlock = (
   const concreteMx = law.compressionStress * (
     clipped.moments.firstMomentY - section.referencePoint.y * clipped.moments.area
   )
-  const concreteMy = -law.compressionStress * (
+  const concreteMy = law.compressionStress * (
     clipped.moments.firstMomentX - section.referencePoint.x * clipped.moments.area
   )
 
@@ -188,7 +188,7 @@ export const evaluateEquivalentBlock = (
       netStress,
       force,
       Mx: force * (bar.y - section.referencePoint.y),
-      My: -force * (bar.x - section.referencePoint.x),
+      My: force * (bar.x - section.referencePoint.x),
       insideBlock
     }
   })

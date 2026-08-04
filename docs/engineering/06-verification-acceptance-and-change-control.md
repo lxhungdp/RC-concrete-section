@@ -98,8 +98,8 @@ draft profile cannot produce an accepted result.
 Gate A has not received formal approval and Gate B remains incomplete. Geometry/material input,
 schema-v1 parsing, two mechanics pipelines, draft code profiles, worker execution, and preview Excel
 exports are implemented and tested, but their production validation matrices are incomplete. The
-cross-kernel `My` sign mismatch is an explicit blocker. Parser defaults are documented behavior
-inside the sole current v1 contract. No design-code profile, analysis surface, accepted-result package,
+former cross-kernel `My` mismatch is resolved by one tested convention. Parser defaults are
+documented behavior inside the sole current v1 contract. No design-code profile, analysis surface, accepted-result package,
 or report renderer is currently eligible for engineering acceptance.
 
 This statement changes only through evidence-backed change control, not when a menu or formula is

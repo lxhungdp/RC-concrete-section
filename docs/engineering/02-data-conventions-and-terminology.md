@@ -38,43 +38,37 @@ changes shall not rerun or alter resistance calculations.
   boundary states used to generate the surface; demand angles are computed from the action vector as
   `thetaLoad = atan2(My, Mx)` and are used only for geometric queries of the finished surface.
 
-The physical section view and the `Mx-My` action-space view do not use the same plotted vector. The
-mapping also depends on the backend's implemented `My` sign, as documented below. Do not compare a
-neutral-axis angle directly with `thetaLoad = atan2(My,Mx)`, which lives in `Mx-My` action space.
+The physical section view and the `Mx-My` action-space view do not use the same plotted vector. Do
+not compare a neutral-axis angle directly with `thetaLoad = atan2(My,Mx)`, which lives in `Mx-My`
+action space.
 
 The generalized strain plane is:
 
 `ε(x,y) = ε0 + κx·y + κy·x`
 
-The stress-strain backend `@pm/analysis` computes resultants about the declared origin as:
+Both the stress-strain backend `@pm/analysis` and the equivalent-block backend
+`@pm/equivalent-block` compute resultants about the declared origin as:
 
 `P = ∫σ dA`, `Mx = ∫σ y dA`, `My = ∫σ x dA`.
 
-For that stress-strain convention, if the new origin is offset by `(Δx, Δy)` from the old origin,
+If the new origin is offset by `(Δx, Δy)` from the old origin,
 with new coordinates
 `x' = x - Δx`, `y' = y - Δy`:
 
 `Mx' = Mx - P·Δy`, `My' = My - P·Δx`.
 
-The section-coordinate direction associated with a stress-strain resultant is `(My,Mx)` and its
-perpendicular reference line is `(-Mx,My)`. The current section-angle UI implements this mapping.
+The section-coordinate direction associated with a resultant is `(My,Mx)` and its perpendicular
+reference line is `(-Mx,My)`. The section-angle UI implements this mapping for both mechanics.
 
-### Current equivalent-block convention
+The project-v1 `LoadCombination`/result DTO stores the same canonical components. No
+mechanics-specific sign conversion is permitted in the bridge, demand solvers, plots, report model,
+or exports. An asymmetric exact-block regression checks the concrete and reinforcing-steel `My`
+terms separately; this prevents symmetric geometry from masking a future sign error.
 
-`@pm/equivalent-block` computes:
-
-`P = ∫σ dA`, `Mx = ∫σ y dA`, `My = -∫σ x dA`.
-
-Its origin shift is therefore `Mx' = Mx - P·Δy`, `My' = My + P·Δx`. Under that convention, the
-section-coordinate force direction is `(-My,Mx)`, not `(My,Mx)`.
-
-The project-v1 `LoadCombination`/result DTO only stores fields named `Mx` and `My`; it does not
-declare or enforce either formula. `@pm/analysis-equivalent-block`, the demand solvers, plots, and
-field UI pass the block value unchanged. The field-angle utility still assumes the stress-strain
-mapping. Thus two implemented `My` conventions currently coexist. This is a cross-model code
-discrepancy, not a schema-version distinction. Until one convention is selected or an explicit
-boundary transform is added and tested on asymmetric sections, nonzero-`My` block output is
-preview-only and must not be used to claim cross-model sign agreement.
+Historical audit loads that were generated directly from the former block kernel used its opposite
+`My` component. Those generated fixtures are migrated with `My_new = -My_legacy`; this reflection
+preserves the physical demand ray, load factor, utilization, and residual norm. Do not apply that
+migration blindly to user-entered loads that already followed the UI/project convention.
 
 ## 3. Required terminology
 

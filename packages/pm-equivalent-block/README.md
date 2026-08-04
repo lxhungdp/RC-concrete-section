@@ -6,7 +6,7 @@ Independent mechanics kernel for reinforced-concrete equivalent rectangular stre
 
 - Units: N, mm, MPa.
 - Axial sign: compression positive.
-- Moments about the supplied reference point: `Mx = F(y-yref)` and `My = -F(x-xref)`.
+- Moments about the supplied reference point: `Mx = F(y-yref)` and `My = F(x-xref)`.
 - State: neutral-axis normal angle `theta` and positive neutral-axis depth `c`, measured from the compression edge.
 - Concrete block: uniform compression on the clipped polygon at depth `a = depthFactor * c`.
 - Steel: linear strain compatibility; concrete displaced by a bar inside the block can be subtracted explicitly.
@@ -34,8 +34,7 @@ steel/resultant evaluation; no state-dependent resistance is cached.
 
 The package deliberately contains no KDS or ACI constants. Standard adapters supply the block law, endpoints, strength factors, and axial cap.
 
-The package-local moment convention is `My = -F(x-xref)`. The project DTO only stores a field named
-`My`; it does not define a formula or convert signs. The stress-strain backend and workbook use
-`My = +F(x-xref)`, while the application bridge and UI pass the block value through unchanged.
-Consumers comparing the two backends must therefore treat nonzero-`My` equivalent-block output as
-preview-only until a common convention or an explicit boundary transform is implemented and tested.
+The package uses the project-wide moment convention `My = +F(x-xref)`. Concrete-block first
+moments, reinforcing-bar contributions, uniform axial endpoints, surfaces, inverse demand checks,
+reports, and workbook formulas all retain that sign. An asymmetric-section unit test checks the
+concrete and steel ledgers independently so a zero-`My` symmetric fixture cannot mask drift.

@@ -74,6 +74,7 @@ export type BlockSectionState = {
 export type CapacityResultants = {
   P: number
   Mx: number
+  /** Project-wide convention: positive force at positive x produces positive My. */
   My: number
 }
 

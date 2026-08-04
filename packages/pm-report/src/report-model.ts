@@ -502,7 +502,7 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       ['Verification status', basis.verificationStatus],
       ['Method id', basis.identity.methodId],
       ['Units', 'mm · N · MPa; forces reported in kN, moments in kN·m'],
-      ['Sign convention', 'Compression positive; moments about the net concrete centroid']
+      ['Sign convention', 'Compression positive; Mx = ΣF·(y−yc); My = ΣF·(x−xc)']
     ],
     scopeStatements: [
       'This document reports a preview calculation. It is not an accepted design result and must not be released as a design report.',
@@ -510,9 +510,6 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       profile.mechanics === 'equivalent-rectangular-block'
         ? 'Concrete compression is the code-equivalent rectangular block over a = β1·c, obtained by exact polygon clipping. There is no concrete integration mesh, and the stress between a and c is zero.'
         : 'Concrete compression is integrated from the material stress-strain law over a verified triangle/quadrature mesh of the section.',
-      ...(profile.mechanics === 'equivalent-rectangular-block'
-        ? ['This backend reports My = −Σ F·x while the stress-strain backend reports My = +Σ F·x. A nonzero-My block result is therefore not directly comparable with a stress-strain result.']
-        : []),
       ...(basis.verificationStatus === 'user-defined'
         ? ['The resistance rules and material parameters in this report were declared by the project. They carry no clause traceability, and this software makes no claim that they satisfy any design standard.']
         : []),

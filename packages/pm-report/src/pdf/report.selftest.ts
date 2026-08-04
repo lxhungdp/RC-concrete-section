@@ -106,6 +106,10 @@ const runCase = async (relativePath: string, label: string, archive: boolean) =>
   const model = buildColumnReportModel(input)
   pass('identity, materials and resistance basis are populated',
     model.identity.length > 6 && model.concreteMaterial.length > 4 && model.resistanceBasis.length > 3)
+  pass('report declares the shared My convention without a cross-model caveat',
+    model.identity.some(([label, value]) =>
+      label === 'Sign convention' && value.includes('My = ΣF·(x−xc)')
+    ) && model.scopeStatements.every((statement) => !statement.includes('not directly comparable')))
   pass('bar schedule matches the section', model.barSchedule.length === rebars.length,
     `${model.barSchedule.length} rows vs ${rebars.length} bars`)
   pass('a detail block exists per combination', model.details.length === loadcases.length,

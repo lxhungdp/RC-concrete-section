@@ -268,7 +268,7 @@ const runCase = async (
   check('worst |ΔMny| (kN·m)', worstMy, 0, 1e-9, Math.max(1, scaleM))
   check('worst |ΔφPn| (kN) — the sheet reproduces φ', worstDesignP, 0, 1e-9, Math.max(1, scaleP))
 
-  console.log('== 6. Sign convention is the block convention, not the fibre one ==')
+  console.log('== 6. My uses the shared project convention ==')
   const signIndex = depths.findIndex((c) => {
     const nominal = nominalEvaluator({ neutralAxisAngle: theta, neutralAxisDepth: c }).source as NominalBlockEvaluation
     return Math.abs(nominal.resultants.My) > 1e6
@@ -278,7 +278,7 @@ const runCase = async (
       .source as NominalBlockEvaluation
     const sheetMy = cellValue('PM_Angle', `H${7 + signIndex}`)
     pass(
-      'Mny keeps the block sign (−ΣF·x)',
+      'Mny uses the shared sign (+ΣF·x)',
       Math.sign(sheetMy) === Math.sign(nominal.resultants.My),
       `sheet ${sheetMy.toFixed(3)} engine ${(nominal.resultants.My / 1e6).toFixed(3)} kN·m`
     )

@@ -52,12 +52,11 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 - The governing design check is composed onto an inverse state in one place, so a second consumer
   cannot publish the fixed-P diagnostic where the governing utilization belongs.
 
-## 3. Open consistency hazards found by the documentation audit
+## 3. Consistency hazards found by the documentation audit
 
-- **Equivalent-block `My` sign boundary:** the project-v1 DTO only names `My`; it enforces no
-  formula. Stress-strain uses `My = +sum(F*x)`, block uses `My = -sum(F*x)`, and the bridge/UI pass
-  both through unchanged. Nonzero-`My` block checks, especially asymmetric sections, remain
-  blocking preview output until one convention or an explicit transform is regression-tested.
+- **Equivalent-block `My` sign boundary:** closed. Stress-strain and block now use
+  `My = +sum(F*(x-x0))` throughout the kernel ledgers, bridge/UI, report model, and Excel formulas.
+  An asymmetric-section regression checks concrete and steel contributions independently.
 - **Equivalent-block workbook:** closed. `@pm/report/equivalent-block.ts` publishes the block
   ledger — clipped polygon with a shoelace reconciliation, `c`, `a`, `beta1`, block area/centroid,
   the bar ledger, the resistance stage and the solver evidence — and `npm run test:excel-block`
@@ -80,13 +79,11 @@ result fingerprints and convergence evidence.
 
 ## 5. Current P0 blockers before engineering release
 
-1. **Cross-kernel sign contract is unresolved.** Stress-strain and block use opposite `My` signs;
-   the neutral v1 project DTO/bridge does not map between them.
-2. **No accepted-result contract.** Preview surface/check DTOs are not a signed, immutable design
+1. **No accepted-result contract.** Preview surface/check DTOs are not a signed, immutable design
    artifact with complete input and implementation hashes.
-3. **Profiles remain draft for release purposes.** Clause-level unit tests exist, but independent
+2. **Profiles remain draft for release purposes.** Clause-level unit tests exist, but independent
    calculations and named discipline review are not complete.
-4. **Numerical uncertainty is not yet an acceptance gate.** Surfaces expose evidence, but the
+3. **Numerical uncertainty is not yet an acceptance gate.** Surfaces expose evidence, but the
    product does not yet prevent report release after a missed tolerance or unresolved cap.
 5. **Geometry/material verification matrix is incomplete.** More topology, high-strength,
    multi-material, and property-based cases are required.

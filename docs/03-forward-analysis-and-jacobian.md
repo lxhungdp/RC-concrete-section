@@ -5,9 +5,9 @@ of design-code reduction rules, and evaluated only in the declared reference fra
 
 ## 1. Generalized strains and resultants
 
-This section documents the implemented `@pm/analysis` stress-strain convention. It is not a claim
-that the current equivalent-block backend uses the same `My` sign; that difference is recorded in
-[`engineering/02-data-conventions-and-terminology.md`](engineering/02-data-conventions-and-terminology.md).
+This section documents the project-wide resultant convention implemented by both `@pm/analysis`
+and `@pm/equivalent-block`. The equivalent-block ledger applies the same signs to its exact clipped
+concrete block and every reinforcing bar.
 
 ```ts
 export interface GeneralizedStrain {

@@ -83,10 +83,10 @@ As of 2026-08-04:
 - Accepted engineering analysis, verified design-code profiles, certified result DTOs, and
   released PDF reports are not complete.
 - Preview data cannot be promoted to accepted design output.
-- One cross-model implementation discrepancy remains an explicit release blocker: stress-strain
-  uses `My = +sum(F*x)`, equivalent-block uses `My = -sum(F*x)`, and the v1 project DTO/bridge/UI do
-  not define or apply a conversion. All current persisted calculation contracts are v1; parser
-  defaults are v1 behavior, not migration or backward compatibility. See
+- The former cross-model `My` discrepancy is closed: both mechanics now use
+  `My = +sum(F*(x-xc))`, matching the DTO, plots, reports, and workbook formulas. This correction
+  does not promote preview calculations to accepted design output; the remaining release gates are
+  tracked in
   [`development/06-current-state-and-roadmap.md`](development/06-current-state-and-roadmap.md).
 
 The detailed status and roadmap live in

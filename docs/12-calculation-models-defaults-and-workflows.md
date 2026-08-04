@@ -24,12 +24,10 @@ The models are separate packages because `sigma_c = f(eps_c)` and a code-equival
 different constitutive statements. Sampling one with the other's equations would produce a smooth
 number but not the resistance defined by the selected method.
 
-Current blocking convention note: the project DTO only stores `My` and does not enforce its sign.
-The stress-strain backend and workbook compute `My = sum(F*x)`; `@pm/equivalent-block` computes
-`My = -sum(F*x)`. The bridge, demand solver, plots, and field UI pass whichever value the selected
-backend returns without transformation. Cross-model comparison and nonzero-`My` block checks remain
-preview-only until one convention is selected or an explicit boundary transform is verified on
-asymmetric sections.
+The shared project convention is `Mx = sum(F*(y-y0))` and `My = sum(F*(x-x0))`. Both mechanics,
+their workbooks, the demand solvers, plots, and field UI use these same component signs without a
+backend-specific transform. The convention is tested on an asymmetric section so `My = 0` symmetry
+cannot hide a regression.
 
 ### 1.1 Custom profiles
 

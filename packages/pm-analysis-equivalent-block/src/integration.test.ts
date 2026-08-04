@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import test from 'node:test'
 import { sliceMomentPlane } from '@pm/analysis'
+import { solveProportionalRayCapacity, type CapacityEvaluator } from '@pm/equivalent-block'
 import { geometryInputRebars, sectionGeometryFromGeometryInput, type GeometryInput } from '@pm/geometry'
 import { createDefaultMaterialStore } from '@pm/materials'
 import {
@@ -302,4 +303,57 @@ test('a prepared design surface is reused across inverse load combinations', () 
   assert.equal(inverses.length, loadcases.length)
   assert.ok(inverses.every((inverse) => inverse.utilization !== null))
   assert.equal(builds, 1, 'the batch API must build one loadcase-independent surface')
+})
+
+test('canonical My migration preserves the physical ray load factor and utilization', () => {
+  const parsed = parseProjectDocument(readFileSync(
+    resolve(process.cwd(), 'docs/example/ACI-EB-03-l-shape-8-bars.pm-project.json'),
+    'utf8'
+  ))
+  assert.ok(parsed.ok, 'asymmetric sign-migration fixture must parse')
+  if (!parsed.ok) return
+  const { inputs } = parsed.document
+  const options = inputs.analysis as EquivalentBlockAnalysisOptions
+  const prepared = prepareBlockAnalysis(
+    inputs.calculationProfileId,
+    sectionGeometryFromGeometryInput(inputs.geometry),
+    geometryInputRebars(inputs.geometry),
+    inputs.materials,
+    inputs.design
+  )
+  const canonicalSurface = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  const canonicalEvaluator = prepared.model.bindDesignEvaluator(prepared.section)
+  const reflectMy = (value: { P: number; Mx: number; My: number }) => ({
+    P: value.P,
+    Mx: value.Mx,
+    My: -value.My
+  })
+  const legacySurface = {
+    ...canonicalSurface,
+    points: canonicalSurface.points.map((point) => ({
+      ...point,
+      resultants: reflectMy(point.resultants)
+    }))
+  }
+  const legacyEvaluator: CapacityEvaluator = (state) => {
+    const evaluation = canonicalEvaluator(state)
+    return { ...evaluation, resultants: reflectMy(evaluation.resultants) }
+  }
+  const canonicalDemand = inputs.loadings.combinations[0]
+  const legacyDemand = reflectMy(canonicalDemand)
+  const canonical = solveProportionalRayCapacity(
+    canonicalSurface,
+    canonicalDemand,
+    canonicalEvaluator
+  )
+  const legacy = solveProportionalRayCapacity(legacySurface, legacyDemand, legacyEvaluator)
+  assert.equal(canonical.status, legacy.status)
+  assert.equal(canonical.loadFactor, legacy.loadFactor)
+  assert.equal(canonical.utilization, legacy.utilization)
+  assert.equal(canonical.residualNorm, legacy.residualNorm)
+  assert.deepEqual(
+    canonical.capacity && reflectMy(canonical.capacity),
+    legacy.capacity,
+    'only the coordinate representation of My may change'
+  )
 })

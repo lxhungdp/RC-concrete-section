@@ -25,6 +25,9 @@ rules differ.
   directions, adaptive direction and station tolerance of 0.75%.
 - Each project includes three factored ULS audit loads generated from evaluated design states:
   one oblique neutral-axis ray and two cardinal neutral-axis rays at 0° and 90°.
+- Resultants use the shared project convention `Mx = ΣF(y-yc)`, `My = ΣF(x-xc)`. The audit-load
+  `My` components were regenerated with that convention; their physical rays, load factors, and
+  utilization values are unchanged from the legacy block-sign fixtures.
 
 ## Automated acceptance
 

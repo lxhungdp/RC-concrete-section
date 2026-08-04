@@ -94,8 +94,8 @@ const SYMBOL_CODES = new Map<string, number>([
 const WIN_ANSI_CODES = new Map<string, number>([
   ['–', 150], ['—', 151], ['°', 176], ['±', 177], ['²', 178], ['³', 179], ['·', 183],
   ['×', 215], ['÷', 247], ['’', 39], ['‘', 39], ['“', 34], ['”', 34], ['…', 46],
-  // U+2212 MINUS SIGN reads as a hyphen in WinAnsi. Dropping it instead would turn "My = −ΣF·x"
-  // into "My = ΣF·x", which is the opposite statement.
+  // U+2212 MINUS SIGN reads as a hyphen in WinAnsi. Dropping it would silently reverse the meaning
+  // of any signed equation that contains it.
   ['−', 45], ['‑', 45], ['‒', 150]
 ])
 

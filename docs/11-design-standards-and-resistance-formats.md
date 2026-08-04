@@ -416,13 +416,13 @@ and red diagnostic points. All Mx-My point connections use explicit straight-lin
 The loadcase table uses
 the three-dimensional proportional demand-ray intersection with the design surface; the Fixed-P
 ratio is diagnostic only. The stress-strain Excel export records the exact profile and check in
-`Design_Check`. Equivalent-block result export is currently blocked until a dedicated block-ledger
-workbook is implemented.
+`Design_Check`. The equivalent-block export provides its own block/steel ledgers, clipped-polygon
+reconciliation, resistance stages, and solver evidence.
 
-One cross-kernel convention issue remains open. The project DTO does not define a sign formula;
-stress-strain computes `My = sum(F*x)`, block computes `My = -sum(F*x)`, and the bridge/UI perform
-no conversion. This blocks accepted cross-model comparison and accepted equivalent-block use with
-nonzero `My` until a common convention or explicit transform is independently tested.
+Both mechanics now compute `My = sum(F*(x-x0))`; the project DTO, bridge, UI, report model, and
+workbook formulas carry that value without a mechanics-specific transform. Asymmetric-section tests
+verify the sign independently for concrete and steel contributions. This closes the sign mismatch,
+but does not by itself satisfy the separate acceptance and profile-verification gates below.
 
 Implementation details and automated evidence are in
 [`development/07-design-resistance-implementation.md`](development/07-design-resistance-implementation.md).

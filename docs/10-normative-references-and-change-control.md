@@ -133,11 +133,12 @@ introduce another schema version or a migration layer.
 
 ## 7. Open decisions before engineering release
 
+Resolved implementation decision: both mechanics use `My = +sum(F*(x-x0))`, with the corresponding
+origin shift and asymmetric-section concrete/steel ledger tests. The project DTO therefore needs no
+mechanics-specific sign discriminator or boundary transform.
+
 Create architecture/design records for:
 
-- selection of one cross-kernel `My` convention, or an explicit transform between stress-strain
-  `My = +sum(F*x)` and equivalent-block `My = -sum(F*x)`, with asymmetric-section tests; the
-  project-v1 DTO currently enforces neither formula;
 - formal confirmation of the parser's v1 omitted-field/default behavior;
 - runtime schema strategy and unknown-property policy;
 - polygon self-intersection/robust-predicate implementation;

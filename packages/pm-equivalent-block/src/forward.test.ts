@@ -5,6 +5,7 @@ import {
   bindEquivalentBlockForwardEvaluator,
   createElasticPerfectlyPlasticSteelLaw,
   evaluateEquivalentBlock,
+  evaluateUniformSectionState,
   prepareEquivalentBlockSection,
   uniformSteelEndpointStrain,
   type EquivalentBlockSection,
@@ -65,6 +66,33 @@ test('forward evaluator reproduces the analytical rectangular concrete block', (
   close(result.resultants.My, 0)
   close(result.diagnostics.componentForceResidual, 0)
   close(result.diagnostics.componentMomentXResidual, 0)
+})
+
+test('asymmetric concrete and steel ledgers use the project-wide positive My convention', () => {
+  const prepared = prepareEquivalentBlockSection(section({
+    solids: [{ outer: rectangle(300, 500, { x: 40, y: 0 }) }],
+    rebars: [{ id: 'right', x: 120, y: 0, area: 500, steelLawId: 'steel' }]
+  }))
+  const steel = createElasticPerfectlyPlasticSteelLaw(200_000, 400)
+  const result = evaluateEquivalentBlock(prepared, law, { steel }, {
+    neutralAxisAngle: Math.PI / 2,
+    neutralAxisDepth: 200
+  })
+  const concreteForce = law.compressionStress * 300 * 160
+  const bar = result.bars[0]
+  close(result.concrete.My, concreteForce * 40)
+  close(bar.My, bar.force * 120)
+  close(result.resultants.My, result.concrete.My + bar.My)
+  assert.ok(result.resultants.My > 0, 'positive force eccentricity along +x must produce +My')
+
+  const uniform = evaluateUniformSectionState(prepared, { steel }, {
+    concreteStress: law.compressionStress,
+    steelStrain: 0.003,
+    subtractDisplacedConcrete: true
+  })
+  close(uniform.concrete.My, uniform.concrete.force * 40)
+  close(uniform.bars[0].My, uniform.bars[0].force * 120)
+  close(uniform.resultants.My, uniform.concrete.My + uniform.bars[0].My)
 })
 
 test('bound forward evaluator preserves exact results while reusing angle-only projection data', () => {

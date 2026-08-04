@@ -55,7 +55,7 @@ export const evaluateUniformSectionState = (
   }
   const concreteForce = options.concreteStress * section.grossArea
   const concreteMx = concreteForce * (section.centroid.y - section.referencePoint.y)
-  const concreteMy = -concreteForce * (section.centroid.x - section.referencePoint.x)
+  const concreteMy = concreteForce * (section.centroid.x - section.referencePoint.x)
   const bars = section.rebars.map((bar) => {
     const steelLaw = steelLaws[bar.steelLawId]
     if (!steelLaw) {
@@ -76,7 +76,7 @@ export const evaluateUniformSectionState = (
       netStress,
       force,
       Mx: force * (bar.y - section.referencePoint.y),
-      My: -force * (bar.x - section.referencePoint.x)
+      My: force * (bar.x - section.referencePoint.x)
     }
   })
   const steelP = bars.reduce((sum, bar) => sum + bar.force, 0)

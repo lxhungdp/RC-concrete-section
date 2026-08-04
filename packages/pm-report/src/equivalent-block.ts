@@ -22,9 +22,9 @@
  *   `theta`   block-normal direction that generates the boundary states;
  *   `theta_L` demand moment direction, `ATAN2(Mux, Muy)`, used only to query the finished surface.
  *
- * Sign convention note: this backend computes `My = −Σ F·x` while the fibre backend computes
- * `My = +Σ F·x` (`docs/12` §1). The workbook publishes the block convention it actually used and
- * says so on `Input`, so a reader comparing the two workbooks is not left to guess.
+ * Both mechanics use the project-wide resultant convention `Mx = Σ F·y`, `My = Σ F·x`
+ * (`docs/engineering/02`). The workbook publishes that convention on `Input` and keeps every
+ * concrete and steel component formula consistent with it.
  */
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore, SteelMaterial } from '@pm/materials'
@@ -377,9 +377,9 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   inputSheet.getCell(signRow + 1, 2).value = 'Mx'
   inputSheet.getCell(signRow + 1, 3).value = '+Σ F·(y−yc)'
   inputSheet.getCell(signRow + 2, 2).value = 'My'
-  inputSheet.getCell(signRow + 2, 3).value = '−Σ F·(x−xc)'
+  inputSheet.getCell(signRow + 2, 3).value = '+Σ F·(x−xc)'
   noteCell(inputSheet, signRow + 2, 5,
-    'The equivalent-block backend negates My; the stress-strain backend does not. docs/12 §1 records this as an open cross-model boundary, so a nonzero-My result must not be compared directly with the fibre workbook.')
+    'Project-wide convention used by both stress-strain and equivalent-block mechanics. Positive force eccentricity along +x produces +My.')
 
   const provRow = signRow + 4
   sectionHeading(inputSheet, provRow, 'What is a formula and what is an engine value', 4)
@@ -672,7 +672,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     blockSheet.getCell(r, 9).value = { formula: `IF(E${r}=0,0,G${r}/E${r})` }
     blockSheet.getCell(r, 10).value = { formula: `sig_blk*E${r}/1000` }
     blockSheet.getCell(r, 11).value = { formula: `sig_blk*(G${r}-yc*E${r})/1000000` }
-    blockSheet.getCell(r, 12).value = { formula: `-sig_blk*(F${r}-xc*E${r})/1000000` }
+    blockSheet.getCell(r, 12).value = { formula: `sig_blk*(F${r}-xc*E${r})/1000000` }
     const engineArea = blockSheet.getCell(r, 13)
     engineArea.value = station.nominal.concrete.area
     engineArea.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CONST_FILL } }
@@ -736,7 +736,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
       steelSheet.getCell(r, 12).value = { formula: `I${r}-K${r}` }
       steelSheet.getCell(r, 13).value = { formula: `INDEX(Bar_As,MATCH(C${r},Bar_No,0))*L${r}/1000` }
       steelSheet.getCell(r, 14).value = { formula: `M${r}*INDEX(Bar_Y,MATCH(C${r},Bar_No,0))/1000` }
-      steelSheet.getCell(r, 15).value = { formula: `-M${r}*INDEX(Bar_X,MATCH(C${r},Bar_No,0))/1000` }
+      steelSheet.getCell(r, 15).value = { formula: `M${r}*INDEX(Bar_X,MATCH(C${r},Bar_No,0))/1000` }
       for (const c of [4, 5, 6, 9, 11, 12, 13, 14, 15]) steelSheet.getCell(r, c).numFmt = '#,##0.0000'
       for (const c of [7, 8]) steelSheet.getCell(r, c).numFmt = '0.0000000'
       steelRow += 1

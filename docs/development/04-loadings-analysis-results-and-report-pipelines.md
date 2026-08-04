@@ -54,9 +54,9 @@ Current web UI keeps loadcase entry inside the Results sidebar rather than expos
 top-level Loadings module. This keeps the user workflow direct: add or edit Pu/Mux/Muy, click a
 loadcase row, then inspect the forward plots and lazy inverse detail in the same screen.
 
-The v1 DTO has no `My` sign discriminator. The current UI and worker pass `My` unchanged:
-`@pm/analysis` uses `+F*x`, while `@pm/equivalent-block` uses `-F*x`. Do not describe load entry as
-cross-model equivalent for nonzero `My` until a shared convention or explicit transform exists.
+The v1 DTO needs no `My` mechanics discriminator. The UI and worker pass the canonical component
+unchanged, and both `@pm/analysis` and `@pm/equivalent-block` use `+F*(x-x0)`. Asymmetric ledger
+tests protect this boundary because symmetric sections would not expose a sign mismatch.
 
 ## 2. Analysis orchestration
 
@@ -353,8 +353,8 @@ does not yet cover accepted-result hashing, PDF rendering, or true cooperative c
 1. **Implemented preview:** Results-sidebar combinations, project round trip, analysis-option
    validation, two independent mechanics, three draft calculation profiles, adaptive preview
    surfaces/checks, model-specific fields, stress-strain Excel, and mesh Excel/DXF.
-2. **Next integrity work:** resolve the two-backend `My` sign boundary, confirm and test the
-   documented parser-v1 defaults, add shared typed issues, canonical hashing, and
+2. **Next integrity work:** confirm and test the documented parser-v1 defaults, add shared typed
+   issues, canonical hashing, and
    a complete stale-state graph.
 3. **Production gates:** finish geometry/material validation gateways, accepted-result numerical
    uncertainty and topology gates, independent code-profile review, and cooperative cancellation.

@@ -108,16 +108,15 @@ converged and every sampled demand ray intersected the surface.
 Every dependency is pinned and CI uses the lockfile. Reference workbooks are regression oracles,
 not design-code authority.
 
-## Current v1 conventions and known blocker
+## Current v1 conventions
 
 - A `Custom` profile is not a code check. It is reported as `user-defined`, never `draft`, and
   carries no clause traceability; whoever declares `beta1`, the block stress factor, `epsCu`, the
   `phi` factors and the transition rule owns their justification.
-- The project DTO stores `My` but does not enforce a resultant sign formula. The stress-strain
-  backend and its workbook use `My = sum(F*x)`; the equivalent-block backend uses
-  `My = -sum(F*x)`. The bridge and UI pass `My` through unchanged. Nonzero-`My` block results,
-  especially for asymmetric sections, therefore remain preview-only until one convention is chosen
-  or an explicit boundary transform is implemented and regression-tested.
+- The project-wide resultant convention is `Mx = sum(F*(y-yc))` and
+  `My = sum(F*(x-xc))`. Stress-strain, equivalent-block, the DTO, plots, reports, and both Excel
+  exports use the same signs. Asymmetric-section regression tests cover the concrete and steel
+  ledgers so a future sign drift fails visibly.
 - All current persisted calculation contracts are v1: project version 1, design-basis version 1,
   analysis-options version 1, `strain-domain-surface-v1`, `equivalent-block-surface-v1`, and v1
   station schedules. There is
