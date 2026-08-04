@@ -412,12 +412,17 @@ export function ResultsWorkspace({
     setFieldMapWorking(true)
     buildSectionFieldMapAsync(
       {
+        calculationProfileId: surface.calculationProfileId ?? 'kds-2024-stress-strain',
         section,
         rebars,
         materialStore,
         designBasis,
         analysisOptions: surface.analysisOptions,
-        state: inverseResult.state
+        state: inverseResult.state,
+        blockState: inverseResult.equivalentBlock ? {
+          neutralAxisAngle: inverseResult.equivalentBlock.neutralAxisAngle,
+          neutralAxisDepth: inverseResult.equivalentBlock.neutralAxisDepth
+        } : undefined
       },
       controller.signal
     )
@@ -454,11 +459,11 @@ export function ResultsWorkspace({
   const activeFixedPKn = kn(activeFixedP)
 
   const contour = useMemo(
-    () => (surface ? sliceFixedPContour(surface.points, activeFixedP) : []),
+    () => (surface ? sliceFixedPContour(surface.points, activeFixedP, surface.triangles) : []),
     [activeFixedP, surface]
   )
   const nominalContour = useMemo(
-    () => (surface ? sliceFixedPContour(surface.nominalPoints, activeFixedP) : []),
+    () => (surface ? sliceFixedPContour(surface.nominalPoints, activeFixedP, surface.nominalTriangles) : []),
     [activeFixedP, surface]
   )
   const axialCapPKn = useMemo(() => {
@@ -487,8 +492,12 @@ export function ResultsWorkspace({
     [surfacePoints3d]
   )
   const surfaceContour3d = useMemo(
-    () => sliceFixedPContour(surfacePoints3d, activeFixedP),
-    [activeFixedP, surfacePoints3d]
+    () => sliceFixedPContour(
+      surfacePoints3d,
+      activeFixedP,
+      surfaceResistanceMode === 'design' ? surface?.triangles : surface?.nominalTriangles
+    ),
+    [activeFixedP, surface, surfacePoints3d, surfaceResistanceMode]
   )
 
   useEffect(() => {
@@ -585,7 +594,8 @@ export function ResultsWorkspace({
         }
       : null
 
-    const momentPlanePaths = sliceMomentPlane(surfacePoints3d, theta)
+    const activeTriangles = surfaceResistanceMode === 'design' ? surface.triangles : surface.nominalTriangles
+    const momentPlanePaths = sliceMomentPlane(surfacePoints3d, theta, activeTriangles)
     const visibleMomentPaths = includeOppositeMoment
       ? momentPlanePaths.map((path) => path.points)
       : clipMomentPlanePaths(momentPlanePaths, 'positive')
@@ -600,14 +610,17 @@ export function ResultsWorkspace({
       hoverinfo: 'skip'
     }))
 
-    return [
-      {
-        type: 'surface',
+    const capacityTrace = activeTriangles
+      ? {
+        type: 'mesh3d',
         name: surfaceResistanceMode === 'design' ? 'Design surface' : 'Nominal surface',
-        x,
-        y,
-        z,
-        customdata,
+        x: surfacePoints3d.map((point) => knm(point.Mx)),
+        y: surfacePoints3d.map((point) => knm(point.My)),
+        z: surfacePoints3d.map((point) => kn(point.P)),
+        i: activeTriangles.map((triangle) => triangle.a),
+        j: activeTriangles.map((triangle) => triangle.b),
+        k: activeTriangles.map((triangle) => triangle.c),
+        intensity: surfacePoints3d.map((point) => kn(point.P)),
         colorscale: fieldColorscale,
         opacity: 0.72,
         colorbar: {
@@ -621,7 +634,22 @@ export function ResultsWorkspace({
         hovertemplate: `P=%{z:.1f} kN<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>${
           surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'
         } surface</extra>`
-      },
+      }
+      : {
+        type: 'surface',
+        name: surfaceResistanceMode === 'design' ? 'Design surface' : 'Nominal surface',
+        x,
+        y,
+        z,
+        customdata,
+        colorscale: fieldColorscale,
+        opacity: 0.72,
+        colorbar: { title: 'P (kN)', thickness: 15, len: 0.72, x: 1.02, xpad: 4, tickfont: { size: 10 } },
+        hovertemplate: `P=%{z:.1f} kN<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>${surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'} surface</extra>`
+      }
+
+    return [
+      capacityTrace,
       verticalPlane,
       fixedPPlane,
       ...sliceTraces,
@@ -965,7 +993,7 @@ export function ResultsWorkspace({
     if (!surface || surfaceGrid.length === 0) return empty
 
     const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
-    const momentPlane = sliceMomentPlane(surface.points, theta)
+    const momentPlane = sliceMomentPlane(surface.points, theta, surface.triangles)
     const project = (point: PreviewMomentPlanePoint) => ({
       m: knm(point.M),
       p: kn(point.P),
@@ -1029,7 +1057,7 @@ export function ResultsWorkspace({
   const nominalVerticalPaths = useMemo(() => {
     if (!surface) return [] as Array<Array<{ m: number; p: number; station: number }>>
     const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
-    const momentPlane = sliceMomentPlane(surface.nominalPoints, theta)
+    const momentPlane = sliceMomentPlane(surface.nominalPoints, theta, surface.nominalTriangles)
     const visible = includeOppositeMoment
       ? momentPlane.map((path) => path.points)
       : clipMomentPlanePaths(momentPlane, 'positive')
@@ -1329,6 +1357,12 @@ export function ResultsWorkspace({
 
   const handleExcelExport = async () => {
     if (!selectedLoadcase || !surface) return
+    const analysisOptions = surface.analysisOptions
+    if (analysisOptions.methodId === 'equivalent-block-surface-v1') {
+      setExportState('error')
+      setExportMessage('Equivalent-block Excel audit export will use a dedicated block ledger; the fiber workbook is intentionally not reused.')
+      return
+    }
     setExportState('working')
     setExportMessage('')
     try {
@@ -1347,7 +1381,7 @@ export function ResultsWorkspace({
         rebars,
         materialStore,
         designBasis,
-        analysisOptions: surface.analysisOptions,
+        analysisOptions,
         betaDeg,
         fixedP: activeFixedP,
         loadcase: selectedLoadcase,
@@ -1658,6 +1692,22 @@ export function ResultsWorkspace({
                     </div>
                   </div>
                 </article>
+
+                {inverseResult.equivalentBlock && (
+                  <article className="pm-field-metric-card">
+                    <header>Equivalent block</header>
+                    <div className="pm-field-metric-rows">
+                      <div><span>θ / c</span><strong>{fmt(inverseResult.equivalentBlock.neutralAxisAngle * 180 / Math.PI, 2)}° · {fmt(inverseResult.equivalentBlock.neutralAxisDepth, 2)} mm</strong></div>
+                      <div><span>a = β1·c</span><strong>{fmt(inverseResult.equivalentBlock.blockDepth, 2)} mm</strong></div>
+                      <div><span>β1 / Dθ</span><strong>{fmt(inverseResult.equivalentBlock.beta1, 3)} · {fmt(inverseResult.equivalentBlock.projectedSectionDepth, 2)} mm</strong></div>
+                      <div><span>Concrete block stress</span><strong>{fmt(inverseResult.equivalentBlock.compressionStress, 3)} MPa</strong></div>
+                      <div><span>Ac,block / Cc</span><strong>{inverseResult.equivalentBlock.concreteBlockArea == null ? 'n/a' : `${fmt(inverseResult.equivalentBlock.concreteBlockArea, 1)} mm²`} · {inverseResult.equivalentBlock.concreteForce == null ? 'n/a' : `${fmt(kn(inverseResult.equivalentBlock.concreteForce), 1)} kN`}</strong></div>
+                      <div><span>εt / controlling bar</span><strong>{inverseResult.equivalentBlock.controllingTensileStrain == null ? 'n/a' : fmt(inverseResult.equivalentBlock.controllingTensileStrain, 6)} · {inverseResult.equivalentBlock.controllingBarId ?? 'n/a'}</strong></div>
+                      <div><span>Force closure</span><strong>{inverseResult.equivalentBlock.forceClosure == null ? 'n/a' : sci(inverseResult.equivalentBlock.forceClosure, 2)}</strong></div>
+                      <div><span>Mx / My closure</span><strong>{inverseResult.equivalentBlock.momentXClosure == null ? 'n/a' : sci(inverseResult.equivalentBlock.momentXClosure, 2)} / {inverseResult.equivalentBlock.momentYClosure == null ? 'n/a' : sci(inverseResult.equivalentBlock.momentYClosure, 2)}</strong></div>
+                    </div>
+                  </article>
+                )}
 
                 <article className="pm-field-metric-card">
                   <header>Stress</header>

@@ -31,6 +31,7 @@ import {
   cloneAnalysisOptions,
   createDefaultAnalysisOptions,
   type AnalysisOptions,
+  type CalculationAnalysisOptions,
   type AnalysisStationCriterion,
   type LoadCombination
 } from '@pm/project'
@@ -112,7 +113,27 @@ export type PreviewSurfacePoint = Resultant & {
   state: StrainState
   ledger: ResultantLedger
   resistance?: DesignResistanceTrace
+  /** Present only for a physical block state; an axial-cap face has no unique strain state. */
+  equivalentBlock?: EquivalentBlockStateTrace
 }
+
+export type EquivalentBlockStateTrace = {
+  neutralAxisAngle: number
+  neutralAxisDepth: number
+  blockDepth: number
+  beta1: number
+  projectedSectionDepth: number
+  compressionStress: number
+  concreteBlockArea?: number
+  concreteForce?: number
+  controllingTensileStrain?: number
+  controllingBarId?: string
+  forceClosure?: number
+  momentXClosure?: number
+  momentYClosure?: number
+}
+
+export type SurfaceIndexTriangle = { a: number; b: number; c: number }
 
 export type DesignResistanceTrace = {
   nominalReference: Resultant
@@ -161,10 +182,15 @@ export type SurfaceDirectionError = {
 }
 
 export type PreviewSurface = {
+  calculationProfileId?: import('@pm/project').CalculationProfileId
+  mechanics?: 'stress-strain-integration' | 'equivalent-rectangular-block'
   /** Governing design-resistance vertices used by all ULS checks and default plots. */
   points: PreviewSurfacePoint[]
   /** Reference/nominal vertices at the exact same stored strain states. */
   nominalPoints: PreviewSurfacePoint[]
+  /** Explicit connectivity is authoritative for independently triangulated/capped surfaces. */
+  triangles?: SurfaceIndexTriangle[]
+  nominalTriangles?: SurfaceIndexTriangle[]
   bounds: {
     P: [number, number]
     Mx: [number, number]
@@ -178,7 +204,7 @@ export type PreviewSurface = {
   /** Canonical schedule and direction grid actually used by this result. */
   stations: SurfaceStation[]
   directions: number[]
-  analysisOptions: AnalysisOptions
+  analysisOptions: CalculationAnalysisOptions
   directionError: SurfaceDirectionError
   /** Which ultimate strain domain produced these states — never inferred from the material label. */
   strainDomain: StrainDomainId
@@ -260,6 +286,7 @@ export type InversePreviewResult = {
   fixedPUtilization?: number | null
   designCapacityPoint?: Resultant | null
   resistance?: DesignResistanceTrace | null
+  equivalentBlock?: EquivalentBlockStateTrace | null
   contourPoint: PreviewContourPoint | null
   message: string
 }
@@ -342,6 +369,8 @@ export type StationDefinition =
   | { kind: 'neutral-axis-ratio'; cOverC1: number }
   | { kind: 'steel-strain'; strain: number }
   | { kind: 'steel-stress-ratio'; ratio: number }
+  | { kind: 'extreme-tension-strain'; strain: number }
+  | { kind: 'block-depth-ratio'; ratio: number }
   | { kind: 'pure-tension' }
 
 /**
@@ -374,6 +403,8 @@ export const PREVIEW_STATIONS: StationDefinition[] = [
 export const stationDefinitionLabel = (station: StationDefinition): string => {
   if (station.kind === 'pure-compression') return 'Pure compression'
   if (station.kind === 'pure-tension') return 'Pure tension'
+  if (station.kind === 'block-depth-ratio') return `c/D = ${station.ratio}`
+  if (station.kind === 'extreme-tension-strain') return `εt = ${station.strain}`
   if (station.kind === 'neutral-axis-ratio') return `c = ${station.cOverC1.toFixed(1)}·c₁`
   if (station.kind === 'steel-stress-ratio') {
     if (station.ratio === 0) return 'fs = 0'
@@ -1035,7 +1066,24 @@ type SurfaceTriangle = {
 
 const surfaceTrianglesCache = new WeakMap<PreviewSurfacePoint[], SurfaceTriangle[]>()
 
-const previewSurfaceTriangles = (points: PreviewSurfacePoint[]): SurfaceTriangle[] => {
+const previewSurfaceTriangles = (
+  points: PreviewSurfacePoint[],
+  topology?: readonly SurfaceIndexTriangle[]
+): SurfaceTriangle[] => {
+  if (topology) {
+    return topology.flatMap(({ a, b, c }) => {
+      const vertices = [points[a], points[b], points[c]] as const
+      if (vertices.some((point) => point === undefined)) return []
+      return [{
+        vertices: [vertices[0], vertices[1], vertices[2]],
+        sameDirectionEdge: [
+          vertices[0].beta === vertices[1].beta,
+          vertices[1].beta === vertices[2].beta,
+          vertices[2].beta === vertices[0].beta
+        ]
+      }]
+    })
+  }
   const cached = surfaceTrianglesCache.get(points)
   if (cached) return cached
   const rows = groupSurfaceRows(points)
@@ -1785,14 +1833,18 @@ export const buildDesignPreviewSurface = (
   )
 }
 
-export const sliceFixedPContour = (points: PreviewSurfacePoint[], fixedP: number): PreviewContourPoint[] => {
+export const sliceFixedPContour = (
+  points: PreviewSurfacePoint[],
+  fixedP: number,
+  triangles?: readonly SurfaceIndexTriangle[]
+): PreviewContourPoint[] => {
   const momentScale = Math.max(...points.map((point) => Math.hypot(point.Mx, point.My)), 1)
   const forceScale = Math.max(...points.map((point) => Math.abs(point.P)), 1)
   const momentTol = momentScale * PREVIEW_GEOMETRY_TOL
   const forceTol = forceScale * PREVIEW_GEOMETRY_TOL
   const contour: PreviewContourPoint[] = []
 
-  for (const triangle of previewSurfaceTriangles(points)) {
+  for (const triangle of previewSurfaceTriangles(points, triangles)) {
     const intersections = trianglePlaneIntersections(triangle, (point) => point.P - fixedP, forceTol)
     for (const point of intersections) {
       appendUniquePoint(contour, { ...point, P: fixedP }, momentTol, forceTol)
@@ -1814,7 +1866,11 @@ export const sliceFixedPContour = (points: PreviewSurfacePoint[], fixedP: number
  * The preview surface is still the coarse beta/station grid. This is a geometric section of that
  * surface; it does not assume the sampled strain-plane angle equals the moment direction.
  */
-export const sliceMomentPlane = (points: PreviewSurfacePoint[], theta: number): PreviewMomentPlanePath[] => {
+export const sliceMomentPlane = (
+  points: PreviewSurfacePoint[],
+  theta: number,
+  triangles?: readonly SurfaceIndexTriangle[]
+): PreviewMomentPlanePath[] => {
   if (points.length === 0) return []
   const c = Math.cos(theta)
   const s = Math.sin(theta)
@@ -1894,7 +1950,7 @@ export const sliceMomentPlane = (points: PreviewSurfacePoint[], theta: number): 
     graph.get(canonicalB.key)!.neighbours.add(canonicalA.key)
   }
 
-  for (const triangle of previewSurfaceTriangles(points)) {
+  for (const triangle of previewSurfaceTriangles(points, triangles)) {
     const intersections = new Map<string, PreviewMomentPlanePoint>()
     const addVertex = (point: PreviewSurfacePoint) =>
       intersections.set(vertexKey(point), projected({ ...point, onSampledDirection: true }))
@@ -2154,7 +2210,7 @@ export const intersectSurfaceWithDemandRay = (
   const direction = toVec(demand)
   let best: SurfaceRayIntersection | null = null
 
-  for (const triangle of previewSurfaceTriangles(surface.points)) {
+  for (const triangle of previewSurfaceTriangles(surface.points, surface.triangles)) {
     const [pa, pb, pc] = triangle.vertices
     const a = toVec(pa)
     const b = toVec(pb)
@@ -2198,7 +2254,7 @@ export const checkLoadcaseUtilizationFromSurface = (
   surface: PreviewSurface,
   loadcase: LoadCombination
 ): LoadcaseQuickCheckResult => {
-  const contour = sliceFixedPContour(surface.points, loadcase.P)
+  const contour = sliceFixedPContour(surface.points, loadcase.P, surface.triangles)
   const fixedP = estimateUtilization(loadcase, contour)
   const proportional = intersectSurfaceWithDemandRay(surface, loadcase)
   const proportionalUtilization =
@@ -2380,6 +2436,7 @@ export type SectionFieldTriangle = {
 }
 
 export type SectionFieldMap = {
+  mechanics?: 'stress-strain-integration' | 'equivalent-rectangular-block'
   origin: AnalysisOrigin
   /** Legacy quadrature samples (debug / hover). */
   samples: SectionFieldSample[]
@@ -2388,6 +2445,13 @@ export type SectionFieldMap = {
   rebars: SectionFieldRebar[]
   bounds: { minX: number; maxX: number; minY: number; maxY: number }
   mesh: ConcreteMeshReport
+  equivalentBlock?: {
+    neutralAxisAngle: number
+    neutralAxisDepth: number
+    blockDepth: number
+    compressionStress: number
+    geometry: Array<{ outer: Array<{ x: number; y: number }>; holes: Array<Array<{ x: number; y: number }>> }>
+  }
 }
 
 /** Mesh samples colored by strain/stress for a known strain plane (loadcase inverse state). */

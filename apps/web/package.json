@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@pm/analysis": "0.1.0",
+    "@pm/analysis-equivalent-block": "0.1.0",
+    "@pm/code-kds142020": "0.1.0",
     "@pm/design": "0.1.0",
     "@pm/geometry": "0.1.0",
     "@pm/materials": "0.1.0",

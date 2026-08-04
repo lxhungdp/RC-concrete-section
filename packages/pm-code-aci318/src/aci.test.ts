@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  EquivalentBlockInputError,
   prepareEquivalentBlockSection,
   type EquivalentBlockSection,
   type Point2
@@ -96,6 +97,38 @@ test('ACI spiral factors change both compression phi and axial cap ratio', () =>
   const nominalP0 = model.nominalEndpoints(section).compression.resultants.P
   close(model.designEndpoints(section).compression.resultants.P, 0.75 * nominalP0)
   close(model.axialCap(section), 0.85 * 0.75 * nominalP0)
+})
+
+test('ACI model applies the resistance factors supplied by the calculation profile', () => {
+  const section = preparedSection()
+  const resistanceFactors = {
+    phiCompressionOther: 0.61,
+    phiCompressionSpiral: 0.73,
+    phiTension: 0.88,
+    transitionExtraStrain: 0.004,
+    axialCapOther: 0.72,
+    axialCapSpiral: 0.84
+  }
+  const model = createAci318Model({
+    concreteStrength: 35,
+    steel: { grade60: { elasticModulus: 200_000, yieldStress: 420 } },
+    transverseReinforcement: 'tied',
+    resistanceFactors
+  })
+  const nominal = model.nominalEndpoints(section)
+  const design = model.designEndpoints(section)
+  close(design.compression.resultants.P, 0.61 * nominal.compression.resultants.P)
+  close(design.tension.resultants.P, 0.88 * nominal.tension.resultants.P)
+  close(model.axialCap(section), 0.72 * 0.61 * nominal.compression.resultants.P)
+  assert.throws(
+    () => createAci318Model({
+      concreteStrength: 35,
+      steel: { grade60: { elasticModulus: 200_000, yieldStress: 420 } },
+      transverseReinforcement: 'tied',
+      resistanceFactors: { ...resistanceFactors, phiTension: 1.01 }
+    }),
+    (error: unknown) => error instanceof EquivalentBlockInputError && error.code === 'INVALID_BLOCK_LAW'
+  )
 })
 
 test('ACI design surface is closed after the standard axial cap is applied', () => {

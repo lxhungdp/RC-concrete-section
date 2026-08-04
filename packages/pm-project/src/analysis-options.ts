@@ -6,6 +6,7 @@
  */
 export const ANALYSIS_OPTIONS_VERSION = 1 as const
 export const STRAIN_DOMAIN_SURFACE_METHOD = 'strain-domain-surface-v1' as const
+export const EQUIVALENT_BLOCK_SURFACE_METHOD = 'equivalent-block-surface-v1' as const
 
 export const MAX_INTERMEDIATE_STATIONS = 198
 export const MAX_STATION_LABEL_LENGTH = 120
@@ -14,6 +15,7 @@ export const MAX_REFINED_DIRECTIONS = 720
 export const MAX_MESH_SEED_DIVISIONS = 256
 export const MAX_MESH_CELLS = 1_000_000
 export const MAX_MESH_SUBDIVISION = 8
+export const MAX_BLOCK_STATIONS = 198
 
 export type AnalysisStationCriterion =
   | { type: 'c-over-c1'; ratio: number }
@@ -66,6 +68,39 @@ export type AnalysisOptions = {
   mesh: AnalysisMeshOptions
 }
 
+/**
+ * Sampling DTO for the equivalent rectangular stress-block pipeline.
+ *
+ * It deliberately has no concrete integration mesh. `neutralAxisStations` sample the physical
+ * unknown c/D, while direction and station refinements measure interpolation error on the
+ * resistance surface. This keeps the block solver independent from the fiber/curve solver.
+ */
+export type EquivalentBlockStation =
+  | { type: 'extreme-tension-strain'; strain: number }
+  | { type: 'depth-ratio'; ratio: number }
+
+export type EquivalentBlockAnalysisOptions = {
+  optionsVersion: typeof ANALYSIS_OPTIONS_VERSION
+  methodId: typeof EQUIVALENT_BLOCK_SURFACE_METHOD
+  neutralAxisStations: {
+    basedOn: 'verified-37-v1' | 'custom'
+    values: EquivalentBlockStation[]
+    refinement:
+      | { type: 'fixed' }
+      | { type: 'adaptive'; tolerance: number; maxPasses: number; maxStations: number }
+  }
+  directions: {
+    seedCount: number
+    startDeg: number
+    refinement:
+      | { type: 'fixed' }
+      | { type: 'adaptive'; tolerance: number; maxPasses: number; maxDirections: number }
+  }
+}
+
+/** Project/UI union. Numerical kernels continue to accept their own narrowed DTO. */
+export type CalculationAnalysisOptions = AnalysisOptions | EquivalentBlockAnalysisOptions
+
 const station = (id: number, label: string, criterion: AnalysisStationCriterion): AnalysisStation => ({
   id,
   label,
@@ -109,10 +144,50 @@ export const createDefaultAnalysisOptions = (): AnalysisOptions => ({
   }
 })
 
+/** 37 neutral-axis states + the two exact uniform-strain poles. */
+export const createDefaultEquivalentBlockAnalysisOptions = (): EquivalentBlockAnalysisOptions => ({
+  optionsVersion: ANALYSIS_OPTIONS_VERSION,
+  methodId: EQUIVALENT_BLOCK_SURFACE_METHOD,
+  neutralAxisStations: {
+    basedOn: 'verified-37-v1',
+    values: [
+      ...[
+        0.1, 0.075, 0.05, 0.04, 0.03, 0.025, 0.02, 0.0175, 0.015, 0.0125, 0.01,
+        0.00875, 0.0075, 0.00625, 0.005, 0.004, 0.003, 0.0025, 0.002, 0.0015,
+        0.001, 0.0005, 0
+      ].map((strain) => ({ type: 'extreme-tension-strain' as const, strain })),
+      ...[1.1, 1.2, 1.35, 1.5, 1.75, 2, 2.5, 3, 4, 5, 7.5, 10, 20, 50].map((ratio) => ({
+        type: 'depth-ratio' as const,
+        ratio
+      }))
+    ],
+    refinement: { type: 'adaptive', tolerance: 0.01, maxPasses: 6, maxStations: 128 }
+  },
+  directions: {
+    seedCount: 24,
+    startDeg: 0,
+    refinement: { type: 'adaptive', tolerance: 0.01, maxPasses: 6, maxDirections: 360 }
+  }
+})
+
+export const createVerifiedEquivalentBlockAnalysisOptions = createDefaultEquivalentBlockAnalysisOptions
+
 export const cloneAnalysisOptions = (options: AnalysisOptions): AnalysisOptions =>
   JSON.parse(JSON.stringify(options)) as AnalysisOptions
 
+export const cloneCalculationAnalysisOptions = <T extends CalculationAnalysisOptions>(options: T): T =>
+  JSON.parse(JSON.stringify(options)) as T
+
 export const analysisStationCount = (options: AnalysisOptions) => options.stations.intermediate.length + 2
+
+export const calculationStationCount = (options: CalculationAnalysisOptions) =>
+  options.methodId === STRAIN_DOMAIN_SURFACE_METHOD
+    ? analysisStationCount(options)
+    : options.neutralAxisStations.values.length + 2
+
+export const isEquivalentBlockAnalysisOptions = (
+  options: CalculationAnalysisOptions
+): options is EquivalentBlockAnalysisOptions => options.methodId === EQUIVALENT_BLOCK_SURFACE_METHOD
 
 /** Convert the persisted, UI-facing mesh settings to the geometry kernel's structural options. */
 export const analysisMeshKernelOptions = (options: AnalysisOptions) => ({

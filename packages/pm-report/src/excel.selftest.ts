@@ -80,6 +80,7 @@ const run = async () => {
   const rebars = geometryInputRebars(geometry)
   const materialStore = parsed.document.inputs.materials
   const analysisOptions = parsed.document.inputs.analysis
+  if (analysisOptions.methodId !== 'strain-domain-surface-v1') throw new Error('Excel selftest requires curve analysis options')
   const loadcase = parsed.document.inputs.loadings.combinations[0]
 
   console.log('== 1. Build the workbook ==')

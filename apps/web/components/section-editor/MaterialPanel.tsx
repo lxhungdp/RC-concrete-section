@@ -21,10 +21,18 @@ import {
   type SteelMaterial,
   type StressStrainPoint
 } from '@pm/materials'
+import {
+  CALCULATION_PROFILES,
+  applyCalculationProfileToMaterials,
+  type CalculationProfileId
+} from '@pm/project'
+import { resolveKds142020BlockParameters } from '@pm/code-kds142020'
 
 type Props = {
   store: MaterialStore
+  calculationProfileId: CalculationProfileId
   usedSteelMaterialIds?: Set<number>
+  onCalculationProfileChange: (profileId: CalculationProfileId) => void
   onChange: (store: MaterialStore) => void
 }
 
@@ -274,10 +282,27 @@ function UserCurveEditor({
   )
 }
 
-export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChange }: Props) {
-  const concreteSupportIssue = concreteModelSupportIssue(store.concrete)
+export function MaterialPanel({
+  store,
+  calculationProfileId,
+  usedSteelMaterialIds = new Set(),
+  onCalculationProfileChange,
+  onChange
+}: Props) {
+  const concreteSupportIssue = calculationProfileId === 'kds-2024-stress-strain'
+    ? concreteModelSupportIssue(store.concrete)
+    : null
   const [activePage, setActivePage] = useState<MaterialPage>('concrete')
   const activeSteel = store.steel.find((material) => material.id === store.defaults.steelMaterialId) ?? store.steel[0]
+  const kdsBlockResolution = useMemo(() => {
+    if (calculationProfileId !== 'kds-142020-equivalent-block') return { parameters: null, error: '' }
+    try {
+      return { parameters: resolveKds142020BlockParameters(store.concrete.fck), error: '' }
+    } catch (error) {
+      return { parameters: null, error: error instanceof Error ? error.message : String(error) }
+    }
+  }, [calculationProfileId, store.concrete.fck])
+  const kdsBlockParameters = kdsBlockResolution.parameters
 
   const updateConcrete = (map: (material: ConcreteMaterial) => ConcreteMaterial) => {
     onChange({ ...store, concrete: map(store.concrete) })
@@ -299,11 +324,11 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
       { name: `Steel ${store.steel.length + 1}` },
       store.steel.map((item) => item.id)
     )
-    onChange({
+    onChange(applyCalculationProfileToMaterials({
       ...store,
       steel: [...store.steel, material],
       defaults: { ...store.defaults, steelMaterialId: material.id }
-    })
+    }, calculationProfileId))
   }
 
   const removeSteel = (id: number) => {
@@ -322,6 +347,26 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
 
   return (
     <>
+      <section className="pm-panel-section">
+        <div className="pm-section-title">
+          <div>
+            <h2>Design code &amp; calculation model</h2>
+            <p>One profile controls mechanics, material defaults and resistance factors.</p>
+          </div>
+        </div>
+        <label className="pm-field">
+          <span>Calculation profile</span>
+          <select
+            value={calculationProfileId}
+            onChange={(event) => onCalculationProfileChange(event.target.value as CalculationProfileId)}
+          >
+            {CALCULATION_PROFILES.map((profile) => (
+              <option key={profile.id} value={profile.id}>{profile.label}</option>
+            ))}
+          </select>
+        </label>
+      </section>
+
       <div className="pm-page-tabs" role="tablist" aria-label="Material tabs">
         <button
           type="button"
@@ -359,7 +404,7 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
             </label>
               <label className="pm-field">
               <span>Standard</span>
-              <select
+              <select hidden aria-hidden="true"
                 value={store.concrete.standard}
                 onChange={(event) =>
                   updateConcrete((material) => {
@@ -382,6 +427,7 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
                   )
                 })}
               </select>
+              <input readOnly value={standardLabel(store.concrete.standard)} />
             </label>
             </div>
 
@@ -482,6 +528,20 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
               </label>
             </div>
 
+            {calculationProfileId !== 'kds-2024-stress-strain' && (
+              <div className="pm-material-stress-box">
+                <div className="pm-material-stress-title">Equivalent rectangular stress block</div>
+                <div className="pm-material-row-3">
+                  <label className="pm-field"><span>β1</span><input readOnly value={Number((kdsBlockParameters?.beta1 ?? (store.concrete.stressStrain.type === 'aci-whitney-block' ? store.concrete.stressStrain.beta1 : 0)).toFixed(4))} /></label>
+                  <label className="pm-field"><span>η</span><input readOnly value={Number((kdsBlockParameters?.eta ?? 1).toFixed(4))} /></label>
+                  <label className="pm-field"><span>εcu</span><input readOnly value={kdsBlockParameters?.extremeCompressionStrain ?? store.concrete.limits.epsCu} /></label>
+                </div>
+                <p className="pm-field-note">Concrete stress is uniform only over a = β1·c. Stress is zero between a and c and over the tension region.</p>
+                {kdsBlockResolution.error && <p className="pm-field-error">{kdsBlockResolution.error}</p>}
+              </div>
+            )}
+
+            {calculationProfileId === 'kds-2024-stress-strain' && (
             <div className="pm-material-stress-box">
               <div className="pm-material-stress-title">Stress-Strain</div>
               {store.concrete.stressStrain.type !== 'user-curve' && (
@@ -671,6 +731,7 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
 
               <StressStrainCurve material={store.concrete} />
             </div>
+            )}
           </div>
         </section>
       )}
@@ -722,7 +783,7 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
                 </label>
                 <label className="pm-field">
                   <span>Standard</span>
-                  <select
+                  <select hidden aria-hidden="true"
                     value={activeSteel.standard}
                     onChange={(event) =>
                       updateSteel(activeSteel.id, (material) =>
@@ -736,6 +797,7 @@ export function MaterialPanel({ store, usedSteelMaterialIds = new Set(), onChang
                       </option>
                     ))}
                   </select>
+                  <input readOnly value={standardLabel(activeSteel.standard)} />
                 </label>
               </div>
 

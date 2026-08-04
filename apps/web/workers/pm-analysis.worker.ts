@@ -17,6 +17,13 @@ import {
   type SectionFieldMap
 } from '@pm/analysis'
 import {
+  buildEquivalentBlockPreviewSurfaceFromPrepared,
+  buildEquivalentBlockFieldMapFromPrepared,
+  prepareBlockAnalysis,
+  solveEquivalentBlockDemandFromPrepared,
+  type PreparedBlockAnalysis
+} from '@pm/analysis-equivalent-block'
+import {
   buildResistanceMaterialSets,
   createDefaultDesignBasis,
   type DesignBasis
@@ -29,7 +36,14 @@ import {
 } from '@pm/report'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
-import { analysisMeshKernelOptions, type AnalysisOptions, type LoadCombination } from '@pm/project'
+import {
+  analysisMeshKernelOptions,
+  isEquivalentBlockAnalysisOptions,
+  type AnalysisOptions,
+  type CalculationAnalysisOptions,
+  type CalculationProfileId,
+  type LoadCombination
+} from '@pm/project'
 import {
   packSectionMeshView,
   sectionMeshTransferList,
@@ -37,14 +51,16 @@ import {
 } from '../lib/section-mesh-view'
 
 export type BuildSurfacePayload = {
+  calculationProfileId: CalculationProfileId
   section: SectionGeometry
   rebars: GeometryInputRebarView[]
   materialStore: MaterialStore
-  analysisOptions: AnalysisOptions
+  analysisOptions: CalculationAnalysisOptions
   designBasis: DesignBasis
 }
 
 export type CheckLoadcasePayload = {
+  calculationProfileId: CalculationProfileId
   section: SectionGeometry
   rebars: GeometryInputRebarView[]
   materialStore: MaterialStore
@@ -54,11 +70,13 @@ export type CheckLoadcasePayload = {
 }
 
 export type BuildFieldMapPayload = {
+  calculationProfileId: CalculationProfileId
   section: SectionGeometry
   rebars: GeometryInputRebarView[]
   materialStore: MaterialStore
-  analysisOptions: AnalysisOptions
+  analysisOptions: CalculationAnalysisOptions
   state: InversePreviewResult['state']
+  blockState?: { neutralAxisAngle: number; neutralAxisDepth: number }
   designBasis: DesignBasis
 }
 
@@ -136,10 +154,11 @@ const workerSelf = self as unknown as {
  */
 const cancelled = new Set<string>()
 let preparedCache: { key: string; value: PreparedAnalysis } | null = null
+let preparedBlockCache: { key: string; value: PreparedBlockAnalysis } | null = null
 let surfaceCache: { key: string; value: PreviewSurface } | null = null
 
 const preparedFor = (
-  payload: Pick<BuildSurfacePayload, 'section' | 'rebars' | 'materialStore' | 'analysisOptions'> & {
+  payload: Pick<BuildSurfacePayload, 'section' | 'rebars' | 'materialStore'> & { analysisOptions: AnalysisOptions } & {
     designBasis?: DesignBasis
   }
 ) => {
@@ -150,6 +169,21 @@ const preparedFor = (
   if (preparedCache?.key === key) return preparedCache.value
   const value = prepareAnalysis(payload.section, payload.rebars, stateMaterials, meshOptions)
   preparedCache = { key, value }
+  return value
+}
+
+const preparedBlockFor = (payload: Pick<BuildSurfacePayload,
+  'calculationProfileId' | 'section' | 'rebars' | 'materialStore' | 'designBasis'>) => {
+  const key = JSON.stringify(payload)
+  if (preparedBlockCache?.key === key) return preparedBlockCache.value
+  const value = prepareBlockAnalysis(
+    payload.calculationProfileId,
+    payload.section,
+    payload.rebars,
+    payload.materialStore,
+    payload.designBasis
+  )
+  preparedBlockCache = { key, value }
   return value
 }
 
@@ -168,6 +202,16 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
 
   try {
     if (request.type === 'buildSurface') {
+      if (isEquivalentBlockAnalysisOptions(request.payload.analysisOptions)) {
+        const result = buildEquivalentBlockPreviewSurfaceFromPrepared(
+          preparedBlockFor(request.payload),
+          request.payload.analysisOptions
+        )
+        result.calculationProfileId = request.payload.calculationProfileId
+        surfaceCache = { key: JSON.stringify(request.payload), value: result }
+        workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
+        return
+      }
       const key = surfaceInputKey(
         request.payload.section,
         request.payload.rebars,
@@ -176,11 +220,12 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
       )
       const designKey = `${key}:${JSON.stringify(request.payload.designBasis)}`
       const result = buildDesignPreviewSurfaceFromPrepared(
-        preparedFor(request.payload),
+        preparedFor({ ...request.payload, analysisOptions: request.payload.analysisOptions }),
         request.payload.materialStore,
         request.payload.designBasis,
         request.payload.analysisOptions
       )
+      result.calculationProfileId = request.payload.calculationProfileId
       // Keep the worker-owned points array. A surface sent to and then back from the UI is cloned,
       // which would otherwise defeat the WeakMap topology cache on every inverse loadcase.
       surfaceCache = { key: designKey, value: result }
@@ -197,10 +242,26 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
 
     if (request.type === 'checkLoadcase') {
       const { section, rebars, materialStore, loadcase, surface } = request.payload
+      if (isEquivalentBlockAnalysisOptions(surface.analysisOptions)) {
+        const result = solveEquivalentBlockDemandFromPrepared(
+          preparedBlockFor({
+            calculationProfileId: request.payload.calculationProfileId,
+            section,
+            rebars,
+            materialStore,
+            designBasis: request.payload.designBasis
+          }),
+          surface.analysisOptions,
+          loadcase
+        )
+        workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
+        return
+      }
       const key = `${surfaceInputKey(section, rebars, materialStore, surface.analysisOptions)}:${JSON.stringify(request.payload.designBasis)}`
       const contour = sliceFixedPContour(
         (surfaceCache?.key === key ? surfaceCache.value : surface).points,
-        loadcase.P
+        loadcase.P,
+        (surfaceCache?.key === key ? surfaceCache.value : surface).triangles
       )
       const inverse = solveInversePreviewFromPrepared(
         preparedFor({
@@ -230,8 +291,20 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
     }
 
     if (request.type === 'buildFieldMap') {
+      if (isEquivalentBlockAnalysisOptions(request.payload.analysisOptions)) {
+        if (!request.payload.blockState) throw new Error('The axial-cap face has no unique equivalent-block field state.')
+        const result = buildEquivalentBlockFieldMapFromPrepared(
+          preparedBlockFor(request.payload),
+          request.payload.blockState
+        )
+        workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
+        return
+      }
       const { state } = request.payload
-      const result = buildSectionFieldMapFromPrepared(preparedFor(request.payload), state)
+      const result = buildSectionFieldMapFromPrepared(
+        preparedFor({ ...request.payload, analysisOptions: request.payload.analysisOptions }),
+        state
+      )
       workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
       return
     }

@@ -55,6 +55,14 @@ export type CreateKds142020ModelInput = {
   steel: Readonly<Record<string, KdsSteelDefinition>>
   transverseReinforcement: KdsTransverseReinforcement
   blockParameterOverride?: KdsBlockParameterOverride
+  resistanceFactors?: {
+    phiCompressionOther: number
+    phiCompressionSpiral: number
+    phiTension: number
+    transitionExtraStrain: number
+    axialCapOther: number
+    axialCapSpiral: number
+  }
 }
 
 export type KdsResistanceClassification = 'compression-controlled' | 'transition' | 'tension-controlled'
@@ -149,15 +157,21 @@ export const resolveKds142020BlockParameters = (
 export const evaluateKds142010StrengthReduction = (
   tensileStrain: number,
   steel: KdsSteelDefinition,
-  transverseReinforcement: KdsTransverseReinforcement
+  transverseReinforcement: KdsTransverseReinforcement,
+  factors = {
+    phiCompressionOther: 0.65,
+    phiCompressionSpiral: 0.70,
+    phiTension: 0.85,
+    transitionExtraStrain: 0.003
+  }
 ): KdsStrengthReduction => {
   if (!Number.isFinite(tensileStrain) || tensileStrain < 0 || !positiveFinite(steel.elasticModulus) || !positiveFinite(steel.yieldStress)) {
     throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'KDS phi evaluation requires a nonnegative tensile strain and valid steel properties.')
   }
   const yieldStrain = steel.yieldStress / steel.elasticModulus
-  const tensionControlledLimit = steel.yieldStress <= 400 ? 0.005 : 2.5 * yieldStrain
-  const compressionPhi = transverseReinforcement === 'qualifying-spiral' ? 0.70 : 0.65
-  const tensionPhi = 0.85
+  const tensionControlledLimit = steel.yieldStress <= 400 ? yieldStrain + factors.transitionExtraStrain : 2.5 * yieldStrain
+  const compressionPhi = transverseReinforcement === 'qualifying-spiral' ? factors.phiCompressionSpiral : factors.phiCompressionOther
+  const tensionPhi = factors.phiTension
   if (tensileStrain <= yieldStrain) {
     return { phi: compressionPhi, classification: 'compression-controlled', tensileStrain, yieldStrain, tensionControlledLimit }
   }
@@ -199,6 +213,26 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
     throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'KDS transverse reinforcement must be other or qualifying-spiral.')
   }
   validateSteel(input.steel)
+  const resistanceFactors = input.resistanceFactors ?? {
+    phiCompressionOther: 0.65,
+    phiCompressionSpiral: 0.70,
+    phiTension: 0.85,
+    transitionExtraStrain: 0.003,
+    axialCapOther: 0.80,
+    axialCapSpiral: 0.85
+  }
+  if (Object.values(resistanceFactors).some((value) => !positiveFinite(value))) {
+    throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'KDS resistance factors must be positive and finite.')
+  }
+  if ([
+    resistanceFactors.phiCompressionOther,
+    resistanceFactors.phiCompressionSpiral,
+    resistanceFactors.phiTension,
+    resistanceFactors.axialCapOther,
+    resistanceFactors.axialCapSpiral
+  ].some((value) => value > 1)) {
+    throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'KDS phi factors and axial-cap ratios must not exceed 1.0.')
+  }
   const parameters = resolveKds142020BlockParameters(input.concreteStrength, input.blockParameterOverride)
   const steelLaws: SteelLawRegistry = Object.fromEntries(Object.entries(input.steel).map(([id, definition]) => [
     id,
@@ -210,8 +244,8 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
     extremeCompressionStrain: parameters.extremeCompressionStrain,
     subtractDisplacedConcrete: true
   }
-  const compressionPhi = input.transverseReinforcement === 'qualifying-spiral' ? 0.70 : 0.65
-  const axialCapRatio = input.transverseReinforcement === 'qualifying-spiral' ? 0.85 : 0.80
+  const compressionPhi = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.phiCompressionSpiral : resistanceFactors.phiCompressionOther
+  const axialCapRatio = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.axialCapSpiral : resistanceFactors.axialCapOther
 
   const bindNominalEvaluator = (section: PreparedEquivalentBlockSection): CapacityEvaluator<NominalBlockEvaluation> => (state) => {
     const nominal = evaluateEquivalentBlock(section, blockLaw, steelLaws, state)
@@ -227,7 +261,8 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
     const resistance = evaluateKds142010StrengthReduction(
       nominal.controllingTensileStrain,
       definition,
-      input.transverseReinforcement
+      input.transverseReinforcement,
+      resistanceFactors
     )
     return {
       state,
@@ -260,8 +295,8 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
     const nominal = nominalEndpoints(section)
     return {
       tension: {
-        resultants: scaleResultants(nominal.tension.resultants, 0.85),
-        metadata: { ...nominal.tension.metadata, phi: 0.85 }
+        resultants: scaleResultants(nominal.tension.resultants, resistanceFactors.phiTension),
+        metadata: { ...nominal.tension.metadata, phi: resistanceFactors.phiTension }
       } as CapacityEndpoint,
       compression: {
         resultants: scaleResultants(nominal.compression.resultants, compressionPhi),

@@ -110,7 +110,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
       <div className="pm-section-title">
         <div>
           <h2>Design resistance</h2>
-          <p>Factored resistance used for ULS checks</p>
+          <p>Design resistance derived from nominal capacity for factored ULS demand checks</p>
         </div>
         <button
           type="button"
@@ -121,19 +121,6 @@ export function DesignBasisPanel({ value, onChange }: Props) {
           <RotateCcw size={14} />
         </button>
       </div>
-
-      <DesignSelect
-        label="Design code profile"
-        value={draft.profileId}
-        onChange={(profileId) => publishIfValid(profileDefaults(profileId as DesignProfileId))}
-      >
-          <option value="kds-2024-current-set">KDS 2024 current set</option>
-          {draft.profileId === 'kds-basic-2021-2022' && (
-            <option value="kds-basic-2021-2022">KDS legacy saved profile (2021/2022)</option>
-          )}
-          <option value="aci-318-19-22">ACI 318-19 (2022)</option>
-          <option value="en-1992-1-1-2004-default">EN 1992-1-1:2004</option>
-      </DesignSelect>
 
       <div className="pm-design-basis-identity">
         <span>{draft.identity.document}</span>

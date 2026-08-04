@@ -184,6 +184,24 @@ const barycentric = (x: number, y: number, tri: SectionFieldTriangle) => {
   return { w0, w1, w2 }
 }
 
+const pointInRing = (x: number, y: number, ring: Array<{ x: number; y: number }>) => {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i]
+    const b = ring[j]
+    if (((a.y > y) !== (b.y > y)) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside
+  }
+  return inside
+}
+
+const pointInBlockGeometry = (
+  x: number,
+  y: number,
+  geometry: NonNullable<SectionFieldMap['equivalentBlock']>['geometry']
+) => geometry.some((solid) =>
+  pointInRing(x, y, solid.outer) && !solid.holes.some((hole) => pointInRing(x, y, hole))
+)
+
 const buildTriangleIndex = (triangles: SectionFieldTriangle[], cellSize: number) => {
   const size = Math.max(1e-6, cellSize)
   const buckets = new Map<string, number[]>()
@@ -234,6 +252,9 @@ export function SectionFieldChart({
 
   const fieldRange = useMemo(() => {
     const values: number[] = []
+    if (fieldMode === 'stress' && fieldMap.equivalentBlock) {
+      values.push(0, fieldMap.equivalentBlock.compressionStress)
+    }
     for (const tri of fieldMap.triangles) {
       if (fieldMode === 'strain') values.push(tri.strainA, tri.strainB, tri.strainC)
       else values.push(tri.stressA, tri.stressB, tri.stressC)
@@ -321,6 +342,7 @@ export function SectionFieldChart({
       const data = image.data
 
       for (const tri of fieldMap.triangles) {
+        if (fieldMode === 'stress' && fieldMap.equivalentBlock) continue
         const x0 = toPixelX(tri.ax)
         const y0 = toPixelY(tri.ay)
         const x1 = toPixelX(tri.bx)
@@ -358,6 +380,32 @@ export function SectionFieldChart({
       }
 
       ctx.putImageData(image, 0, 0)
+
+      if (fieldMode === 'stress' && fieldMap.equivalentBlock) {
+        const appendRing = (ring: Array<{ x: number; y: number }>) => {
+          if (ring.length === 0) return
+          ctx.moveTo(toPixelX(ring[0].x), toPixelY(ring[0].y))
+          for (let index = 1; index < ring.length; index += 1) {
+            ctx.lineTo(toPixelX(ring[index].x), toPixelY(ring[index].y))
+          }
+          ctx.closePath()
+        }
+        const fillSolids = (
+          solids: Array<{ outer: Array<{ x: number; y: number }>; holes: Array<Array<{ x: number; y: number }>> }>,
+          value: number
+        ) => {
+          const [r, g, b] = valueToRgb(norm(value))
+          ctx.beginPath()
+          for (const solid of solids) {
+            appendRing(solid.outer)
+            solid.holes.forEach(appendRing)
+          }
+          ctx.fillStyle = `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`
+          ctx.fill('evenodd')
+        }
+        fillSolids(section.solids, 0)
+        fillSolids(fieldMap.equivalentBlock.geometry, fieldMap.equivalentBlock.compressionStress)
+      }
 
       for (const solid of section.solids) {
         const rings = [solid.outer, ...solid.holes]
@@ -649,7 +697,11 @@ export function SectionFieldChart({
         worldX,
         worldY,
         strain: w0 * tri.strainA + w1 * tri.strainB + w2 * tri.strainC,
-        stress: w0 * tri.stressA + w1 * tri.stressB + w2 * tri.stressC,
+        stress: fieldMap.equivalentBlock
+          ? (pointInBlockGeometry(worldX, worldY, fieldMap.equivalentBlock.geometry)
+            ? fieldMap.equivalentBlock.compressionStress
+            : 0)
+          : w0 * tri.stressA + w1 * tri.stressB + w2 * tri.stressC,
         kind: 'concrete'
       }
     }

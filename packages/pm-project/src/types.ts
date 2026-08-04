@@ -1,7 +1,8 @@
 import type { GeometryInput } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
 import type { DesignBasis } from '@pm/design'
-import type { AnalysisOptions } from './analysis-options'
+import type { CalculationAnalysisOptions } from './analysis-options'
+import type { CalculationProfileId } from './calculation-profiles'
 
 /** Schema id written into every project JSON file. */
 export const PM_PROJECT_SCHEMA = 'pm-column-project' as const
@@ -48,19 +49,21 @@ export type PmProjectDocument = {
     updatedAt: string
   }
   inputs: {
+    calculationProfileId: CalculationProfileId
     geometry: GeometryInput
     materials: MaterialStore
     loadings: LoadingsInput
-    analysis: AnalysisOptions
+    analysis: CalculationAnalysisOptions
     design: DesignBasis
   }
 }
 
 export type ProjectInputSnapshot = {
+  calculationProfileId?: CalculationProfileId
   geometry: GeometryInput
   materials: MaterialStore
   loadings?: LoadingsInput
-  analysis?: AnalysisOptions
+  analysis?: CalculationAnalysisOptions
   design?: DesignBasis
   meta?: Partial<PmProjectDocument['meta']>
 }

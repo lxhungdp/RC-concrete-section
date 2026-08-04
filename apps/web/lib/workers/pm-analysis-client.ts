@@ -15,6 +15,13 @@ import {
   type SectionFieldMap
 } from '@pm/analysis'
 import {
+  buildEquivalentBlockPreviewSurfaceFromPrepared,
+  buildEquivalentBlockFieldMapFromPrepared,
+  prepareBlockAnalysis,
+  solveEquivalentBlockDemandFromPrepared,
+  type PreparedBlockAnalysis
+} from '@pm/analysis-equivalent-block'
+import {
   buildResistanceMaterialSets,
   createDefaultDesignBasis,
   type DesignBasis
@@ -25,7 +32,7 @@ import {
   exportSectionWorkbook,
   type ExcelExportInput
 } from '@pm/report'
-import { analysisMeshKernelOptions } from '@pm/project'
+import { analysisMeshKernelOptions, isEquivalentBlockAnalysisOptions, type AnalysisOptions } from '@pm/project'
 import { packSectionMeshView, type SectionMeshView } from '../section-mesh-view'
 import type {
   AnalysisWorkerJob,
@@ -61,9 +68,10 @@ let workerFailed = false
 let sequence = 0
 const pending = new Map<string, PendingJob>()
 let fallbackPreparedCache: { key: string; value: PreparedAnalysis } | null = null
+let fallbackBlockCache: { key: string; value: PreparedBlockAnalysis } | null = null
 
 const fallbackPreparedFor = (
-  payload: Pick<BuildSurfacePayload, 'section' | 'rebars' | 'materialStore' | 'analysisOptions'> & {
+  payload: Pick<BuildSurfacePayload, 'section' | 'rebars' | 'materialStore'> & { analysisOptions: AnalysisOptions } & {
     designBasis?: DesignBasis
   }
 ) => {
@@ -74,6 +82,21 @@ const fallbackPreparedFor = (
   if (fallbackPreparedCache?.key === key) return fallbackPreparedCache.value
   const value = prepareAnalysis(payload.section, payload.rebars, stateMaterials, meshOptions)
   fallbackPreparedCache = { key, value }
+  return value
+}
+
+const fallbackBlockFor = (payload: Pick<BuildSurfacePayload,
+  'calculationProfileId' | 'section' | 'rebars' | 'materialStore' | 'designBasis'>) => {
+  const key = JSON.stringify(payload)
+  if (fallbackBlockCache?.key === key) return fallbackBlockCache.value
+  const value = prepareBlockAnalysis(
+    payload.calculationProfileId,
+    payload.section,
+    payload.rebars,
+    payload.materialStore,
+    payload.designBasis
+  )
+  fallbackBlockCache = { key, value }
   return value
 }
 
@@ -173,13 +196,24 @@ const runWorkerOrFallback = async <T>(
 export const buildPreviewSurfaceAsync = (payload: BuildSurfacePayload, signal?: AbortSignal): Promise<PreviewSurface> =>
   runWorkerOrFallback<PreviewSurface>(
     { type: 'buildSurface', payload },
-    () =>
-      buildDesignPreviewSurfaceFromPrepared(
-        fallbackPreparedFor(payload),
+    () => {
+      if (isEquivalentBlockAnalysisOptions(payload.analysisOptions)) {
+        const result = buildEquivalentBlockPreviewSurfaceFromPrepared(
+          fallbackBlockFor(payload),
+          payload.analysisOptions
+        )
+        result.calculationProfileId = payload.calculationProfileId
+        return result
+      }
+      const result = buildDesignPreviewSurfaceFromPrepared(
+        fallbackPreparedFor({ ...payload, analysisOptions: payload.analysisOptions }),
         payload.materialStore,
         payload.designBasis,
         payload.analysisOptions
-      ),
+      )
+      result.calculationProfileId = payload.calculationProfileId
+      return result
+    },
     signal
   )
 
@@ -200,7 +234,14 @@ export const checkLoadcaseAsync = (
   runWorkerOrFallback<InversePreviewResult>(
     { type: 'checkLoadcase', payload },
     () => {
-      const contour = sliceFixedPContour(payload.surface.points, payload.loadcase.P)
+      if (isEquivalentBlockAnalysisOptions(payload.surface.analysisOptions)) {
+        return solveEquivalentBlockDemandFromPrepared(
+          fallbackBlockFor(payload),
+          payload.surface.analysisOptions,
+          payload.loadcase
+        )
+      }
+      const contour = sliceFixedPContour(payload.surface.points, payload.loadcase.P, payload.surface.triangles)
       const inverse = solveInversePreviewFromPrepared(
         fallbackPreparedFor({ ...payload, analysisOptions: payload.surface.analysisOptions }),
         payload.loadcase,
@@ -225,7 +266,16 @@ export const buildSectionFieldMapAsync = (
 ): Promise<SectionFieldMap> =>
   runWorkerOrFallback<SectionFieldMap>(
     { type: 'buildFieldMap', payload },
-    () => buildSectionFieldMapFromPrepared(fallbackPreparedFor(payload), payload.state),
+    () => {
+      if (isEquivalentBlockAnalysisOptions(payload.analysisOptions)) {
+        if (!payload.blockState) throw new Error('The axial-cap face has no unique equivalent-block field state.')
+        return buildEquivalentBlockFieldMapFromPrepared(fallbackBlockFor(payload), payload.blockState)
+      }
+      return buildSectionFieldMapFromPrepared(
+        fallbackPreparedFor({ ...payload, analysisOptions: payload.analysisOptions }),
+        payload.state
+      )
+    },
     signal
   )
 

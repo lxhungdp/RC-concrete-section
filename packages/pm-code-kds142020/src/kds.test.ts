@@ -118,6 +118,38 @@ test('KDS pure-compression P0 is separate from the eta-reduced flexural block', 
   close(model.axialCap(section), 0.80 * 0.65 * nominalP0)
 })
 
+test('KDS model applies the resistance factors supplied by the calculation profile', () => {
+  const section = preparedSection()
+  const resistanceFactors = {
+    phiCompressionOther: 0.62,
+    phiCompressionSpiral: 0.72,
+    phiTension: 0.86,
+    transitionExtraStrain: 0.0035,
+    axialCapOther: 0.74,
+    axialCapSpiral: 0.83
+  }
+  const model = createKds142020Model({
+    concreteStrength: 40,
+    steel: { sd400: { elasticModulus: 200_000, yieldStress: 400 } },
+    transverseReinforcement: 'other',
+    resistanceFactors
+  })
+  const nominal = model.nominalEndpoints(section)
+  const design = model.designEndpoints(section)
+  close(design.compression.resultants.P, 0.62 * nominal.compression.resultants.P)
+  close(design.tension.resultants.P, 0.86 * nominal.tension.resultants.P)
+  close(model.axialCap(section), 0.74 * 0.62 * nominal.compression.resultants.P)
+  assert.throws(
+    () => createKds142020Model({
+      concreteStrength: 40,
+      steel: { sd400: { elasticModulus: 200_000, yieldStress: 400 } },
+      transverseReinforcement: 'other',
+      resistanceFactors: { ...resistanceFactors, axialCapOther: 1.01 }
+    }),
+    (error: unknown) => error instanceof EquivalentBlockInputError && error.code === 'INVALID_BLOCK_LAW'
+  )
+})
+
 test('KDS design surface is closed after the standard axial cap is applied', () => {
   const section = preparedSection()
   const model = createKds142020Model({

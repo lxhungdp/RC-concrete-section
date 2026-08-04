@@ -100,8 +100,11 @@ const run = () => {
   assert.equal(parsed.document.inputs.loadings.combinations[0]?.actionBasis, 'factoredULS')
   assert.equal(parsed.document.inputs.design.profileId, 'en-1992-1-1-2004-default')
   assert.equal(parsed.document.inputs.design.format, 'designMaterialReevaluation')
-  assert.equal(parsed.document.inputs.analysis.stations.intermediate.length, 17)
-  assert.deepEqual(parsed.document.inputs.analysis.directions.seed, {
+  const parsedAnalysis = parsed.document.inputs.analysis
+  assert.equal(parsedAnalysis.methodId, 'strain-domain-surface-v1')
+  if (parsedAnalysis.methodId !== 'strain-domain-surface-v1') throw new Error('Expected curve analysis options')
+  assert.equal(parsedAnalysis.stations.intermediate.length, 17)
+  assert.deepEqual(parsedAnalysis.directions.seed, {
     type: 'uniform',
     count: 24,
     startDeg: 0

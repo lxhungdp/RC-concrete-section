@@ -48,13 +48,18 @@ import {
 } from '@pm/design'
 import {
   createEmptyLoadingsInput,
+  DEFAULT_CALCULATION_PROFILE_ID,
+  applyCalculationProfileToMaterials,
+  createAnalysisOptionsForProfile,
+  createDesignBasisForCalculationProfile,
   createDefaultAnalysisOptions,
   createProjectDocument,
   parseProjectDocument,
   projectDocumentFileName,
   serializeProjectDocument,
   type LoadCombination,
-  type AnalysisOptions,
+  type CalculationAnalysisOptions,
+  type CalculationProfileId,
   type LoadingsInput
 } from '@pm/project'
 import {
@@ -489,8 +494,9 @@ export function SectionDrawingClient() {
     createEmptyGeometryInput({ id: 1, name: 'Column section' })
   )
   const [materialStore, setMaterialStore] = useState<MaterialStore>(() => createDefaultMaterialStore())
+  const [calculationProfileId, setCalculationProfileId] = useState<CalculationProfileId>(DEFAULT_CALCULATION_PROFILE_ID)
   const [loadingsInput, setLoadingsInput] = useState<LoadingsInput>(() => createEmptyLoadingsInput())
-  const [analysisOptions, setAnalysisOptions] = useState<AnalysisOptions>(() => createDefaultAnalysisOptions())
+  const [analysisOptions, setAnalysisOptions] = useState<CalculationAnalysisOptions>(() => createDefaultAnalysisOptions())
   const [designBasis, setDesignBasis] = useState<DesignBasis>(() =>
     createDefaultDesignBasis(createDefaultMaterialStore())
   )
@@ -517,6 +523,14 @@ export function SectionDrawingClient() {
   const [size, setSize] = useState(DEFAULT_DRAWING_SIZE)
   const [isDrawingMeasured, setIsDrawingMeasured] = useState(false)
   const [camera, setCamera] = useState<Camera2d>(() => createDefaultDrawingCamera())
+
+  const changeCalculationProfile = (profileId: CalculationProfileId) => {
+    setCalculationProfileId(profileId)
+    setMaterialStore((current) => applyCalculationProfileToMaterials(current, profileId))
+    setAnalysisOptions(createAnalysisOptionsForProfile(profileId))
+    setDesignBasis(createDesignBasisForCalculationProfile(profileId))
+    setAnalysisSubTab('points')
+  }
 
   useEffect(() => {
     document.body.dataset.jscadTheme = theme
@@ -584,7 +598,7 @@ export function SectionDrawingClient() {
     setSurfaceStatus('working')
     const timer = window.setTimeout(() => {
       buildPreviewSurfaceAsync(
-        { section: finalSection, rebars, materialStore, analysisOptions, designBasis },
+        { calculationProfileId, section: finalSection, rebars, materialStore, analysisOptions, designBasis },
         controller.signal
       )
         .then((surface) => {
@@ -603,7 +617,7 @@ export function SectionDrawingClient() {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [analysisOptions, designBasis, finalSection, hasAppliedSection, materialStore, rebars])
+  }, [analysisOptions, calculationProfileId, designBasis, finalSection, hasAppliedSection, materialStore, rebars])
   const appliedSummary = useMemo(() => summarizeSection(finalSection), [finalSection])
   const steelArea = useMemo(
     () => rebars.reduce((sum, bar) => sum + (Math.PI * bar.dia * bar.dia) / 4, 0),
@@ -756,7 +770,7 @@ export function SectionDrawingClient() {
     inverseAbortRef.current.set(loadcase.id, controller)
     setInverseWorkingById((current) => ({ ...current, [loadcase.id]: true }))
     checkLoadcaseAsync(
-      { section: finalSection, rebars, materialStore, loadcase, surface: resultSurface, designBasis },
+      { calculationProfileId, section: finalSection, rebars, materialStore, loadcase, surface: resultSurface, designBasis },
       controller.signal
     )
       .then((result) => {
@@ -788,14 +802,14 @@ export function SectionDrawingClient() {
     calculateInverseForLoadcase(loadcase)
   }
 
-  // A new surface invalidates every inverse result. If the user is inspecting one loadcase, rebuild
-  // that detail automatically when an Analysis setting changes instead of leaving the chart empty
-  // until the row is clicked again.
+  // Rebuild the selected detail after either the resistance surface or the loadcase list changes.
+  // The latter matters when a new row is created: selection can be emitted before React has committed
+  // the new loadcase to parent state, so the first direct lookup legitimately finds no row yet.
   useEffect(() => {
     if (!resultSurface || resultsViewMode !== 'loadcase' || selectedLoadcaseId == null) return
     const loadcase = loadingsInput.combinations.find((item) => item.id === selectedLoadcaseId)
     if (loadcase) calculateInverseForLoadcase(loadcase, true)
-  }, [resultSurface])
+  }, [loadingsInput.combinations, resultSurface, resultsViewMode, selectedLoadcaseId])
 
   const draftRing = useMemo(() => {
     if (!drawingDraft) return []
@@ -1421,6 +1435,7 @@ export function SectionDrawingClient() {
     }
 
     const document = createProjectDocument({
+      calculationProfileId,
       geometry: appliedGeometryInput,
       materials: materialStore,
       loadings: loadingsInput,
@@ -1459,6 +1474,7 @@ export function SectionDrawingClient() {
     const hasGeometry = geometry.outers.some((outer) => outer.points.length >= 3)
 
     setAppliedGeometryInput(geometry)
+    setCalculationProfileId(document.inputs.calculationProfileId)
     setMaterialStore(document.inputs.materials)
     setLoadingsInput(document.inputs.loadings)
     setAnalysisOptions(document.inputs.analysis)
@@ -2317,7 +2333,9 @@ export function SectionDrawingClient() {
         {activeModule === 'materials' && (
           <MaterialPanel
             store={materialStore}
+            calculationProfileId={calculationProfileId}
             usedSteelMaterialIds={new Set(rebars.map((bar) => bar.steelMaterialId ?? materialStore.defaults.steelMaterialId))}
+            onCalculationProfileChange={changeCalculationProfile}
             onChange={setMaterialStore}
           />
         )}
@@ -2470,15 +2488,22 @@ export function SectionDrawingClient() {
             onSelectLoadcase={runInverseForLoadcase}
           />
         ) : activeModule === 'analysis' ? (
-          <AnalysisMeshWorkspace
-            theme={theme}
-            projectName={projectMeta.name || appliedGeometryInput.name || 'Column project'}
-            ready={hasAppliedSection}
-            section={finalSection}
-            rebars={rebars}
-            materialStore={materialStore}
-            analysisOptions={analysisOptions}
-          />
+          analysisOptions.methodId === 'strain-domain-surface-v1' ? (
+            <AnalysisMeshWorkspace
+              theme={theme}
+              projectName={projectMeta.name || appliedGeometryInput.name || 'Column project'}
+              ready={hasAppliedSection}
+              section={finalSection}
+              rebars={rebars}
+              materialStore={materialStore}
+              analysisOptions={analysisOptions}
+            />
+          ) : (
+            <div className="pm-empty-stage">
+              <strong>Exact equivalent-block geometry</strong>
+              <span>No concrete integration mesh is used. The compression polygon is clipped exactly at a = β1·c.</span>
+            </div>
+          )
         ) : (
         <>
         <div className="pm-canvas-toolbox" aria-label="Boundary drawing tools">

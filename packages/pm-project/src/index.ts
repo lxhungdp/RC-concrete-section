@@ -1,5 +1,6 @@
 export * from './types'
 export * from './analysis-options'
+export * from './calculation-profiles'
 export * from './ids'
 export * from './loadings'
 export * from './document'

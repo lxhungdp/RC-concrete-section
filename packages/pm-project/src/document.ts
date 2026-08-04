@@ -3,7 +3,12 @@ import { createDefaultMaterialStore, type MaterialStore } from '@pm/materials'
 import { cloneDesignBasis, createDefaultDesignBasis } from '@pm/design'
 import { nextAvailableId } from './ids'
 import { cloneLoadingsInput, createEmptyLoadingsInput } from './loadings'
-import { cloneAnalysisOptions, createDefaultAnalysisOptions } from './analysis-options'
+import { cloneCalculationAnalysisOptions } from './analysis-options'
+import {
+  DEFAULT_CALCULATION_PROFILE_ID,
+  createAnalysisOptionsForProfile,
+  createDesignBasisForCalculationProfile
+} from './calculation-profiles'
 import {
   PM_PROJECT_SCHEMA,
   PM_PROJECT_VERSION,
@@ -54,8 +59,15 @@ export const createProjectDocument = (snapshot: ProjectInputSnapshot): PmProject
   const geometry = cloneGeometryInput(snapshot.geometry)
   const materials = cloneMaterialStore(snapshot.materials)
   const loadings = cloneLoadingsInput(snapshot.loadings ?? createEmptyLoadingsInput())
-  const analysis = cloneAnalysisOptions(snapshot.analysis ?? createDefaultAnalysisOptions())
-  const design = cloneDesignBasis(snapshot.design ?? createDefaultDesignBasis(materials))
+  const calculationProfileId = snapshot.calculationProfileId ?? DEFAULT_CALCULATION_PROFILE_ID
+  const analysis = cloneCalculationAnalysisOptions(
+    snapshot.analysis ?? createAnalysisOptionsForProfile(calculationProfileId)
+  )
+  const design = cloneDesignBasis(
+    snapshot.design ?? (snapshot.calculationProfileId
+      ? createDesignBasisForCalculationProfile(calculationProfileId)
+      : createDefaultDesignBasis(materials))
+  )
 
   return {
     schema: PM_PROJECT_SCHEMA,
@@ -67,6 +79,7 @@ export const createProjectDocument = (snapshot: ProjectInputSnapshot): PmProject
       updatedAt: stamp
     },
     inputs: {
+      calculationProfileId,
       geometry,
       materials,
       loadings,

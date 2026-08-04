@@ -8,6 +8,7 @@
     "updatedAt": "2026-07-23T00:00:00.000Z"
   },
   "inputs": {
+    "calculationProfileId": "kds-2024-stress-strain",
     "geometry": {
       "id": 1,
       "name": "PM-advanced (7) 2D — 1500x1200 chamfered section, two voids",

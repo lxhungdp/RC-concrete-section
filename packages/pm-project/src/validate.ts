@@ -12,6 +12,8 @@ import {
 import { isValidEntityId } from './ids'
 import {
   ANALYSIS_OPTIONS_VERSION,
+  EQUIVALENT_BLOCK_SURFACE_METHOD,
+  MAX_BLOCK_STATIONS,
   MAX_INTERMEDIATE_STATIONS,
   MAX_MESH_CELLS,
   MAX_MESH_SEED_DIVISIONS,
@@ -23,8 +25,11 @@ import {
   createDefaultAnalysisOptions,
   type AnalysisOptions,
   type AnalysisStation,
+  type CalculationAnalysisOptions,
+  type EquivalentBlockAnalysisOptions,
   type DirectionProbe
 } from './analysis-options'
+import { calculationProfile, isCalculationProfileId } from './calculation-profiles'
 import {
   PM_PROJECT_SCHEMA,
   PM_PROJECT_VERSION,
@@ -383,10 +388,102 @@ const parseDirectionProbe = (
   return { stationIds: ids }
 }
 
-const parseAnalysis = (value: unknown): AnalysisOptions => {
+const parseEquivalentBlockAnalysis = (
+  value: Record<string, unknown>,
+  path: string
+): EquivalentBlockAnalysisOptions => {
+  assertRecord(value.neutralAxisStations, `${path}.neutralAxisStations must be an object`)
+  assert(
+    value.neutralAxisStations.basedOn === 'verified-37-v1' || value.neutralAxisStations.basedOn === 'custom',
+    `${path}.neutralAxisStations.basedOn is invalid`
+  )
+  assertArray(value.neutralAxisStations.values, `${path}.neutralAxisStations.values must be an array`)
+  assert(
+    value.neutralAxisStations.values.length >= 2 && value.neutralAxisStations.values.length <= MAX_BLOCK_STATIONS,
+    `${path}.neutralAxisStations.values must contain 2–${MAX_BLOCK_STATIONS} stations`
+  )
+  const values = value.neutralAxisStations.values.map((item, index) => {
+    const itemPath = `${path}.neutralAxisStations.values[${index}]`
+    assertRecord(item, `${itemPath} must be an object`)
+    if (item.type === 'extreme-tension-strain') {
+      assert(isFiniteNumber(item.strain) && item.strain >= 0, `${itemPath}.strain must be nonnegative`)
+      return { type: 'extreme-tension-strain' as const, strain: item.strain }
+    }
+    assert(item.type === 'depth-ratio', `${itemPath}.type is unsupported`)
+    assert(isFiniteNumber(item.ratio) && item.ratio > 1, `${itemPath}.ratio must be greater than 1`)
+    return { type: 'depth-ratio' as const, ratio: item.ratio }
+  })
+
+  assertRecord(value.neutralAxisStations.refinement, `${path}.neutralAxisStations.refinement must be an object`)
+  const stationRefinement = value.neutralAxisStations.refinement
+  let refinement: EquivalentBlockAnalysisOptions['neutralAxisStations']['refinement']
+  if (stationRefinement.type === 'fixed') {
+    refinement = { type: 'fixed' }
+  } else {
+    assert(stationRefinement.type === 'adaptive', `${path}.neutralAxisStations.refinement.type is unsupported`)
+    assert(
+      isFiniteNumber(stationRefinement.tolerance) && stationRefinement.tolerance > 0 && stationRefinement.tolerance <= 0.25,
+      `${path}.neutralAxisStations.refinement.tolerance must be in (0, 0.25]`
+    )
+    assert(Number.isInteger(stationRefinement.maxPasses) && (stationRefinement.maxPasses as number) >= 0 && (stationRefinement.maxPasses as number) <= 12,
+      `${path}.neutralAxisStations.refinement.maxPasses must be an integer between 0 and 12`)
+    assert(Number.isInteger(stationRefinement.maxStations) && (stationRefinement.maxStations as number) >= values.length && (stationRefinement.maxStations as number) <= MAX_BLOCK_STATIONS,
+      `${path}.neutralAxisStations.refinement.maxStations must be between station count and ${MAX_BLOCK_STATIONS}`)
+    refinement = {
+      type: 'adaptive',
+      tolerance: stationRefinement.tolerance,
+      maxPasses: stationRefinement.maxPasses as number,
+      maxStations: stationRefinement.maxStations as number
+    }
+  }
+
+  assertRecord(value.directions, `${path}.directions must be an object`)
+  assert(Number.isInteger(value.directions.seedCount) && (value.directions.seedCount as number) >= 4 && (value.directions.seedCount as number) <= MAX_SEED_DIRECTIONS,
+    `${path}.directions.seedCount must be an integer between 4 and ${MAX_SEED_DIRECTIONS}`)
+  assert(isFiniteNumber(value.directions.startDeg) && value.directions.startDeg >= 0 && value.directions.startDeg < 360,
+    `${path}.directions.startDeg must be in [0, 360)`)
+  assertRecord(value.directions.refinement, `${path}.directions.refinement must be an object`)
+  const directionRefinement = value.directions.refinement
+  let directionsRefinement: EquivalentBlockAnalysisOptions['directions']['refinement']
+  if (directionRefinement.type === 'fixed') {
+    directionsRefinement = { type: 'fixed' }
+  } else {
+    assert(directionRefinement.type === 'adaptive', `${path}.directions.refinement.type is unsupported`)
+    assert(isFiniteNumber(directionRefinement.tolerance) && directionRefinement.tolerance > 0 && directionRefinement.tolerance <= 0.25,
+      `${path}.directions.refinement.tolerance must be in (0, 0.25]`)
+    assert(Number.isInteger(directionRefinement.maxPasses) && (directionRefinement.maxPasses as number) >= 0 && (directionRefinement.maxPasses as number) <= 12,
+      `${path}.directions.refinement.maxPasses must be an integer between 0 and 12`)
+    assert(Number.isInteger(directionRefinement.maxDirections) && (directionRefinement.maxDirections as number) >= (value.directions.seedCount as number) && (directionRefinement.maxDirections as number) <= MAX_REFINED_DIRECTIONS,
+      `${path}.directions.refinement.maxDirections must be between seed count and ${MAX_REFINED_DIRECTIONS}`)
+    directionsRefinement = {
+      type: 'adaptive',
+      tolerance: directionRefinement.tolerance,
+      maxPasses: directionRefinement.maxPasses as number,
+      maxDirections: directionRefinement.maxDirections as number
+    }
+  }
+
+  return {
+    optionsVersion: ANALYSIS_OPTIONS_VERSION,
+    methodId: EQUIVALENT_BLOCK_SURFACE_METHOD,
+    neutralAxisStations: {
+      basedOn: value.neutralAxisStations.basedOn,
+      values,
+      refinement
+    },
+    directions: {
+      seedCount: value.directions.seedCount as number,
+      startDeg: value.directions.startDeg,
+      refinement: directionsRefinement
+    }
+  }
+}
+
+const parseAnalysis = (value: unknown): CalculationAnalysisOptions => {
   const path = 'inputs.analysis'
   assertRecord(value, `${path} must be an object`)
   assert(value.optionsVersion === ANALYSIS_OPTIONS_VERSION, `${path}.optionsVersion is unsupported`)
+  if (value.methodId === EQUIVALENT_BLOCK_SURFACE_METHOD) return parseEquivalentBlockAnalysis(value, path)
   assert(value.methodId === STRAIN_DOMAIN_SURFACE_METHOD, `${path}.methodId is unsupported`)
   assertRecord(value.stations, `${path}.stations must be an object`)
   assert(
@@ -652,8 +749,17 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
   assert(isString(value.meta.createdAt), 'meta.createdAt must be a string')
   assert(isString(value.meta.updatedAt), 'meta.updatedAt must be a string')
   assertRecord(value.inputs, 'inputs must be an object')
+  assert(isCalculationProfileId(value.inputs.calculationProfileId), 'inputs.calculationProfileId is unsupported')
 
   const materials = parseMaterials(value.inputs.materials)
+  const analysis = parseAnalysis(value.inputs.analysis)
+  const profile = calculationProfile(value.inputs.calculationProfileId)
+  const design = parseDesignBasis(value.inputs.design, materials)
+  assert(
+    (profile.mechanics === 'equivalent-rectangular-block') ===
+      (analysis.methodId === EQUIVALENT_BLOCK_SURFACE_METHOD),
+    'inputs.calculationProfileId and inputs.analysis.methodId select different mechanics'
+  )
   return {
     schema: PM_PROJECT_SCHEMA,
     version: PM_PROJECT_VERSION,
@@ -664,11 +770,12 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
       updatedAt: value.meta.updatedAt
     },
     inputs: {
+      calculationProfileId: value.inputs.calculationProfileId,
       geometry: parseGeometry(value.inputs.geometry),
       materials,
       loadings: parseLoadings(value.inputs.loadings),
-      analysis: parseAnalysis(value.inputs.analysis),
-      design: parseDesignBasis(value.inputs.design, materials)
+      analysis,
+      design
     }
   }
 }

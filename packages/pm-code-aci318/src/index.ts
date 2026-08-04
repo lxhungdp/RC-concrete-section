@@ -38,6 +38,14 @@ export type CreateAci318ModelInput = {
   concreteStrength: number
   steel: Readonly<Record<string, AciSteelDefinition>>
   transverseReinforcement: AciTransverseReinforcement
+  resistanceFactors?: {
+    phiCompressionOther: number
+    phiCompressionSpiral: number
+    phiTension: number
+    transitionExtraStrain: number
+    axialCapOther: number
+    axialCapSpiral: number
+  }
 }
 
 export type AciResistanceClassification = 'compression-controlled' | 'transition' | 'tension-controlled'
@@ -73,15 +81,21 @@ export const aci318Beta1 = (concreteStrength: number) => {
 export const evaluateAci318StrengthReduction = (
   tensileStrain: number,
   steel: AciSteelDefinition,
-  transverseReinforcement: AciTransverseReinforcement
+  transverseReinforcement: AciTransverseReinforcement,
+  factors = {
+    phiCompressionOther: 0.65,
+    phiCompressionSpiral: 0.75,
+    phiTension: 0.90,
+    transitionExtraStrain: 0.003
+  }
 ): AciStrengthReduction => {
   if (!Number.isFinite(tensileStrain) || tensileStrain < 0 || !positiveFinite(steel.elasticModulus) || !positiveFinite(steel.yieldStress)) {
     throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'ACI phi evaluation requires a nonnegative tensile strain and valid steel properties.')
   }
   const yieldStrain = steel.yieldStress / steel.elasticModulus
-  const tensionControlledLimit = yieldStrain + 0.003
-  const compressionPhi = transverseReinforcement === 'qualifying-spiral' ? 0.75 : 0.65
-  const tensionPhi = 0.90
+  const tensionControlledLimit = yieldStrain + factors.transitionExtraStrain
+  const compressionPhi = transverseReinforcement === 'qualifying-spiral' ? factors.phiCompressionSpiral : factors.phiCompressionOther
+  const tensionPhi = factors.phiTension
   if (tensileStrain <= yieldStrain) {
     return { phi: compressionPhi, classification: 'compression-controlled', tensileStrain, yieldStrain, tensionControlledLimit }
   }
@@ -126,6 +140,26 @@ export const createAci318Model = (input: CreateAci318ModelInput) => {
     throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'ACI transverse reinforcement must be tied or qualifying-spiral.')
   }
   validateSteel(input.steel)
+  const resistanceFactors = input.resistanceFactors ?? {
+    phiCompressionOther: 0.65,
+    phiCompressionSpiral: 0.75,
+    phiTension: 0.90,
+    transitionExtraStrain: 0.003,
+    axialCapOther: 0.80,
+    axialCapSpiral: 0.85
+  }
+  if (Object.values(resistanceFactors).some((value) => !positiveFinite(value))) {
+    throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'ACI resistance factors must be positive and finite.')
+  }
+  if ([
+    resistanceFactors.phiCompressionOther,
+    resistanceFactors.phiCompressionSpiral,
+    resistanceFactors.phiTension,
+    resistanceFactors.axialCapOther,
+    resistanceFactors.axialCapSpiral
+  ].some((value) => value > 1)) {
+    throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'ACI phi factors and axial-cap ratios must not exceed 1.0.')
+  }
   const beta1 = aci318Beta1(input.concreteStrength)
   const steelLaws: SteelLawRegistry = Object.fromEntries(Object.entries(input.steel).map(([id, definition]) => [
     id,
@@ -137,8 +171,8 @@ export const createAci318Model = (input: CreateAci318ModelInput) => {
     extremeCompressionStrain: 0.003,
     subtractDisplacedConcrete: true
   }
-  const compressionPhi = input.transverseReinforcement === 'qualifying-spiral' ? 0.75 : 0.65
-  const axialCapRatio = input.transverseReinforcement === 'qualifying-spiral' ? 0.85 : 0.80
+  const compressionPhi = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.phiCompressionSpiral : resistanceFactors.phiCompressionOther
+  const axialCapRatio = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.axialCapSpiral : resistanceFactors.axialCapOther
 
   const bindNominalEvaluator = (section: PreparedEquivalentBlockSection): CapacityEvaluator<NominalBlockEvaluation> => (state: BlockSectionState) => {
     const nominal = evaluateEquivalentBlock(section, blockLaw, steelLaws, state)
@@ -154,7 +188,8 @@ export const createAci318Model = (input: CreateAci318ModelInput) => {
     const resistance = evaluateAci318StrengthReduction(
       nominal.controllingTensileStrain,
       definition,
-      input.transverseReinforcement
+      input.transverseReinforcement,
+      resistanceFactors
     )
     return {
       state,
@@ -187,8 +222,8 @@ export const createAci318Model = (input: CreateAci318ModelInput) => {
     const nominal = nominalEndpoints(section)
     return {
       tension: {
-        resultants: scaleResultants(nominal.tension.resultants, 0.90),
-        metadata: { ...nominal.tension.metadata, phi: 0.90 }
+        resultants: scaleResultants(nominal.tension.resultants, resistanceFactors.phiTension),
+        metadata: { ...nominal.tension.metadata, phi: resistanceFactors.phiTension }
       } as CapacityEndpoint,
       compression: {
         resultants: scaleResultants(nominal.compression.resultants, compressionPhi),
