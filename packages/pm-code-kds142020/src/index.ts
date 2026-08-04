@@ -50,16 +50,22 @@ export type KdsBlockParameterOverride = {
   basis: string
 }
 
+export type KdsTensionControlledLimitRule = {
+  yieldStressThreshold: number
+  fixedStrainLimit: number
+  highStrengthYieldMultiple: number
+}
+
 export type CreateKds142020ModelInput = {
   concreteStrength: number
   steel: Readonly<Record<string, KdsSteelDefinition>>
   transverseReinforcement: KdsTransverseReinforcement
   blockParameterOverride?: KdsBlockParameterOverride
+  transitionLimitRule?: KdsTensionControlledLimitRule
   resistanceFactors?: {
     phiCompressionOther: number
     phiCompressionSpiral: number
     phiTension: number
-    transitionExtraStrain: number
     axialCapOther: number
     axialCapSpiral: number
   }
@@ -161,15 +167,21 @@ export const evaluateKds142010StrengthReduction = (
   factors = {
     phiCompressionOther: 0.65,
     phiCompressionSpiral: 0.70,
-    phiTension: 0.85,
-    transitionExtraStrain: 0.003
+    phiTension: 0.85
+  },
+  transitionRule: KdsTensionControlledLimitRule = {
+    yieldStressThreshold: 400,
+    fixedStrainLimit: 0.005,
+    highStrengthYieldMultiple: 2.5
   }
 ): KdsStrengthReduction => {
   if (!Number.isFinite(tensileStrain) || tensileStrain < 0 || !positiveFinite(steel.elasticModulus) || !positiveFinite(steel.yieldStress)) {
     throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'KDS phi evaluation requires a nonnegative tensile strain and valid steel properties.')
   }
   const yieldStrain = steel.yieldStress / steel.elasticModulus
-  const tensionControlledLimit = steel.yieldStress <= 400 ? yieldStrain + factors.transitionExtraStrain : 2.5 * yieldStrain
+  const tensionControlledLimit = steel.yieldStress <= transitionRule.yieldStressThreshold
+    ? transitionRule.fixedStrainLimit
+    : transitionRule.highStrengthYieldMultiple * yieldStrain
   const compressionPhi = transverseReinforcement === 'qualifying-spiral' ? factors.phiCompressionSpiral : factors.phiCompressionOther
   const tensionPhi = factors.phiTension
   if (tensileStrain <= yieldStrain) {
@@ -217,12 +229,19 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
     phiCompressionOther: 0.65,
     phiCompressionSpiral: 0.70,
     phiTension: 0.85,
-    transitionExtraStrain: 0.003,
     axialCapOther: 0.80,
     axialCapSpiral: 0.85
   }
+  const transitionLimitRule = input.transitionLimitRule ?? {
+    yieldStressThreshold: 400,
+    fixedStrainLimit: 0.005,
+    highStrengthYieldMultiple: 2.5
+  }
   if (Object.values(resistanceFactors).some((value) => !positiveFinite(value))) {
     throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'KDS resistance factors must be positive and finite.')
+  }
+  if (Object.values(transitionLimitRule).some((value) => !positiveFinite(value))) {
+    throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'KDS transition-limit parameters must be positive and finite.')
   }
   if ([
     resistanceFactors.phiCompressionOther,
@@ -262,7 +281,8 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
       nominal.controllingTensileStrain,
       definition,
       input.transverseReinforcement,
-      resistanceFactors
+      resistanceFactors,
+      transitionLimitRule
     )
     return {
       state,

@@ -368,6 +368,28 @@ const parseAnalysisStation = (value: unknown, path: string): AnalysisStation => 
     )
     return { id: value.id, label: value.label, criterion: { type: 'steel-strain', strain: value.criterion.strain } }
   }
+  if (value.criterion.type === 'strength-reduction-transition-ratio') {
+    assert(
+      isFiniteNumber(value.criterion.ratio) && value.criterion.ratio > 0 && value.criterion.ratio <= 1,
+      `${path}.criterion.ratio must be in (0, 1]`
+    )
+    return {
+      id: value.id,
+      label: value.label,
+      criterion: { type: 'strength-reduction-transition-ratio', ratio: value.criterion.ratio }
+    }
+  }
+  if (value.criterion.type === 'strength-reduction-post-transition') {
+    assert(
+      isFiniteNumber(value.criterion.extraStrain) && value.criterion.extraStrain > 0,
+      `${path}.criterion.extraStrain must be positive`
+    )
+    return {
+      id: value.id,
+      label: value.label,
+      criterion: { type: 'strength-reduction-post-transition', extraStrain: value.criterion.extraStrain }
+    }
+  }
   throw new Error(`${path}.criterion.type is unsupported`)
 }
 
@@ -487,7 +509,9 @@ const parseAnalysis = (value: unknown): CalculationAnalysisOptions => {
   assert(value.methodId === STRAIN_DOMAIN_SURFACE_METHOD, `${path}.methodId is unsupported`)
   assertRecord(value.stations, `${path}.stations must be an object`)
   assert(
-    value.stations.basedOn === 'legacy-p0-p18-v1' || value.stations.basedOn === 'custom',
+    value.stations.basedOn === 'transition-aware-p0-p24-v1' ||
+      value.stations.basedOn === 'legacy-p0-p18-v1' ||
+      value.stations.basedOn === 'custom',
     `${path}.stations.basedOn is invalid`
   )
   assertArray(value.stations.intermediate, `${path}.stations.intermediate must be an array`)
@@ -500,6 +524,21 @@ const parseAnalysis = (value: unknown): CalculationAnalysisOptions => {
   )
   const stationIds = new Set(intermediate.map((item) => item.id))
   assert(stationIds.size === intermediate.length, `${path}.stations.intermediate ids must be unique`)
+  if (value.stations.basedOn === 'transition-aware-p0-p24-v1') {
+    const hasYield = intermediate.some(
+      (item) => item.criterion.type === 'steel-stress-ratio' && Math.abs(item.criterion.ratio - 1) <= 1e-12
+    )
+    const hasTransitionFractions = Array.from({ length: 8 }, (_, index) => (index + 1) / 8).every(
+      (ratio) => intermediate.some(
+        (item) => item.criterion.type === 'strength-reduction-transition-ratio' &&
+          Math.abs(item.criterion.ratio - ratio) <= 1e-12
+      )
+    )
+    assert(
+      hasYield && hasTransitionFractions,
+      `${path}.stations must retain yield plus all eight 1/8 transition fractions for transition-aware-p0-p24-v1`
+    )
+  }
 
   assertRecord(value.directions, `${path}.directions must be an object`)
   assertRecord(value.directions.seed, `${path}.directions.seed must be an object`)
@@ -689,19 +728,39 @@ const parseDesignBasis = (value: unknown | undefined, materials: MaterialStore):
       'phiCompressionOther',
       'phiCompressionSpiral',
       'phiTension',
-      'transitionExtraStrain',
       'axialCapOther',
       'axialCapSpiral'
     ]
     for (const key of factorKeys) {
       assert(isFiniteNumber(factors[key]), `inputs.design.factors.${key} must be finite`)
     }
+    assertRecord(value.transition, 'inputs.design.transition must be an object')
+    let transition: Extract<DesignBasis, { format: 'globalResultantFactor' }>['transition']
+    if (value.transition.type === 'yield-plus-strain') {
+      assert(isFiniteNumber(value.transition.extraStrain), 'inputs.design.transition.extraStrain must be finite')
+      transition = { type: 'yield-plus-strain', extraStrain: value.transition.extraStrain }
+    } else {
+      assert(
+        value.transition.type === 'fixed-or-yield-multiple',
+        'inputs.design.transition.type is unsupported'
+      )
+      for (const key of ['yieldStressThreshold', 'fixedStrainLimit', 'highStrengthYieldMultiple'] as const) {
+        assert(isFiniteNumber(value.transition[key]), `inputs.design.transition.${key} must be finite`)
+      }
+      transition = {
+        type: 'fixed-or-yield-multiple',
+        yieldStressThreshold: value.transition.yieldStressThreshold as number,
+        fixedStrainLimit: value.transition.fixedStrainLimit as number,
+        highStrengthYieldMultiple: value.transition.highStrengthYieldMultiple as number
+      }
+    }
     design = {
       ...common,
       format: 'globalResultantFactor',
       transverseReinforcement: value.transverseReinforcement,
       axialCapEnabled: value.axialCapEnabled,
-      factors: Object.fromEntries(factorKeys.map((key) => [key, factors[key]])) as unknown as GlobalStrengthReductionFactors
+      factors: Object.fromEntries(factorKeys.map((key) => [key, factors[key]])) as unknown as GlobalStrengthReductionFactors,
+      transition
     }
   } else {
     assert(value.format === 'designMaterialReevaluation', 'inputs.design.format is unsupported')
@@ -759,6 +818,17 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
     (profile.mechanics === 'equivalent-rectangular-block') ===
       (analysis.methodId === EQUIVALENT_BLOCK_SURFACE_METHOD),
     'inputs.calculationProfileId and inputs.analysis.methodId select different mechanics'
+  )
+  const expectsAci = value.inputs.calculationProfileId === 'aci-318-19-22-equivalent-block'
+  assert(
+    design.format === 'globalResultantFactor' &&
+      design.profileId === (expectsAci ? 'aci-318-19-22' : 'kds-2024-current-set'),
+    'inputs.calculationProfileId and inputs.design select different standards or resistance formats'
+  )
+  assert(
+    materials.concrete.standard === (expectsAci ? 'ACI318' : 'KDS') &&
+      materials.steel.every((steel) => steel.standard === (expectsAci ? 'ACI318' : 'KDS')),
+    'inputs.calculationProfileId and inputs.materials select different standards'
   )
   return {
     schema: PM_PROJECT_SCHEMA,

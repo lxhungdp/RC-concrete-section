@@ -12,12 +12,11 @@ import { buildPreviewSurface, contourStrainAngleSamples, sliceFixedPContour } fr
 import { referenceProjectDocument } from './reference-case'
 
 const KN = 1e3
-const SAMPLED_DIRECTIONS = 24
-
 const document = referenceProjectDocument()
 const section = sectionGeometryFromGeometryInput(document.inputs.geometry)
 const rebars = geometryInputRebars(document.inputs.geometry)
 const surface = buildPreviewSurface(section, rebars, document.inputs.materials)
+const SAMPLED_DIRECTIONS = surface.directions.length
 
 const levels = [24942.9 * KN, 10000 * KN, 0, -3000 * KN]
 
@@ -25,7 +24,8 @@ test('the surface no longer carries an unused precomputed contour', () => {
   assert.equal('contour' in surface, false)
 })
 
-test('the surface is sampled on 24 strain-plane directions', () => {
+test('the surface retains at least the 36 seed directions after adaptive refinement', () => {
+  assert.ok(SAMPLED_DIRECTIONS >= 36)
   assert.equal(new Set(surface.points.map((point) => point.beta)).size, SAMPLED_DIRECTIONS)
 })
 

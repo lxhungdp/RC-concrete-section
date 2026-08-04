@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict'
 import { createEmptyGeometryInput } from '@pm/geometry'
 import {
-  applyEn1992ConcreteDerived,
-  applyEn1992SteelDerived,
   createDefaultMaterialStore,
   createKdsRebarSteel
 } from '@pm/materials'
@@ -18,19 +16,6 @@ import {
 const run = () => {
   const materials = createDefaultMaterialStore()
   const steel2 = createKdsRebarSteel({ name: 'SD500', fy: 500 }, materials.steel.map((item) => item.id))
-  materials.concrete = applyEn1992ConcreteDerived({
-    ...materials.concrete,
-    name: 'EN 1992 C30',
-    standard: 'EC2',
-    factors: { alpha: 0.85, gammaC: 1.5 }
-  })
-  materials.steel[0] = applyEn1992SteelDerived({
-    ...materials.steel[0],
-    name: 'EN 1992 B500',
-    standard: 'EC2',
-    fy: 500,
-    factors: { gammaS: 1.15 }
-  })
   materials.steel.push(steel2)
 
   const geometry = createEmptyGeometryInput({ id: 1, name: 'Roundtrip section' })
@@ -86,28 +71,38 @@ const run = () => {
   assert.equal(parsed.document.inputs.geometry.outers[0]?.points[0]?.id, 1)
   assert.equal(parsed.document.inputs.materials.concrete.id, 1)
   assert.equal(parsed.document.inputs.materials.concrete.mc, 2350)
-  assert.equal(parsed.document.inputs.materials.concrete.standard, 'EC2')
-  assert.equal(parsed.document.inputs.materials.concrete.stressStrain.type, 'ec2-parabolic-rectangular')
-  assert.equal(parsed.document.inputs.materials.concrete.factors?.alpha, 0.85)
-  assert.equal(parsed.document.inputs.materials.concrete.factors?.gammaC, 1.5)
+  assert.equal(parsed.document.inputs.materials.concrete.standard, 'KDS')
+  assert.equal(parsed.document.inputs.materials.concrete.stressStrain.type, 'kds-parabolic')
+  assert.ok((parsed.document.inputs.materials.concrete.factors?.alpha ?? 0) > 0)
+  assert.equal(parsed.document.inputs.materials.concrete.factors?.gammaC, undefined)
   assert.ok((parsed.document.inputs.materials.concrete.elasticModulus ?? 0) > 0)
-  assert.equal(parsed.document.inputs.materials.steel[0]?.standard, 'EC2')
-  assert.equal(parsed.document.inputs.materials.steel[0]?.factors?.gammaS, 1.15)
-  assert.equal(parsed.document.inputs.materials.steel[0]?.limits?.epsY, 500 / 1.15 / 200000)
+  assert.equal(parsed.document.inputs.materials.steel[0]?.standard, 'KDS')
+  assert.equal(parsed.document.inputs.materials.steel[0]?.factors?.gammaS, undefined)
+  assert.equal(
+    parsed.document.inputs.materials.steel[0]?.limits?.epsY,
+    parsed.document.inputs.materials.steel[0]!.fy / parsed.document.inputs.materials.steel[0]!.elasticModulus
+  )
   assert.equal(parsed.document.inputs.materials.steel[1]?.id, 2)
   assert.equal(parsed.document.inputs.geometry.rebars[1]?.steelMaterialId, 2)
   assert.equal(parsed.document.inputs.loadings.combinations[0]?.P, 1_000_000)
   assert.equal(parsed.document.inputs.loadings.combinations[0]?.actionBasis, 'factoredULS')
-  assert.equal(parsed.document.inputs.design.profileId, 'en-1992-1-1-2004-default')
-  assert.equal(parsed.document.inputs.design.format, 'designMaterialReevaluation')
+  assert.equal(parsed.document.inputs.design.profileId, 'kds-2024-current-set')
+  assert.equal(parsed.document.inputs.design.format, 'globalResultantFactor')
   const parsedAnalysis = parsed.document.inputs.analysis
   assert.equal(parsedAnalysis.methodId, 'strain-domain-surface-v1')
   if (parsedAnalysis.methodId !== 'strain-domain-surface-v1') throw new Error('Expected curve analysis options')
-  assert.equal(parsedAnalysis.stations.intermediate.length, 17)
+  assert.equal(parsedAnalysis.stations.intermediate.length, 23)
   assert.deepEqual(parsedAnalysis.directions.seed, {
     type: 'uniform',
-    count: 24,
+    count: 36,
     startDeg: 0
+  })
+  assert.deepEqual(parsedAnalysis.directions.refinement, {
+    type: 'adaptive',
+    tolerance: 0.005,
+    maxPasses: 6,
+    maxDirections: 360,
+    probe: 'all'
   })
 
   const empty = createEmptyProjectDocument({ id: 1, name: 'Empty' })

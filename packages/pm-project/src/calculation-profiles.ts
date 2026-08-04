@@ -28,7 +28,7 @@ export type CalculationProfile = {
   organization: 'KDS' | 'ACI'
   standard: 'KDS 2024 current set' | 'KDS 14 20 20:2022' | 'ACI 318-19(22)'
   mechanics: CalculationMechanics
-  verificationStatus: 'verified'
+  verificationStatus: 'implemented'
 }
 
 export const CALCULATION_PROFILES: readonly CalculationProfile[] = [
@@ -39,7 +39,7 @@ export const CALCULATION_PROFILES: readonly CalculationProfile[] = [
     organization: 'KDS',
     standard: 'KDS 2024 current set',
     mechanics: 'stress-strain-integration',
-    verificationStatus: 'verified'
+    verificationStatus: 'implemented'
   },
   {
     id: 'kds-142020-equivalent-block',
@@ -48,7 +48,7 @@ export const CALCULATION_PROFILES: readonly CalculationProfile[] = [
     organization: 'KDS',
     standard: 'KDS 14 20 20:2022',
     mechanics: 'equivalent-rectangular-block',
-    verificationStatus: 'verified'
+    verificationStatus: 'implemented'
   },
   {
     id: 'aci-318-19-22-equivalent-block',
@@ -57,7 +57,7 @@ export const CALCULATION_PROFILES: readonly CalculationProfile[] = [
     organization: 'ACI',
     standard: 'ACI 318-19(22)',
     mechanics: 'equivalent-rectangular-block',
-    verificationStatus: 'verified'
+    verificationStatus: 'implemented'
   }
 ] as const
 

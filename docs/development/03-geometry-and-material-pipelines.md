@@ -125,12 +125,16 @@ At minimum:
 Concrete definitions support KDS parabolic, ACI Whitney block, EC2 parabolic-rectangular, and user
 curve discriminants. Steel supports elastic-perfectly-plastic, bilinear, and user curves.
 
-The editor exposes this through one source/standard selector. Code keeps the stored enum values
-`KDS`, `ACI318`, `EC2`, and `CUSTOM`; the UI labels are `KDS`, `ACI 318`,
-`EN 1992-1-1 (EC2)`, and `Custom`. That selector is responsible for deriving the current
-`stressStrain`, `limits`, `elasticModulus`, and optional `factors` fields. A second independent
-stress-strain-model selector must not be reintroduced unless the schema is redesigned, because it
-would allow contradictory states such as `standard = EC2` with an unrelated law and hidden factors.
+The Materials editor exposes one calculation-profile selector. Its current choices are KDS 2024
+stress-strain integration, KDS 14 20 20 equivalent block, and ACI 318-19(22) equivalent block. One
+change atomically derives the material source/model, mechanics, resistance basis, and matching
+analysis-options DTO. A second independent mechanics or standard selector must not be introduced,
+because it would allow contradictory states such as an ACI block profile with stress-strain options.
+
+The lower-level material enums `KDS`, `ACI318`, `EC2`, and `CUSTOM` remain serializable definition
+fields. EC2 and Custom material families do not currently appear as complete calculation profiles in
+the main selector; adding one requires a complete profile and matching numerical route, not only a
+new combobox label.
 
 ### Implemented compilation
 
@@ -204,7 +208,7 @@ precompute curve segments once; use binary search or indexed segment traversal.
 | blocking | material forms can create invalid/inconsistent combinations | strict discriminated validation and authoritative derivation |
 | blocking | silent fallback/default model selection | exhaustive switch and typed unsupported-model error |
 | blocking | no explicit extrapolation/admissibility | add policies, rupture/domain behavior, and fatal out-of-domain path |
-| blocking | ACI Whitney `beta1` unused | remove from accepted local-law registry and implement verified profile-specific block operation |
+| closed routing hazard | ACI Whitney `beta1` cannot be used as a local fiber law | local-law path rejects it; the ACI calculation profile routes to `@pm/code-aci318`, where `a = beta1 c` is evaluated by exact block clipping |
 | high | numerical tangents and unspecified kink side | analytical tangents and documented deterministic kink convention |
 | high | no stress contribution ledger | expose concrete/steel/displaced-concrete components |
 | high | deleting steel can orphan bars | block deletion or require explicit reassignment command |

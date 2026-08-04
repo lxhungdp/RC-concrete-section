@@ -30,20 +30,35 @@ type StrainProps = Props & { options: AnalysisOptions }
 const clone = (options: AnalysisOptions): AnalysisOptions => structuredClone(options)
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
-const criterionValue = (criterion: AnalysisStationCriterion) =>
-  criterion.type === 'steel-strain' ? criterion.strain : criterion.ratio
+const criterionValue = (criterion: AnalysisStationCriterion) => {
+  if (criterion.type === 'steel-strain') return criterion.strain
+  if (criterion.type === 'strength-reduction-post-transition') return criterion.extraStrain
+  return criterion.ratio
+}
 
 const criterionWithValue = (criterion: AnalysisStationCriterion, value: number): AnalysisStationCriterion => {
   if (criterion.type === 'c-over-c1') return { type: criterion.type, ratio: Math.max(1e-6, value) }
   if (criterion.type === 'steel-stress-ratio') return { type: criterion.type, ratio: clamp(value, 0, 1) }
+  if (criterion.type === 'strength-reduction-transition-ratio') {
+    return { type: criterion.type, ratio: clamp(value, 1e-6, 1) }
+  }
+  if (criterion.type === 'strength-reduction-post-transition') {
+    return { type: criterion.type, extraStrain: Math.max(1e-6, value) }
+  }
   return { type: criterion.type, strain: Math.min(0, value) }
 }
 
 const defaultCriterion = (type: AnalysisStationCriterion['type']): AnalysisStationCriterion => {
   if (type === 'c-over-c1') return { type, ratio: 1 }
   if (type === 'steel-stress-ratio') return { type, ratio: 0 }
+  if (type === 'strength-reduction-transition-ratio') return { type, ratio: 0.5 }
+  if (type === 'strength-reduction-post-transition') return { type, extraStrain: 0.0025 }
   return { type, strain: -0.003 }
 }
+
+const isMandatoryTransitionStation = (criterion: AnalysisStationCriterion) =>
+  criterion.type === 'strength-reduction-transition-ratio' ||
+  (criterion.type === 'steel-stress-ratio' && Math.abs(criterion.ratio - 1) < 1e-12)
 
 const insertLargestGapMidpoint = (angles: number[]) => {
   const sorted = [...angles].sort((a, b) => a - b)
@@ -69,10 +84,11 @@ type NumericInputProps = {
   max?: number
   step?: number | 'any'
   integer?: boolean
+  disabled?: boolean
 }
 
 /** Keep transient text local so "-", ".", and an empty selection never mutate canonical options. */
-function NumericInput({ value, onCommit, ariaLabel, min, max, step = 'any', integer = false }: NumericInputProps) {
+function NumericInput({ value, onCommit, ariaLabel, min, max, step = 'any', integer = false, disabled = false }: NumericInputProps) {
   const [draft, setDraft] = useState(String(value))
   useEffect(() => setDraft(String(value)), [value])
 
@@ -96,6 +112,7 @@ function NumericInput({ value, onCommit, ariaLabel, min, max, step = 'any', inte
       min={min}
       max={max}
       step={step}
+      disabled={disabled}
       value={draft}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commitDraft}
@@ -190,7 +207,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
         <button
           type="button"
           className="pm-table-icon-btn"
-          title="Reset the verified P0–P18 / 24-direction profile"
+          title="Reset the transition-aware P0–P24 / 36-seed-direction profile"
           onClick={() => onChange(createDefaultAnalysisOptions())}
         >
           <RotateCcw size={14} />
@@ -260,6 +277,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
                   <select
                     aria-label={`Point ${index + 2} criteria`}
                     value={station.criterion.type}
+                    disabled={isMandatoryTransitionStation(station.criterion)}
                     onChange={(event) =>
                       updateStation(station.id, {
                         criterion: defaultCriterion(event.target.value as AnalysisStationCriterion['type'])
@@ -268,6 +286,8 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
                   >
                     <option value="c-over-c1">c/c1</option>
                     <option value="steel-stress-ratio">fs/fyd</option>
+                    <option value="strength-reduction-transition-ratio">phi transition ratio</option>
+                    <option value="strength-reduction-post-transition">post-transition strain</option>
                     <option value="steel-strain">εₛ</option>
                   </select>
                 </td>
@@ -276,6 +296,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
                     ariaLabel={`Point ${index + 2} value`}
                     step="any"
                     value={criterionValue(station.criterion)}
+                    disabled={isMandatoryTransitionStation(station.criterion)}
                     onCommit={(value) =>
                       updateStation(station.id, {
                         criterion: criterionWithValue(station.criterion, value)
@@ -287,6 +308,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
                   <button
                     type="button"
                     className="pm-table-icon-btn pm-table-icon-btn--danger"
+                    disabled={isMandatoryTransitionStation(station.criterion)}
                     onClick={() =>
                       commit((draft) => {
                         draft.stations.intermediate = draft.stations.intermediate.filter(
@@ -329,8 +351,8 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
             commit((draft) => {
               draft.directions.seed =
                 event.target.value === 'uniform'
-                  ? { type: 'uniform', count: 24, startDeg: 0 }
-                  : { type: 'explicit', anglesDeg: Array.from({ length: 24 }, (_, index) => index * 15) }
+                  ? { type: 'uniform', count: 36, startDeg: 0 }
+                  : { type: 'explicit', anglesDeg: Array.from({ length: 36 }, (_, index) => index * 10) }
             })
           }
         >

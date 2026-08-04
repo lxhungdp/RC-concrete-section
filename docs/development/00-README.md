@@ -10,7 +10,7 @@ behavior, or package ownership.
 | Step | Document | Use it for |
 |---|---|---|
 | 1 | [`01-architecture-and-package-boundaries.md`](01-architecture-and-package-boundaries.md) | Package ownership, dependency direction, runtime separation. |
-| 2 | [`02-data-contracts-persistence-and-versioning.md`](02-data-contracts-persistence-and-versioning.md) | Project schema, migrations, persisted definitions, result identity. |
+| 2 | [`02-data-contracts-persistence-and-versioning.md`](02-data-contracts-persistence-and-versioning.md) | Strict pre-release schema v1, persisted definitions, profile/options contracts, result identity; no migration layer. |
 | 3 | [`03-geometry-and-material-pipelines.md`](03-geometry-and-material-pipelines.md) | Validation, normalization, compilation, UI-to-domain boundaries. |
 | 4 | [`04-loadings-analysis-results-and-report-pipelines.md`](04-loadings-analysis-results-and-report-pipelines.md) | Loadcase data, engine orchestration, results, Plotly adapter, reports. |
 | 5 | [`05-coding-quality-and-ai-workflow.md`](05-coding-quality-and-ai-workflow.md) | Testing discipline, review workflow, AI coding constraints. |
@@ -19,6 +19,9 @@ behavior, or package ownership.
 
 The numbered root files are technical references, not competing implementation instructions. The
 control map names the single owner for each rule or parameter.
+
+The current two-kernel routing and numerical defaults are summarized in
+[`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-models-defaults-and-workflows.md).
 
 ## 2. Mandatory Development Principles
 

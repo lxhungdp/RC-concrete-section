@@ -124,7 +124,6 @@ test('KDS model applies the resistance factors supplied by the calculation profi
     phiCompressionOther: 0.62,
     phiCompressionSpiral: 0.72,
     phiTension: 0.86,
-    transitionExtraStrain: 0.0035,
     axialCapOther: 0.74,
     axialCapSpiral: 0.83
   }

@@ -10,4 +10,7 @@ Implemented basis:
 - Pure-compression endpoint: `P0 = 0.85*f'c*(Ag-Ast) + sum(fy*As)`.
 - Maximum design compression: `0.80*phi*P0` for tied columns or `0.85*phi*P0` for qualifying spirals.
 
-The adapter owns only ACI policy. Geometry integration and inverse solving remain in `@pm/equivalent-block`, and no existing solver, UI, or persisted project schema is changed.
+The adapter owns only ACI policy. Geometry integration and inverse solving remain in
+`@pm/equivalent-block`. Project schema v1 selects it through
+`aci-318-19-22-equivalent-block`; `@pm/analysis-equivalent-block` maps the persisted DesignBasis and
+returns the common Nominal/Design result contract without routing through the fiber solver.

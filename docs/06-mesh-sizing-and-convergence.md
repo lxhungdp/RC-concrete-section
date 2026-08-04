@@ -159,18 +159,14 @@ strain angle is under-tested.
 
 ### 5.1 Measured direction-sampling error, and what it costs
 
-`PreviewSurface.directionError` now reports the β chord error of the grid it actually returned. The
-engine evaluates the true state halfway between two sampled directions and compares it with the
-chord the triangulation uses there. It is a sampled estimate over four probe stations, not a bound
-(§11); measured against a full 19-station sweep it recovered at worst 92% and on average 97% of the
-true worst, for about 21% of a surface build.
+`PreviewSurface.directionError` reports the beta chord error of the grid it actually returned. The
+engine evaluates the true state halfway between sampled directions and compares it with the chord
+used by the triangulation. The production stress-strain default probes all 25 stations; this is a
+sampled estimator, not a mathematical upper bound (§11). An explicit empty probe list disables the
+measurement and returns `NaN`, never a misleading zero.
 
-Those four probes are the verified default profile only and are persisted by stable station ID.
-After a user changes the schedule, the UI initializes adaptive refinement with `probe: "all"` so a
-legacy index set cannot silently stand in for the new path. An explicit empty ID list disables the
-estimate and returns `NaN`, never a misleading zero.
-
-At the default fixed grid of 24 directions:
+The following table is a historical measurement of the former fixed 24-direction grid. It is kept
+to explain why that default was retired; it is not the current production configuration:
 
 | Section | `max |ΔP|/Pspan` | `max |ΔM|/Mspan` | Capacity change when refined to 192 directions |
 |---|---:|---:|---:|
@@ -185,14 +181,16 @@ The direction grid, not the integration mesh, is the governing numerical error: 
 percent in moment, against one tenth of a percent from the mesh.
 
 The capacity change is **always positive**. Chord interpolation across a convex fixed-P contour cuts
-the corner, so the 24-direction grid systematically under-reports capacity — conservative, but by an
-amount nobody had measured. Per-station sweeps show the error rising with station index: the poles
-`P0` and `P18` are direction independent and score exactly zero, while the deep-tension stations peak
-near 16%.
+the corner, so a coarse fixed direction grid systematically under-reports capacity. The current
+stress-strain default starts from 36 directions and adaptively probes all 25 stations at 0.5%
+relative tolerance. The effective direction count and convergence evidence are recorded with every
+surface. The equivalent-block model retains its independent 24-direction seed and 1% adaptive
+default because its station coordinate and exact clipped-block kernel are different.
 
-Refinement is available through `SurfaceRefinementOptions` and is **off by default**, so no result
-moves unless it is asked for. Turning it on is an engineering decision — it makes the reported
-capacity less conservative — and it must be recorded with the result, not enabled globally.
+The permanent post-change benchmark is `npm run bench:strain-sampling`. Against a 144-direction,
+33-transition-node reference, worst 3D ray error over five fixtures fell from 7.800% for the legacy
+19 x 24 fixed grid to 0.521% for the production 25-station/36-seed adaptive configuration. See `12`
+for per-configuration cost and acceptance evidence.
 
 ## 6. Error budget hierarchy
 

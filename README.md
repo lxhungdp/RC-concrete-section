@@ -1,51 +1,48 @@
 # P-M Column Designer
 
-Modular web platform for reinforced concrete column section geometry and future P-M-M capacity analysis.
+Modular TypeScript application for reinforced-concrete column-section P-M-M analysis and design
+preview.
 
-## Project Structure
+## Implemented calculation models
+
+The project contains two independent numerical pipelines:
+
+- **stress-strain integration**: compatible strain plane, concrete/steel material laws, verified
+  triangle/quadrature mesh, consistent tangent, Newton inverse solve;
+- **equivalent rectangular stress block**: exact polygon clipping of `a = beta1 c`, code-owned
+  block stress and strain limits, independent forward/inverse/surface algorithms.
+
+The current stress-strain default is 25 stations with nine mandatory code-aware transition nodes,
+36 uniform seed directions, and adaptive angular refinement to a 0.5% target. The equivalent-block
+default is independent: 37 initial neutral-axis states, 24 seed directions, and 1% adaptive station
+and direction refinement.
+
+KDS current-set and ACI 318-19(22) equivalent-block profiles are implemented as draft previews.
+Nominal, Design, and factored ULS Demand are separate result stages. See
+[`docs/12-calculation-models-defaults-and-workflows.md`](docs/12-calculation-models-defaults-and-workflows.md)
+for formulas, workflow, fields, defaults, and benchmark evidence.
+
+## Project structure
 
 ```text
-apps/
-  web/                    Next.js application
-
-packages/
-  cad-drawing/            Reusable CAD drawing foundation adapted from the develop/frame reference
-  pm-ids/                 Shared positive-integer entity id helpers (gap-fill)
-  pm-geometry/            Geometry data model and polygon calculations
-  pm-materials/           Material definitions, stress-strain compile pipeline, model support gates
-  pm-project/             Versioned project JSON document (geometry, materials, loadings, …)
-  pm-analysis/            Preview P-M-M kernel: fibres, stations, surface, slicing, inverse solve
-  pm-report/              Excel workbook export built from the analysis kernel
-
-docs/
-  engineering/            Structural-engineering scope, conventions, acceptance, and governance
-  development/            Package, pipeline, API, testing, and AI coding instructions
-  01...11                 Detailed mathematical, numerical, and V&V references
-
-data/
-  excel/                  Original Excel calculation workbooks used as references
+apps/web/                         Next.js application and section editor
+packages/pm-geometry/             Geometry, clipping, and integration mesh
+packages/pm-materials/            Persisted material definitions and compiled laws
+packages/pm-project/              Strict project schema v1 and analysis/profile DTOs
+packages/pm-design/               Resistance profile identity, factors, and transition rules
+packages/pm-analysis/             Stress-strain forward/inverse/surface kernel
+packages/pm-equivalent-block/     Standard-independent rectangular-block kernel
+packages/pm-code-kds142020/       KDS 14 20 20 block adapter
+packages/pm-code-aci318/          ACI 318 Whitney-block adapter
+packages/pm-analysis-equivalent-block/  Project/result bridge for block profiles
+packages/pm-report/               Excel and mesh-audit exports
+docs/engineering/                 Structural-engineering meaning and acceptance rules
+docs/development/                 Package, schema, UI, test, and release instructions
 ```
 
-## Documentation
-
-Start at [`docs/00-README.md`](docs/00-README.md). Engineering rules and programming rules are kept
-as separate instruction groups; source code and reference spreadsheets do not override them.
-
-## Current App
-
-The current working slices are Geometry and Materials input:
-
-- 2D polygon section input
-- smooth pan and pointer-centered zoom
-- fixed-size labels, dimensions, handles, and toolbar controls
-- light/dark theme tokens aligned with the referenced `develop/frame` platform
-- separate geometry package for later use by the P-M-M calculation kernel
-- concrete and steel definition editors with preview stress-strain curves
-- toolbar Import / Export JSON for the full project input document (`@pm/project`)
-
-Loadings has a persisted seed contract but its UI is still a placeholder. The analysis kernel,
-accepted Results workflow, and Excel/PDF Report workflow are not yet implemented; current output is
-input/preview only.
+Start documentation at [`docs/00-README.md`](docs/00-README.md). The repository is a development
+preview, not a certified design product; code-profile status and release gates are explicit in the
+reports and documentation.
 
 ## Commands
 
@@ -54,46 +51,32 @@ npm run dev
 npm run typecheck
 npm run test
 npm run build
+npm run bench:strain-sampling
+npm run bench:pipelines
+npm run bench:verify
 ```
 
-`npm test` runs the typecheck, the `node --test` unit suites, the `cad-drawing` suite, and the three
-verification fixtures (project round trip, P-M stations vs the reference workbook, Excel export
-re-evaluated through HyperFormula). All of it runs on every pull request via
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml). Every dependency is pinned to an exact
-version and `npm ci` enforces the lockfile, so a result-relevant build is reproducible.
+`npm test` runs typecheck, unit/integration suites, CAD tests, strict schema-v1 round trip, the
+historical workbook regression fixture, and formula-recalculated Excel-export verification.
 
-## Analysis gates
+`bench:strain-sampling` compares the legacy 19 x 24 fixed grid, the new 25 x 36 fixed grid, and the
+production adaptive configuration against a 144-direction/33-transition-node reference. On the
+five-fixture 2026-08-04 run, worst 3D ray error improved from 7.800% to 0.521%; every production case
+converged and every sampled demand ray intersected the surface.
 
-The kernel fails closed rather than substituting a plausible value:
+## Fail-closed analysis gates
 
-- a rebar referencing a steel material that does not exist is a typed `MISSING_STEEL_MATERIAL` error
-  instead of a bar that silently contributes nothing;
-- the ACI Whitney block is rejected as `UNSUPPORTED_CONCRETE_MODEL` until it has a resistance-level
-  adapter, because `β1` never reaches the fibre stress evaluation;
-- a mesh over its cell budget, an empty concrete region, or a mesh that fails its own area and
-  first-moment checks are `MESH_RESOURCE_LIMIT`, `EMPTY_CONCRETE_SECTION` and `MESH_NOT_VERIFIED`
-  rather than a capacity surface built from the reinforcement alone;
-- an inverse solve reports `converged` and `admissibility` separately, and `ok` requires both;
-- every surface names the ultimate strain domain it was built on, and flags a material law that
-  belongs to a different one.
+- Missing steel material references are typed fatal errors.
+- A fiber/material request for an ACI Whitney law is rejected because the Whitney block belongs to
+  the equivalent-block pipeline; selecting the ACI equivalent-block calculation profile routes to
+  the implemented adapter instead.
+- Mesh resource limits, empty concrete, and failed area/first-moment self-checks cannot produce a
+  stress-strain surface.
+- Inverse convergence and strain admissibility are reported separately; success requires both.
+- Adaptive surfaces record effective directions, passes, error estimate, tolerance status, and any
+  cap reached.
+- A global resistance factor is applied once to the complete resultant ledger; factored demand is
+  not reduced again.
 
-## Numerical uncertainty
-
-Every surface reports `directionError`: how much it still depends on how coarsely the strain-plane
-directions were sampled, measured by evaluating the true state between two sampled directions. On
-the benchmark sections this is 1–16% in moment — thirty times the integration-mesh error — and it is
-always conservative. Refinement is available and off by default, so no result moves unless asked.
-See [`docs/06`](docs/06-mesh-sizing-and-convergence.md) §4.1 and §5.1 for the measured tables.
-
-## Benchmarks
-
-```bash
-npm run bench           # 8 sections, one process each, min-of-N per stage
-npm run bench:verify    # bit-identity gate against the committed capacity fingerprint
-npm run bench:record    # regenerate that fingerprint after a deliberate engineering change
-```
-
-`bench:verify` runs in CI. It compares 24 capacity quantities across 8 sections at full double
-precision and fails on a single changed bit; a 1-in-10¹² perturbation of the concrete law is enough
-to trip it. Solver iteration-path diagnostics are reported separately, since an improved Jacobian is
-meant to move them.
+Every dependency is pinned and CI uses the lockfile. Reference workbooks are regression oracles,
+not design-code authority.

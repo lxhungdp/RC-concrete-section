@@ -195,18 +195,54 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                 }
               />
               <NumericFactor
-                label="Δεt"
-                value={draft.factors.transitionExtraStrain}
+                label={draft.transition.type === 'yield-plus-strain' ? 'Δεt' : 'εt,limit'}
+                value={draft.transition.type === 'yield-plus-strain'
+                  ? draft.transition.extraStrain
+                  : draft.transition.fixedStrainLimit}
                 min={0.000001}
-                max={0.02}
+                max={0.05}
                 step={0.0001}
-                help="Transition width above yield strain: the tension-controlled limit is εy + Δεt."
+                help={draft.transition.type === 'yield-plus-strain'
+                  ? 'ACI: the tension-controlled limit is εy + Δεt.'
+                  : 'KDS: fixed tension-controlled strain limit at or below the threshold grade.'}
                 onChange={(factor) =>
                   update((next) => {
-                    if (next.format === 'globalResultantFactor') next.factors.transitionExtraStrain = factor
+                    if (next.format !== 'globalResultantFactor') return
+                    if (next.transition.type === 'yield-plus-strain') next.transition.extraStrain = factor
+                    else next.transition.fixedStrainLimit = factor
                   })
                 }
               />
+              {draft.transition.type === 'fixed-or-yield-multiple' && (
+                <>
+                  <NumericFactor
+                    label="fy threshold (MPa)"
+                    value={draft.transition.yieldStressThreshold}
+                    min={100}
+                    max={1000}
+                    step={10}
+                    help="The fixed strain limit applies at or below this specified yield stress."
+                    onChange={(factor) => update((next) => {
+                      if (next.format === 'globalResultantFactor' && next.transition.type === 'fixed-or-yield-multiple') {
+                        next.transition.yieldStressThreshold = factor
+                      }
+                    })}
+                  />
+                  <NumericFactor
+                    label="High-strength εy multiplier"
+                    value={draft.transition.highStrengthYieldMultiple}
+                    min={1}
+                    max={10}
+                    step={0.1}
+                    help="Above the threshold, the tension-controlled limit equals this multiplier times εy."
+                    onChange={(factor) => update((next) => {
+                      if (next.format === 'globalResultantFactor' && next.transition.type === 'fixed-or-yield-multiple') {
+                        next.transition.highStrengthYieldMultiple = factor
+                      }
+                    })}
+                  />
+                </>
+              )}
             </div>
             <dl className="pm-design-definitions">
               <div>

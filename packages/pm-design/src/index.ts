@@ -28,12 +28,26 @@ export type GlobalStrengthReductionFactors = {
   phiCompressionOther: number
   phiCompressionSpiral: number
   phiTension: number
-  /** Tension-controlled threshold is epsYield + this increment. */
-  transitionExtraStrain: number
   /** Maximum design compression as a fraction of the uncapped compression pole. */
   axialCapOther: number
   axialCapSpiral: number
 }
+
+/**
+ * Code-owned definition of the tensile strain at which the tension-controlled
+ * strength-reduction factor is reached.
+ */
+export type TensionControlledLimitRule =
+  | {
+      type: 'yield-plus-strain'
+      extraStrain: number
+    }
+  | {
+      type: 'fixed-or-yield-multiple'
+      yieldStressThreshold: number
+      fixedStrainLimit: number
+      highStrengthYieldMultiple: number
+    }
 
 export type DesignMaterialFactors = {
   alphaCc: number
@@ -54,6 +68,7 @@ export type GlobalStrengthReductionBasis = DesignBasisCommon & {
   format: 'globalResultantFactor'
   transverseReinforcement: TransverseReinforcementClass
   factors: GlobalStrengthReductionFactors
+  transition: TensionControlledLimitRule
   axialCapEnabled: boolean
 }
 
@@ -106,9 +121,14 @@ export const createKdsBasicDesignBasis = (): GlobalStrengthReductionBasis => ({
     phiCompressionOther: 0.65,
     phiCompressionSpiral: 0.7,
     phiTension: 0.85,
-    transitionExtraStrain: 0.003,
     axialCapOther: 0.8,
     axialCapSpiral: 0.85
+  },
+  transition: {
+    type: 'fixed-or-yield-multiple',
+    yieldStressThreshold: 400,
+    fixedStrainLimit: 0.005,
+    highStrengthYieldMultiple: 2.5
   },
   axialCapEnabled: true,
   modified: false,
@@ -131,9 +151,12 @@ export const createAci318DesignBasis = (): GlobalStrengthReductionBasis => ({
     phiCompressionOther: 0.65,
     phiCompressionSpiral: 0.75,
     phiTension: 0.9,
-    transitionExtraStrain: 0.003,
     axialCapOther: 0.8,
     axialCapSpiral: 0.85
+  },
+  transition: {
+    type: 'yield-plus-strain',
+    extraStrain: 0.003
   },
   axialCapEnabled: true,
   modified: false,
@@ -245,13 +268,14 @@ export const buildResistanceMaterialSets = (
 export const evaluateGlobalStrengthReduction = (
   basis: GlobalStrengthReductionBasis,
   controllingTensileStrain: number,
-  yieldStrain: number
+  yieldStrain: number,
+  yieldStress: number
 ): GlobalFactorEvaluation => {
   const compressionPhi =
     basis.transverseReinforcement === 'qualifying-spiral'
       ? basis.factors.phiCompressionSpiral
       : basis.factors.phiCompressionOther
-  const tensionLimit = yieldStrain + basis.factors.transitionExtraStrain
+  const tensionLimit = resolveTensionControlledStrainLimit(basis, yieldStrain, yieldStress)
 
   if (controllingTensileStrain <= yieldStrain) {
     return {
@@ -283,6 +307,19 @@ export const evaluateGlobalStrengthReduction = (
   }
 }
 
+export const resolveTensionControlledStrainLimit = (
+  basis: GlobalStrengthReductionBasis,
+  yieldStrain: number,
+  yieldStress: number
+): number => {
+  if (basis.transition.type === 'yield-plus-strain') {
+    return yieldStrain + basis.transition.extraStrain
+  }
+  return yieldStress <= basis.transition.yieldStressThreshold
+    ? basis.transition.fixedStrainLimit
+    : basis.transition.highStrengthYieldMultiple * yieldStrain
+}
+
 const finiteBetween = (value: number, min: number, max: number) =>
   Number.isFinite(value) && value >= min && value <= max
 
@@ -307,7 +344,8 @@ export const designBasisRequiresOverrideReason = (basis: DesignBasis): boolean =
   if (basis.format === 'globalResultantFactor' && defaults.format === 'globalResultantFactor') {
     return (
       basis.transverseReinforcement !== defaults.transverseReinforcement ||
-      !sameNumbers(basis.factors, defaults.factors)
+      !sameNumbers(basis.factors, defaults.factors) ||
+      JSON.stringify(basis.transition) !== JSON.stringify(defaults.transition)
     )
   }
   return (
@@ -326,10 +364,23 @@ export const designBasisIssues = (basis: DesignBasis): string[] => {
   if (basis.format === 'globalResultantFactor') {
     const entries = Object.entries(basis.factors) as Array<[keyof GlobalStrengthReductionFactors, number]>
     for (const [key, value] of entries) {
-      const valid = key === 'transitionExtraStrain'
-        ? finiteBetween(value, 1e-6, 0.02)
-        : finiteBetween(value, 0.1, 1)
+      const valid = finiteBetween(value, 0.1, 1)
       if (!valid) issues.push(`${key} is outside the supported range.`)
+    }
+    if (basis.transition.type === 'yield-plus-strain') {
+      if (!finiteBetween(basis.transition.extraStrain, 1e-6, 0.02)) {
+        issues.push('transition.extraStrain is outside the supported range.')
+      }
+    } else {
+      if (!finiteBetween(basis.transition.yieldStressThreshold, 100, 1000)) {
+        issues.push('transition.yieldStressThreshold is outside the supported range.')
+      }
+      if (!finiteBetween(basis.transition.fixedStrainLimit, 1e-4, 0.05)) {
+        issues.push('transition.fixedStrainLimit is outside the supported range.')
+      }
+      if (!finiteBetween(basis.transition.highStrengthYieldMultiple, 1, 10)) {
+        issues.push('transition.highStrengthYieldMultiple is outside the supported range.')
+      }
     }
     if (basis.factors.phiTension < basis.factors.phiCompressionOther) {
       issues.push('Tension-controlled phi must not be below compression-controlled phi.')

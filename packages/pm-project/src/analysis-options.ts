@@ -21,6 +21,10 @@ export type AnalysisStationCriterion =
   | { type: 'c-over-c1'; ratio: number }
   | { type: 'steel-stress-ratio'; ratio: number }
   | { type: 'steel-strain'; strain: number }
+  /** Fraction from eps_y to the code-defined tension-controlled strain limit. */
+  | { type: 'strength-reduction-transition-ratio'; ratio: number }
+  /** Absolute tensile-strain increment beyond the code-defined transition limit. */
+  | { type: 'strength-reduction-post-transition'; extraStrain: number }
 
 export type AnalysisStation = {
   /** Stable within the station schedule; display order is the array order. */
@@ -58,7 +62,7 @@ export type AnalysisOptions = {
   methodId: typeof STRAIN_DOMAIN_SURFACE_METHOD
   stations: {
     /** Informational origin of the resolved list; the list below remains authoritative. */
-    basedOn: 'legacy-p0-p18-v1' | 'custom'
+    basedOn: 'transition-aware-p0-p24-v1' | 'legacy-p0-p18-v1' | 'custom'
     intermediate: AnalysisStation[]
   }
   directions: {
@@ -108,7 +112,7 @@ const station = (id: number, label: string, criterion: AnalysisStationCriterion)
 })
 
 /** The historical P1…P17 schedule and 24 directions, expressed as canonical data. */
-export const createDefaultAnalysisOptions = (): AnalysisOptions => ({
+export const createLegacyAnalysisOptions = (): AnalysisOptions => ({
   optionsVersion: ANALYSIS_OPTIONS_VERSION,
   methodId: STRAIN_DOMAIN_SURFACE_METHOD,
   stations: {
@@ -136,6 +140,78 @@ export const createDefaultAnalysisOptions = (): AnalysisOptions => ({
   directions: {
     seed: { type: 'uniform', count: 24, startDeg: 0 },
     refinement: { type: 'fixed', probe: { stationIds: [5, 10, 14, 16] } }
+  },
+  mesh: {
+    sizing: { type: 'automatic', seedDivisions: 32 },
+    maxCells: 250_000,
+    maxSubdivision: 4
+  }
+})
+
+/**
+ * Production default for the strain-domain model.
+ *
+ * P9 is the yield boundary. P9 plus P10-P17 are the nine mandatory nodes across
+ * the code-defined strength-reduction transition. Thirty-six directions are the
+ * seed, not a hard ceiling; refinement enforces a 0.5% angular interpolation target.
+ */
+export const createDefaultAnalysisOptions = (): AnalysisOptions => ({
+  optionsVersion: ANALYSIS_OPTIONS_VERSION,
+  methodId: STRAIN_DOMAIN_SURFACE_METHOD,
+  stations: {
+    basedOn: 'transition-aware-p0-p24-v1',
+    intermediate: [
+      station(1, 'c = 3 c1', { type: 'c-over-c1', ratio: 3 }),
+      station(2, 'c = 2 c1', { type: 'c-over-c1', ratio: 2 }),
+      station(3, 'c = 1.5 c1', { type: 'c-over-c1', ratio: 1.5 }),
+      station(4, 'c = 1.2 c1', { type: 'c-over-c1', ratio: 1.2 }),
+      station(5, 'fs = 0', { type: 'steel-stress-ratio', ratio: 0 }),
+      station(6, 'fs = 0.25 fyd', { type: 'steel-stress-ratio', ratio: 0.25 }),
+      station(7, 'fs = 0.5 fyd', { type: 'steel-stress-ratio', ratio: 0.5 }),
+      station(8, 'fs = 0.75 fyd', { type: 'steel-stress-ratio', ratio: 0.75 }),
+      station(9, 'eps_t = eps_y (transition 0/8)', { type: 'steel-stress-ratio', ratio: 1 }),
+      ...Array.from({ length: 8 }, (_, index) => {
+        const numerator = index + 1
+        return station(9 + numerator, `phi transition ${numerator}/8`, {
+          type: 'strength-reduction-transition-ratio',
+          ratio: numerator / 8
+        })
+      }),
+      station(18, 'post-transition +0.0025', {
+        type: 'strength-reduction-post-transition',
+        extraStrain: 0.0025
+      }),
+      station(19, 'post-transition +0.005', {
+        type: 'strength-reduction-post-transition',
+        extraStrain: 0.005
+      }),
+      station(20, 'post-transition +0.01', {
+        type: 'strength-reduction-post-transition',
+        extraStrain: 0.01
+      }),
+      station(21, 'post-transition +0.02', {
+        type: 'strength-reduction-post-transition',
+        extraStrain: 0.02
+      }),
+      station(22, 'post-transition +0.025', {
+        type: 'strength-reduction-post-transition',
+        extraStrain: 0.025
+      }),
+      station(23, 'post-transition +0.045', {
+        type: 'strength-reduction-post-transition',
+        extraStrain: 0.045
+      })
+    ]
+  },
+  directions: {
+    seed: { type: 'uniform', count: 36, startDeg: 0 },
+    refinement: {
+      type: 'adaptive',
+      tolerance: 0.005,
+      maxPasses: 6,
+      maxDirections: 360,
+      probe: 'all'
+    }
   },
   mesh: {
     sizing: { type: 'automatic', seedDivisions: 32 },

@@ -210,9 +210,11 @@ factor. For moment, axial force, and combined P-M states covered here:
 | Compression-controlled, other reinforced-concrete members | `0.65` |
 | Transition between compression- and tension-controlled limits | increase from the applicable compression value to `0.85` as prescribed by KDS |
 
-The adapter must derive the transition factor from the exact KDS strain limits and record the
-controlling tensile strain and transverse-reinforcement classification. It must also implement all
-applicable axial caps from KDS 14 20 20 as separate domain operations.
+The implemented KDS rule resolves the tension-controlled limit as `0.005` for `fy <= 400 MPa` and
+`2.5 eps_y` for higher-strength reinforcement. Phi is linearly interpolated from the applicable
+compression value to `0.85` between `eps_y` and that limit. Both calculation mechanics record the
+controlling tensile strain, yield strain/stress, resolved limit, and transverse-reinforcement class.
+Applicable axial caps are separate domain operations.
 
 This method follows the literal nominal-then-global-factor pipeline. It does **not** apply `0.90`
 to reinforcement and `0.65` to concrete.
@@ -383,16 +385,20 @@ Before a profile is `verified`, test at least:
 Source access alone does not make an adapter verified. The profile-specific traceability bundle
 must identify every implemented clause, edition, amendment, interpretation, test, and reviewer.
 
-## 13. Implemented preview boundary (2026-07-27)
+## 13. Implemented preview boundary (2026-08-04)
 
-The current repository implements the two primary formats described above:
+The repository implements two independent mechanics and the common resistance formats:
 
-- `globalResultantFactor` for the KDS basic and ACI 318-19(22) preview profiles;
-- `designMaterialReevaluation` for an EN 1992-1-1:2004 default-factor preview profile.
+- stress-strain integration for the KDS current profile;
+- exact equivalent rectangular blocks for KDS 14 20 20 and ACI 318-19(22);
+- `globalResultantFactor` for those KDS and ACI calculation profiles;
+- a `designMaterialReevaluation` basis exists for EN 1992-1-1:2004 preview work, but EC2 is not yet
+  exposed as a complete calculation profile in the main selector.
 
-The project schema persists the complete basis and loadcases are explicitly factored ULS actions.
+Strict project schema v1 persists the complete basis and loadcases are explicitly factored ULS actions.
 The result DTO contains both `nominalPoints` and governing design `points`. Analysis Options owns
-the selected design-code profile, factors, transverse-reinforcement class, and optional axial cap.
+the model-specific sampling controls, factors, transverse-reinforcement class, and optional axial cap.
+The single calculation-profile selection itself lives in Materials and updates these defaults atomically.
 Results does not edit that basis. The 3D plot uses a light Nominal/Design radio selector and renders
 only one surface at a time. The two-dimensional plots may show both curves; when both are visible,
 nominal is a faint dashed reference, while a single visible curve receives the primary blue line

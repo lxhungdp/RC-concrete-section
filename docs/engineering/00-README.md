@@ -21,6 +21,11 @@ acceptance gate, open [`../01-control-map.md`](../01-control-map.md) and use the
 The numbered files in the parent folder hold the detailed mathematics and numerical specifications.
 This engineering group states how those details are used in the product.
 
+For the implemented two-model comparison, default station/direction schedules, formulas, forward and
+inverse workflows, fields, and benchmark results, read
+[`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-models-defaults-and-workflows.md)
+after steps 4 and 5.
+
 ## 2. Engineering Control Points
 
 An engineering baseline is not ready until these decisions are explicit:

@@ -8,7 +8,8 @@ import { strict as assert } from 'node:assert'
 import test from 'node:test'
 import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
 import { createKdsRebarSteel, IMPLEMENTED_STRAIN_DOMAIN, type MaterialStore } from '@pm/materials'
-import { buildPreviewSurface, PREVIEW_STATIONS } from './index'
+import { createDefaultAnalysisOptions } from '@pm/project'
+import { analysisStations, buildPreviewSurface } from './index'
 import { referenceProjectDocument } from './reference-case'
 
 const document = referenceProjectDocument()
@@ -16,9 +17,10 @@ const section = sectionGeometryFromGeometryInput(document.inputs.geometry)
 const rebars = geometryInputRebars(document.inputs.geometry)
 const materials = document.inputs.materials
 
-const PURE_TENSION = PREVIEW_STATIONS.findIndex((station) => station.kind === 'pure-tension')
-const YIELD_STATION = PREVIEW_STATIONS.findIndex(
-  (station) => station.kind === 'steel-stress-ratio' && station.ratio === 1
+const DEFAULT_STATIONS = analysisStations(createDefaultAnalysisOptions())
+const PURE_TENSION = DEFAULT_STATIONS.findIndex((station) => station.definition.kind === 'pure-tension')
+const YIELD_STATION = DEFAULT_STATIONS.findIndex(
+  (station) => station.definition.kind === 'steel-stress-ratio' && station.definition.ratio === 1
 )
 
 const stationRow = (store: MaterialStore, stationIndex: number) => {

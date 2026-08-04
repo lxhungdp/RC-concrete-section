@@ -59,15 +59,15 @@ test('global strength reduction is classified and interpolated at the declared s
   const basis = createKdsBasicDesignBasis()
   const epsY = 0.002
 
-  const compression = evaluateGlobalStrengthReduction(basis, epsY, epsY)
+  const compression = evaluateGlobalStrengthReduction(basis, epsY, epsY, 400)
   assert.equal(compression.classification, 'compression-controlled')
   assert.equal(compression.phi, 0.65)
 
-  const transition = evaluateGlobalStrengthReduction(basis, epsY + 0.0015, epsY)
+  const transition = evaluateGlobalStrengthReduction(basis, epsY + 0.0015, epsY, 400)
   assert.equal(transition.classification, 'transition')
   assert.ok(Math.abs(transition.phi - 0.75) < 1e-12)
 
-  const tension = evaluateGlobalStrengthReduction(basis, epsY + 0.003, epsY)
+  const tension = evaluateGlobalStrengthReduction(basis, epsY + 0.003, epsY, 400)
   assert.equal(tension.classification, 'tension-controlled')
   assert.equal(tension.phi, 0.85)
 })

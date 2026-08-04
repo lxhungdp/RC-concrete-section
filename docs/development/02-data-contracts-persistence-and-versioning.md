@@ -1,231 +1,158 @@
 # Data Contracts, Persistence, and Versioning
 
-## 1. Contract layers
+## 1. Current rule: strict schema v1, no migration layer
 
-Keep these types separate even when their fields initially look similar:
+The project is pre-release and every persisted schema in the active calculation path is version 1.
+The project parser accepts only:
 
-| Layer | Example | Mutability/persistence |
-|---|---|---|
-| editor draft | boundaries, selection, material form text | mutable, not canonical, not analyzed |
-| persisted definition | `GeometryInput`, `MaterialStore`, `LoadingsInput` | serializable project truth |
-| normalized definition | oriented geometry, resolved material IDs, declared frame | immutable transient/cacheable |
-| compiled runtime | stress/tangent evaluators, quadrature, acceleration structures | immutable, never serialized |
-| result artifact | surfaces, checks, evidence, provenance | immutable and separately versioned |
-| report artifact | report model and rendered file | derived from accepted result only |
+```text
+schema  = "pm-column-project"
+version = 1
+```
 
-Do not cast between layers. Use named adapters that can return typed issues.
+There is no v2/v3/v4 document, no compatibility conversion, and no invisible inference of missing
+analysis or design settings. A missing or unsupported field is a parse failure. When a future public
+release requires a new schema, migration design must be approved as a separate change; it must not
+be pre-built into the initial v1 code.
 
-## 2. Current project schema v3
-
-The implemented project contract is:
+## 2. Canonical project document
 
 ```ts
 type PmProjectDocument = {
   schema: 'pm-column-project'
-  version: 3
-  meta: { id: number; name: string; createdAt: string; updatedAt: string }
+  version: 1
+  meta: {
+    id: number
+    name: string
+    createdAt: string
+    updatedAt: string
+  }
   inputs: {
+    calculationProfileId:
+      | 'kds-2024-stress-strain'
+      | 'kds-142020-equivalent-block'
+      | 'aci-318-19-22-equivalent-block'
     geometry: GeometryInput
     materials: MaterialStore
-    loadings: LoadingsInput
-    analysis: AnalysisOptions
+    loadings: { combinations: LoadCombination[] }
+    analysis: AnalysisOptions | EquivalentBlockAnalysisOptions
+    design: DesignBasis
   }
 }
 ```
 
-Canonical units are fixed by this schema: mm, N, MPa, and N·mm. Editor-only draft boundaries,
-camera, visibility, locks, selections, and compiled material functions are intentionally excluded.
+Canonical internal units are millimetres, newtons, megapascals, and newton-millimetres. Axial force
+and strain are compression positive. Entity IDs are positive integers and references are by ID, not
+array position or display name.
 
-Current `GeometryInput` stores multiple `outers`, holes, and outer-owned rebars. Current
-`MaterialStore` stores one concrete definition and multiple steel definitions. Current
-`LoadingsInput` stores combinations. `AnalysisOptions` stores the authoritative reporting-station
-schedule, direction seed, and deterministic refinement policy.
+## 3. Atomic calculation profile
 
-Version 3 is intentionally strict: `inputs.analysis` is required and old files are rejected rather
-than silently assigned a sampling profile. This project is pre-release, so no historical migration
-is maintained. Export writes the exact canonical configuration shown by the UI. Draft edits inside
-the Results Options dialog are not canonical and are neither persisted nor calculated until the
-user selects **Apply & recalculate**.
+`calculationProfileId` is the one persisted selection that binds mechanics, standard, material
+defaults, resistance basis, and analysis-options family. Changing it in Materials must atomically
+replace dependent defaults:
 
-The persisted sampling DTO is data-only:
+| Profile | Mechanics | Analysis DTO | Resistance basis |
+|---|---|---|---|
+| `kds-2024-stress-strain` | stress-strain integration | `strain-domain-surface-v1` | KDS global resultant factor |
+| `kds-142020-equivalent-block` | equivalent rectangular block | `equivalent-block-surface-v1` | KDS global resultant factor |
+| `aci-318-19-22-equivalent-block` | equivalent rectangular block | `equivalent-block-surface-v1` | ACI global resultant factor |
+
+Downstream packages switch on these IDs. They must not infer mechanics from concrete material text.
+
+## 4. Stress-strain analysis options v1
 
 ```ts
 type AnalysisOptions = {
   optionsVersion: 1
   methodId: 'strain-domain-surface-v1'
   stations: {
-    basedOn: 'legacy-p0-p18-v1' | 'custom'
-    intermediate: Array<{
-      id: number
-      label: string
-      criterion:
-        | { type: 'c-over-c1'; ratio: number }
-        | { type: 'steel-stress-ratio'; ratio: number }
-        | { type: 'steel-strain'; strain: number }
-    }>
+    basedOn: 'transition-aware-p0-p24-v1' | 'legacy-p0-p18-v1' | 'custom'
+    intermediate: AnalysisStation[]
   }
   directions: {
-    seed:
-      | { type: 'uniform'; count: number; startDeg: number }
-      | { type: 'explicit'; anglesDeg: number[] }
-    refinement:
-      | { type: 'fixed'; probe: 'all' | { stationIds: number[] } }
-      | {
-          type: 'adaptive'
-          tolerance: number
-          maxPasses: number
-          maxDirections: number
-          probe: 'all' | { stationIds: number[] }
-        }
+    seed: { type: 'uniform'; count: number; startDeg: number }
+        | { type: 'explicit'; anglesDeg: number[] }
+    refinement: DirectionRefinement
+  }
+  mesh: AnalysisMeshOptions
+}
+```
+
+Station criteria are `c-over-c1`, `steel-stress-ratio`, `steel-strain`,
+`strength-reduction-transition-ratio`, and `strength-reduction-post-transition`. The last two are
+standard-independent coordinates: the solver resolves them using the selected DesignBasis.
+
+The production default is 25 total stations, 36 uniform seed directions, and adaptive all-station
+refinement at 0.005 relative tolerance. `legacy-p0-p18-v1` exists only for an explicit regression
+fixture or user-selected legacy schedule; it is not inferred during import.
+
+## 5. Equivalent-block analysis options v1
+
+```ts
+type EquivalentBlockAnalysisOptions = {
+  optionsVersion: 1
+  methodId: 'equivalent-block-surface-v1'
+  neutralAxisStations: {
+    basedOn: 'verified-37-v1' | 'custom'
+    values: Array<
+      | { type: 'extreme-tension-strain'; strain: number }
+      | { type: 'depth-ratio'; ratio: number }
+    >
+    refinement: BlockStationRefinement
+  }
+  directions: {
+    seedCount: number
+    startDeg: number
+    refinement: BlockDirectionRefinement
   }
 }
 ```
 
-`@pm/project` owns serialization, structural limits, uniqueness, ordering, and cross-reference
-validation. It does not derive strain planes. `@pm/analysis` resolves the two poles, controlling
-steel grade, nonlinear `fₛ/fyd` inverse, monotonicity, midpoint refinement, and actual result grid.
+This DTO intentionally contains no concrete integration-mesh settings. The equivalent-block kernel
+uses exact polygon clipping. Its production defaults are 37 initial neutral-axis states, 24 seed
+directions, and 1% adaptive station/direction refinement.
 
-## 3. Required project evolution
+## 6. Design basis v1
 
-Remaining analysis-ready additions need, at minimum:
-
-- design basis/profile identity and method;
-- analysis mode and design-profile identity beyond the implemented surface sampling options;
-- loading action basis and reference frame;
-- optional project presentation preferences that do not affect results.
-
-Once the format is released, additive defaults must preserve old meaning and semantic changes must
-bump the project version with an explicit migration. The current pre-release v3 parser deliberately
-implements no v2 compatibility path.
-
-Results are not inserted into `inputs`. Save them as versioned result artifacts referencing the
-project input hash. The project may keep a list of result artifact references, but an old result
-never becomes current merely because it is stored beside edited inputs.
-
-## 4. Parsing and validation
-
-Public JSON is untrusted. Parsing performs:
-
-1. safe JSON and record/array checks;
-2. schema/version dispatch;
-3. migration from supported historical versions;
-4. strict structural validation and resource limits;
-5. semantic cross-reference validation;
-6. engineering normalization in its owning package.
-
-The parser does not convert invalid numbers to zero, silently select the first material, or mutate
-the opened document to repair it. A repair workflow returns a proposed repaired document plus
-issues; the user accepts it as a new snapshot.
-
-Unexpected keys are rejected or preserved only under an explicit extension namespace. Timestamps
-are validated ISO values, not arbitrary strings.
-
-## 5. Typed issues and results
-
-Use a shared structure such as:
+Global-factor bases persist numeric phi/axial-cap factors and a discriminated transition rule:
 
 ```ts
-type EngineeringIssue = {
-  code: string
-  severity: 'info' | 'warning' | 'error'
-  message: string
-  path?: string
-  entity?: { kind: string; id: number }
-  context?: Readonly<Record<string, string | number | boolean>>
-}
-
-type EngineeringResult<T> =
-  | { ok: true; value: T; issues: readonly EngineeringIssue[]; provenance: Provenance }
-  | { ok: false; errors: readonly EngineeringIssue[]; preview?: PreviewOnlyData; provenance: Provenance }
+type TensionControlledLimitRule =
+  | { type: 'yield-plus-strain'; extraStrain: number }
+  | {
+      type: 'fixed-or-yield-multiple'
+      yieldStressThreshold: number
+      fixedStrainLimit: number
+      highStrengthYieldMultiple: number
+    }
 ```
 
-Errors are stable machine-readable codes; messages can be localized later. Exceptions are reserved
-for programmer/invariant defects and are converted once at the application boundary.
+ACI uses the first rule. KDS uses the second. This prevents the project from persisting one ambiguous
+`transitionExtraStrain` and applying it to both standards.
 
-Strings such as the current project warning list are migration-stage compatibility only.
+## 7. Load combinations
 
-## 6. Geometry adapter contract
+Every current demand combination has `actionBasis: 'factoredULS'` and stores `P`, `Mx`, and `My` in
+canonical units. The design check rejects a different basis. Factored demand is compared with the
+Design surface; it is never multiplied by the resistance factor again.
 
-`GeometryInput` is the applied editor/persistence shape. A named adapter produces an analysis input:
+## 8. Parsing and validation
 
-```text
-GeometryInput
-  -> validateGeometryDefinition
-  -> normalizeSectionGeometry
-  -> NormalizedSectionGeometry + ReferenceFrame
-```
+Parsing is a boundary operation:
 
-The adapter maps `outers[]` to concrete regions, resolves parent ownership, checks IDs and topology,
-normalizes orientation/origin, and retains source IDs. `SectionGeometry` summaries are not proof that
-this pipeline has passed.
+- reject unsupported schema/version/method/profile discriminants;
+- reject non-finite values, invalid ranges, duplicate IDs, and broken references;
+- require analysis and design objects explicitly;
+- validate model/profile consistency before running a numerical kernel;
+- return warnings only for conditions that remain mathematically defined; never repair a value that
+  changes resistance.
 
-## 7. Material adapter contract
+The round-trip test serializes and parses schema v1 and requires exact equality of analysis/profile/
+design inputs. Separate tests cover both mechanics and the code-aware transition rule.
 
-`MaterialStore` is definition data. Compilation is:
+## 9. Runtime results are not project input
 
-```text
-MaterialStore
-  -> validateMaterialDefinitions(profile context)
-  -> NormalizedMaterialSet
-  -> compileMaterialRegistry
-  -> immutable evaluators
-```
-
-No standard/model switch has a default fallback. An unknown discriminant is a typed error. Compiled
-evaluators expose stress, tangent, breakpoints, admissibility, and contribution components required
-by the selected analysis mode.
-
-Current v3 project JSON must preserve the complete material store:
-
-- `strainSign`, concrete definition, steel definitions, and `defaults.steelMaterialId`;
-- concrete `standard`, `fck`, `mc`, optional `elasticModulus`, complete `stressStrain`, `limits`,
-  and optional `factors.alpha` / `factors.gammaC`;
-- steel `id`, `name`, `standard`, `fy`, `elasticModulus`, complete `stressStrain`, optional
-  `limits`, and optional `factors.gammaS`;
-- every user-curve point in order after validation, including interpolation mode and concrete
-  `zeroTension` when present.
-
-The parser must never preserve only `standard` and re-derive the rest on open. Re-derivation is a
-user action in the material editor or a versioned migration with explicit warnings; otherwise import
-and export must be a lossless engineering snapshot.
-
-## 8. Identity and references
-
-- IDs are positive integers and unique per declared namespace.
-- ID allocation strategy is not engineering order.
-- foreign keys are checked after all definitions parse.
-- deleting a material referenced by a bar is blocked or handled by an explicit reassignment command;
-  it never leaves a hidden fallback.
-- import/migration preserves IDs where valid and returns a mapping when remapping is necessary.
-
-The current UI can remove a steel definition while bars still reference it; this is a known gap that
-must be closed before input validation can pass.
-
-## 9. Version and hash rules
-
-Maintain separate versions for:
-
-- project schema and each migration;
-- material model/compiler behavior;
-- geometry normalization and numerical integration behavior;
-- design-code profile/adapter;
-- analysis/result schema;
-- report schema/template.
-
-Use canonical deterministic serialization for hashes. Include every result-affecting definition and
-expanded option; exclude display theme, camera, selection, and report-only formatting. Store the hash
-algorithm/version with the hash.
-
-## 10. Round-trip requirements
-
-For every supported project version:
-
-- parse -> serialize -> parse preserves engineering meaning and stable identities;
-- unknown/invalid versions fail with a clear migration message;
-- canonical units and signs do not drift;
-- imported definitions compile to tolerance-equivalent runtime behavior;
-- material round trips cover KDS, ACI318, EC2 partial-factor fields, and Custom user curves;
-- load ordering and entity ordering remain deterministic;
-- fixtures cover empty, ordinary, complex, boundary-limit, and malicious/resource-exhaustion data.
-
-One hand-written round-trip self-test is a starting fixture, not a sufficient schema test suite.
+Prepared meshes, compiled material functions, capacity surfaces, inverse iterations, field maps,
+and Plotly traces are runtime artifacts. They are regenerated from persisted definitions and are not
+embedded in the project JSON. A future accepted-result artifact requires its own immutable contract,
+input hash, kernel/profile versions, convergence evidence, and release policy.

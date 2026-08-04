@@ -11,6 +11,12 @@ engine. A rectangle is a polygon input, not a separate calculation method.
 
 ## 2. Supported engineering modes
 
+The implemented ULS preview has two independent section mechanics: stress-strain integration and a
+code-equivalent rectangular stress block. A single calculation-profile selection in Materials binds
+the mechanics, standard, material defaults, resistance rule, and matching analysis-options family.
+Their equations and defaults are specified in
+[`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-models-defaults-and-workflows.md).
+
 ### ULS resistance
 
 Input actions are factored design actions. A versioned design-code profile supplies ultimate strain
@@ -69,7 +75,7 @@ not be titled “column design complete” when member-level checks are excluded
 Current UI workflow:
 
 ```text
-Geometry -> Materials -> Results -> Report
+Geometry -> Materials -> Results -> Analysis Options -> Report
 ```
 
 Loadcases remain engineering input, but simple `Pu/Mux/Muy` entry belongs inside the Results
@@ -80,7 +86,8 @@ is an internal pipeline behind Results, not a top-level menu.
 |---|---|---|
 | Geometry | concrete boundaries, holes, bars, origin/axes | valid normalized topology and reinforcement references |
 | Materials | concrete/steel definitions and sources | validated material definitions and compatible selected profile |
-| Results | loadcases/combinations, normalized scenario, profile, accuracy options, immutable result package | finite compatible demands, converged accepted result or typed failure, plots/tables derived without recomputing engineering rules |
+| Results | loadcases/combinations, normalized scenario, profile, immutable result package | finite compatible demands, converged accepted result or typed failure, plots/tables derived without recomputing engineering rules |
+| Analysis Options | model-specific stations/directions, integration mesh where applicable, and Design resistance parameters | validated version-1 options matched to the selected calculation profile |
 | Report | accepted result plus presentation options | released Excel/PDF carrying result identity and limitations |
 
 The user may edit modules in any order, but analysis starts only after all prerequisite gates pass.

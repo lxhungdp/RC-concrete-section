@@ -356,11 +356,11 @@
       "optionsVersion": 1,
       "methodId": "strain-domain-surface-v1",
       "stations": {
-        "basedOn": "legacy-p0-p18-v1",
+        "basedOn": "transition-aware-p0-p24-v1",
         "intermediate": [
           {
             "id": 1,
-            "label": "c = 3·c₁",
+            "label": "c = 3 c1",
             "criterion": {
               "type": "c-over-c1",
               "ratio": 3
@@ -368,7 +368,7 @@
           },
           {
             "id": 2,
-            "label": "c = 2·c₁",
+            "label": "c = 2 c1",
             "criterion": {
               "type": "c-over-c1",
               "ratio": 2
@@ -376,7 +376,7 @@
           },
           {
             "id": 3,
-            "label": "c = 1.5·c₁",
+            "label": "c = 1.5 c1",
             "criterion": {
               "type": "c-over-c1",
               "ratio": 1.5
@@ -384,7 +384,7 @@
           },
           {
             "id": 4,
-            "label": "c = 1.2·c₁",
+            "label": "c = 1.2 c1",
             "criterion": {
               "type": "c-over-c1",
               "ratio": 1.2
@@ -392,7 +392,7 @@
           },
           {
             "id": 5,
-            "label": "fₛ = 0",
+            "label": "fs = 0",
             "criterion": {
               "type": "steel-stress-ratio",
               "ratio": 0
@@ -400,7 +400,7 @@
           },
           {
             "id": 6,
-            "label": "fₛ = 0.25·fyd",
+            "label": "fs = 0.25 fyd",
             "criterion": {
               "type": "steel-stress-ratio",
               "ratio": 0.25
@@ -408,7 +408,7 @@
           },
           {
             "id": 7,
-            "label": "fₛ = 0.5·fyd",
+            "label": "fs = 0.5 fyd",
             "criterion": {
               "type": "steel-stress-ratio",
               "ratio": 0.5
@@ -416,7 +416,7 @@
           },
           {
             "id": 8,
-            "label": "fₛ = 0.75·fyd",
+            "label": "fs = 0.75 fyd",
             "criterion": {
               "type": "steel-stress-ratio",
               "ratio": 0.75
@@ -424,7 +424,7 @@
           },
           {
             "id": 9,
-            "label": "fₛ = fyd",
+            "label": "eps_t = eps_y (transition 0/8)",
             "criterion": {
               "type": "steel-stress-ratio",
               "ratio": 1
@@ -432,66 +432,114 @@
           },
           {
             "id": 10,
-            "label": "εₛ = -0.003",
+            "label": "phi transition 1/8",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.003
+              "type": "strength-reduction-transition-ratio",
+              "ratio": 0.125
             }
           },
           {
             "id": 11,
-            "label": "εₛ = -0.005",
+            "label": "phi transition 2/8",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.005
+              "type": "strength-reduction-transition-ratio",
+              "ratio": 0.25
             }
           },
           {
             "id": 12,
-            "label": "εₛ = -0.0075",
+            "label": "phi transition 3/8",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.0075
+              "type": "strength-reduction-transition-ratio",
+              "ratio": 0.375
             }
           },
           {
             "id": 13,
-            "label": "εₛ = -0.01",
+            "label": "phi transition 4/8",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.01
+              "type": "strength-reduction-transition-ratio",
+              "ratio": 0.5
             }
           },
           {
             "id": 14,
-            "label": "εₛ = -0.015",
+            "label": "phi transition 5/8",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.015
+              "type": "strength-reduction-transition-ratio",
+              "ratio": 0.625
             }
           },
           {
             "id": 15,
-            "label": "εₛ = -0.025",
+            "label": "phi transition 6/8",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.025
+              "type": "strength-reduction-transition-ratio",
+              "ratio": 0.75
             }
           },
           {
             "id": 16,
-            "label": "εₛ = -0.03",
+            "label": "phi transition 7/8",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.03
+              "type": "strength-reduction-transition-ratio",
+              "ratio": 0.875
             }
           },
           {
             "id": 17,
-            "label": "εₛ = -0.05",
+            "label": "phi transition 8/8",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.05
+              "type": "strength-reduction-transition-ratio",
+              "ratio": 1
+            }
+          },
+          {
+            "id": 18,
+            "label": "post-transition +0.0025",
+            "criterion": {
+              "type": "strength-reduction-post-transition",
+              "extraStrain": 0.0025
+            }
+          },
+          {
+            "id": 19,
+            "label": "post-transition +0.005",
+            "criterion": {
+              "type": "strength-reduction-post-transition",
+              "extraStrain": 0.005
+            }
+          },
+          {
+            "id": 20,
+            "label": "post-transition +0.01",
+            "criterion": {
+              "type": "strength-reduction-post-transition",
+              "extraStrain": 0.01
+            }
+          },
+          {
+            "id": 21,
+            "label": "post-transition +0.02",
+            "criterion": {
+              "type": "strength-reduction-post-transition",
+              "extraStrain": 0.02
+            }
+          },
+          {
+            "id": 22,
+            "label": "post-transition +0.025",
+            "criterion": {
+              "type": "strength-reduction-post-transition",
+              "extraStrain": 0.025
+            }
+          },
+          {
+            "id": 23,
+            "label": "post-transition +0.045",
+            "criterion": {
+              "type": "strength-reduction-post-transition",
+              "extraStrain": 0.045
             }
           }
         ]
@@ -499,19 +547,15 @@
       "directions": {
         "seed": {
           "type": "uniform",
-          "count": 24,
+          "count": 36,
           "startDeg": 0
         },
         "refinement": {
-          "type": "fixed",
-          "probe": {
-            "stationIds": [
-              5,
-              10,
-              14,
-              16
-            ]
-          }
+          "type": "adaptive",
+          "tolerance": 0.005,
+          "maxPasses": 6,
+          "maxDirections": 360,
+          "probe": "all"
         }
       },
       "mesh": {
@@ -541,9 +585,14 @@
         "phiCompressionOther": 0.65,
         "phiCompressionSpiral": 0.7,
         "phiTension": 0.85,
-        "transitionExtraStrain": 0.003,
         "axialCapOther": 0.8,
         "axialCapSpiral": 0.85
+      },
+      "transition": {
+        "type": "fixed-or-yield-multiple",
+        "yieldStressThreshold": 400,
+        "fixedStrainLimit": 0.005,
+        "highStrengthYieldMultiple": 2.5
       },
       "axialCapEnabled": true,
       "modified": false,

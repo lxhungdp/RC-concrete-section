@@ -17,8 +17,9 @@ resistance used for a factored ULS check. The engineering requirements remain au
 - construction of reference, state and design material sets;
 - state-dependent global-strength-reduction evaluation.
 
-`@pm/project` persists `inputs.design` in project schema version 4. Version 3 files migrate by
-selecting the default design profile associated with the stored concrete material standard.
+`@pm/project` persists `inputs.design` directly in strict project schema version 1. There is no
+migration or profile inference layer; `calculationProfileId`, materials, analysis options, and the
+DesignBasis must be mutually consistent in the v1 document.
 Every load combination is explicitly tagged `actionBasis: "factoredULS"`.
 
 `@pm/analysis` owns the immutable calculation pipeline and never reads factors from UI controls
@@ -145,7 +146,7 @@ engineer approves the exact project jurisdiction and code edition.
 - design-material reevaluation;
 - 3D proportional demand-ray utilization.
 
-The project round-trip test covers schema version 4, factored ULS action basis and design-profile
+The project round-trip test covers schema version 1, factored ULS action basis and design-profile
 persistence. Full project verification is `npm test`, followed by `npm run build`.
 
 ## 8. UI ownership and display contract

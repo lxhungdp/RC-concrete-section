@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert'
 import test from 'node:test'
 import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
 import { compileSteelMaterial, type MaterialStore, type SteelMaterial } from '@pm/materials'
+import { createAci318DesignBasis, createKdsBasicDesignBasis } from '@pm/design'
 import {
   cloneAnalysisOptions,
   createDefaultAnalysisOptions,
@@ -11,6 +12,7 @@ import {
 } from '@pm/project'
 import {
   AnalysisInputError,
+  analysisStations,
   buildPreviewSurface,
   buildPreviewSurfaceFromPrepared,
   prepareAnalysis
@@ -53,16 +55,55 @@ const controllingBarStrain = (
   return point.state.e0 + point.state.kx * control.y + point.state.ky * control.x
 }
 
-test('the canonical default is exactly the legacy 19 by 24 numerical surface', () => {
+test('the canonical default is the transition-aware 25-station surface with 36 seed directions', () => {
   const implicit = buildPreviewSurfaceFromPrepared(prepared)
-  const explicit = buildPreviewSurfaceFromPrepared(prepared, createDefaultAnalysisOptions())
+  const defaults = createDefaultAnalysisOptions()
+  const explicit = buildPreviewSurfaceFromPrepared(prepared, defaults)
 
-  assert.equal(explicit.stations.length, 19)
-  assert.equal(explicit.directions.length, 24)
+  assert.equal(explicit.stations.length, 25)
+  assert.equal(defaults.directions.seed.type, 'uniform')
+  assert.equal(defaults.directions.seed.type === 'uniform' ? defaults.directions.seed.count : 0, 36)
+  assert.ok(explicit.directions.length >= 36)
   assert.deepEqual(
     explicit.points.map(({ P, Mx, My, state }) => ({ P, Mx, My, state })),
     implicit.points.map(({ P, Mx, My, state }) => ({ P, Mx, My, state }))
   )
+})
+
+test('nine mandatory transition nodes resolve to the selected code rule', () => {
+  const sd500: MaterialStore = {
+    ...materials,
+    steel: materials.steel.map((steel) => ({
+      ...steel,
+      fy: 500,
+      limits: { ...steel.limits, epsY: 500 / steel.elasticModulus }
+    }))
+  }
+  const sd500Prepared = prepareAnalysis(section, rebars, sd500)
+  const options = createDefaultAnalysisOptions()
+  options.directions.refinement = { type: 'fixed', probe: 'all' }
+  const transitionIndices = analysisStations(options)
+    .map((station, index) => ({ station, index }))
+    .filter(({ station }) =>
+      (station.definition.kind === 'steel-stress-ratio' && station.definition.ratio === 1) ||
+      station.definition.kind === 'strength-reduction-transition-ratio'
+    )
+    .map(({ index }) => index)
+  assert.equal(transitionIndices.length, 9)
+
+  const resolved = (basis: ReturnType<typeof createAci318DesignBasis> | ReturnType<typeof createKdsBasicDesignBasis>) => {
+    const surface = buildPreviewSurfaceFromPrepared(sd500Prepared, options, basis)
+    return transitionIndices.map((station) => {
+      const point = surface.points.find((candidate) => candidate.station === station && candidate.beta === 0)
+      assert.ok(point)
+      return Math.abs(controllingBarStrain(point))
+    })
+  }
+  const epsY = 500 / sd500.steel[0].elasticModulus
+  const kds = resolved(createKdsBasicDesignBasis())
+  const aci = resolved(createAci318DesignBasis())
+  kds.forEach((strain, index) => assert.ok(Math.abs(strain - (epsY + index / 8 * (2.5 * epsY - epsY))) < 1e-12))
+  aci.forEach((strain, index) => assert.ok(Math.abs(strain - (epsY + index / 8 * 0.003)) < 1e-12))
 })
 
 test('an explicit nonuniform grid and custom schedule flow through the engine unchanged', () => {
@@ -198,4 +239,13 @@ test('analysis options are required and round-trip exactly in project JSON', () 
   delete inputs.analysis
   const rejected = parseProjectDocument(JSON.stringify(missing))
   assert.equal(rejected.ok, false, 'the new format intentionally does not infer legacy defaults')
+
+  const missingTransition = referenceProjectDocument()
+  const transitionAware = createDefaultAnalysisOptions()
+  transitionAware.stations.intermediate = transitionAware.stations.intermediate.filter(
+    (station) => !(station.criterion.type === 'strength-reduction-transition-ratio' && station.criterion.ratio === 0.5)
+  )
+  missingTransition.inputs.analysis = transitionAware
+  const transitionRejected = parseProjectDocument(serializeProjectDocument(missingTransition))
+  assert.equal(transitionRejected.ok, false, 'a transition-aware profile must retain all nine mandatory nodes')
 })

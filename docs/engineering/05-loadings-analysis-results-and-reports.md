@@ -3,8 +3,9 @@
 ## 1. Loading terminology and scope
 
 A **load case** is a source action state. A **load combination** is an action vector assembled and
-factored for a declared check. The current project model persists `LoadCombination { id, name, P,
-Mx, My }`; the Results menu therefore reports one row per combination. If future source load cases
+factored for a declared check. The current project model persists
+`LoadCombination { id, name, actionBasis: 'factoredULS', P, Mx, My }`; the Results menu therefore
+reports one row per combination. If future source load cases
 are introduced, each combination retains its component case IDs and factors.
 
 The current web workflow embeds loadcase creation and editing in the Results sidebar. A separate

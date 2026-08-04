@@ -14,7 +14,12 @@ import { resolve } from 'node:path'
 import { HyperFormula } from 'hyperformula'
 import ExcelJS from 'exceljs'
 import { geometryInputRebars, netConcreteCentroid, sectionGeometryFromGeometryInput } from '@pm/geometry'
-import { cloneAnalysisOptions, parseProjectDocument } from '@pm/project'
+import {
+  cloneAnalysisOptions,
+  createDefaultAnalysisOptions,
+  createLegacyAnalysisOptions,
+  parseProjectDocument
+} from '@pm/project'
 import {
   PREVIEW_STATIONS,
   buildPreviewSurface,
@@ -79,7 +84,10 @@ const run = async () => {
   const section = sectionGeometryFromGeometryInput(geometry)
   const rebars = geometryInputRebars(geometry)
   const materialStore = parsed.document.inputs.materials
-  const analysisOptions = parsed.document.inputs.analysis
+  // The main workbook assertions reproduce the archived 19-station/24-direction source workbook.
+  // Keep that verification grid explicit and independent from the current project default, which
+  // is exercised separately in section 16 below.
+  const analysisOptions = createLegacyAnalysisOptions()
   if (analysisOptions.methodId !== 'strain-domain-surface-v1') throw new Error('Excel selftest requires curve analysis options')
   const loadcase = parsed.document.inputs.loadings.combinations[0]
 
@@ -327,7 +335,7 @@ const run = async () => {
   check('mesh area = polygon area (mm2)', cellValue('Input', `C${findLabelRow(readBack.getWorksheet('Input')!, 'Net concrete area')}`), 1120000, 1e-9)
   console.log()
 
-  console.log('== 4. PM_Angle: 19 stations reproduce the engine ==')
+  console.log('== 4. PM_Angle: historical 19-station fixture reproduces the engine ==')
   const pmSheet = readBack.getWorksheet('PM_Angle')!
   const PM_HEAD = 5
   const PM_FIRST = 7
@@ -396,10 +404,10 @@ const run = async () => {
   )
   console.log()
 
-  console.log('== 8. MxMy_FixedP: 24 directions vs the engine contour ==')
+  console.log('== 8. MxMy_FixedP: historical 24-direction fixture vs the engine contour ==')
   const inputSheet = readBack.getWorksheet('Input')!
   const cellSize = Number(inputSheet.getCell(`C${findLabelRow(inputSheet, 'mesh cell size')}`).value)
-  const surface = buildPreviewSurface(section, rebars, materialStore, { cellSize })
+  const surface = buildPreviewSurface(section, rebars, materialStore, { cellSize }, analysisOptions)
   const engineContour = contourStrainAngleSamples(sliceFixedPContour(surface.points, loadcase.P))
   const stationCount = PREVIEW_STATIONS.length
   const MM_FIRST = 8
@@ -461,7 +469,7 @@ const run = async () => {
   )
 
   console.log('== 10. Demand-ray capacity: workbook vs engine ==')
-  const surfaceForDemand = buildPreviewSurface(section, rebars, materialStore, { cellSize })
+  const surfaceForDemand = buildPreviewSurface(section, rebars, materialStore, { cellSize }, analysisOptions)
   const demandContour = sliceFixedPContour(surfaceForDemand.points, loadcase.P)
   const thetaLoad = Math.atan2(loadcase.My, loadcase.Mx)
   const engineHit = intersectFixedPContourWithMomentRay(demandContour, thetaLoad)
@@ -477,7 +485,8 @@ const run = async () => {
     `      engine ${engineMb.toFixed(3)}   ray on the workbook contour ${workbookMbRay.toFixed(3)}   ` +
       `plane cut of the station rings ${workbookMbPlane.toFixed(3)} kN·m`
   )
-  // The workbook slices a 24x19 grid, the engine slices its triangulation: agreement is expected
+  // This compatibility workbook slices its persisted 24x19 grid; the engine slices the same
+  // triangulation. Current project defaults are tested separately.
   // to the direction-sampling spread, not to machine precision.
   check('workbook ray Mb vs engine', workbookMbRay, engineMb, 5e-3)
   check('workbook plane Mb vs engine', workbookMbPlane, engineMb, 5e-3)
@@ -750,6 +759,36 @@ const run = async () => {
   )
   assert.equal(customPm.getCell(12, 2).value, null, 'the station block must stop after the configured five rows')
   console.log('PASS  5 custom stations, 5 nonuniform directions, wrap angle and nonlinear inverse\n')
+
+  console.log('== 16. Current 25-station default exports all nine code-aware transition nodes ==')
+  const currentOptions = createDefaultAnalysisOptions()
+  const currentWorkbook = await buildSectionWorkbook({
+    projectName: `${parsed.document.meta.name} (current sampling default)`,
+    sectionName: geometry.name,
+    section,
+    rebars,
+    materialStore,
+    designBasis: parsed.document.inputs.design,
+    analysisOptions: currentOptions,
+    betaDeg: BETA_DEG,
+    fixedP: loadcase.P,
+    loadcase
+  })
+  const currentBuffer = await currentWorkbook.xlsx.writeBuffer()
+  const currentRead = new ExcelJS.Workbook()
+  await currentRead.xlsx.load(currentBuffer as ArrayBuffer)
+  const currentPm = currentRead.getWorksheet('PM_Angle')!
+  assert.match(String(currentPm.getCell('B1').value), /25 STATIONS/)
+  const currentEpsControlColumn = headerColumn(currentPm, 5, 'ε_ctrl')
+  const transitionStrains = Array.from(
+    { length: 9 },
+    (_, index) => Number(currentPm.getCell(16 + index, currentEpsControlColumn).value)
+  )
+  assert.ok(transitionStrains.every(Number.isFinite))
+  assert.ok(transitionStrains.every((strain, index) => index === 0 || strain < transitionStrains[index - 1]))
+  assert.ok(Math.abs(transitionStrains[0] + 0.002) < 1e-12)
+  assert.ok(Math.abs(transitionStrains[8] + 0.005) < 1e-12)
+  console.log('PASS  25 stations exported; transition strains run from eps_y to the KDS limit at 1/8 spacing\n')
 
   if (failures.length > 0) {
     console.log(`${failures.length} check(s) failed:`)

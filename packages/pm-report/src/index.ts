@@ -415,7 +415,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   // alongside its own and shows the spread instead of pretending they are identical.
   const demandP = input.loadcase ? input.loadcase.P : input.fixedP
   const thetaLoad = input.loadcase ? Math.atan2(input.loadcase.My, input.loadcase.Mx) : 0
-  const engineSurface = buildPreviewSurfaceFromPrepared(prepared, input.analysisOptions)
+  const engineSurface = buildPreviewSurfaceFromPrepared(prepared, input.analysisOptions, designBasis)
   const designSurface = buildDesignPreviewSurfaceFromPrepared(
     prepared,
     input.materialStore,
@@ -433,7 +433,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     .sort((a, b) => a - b)
   auditOptions.directions.seed = { type: 'explicit', anglesDeg: auditAngles }
   auditOptions.directions.refinement = { type: 'fixed', probe: { stationIds: [] } }
-  const auditSurface = buildPreviewSurfaceFromPrepared(prepared, auditOptions)
+  const auditSurface = buildPreviewSurfaceFromPrepared(prepared, auditOptions, designBasis)
   const auditBeta = (betaDegNormalized * Math.PI) / 180
   const engineStations = auditSurface.points
     .filter((point) => Math.abs(point.beta - auditBeta) <= 1e-12)
@@ -769,7 +769,16 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
           ['φ compression · ties/other', designBasis.factors.phiCompressionOther, '-', 'Global factor on Pn, Mnx and Mny'],
           ['φ compression · spiral', designBasis.factors.phiCompressionSpiral, '-', 'Used only for qualifying spiral classification'],
           ['φ tension-controlled', designBasis.factors.phiTension, '-', 'Global factor on the complete resultant ledger'],
-          ['Transition Δεt', designBasis.factors.transitionExtraStrain, '-', 'Upper limit = εy + Δεt'],
+          [
+            designBasis.transition.type === 'yield-plus-strain' ? 'Transition strain increment' : 'Transition fixed strain limit',
+            designBasis.transition.type === 'yield-plus-strain'
+              ? designBasis.transition.extraStrain
+              : designBasis.transition.fixedStrainLimit,
+            '-',
+            designBasis.transition.type === 'yield-plus-strain'
+              ? 'Tension-controlled limit = eps_y + increment'
+              : `Fixed through fy = ${designBasis.transition.yieldStressThreshold} MPa; above: ${designBasis.transition.highStrengthYieldMultiple} eps_y`
+          ],
           ['Maximum axial ratio · ties/other', designBasis.factors.axialCapOther, '-', 'Applied after φ'],
           ['Maximum axial ratio · spiral', designBasis.factors.axialCapSpiral, '-', 'Applied after φ'],
           ['Transverse reinforcement', designBasis.transverseReinforcement, '', 'Project classification'],
@@ -1165,7 +1174,11 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       pmSheet.getCell(r, PM.uCtrl).value = {
         formula: station.kind === 'neutral-axis-ratio' ? `u_max-${col(PM.cRatio)}${r}*u_C1` : 'u_bar'
       }
-      if (station.kind === 'steel-stress-ratio') {
+      if (
+        station.kind === 'steel-stress-ratio' ||
+        station.kind === 'strength-reduction-transition-ratio' ||
+        station.kind === 'strength-reduction-post-transition'
+      ) {
         const state = engineStations[index].state
         const resolved = state.e0 + Math.hypot(state.kx, state.ky) * auditUBar
         pmSheet.getCell(r, PM.epsCtrl).value = resolved
@@ -1174,8 +1187,9 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
           pattern: 'solid',
           fgColor: { argb: CONST_FILL }
         }
-        pmSheet.getCell(r, PM.epsCtrl).note =
-          'Engine-resolved inverse of the controlling bar material law at the requested fₛ/fyd.'
+        pmSheet.getCell(r, PM.epsCtrl).note = station.kind === 'steel-stress-ratio'
+          ? 'Engine-resolved inverse of the controlling bar material law at the requested fs/fyd.'
+          : 'Engine-resolved code-aware tensile strain landmark from the selected resistance profile.'
       } else {
         pmSheet.getCell(r, PM.epsCtrl).value = {
           formula: station.kind === 'neutral-axis-ratio' ? 'ROUND(0,0)' : `-${col(PM.epsS)}${r}`

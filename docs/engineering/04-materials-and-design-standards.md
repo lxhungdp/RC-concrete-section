@@ -1,150 +1,120 @@
 # Materials and Design-Standard Rules
 
-## 1. Separate three concepts
+## 1. One user selection, separate internal responsibilities
 
-The product shall not collapse these concepts into one `standard` dropdown:
+The Materials page exposes one calculation-profile selector so the user cannot create an accidental
+combination of mechanics, material law, standard, factors, and analysis defaults. Internally, the
+selection resolves four separate objects:
 
-1. **Material definition** — serializable parameters/curve data and engineering source.
-2. **Material evaluator** — runtime stress, tangent, breakpoints, components, and admissibility
-   compiled from a validated definition.
-3. **Design-code resistance profile** — exact standard identity, method, applicability,
-   classifications, ultimate strain domain, resistance format, factors/caps, and clause trace.
+1. serializable concrete and steel material definitions;
+2. compiled runtime material evaluators;
+3. the calculation mechanics and matching analysis-options DTO;
+4. the edition-specific DesignBasis and code adapter.
 
-A material tagged `KDS`, `ACI318`, or `EC2` is not proof that a complete code check is implemented.
-The exact document, edition, amendment, jurisdiction or National Annex, and `methodId` belong to the
-design basis/profile.
+The UI simplicity does not collapse these responsibilities in code. A material tag alone is never
+proof of a complete standard check.
 
-## 2. Material definition requirements
+## 2. Implemented calculation profiles
 
-Every definition is immutable after normalization, serializable, finite, and versioned. It records:
-
-- role (`concrete` or `reinforcement`), stable ID, and display name;
-- model kind and all authoritative parameters;
-- compression-positive sign convention and canonical stress/strain units;
-- lower/upper behavior outside the curve or an explicit domain error policy;
-- admissible strain range and all breakpoints;
-- source/profile metadata and verification status;
-- derivation rule for every computed property.
-
-Do not independently store values that can contradict one another, such as `fy`, `Es`, `epsY`, and
-curve points. One authoritative definition derives the others, or validation proves agreement within
-an approved tolerance.
-
-## 3. User-defined curves
-
-A curve requires at least two finite points with strictly increasing strain. Duplicate strains,
-implicit discontinuities, and empty curves are errors. Tension behavior, extrapolation on both ends,
-rupture, and admissible limits are explicit.
-
-Compilation may pre-sort only after validation has established a deterministic normalized order. A
-runtime evaluator shall not sort and allocate on every stress call. Tangents are analytical segment
-slopes with a documented one-sided convention at kinks; a fixed finite-difference tangent is not an
-accepted production default.
-
-## 4. Concrete and steel behavior
-
-Concrete ULS laws, service-response laws, and equivalent rectangular stress blocks are not
-interchangeable. A service elastic modulus is not inferred from an ultimate stress block unless the
-governing model explicitly defines that use.
-
-Steel laws must define elastic behavior, yield transition, hardening/plateau, and ultimate strain or
-extrapolation policy. Compression/tension symmetry is an explicit model property, not a universal
-assumption.
-
-Evaluation outside an admissible ultimate strain does not silently return zero. It returns a typed
-domain failure unless the selected law explicitly defines post-ultimate behavior for the analysis
-mode.
-
-## 5. Current implementation assessment
-
-| Current model/helper | Code status | Engineering use until hardened/verified |
-|---|---|---|
-| KDS parabolic concrete and derived values | implemented preview | material-family curve preview and regression only; exact profile/clauses and domain behavior still require verification |
-| elastic-perfectly-plastic steel | implemented preview | material-family model only; global or state-dependent resistance factors are outside the material definition |
-| bilinear steel | implemented preview | hardening/ultimate range and kink behavior require validation |
-| EN 1992-1-1 (EC2) parabolic-rectangular concrete | implemented preview | generic model family with editable `alpha_cc` and `gamma_c`; not a complete edition/National-Annex profile |
-| EN 1992 reinforcement factor `gamma_s` | implemented preview | material-family design yield is available for preview; exact annex/profile scope still requires verification |
-| user curves | implemented preview | blocked from accepted analysis until strict curve/extrapolation validation exists |
-| ACI Whitney helper | implemented but not analysis-valid | current evaluator ignores `beta1` in local stress integration; it must be redesigned as a code-specific equivalent-block operation or replaced by a verified fiber law |
-
-The current compiler also uses silent fallbacks and numerical tangents. Those behaviors are allowed
-for UI preview only and shall not enter an accepted result.
-
-The current project schema stores one concrete definition (`id = 1`) and multiple steel definitions.
-That is the supported persisted v2 scope. A future multi-concrete-region capability requires a
-versioned mapping/migration; it shall not infer material assignment by array order.
-
-### Current material editor pipeline
-
-The material editor intentionally exposes one **Standard / Source** selector, not a separate
-stress-strain model selector. The selected source derives the model family and its editable
-parameters:
-
-| UI label | Stored `standard` | Concrete effect | Reinforcement effect |
+| User profile | Mechanics | Concrete resistance | Resistance treatment |
 |---|---|---|---|
-| `KDS` | `KDS` | KDS parabola-rectangle helper derives `Ec`, `eps0`, `epsCu`, and `n` from `fck` and density; `alpha` is stored as a material factor/source coefficient. | Elastic-perfectly-plastic steel with `Es = 200000 MPa`; no material partial factor is applied. |
-| `ACI 318` | `ACI318` | ACI Whitney/block-family preview with `alpha = 0.85` and `epsCu = 0.003`; `beta1` is stored for traceability but is not a verified local fiber-law check. | Elastic-perfectly-plastic steel with `Es = 200000 MPa`; strength reduction `phi` is not a material property. |
-| `EN 1992-1-1 (EC2)` | `EC2` | EC2 parabola-rectangle preview with `epsC2 = 0.002`, `epsCu2 = 0.0035`, `n = 2`; user-visible `alpha_cc`, `gamma_c`, and derived `fcd` are captured. | Elastic-perfectly-plastic steel with `Es = 200000 MPa`; user-visible `gamma_s` and derived `fyd` are captured. |
-| `Custom` | `CUSTOM` | User-defined stress-strain points; standard-derived `eps0`, `n`, and partial-factor controls are hidden. | User-defined stress-strain points; standard-derived partial-factor controls are hidden. |
+| KDS 2024 - Stress-strain integration | full stress-strain integration | KDS concrete curve at integration points | KDS global resultant factor and cap |
+| KDS 14 20 20 - Equivalent rectangular block | exact clipped block `a=beta1 c` | `eta 0.85 fck` in the active block | KDS global resultant factor and cap |
+| ACI 318-19(22) - Whitney equivalent block | exact clipped block `a=beta1 c` | `0.85 f'c` in the active block | ACI state-dependent phi and cap |
 
-The source selector is a derivation convenience, not a certification statement. It may populate
-`stressStrain`, `limits`, `elasticModulus`, and `factors`, but an accepted design check still needs
-a separate design-code resistance profile.
+The material compiler deliberately rejects an ACI Whitney definition in the fiber/stress-strain
+kernel. That is a routing guard, not a missing ACI capability: the ACI calculation profile routes to
+the separate implemented block adapter where `beta1` changes the physical block depth.
 
-### Required import/export capture
+## 3. Material definitions
 
-Project JSON and report artifacts must preserve the full material definition, not merely the
-displayed source label. The required persisted/audited fields are:
+Every persisted definition is serializable and finite. It records stable ID/name, source standard,
+model discriminant, all model parameters or curve points, elastic modulus where relevant, strain
+limits, factor fields, compression-positive convention, and derivation provenance.
 
-- concrete: `standard`, `fck`, `mc`, optional `elasticModulus`, full `stressStrain` discriminant and
-  parameters/points, `limits.eps0`, `limits.epsCu`, `limits.ignoreTension`, and `factors.alpha`,
-  `factors.gammaC` when present;
-- steel: `id`, `name`, `standard`, `fy`, `elasticModulus`, full `stressStrain` discriminant and
-  parameters/points, `limits.epsY`, `limits.epsU` when present, and `factors.gammaS` when present;
-- store metadata: `strainSign = compression-positive`, the steel list, and
-  `defaults.steelMaterialId`.
+Do not independently edit contradictory values such as `fy`, `Es`, `epsY`, and curve yield points.
+One authoritative value derives the others, or semantic validation proves agreement.
 
-Excel export must show both characteristic/input values and design values used by the formulas. For
-EN 1992 preview this means `alpha_source`, `gamma_c`, `alpha_eff`, `fcd`, `fy characteristic`,
-`gamma_s`, and `fy model / fyd` are all explicit. The live formulas use the same effective material
-law as the engine. A reviewer must be able to trace whether a factor was applied in the material law
-or reserved for a later resistance-profile stage.
+User curves require strictly increasing finite strain coordinates, explicit interpolation,
+extrapolation/rupture policy, and deterministic one-sided tangent behavior at kinks. Invalid curves
+do not fall back to a default law in an engineering calculation.
 
-## 6. Nominal/reference and design resistance
+## 4. Concrete model distinction
 
-For every ULS surface state:
+A stress-strain law and an equivalent rectangular block are not interchangeable:
 
-1. construct an admissible strain state from exact geometry and the selected profile;
-2. evaluate and retain `nominalReference` with a contribution ledger;
-3. apply exactly one profile-declared resistance format;
-4. apply that method's caps/domain operations;
-5. revalidate the design resistance domain.
+- stress-strain integration evaluates `sigma_c = f(eps_c)` throughout the concrete mesh;
+- an equivalent block applies a constant code stress only inside `0 <= depth <= a`, where
+  `a = beta1 c`, and zero outside.
 
-Permitted resistance formats are:
+The equivalent block is a resistance-level approximation of resultants. It must not be drawn as a
+material stress-strain curve or extended through the full neutral-axis depth `c`.
 
-- global resultant factor;
-- design-material reevaluation at the same strain state;
-- contribution-factor transform with proof of factorability;
-- explicitly ordered hybrid method.
+## 5. Steel and transition rules
 
-Material partial factors and a global strength-reduction factor are not interchangeable. Basic and
-alternative methods from the same standard are mutually exclusive unless the governing profile
-explicitly proves an ordered hybrid requirement.
+Steel behavior defines elastic response, yield/plateau or hardening, and ultimate strain when known.
+The DesignBasis separately owns the strain at which the tension-controlled resistance factor is
+reached:
 
-The detailed sequencing contract is in
-[`../11-design-standards-and-resistance-formats.md`](../11-design-standards-and-resistance-formats.md).
+```text
+ACI 318-19(22): eps_t,limit = eps_y + 0.003
 
-## 7. Acceptance gates
+KDS current profile:
+  fy <= 400 MPa: eps_t,limit = 0.005
+  fy >  400 MPa: eps_t,limit = 2.5 eps_y
+```
+
+These are persisted as discriminated rules, not one shared `transitionExtraStrain`. The stress-strain
+surface samples nine points from yield through the active rule's upper limit. Both block adapters use
+the same profile-owned limits for phi evaluation.
+
+## 6. Nominal and Design resistance
+
+For every ULS state:
+
+1. evaluate and retain the Nominal/reference resultant ledger;
+2. apply exactly one profile-declared resistance format;
+3. apply the profile axial cap where enabled;
+4. retain factor/classification/controlling-strain evidence with the Design point.
+
+For global-resultant profiles, phi multiplies the complete `P-Mx-My` ledger once. It is not embedded
+again in material stresses, and factored Demand is not reduced. For a design-material profile, the
+same strain state is reevaluated with design material strengths instead of applying a global factor.
+
+## 7. Persisted and reported evidence
+
+Project schema v1 stores the selected calculation profile, complete material definitions,
+model-specific analysis options, and complete DesignBasis. Reports expose:
+
+- characteristic/input and effective material values;
+- calculation profile, standard document/edition, method ID, and verification status;
+- transition-rule type and parameters;
+- Nominal and Design resultants and contribution ledgers;
+- phi classification, controlling tensile/yield strains, and tension-controlled limit;
+- axial-cap status and actual surface refinement evidence.
+
+There is no schema migration or profile inference layer in the pre-release v1 project.
+
+## 8. Current status
+
+The material laws, both numerical mechanics, and KDS/ACI adapters are implemented and tested as
+preview capability. They are not a released design certification. Independent clause calculations,
+commercial comparisons with matched assumptions, named structural review, accepted-result gating,
+and report-release evidence remain required.
+
+## 9. Acceptance gates
 
 | ID | Gate |
 |---|---|
-| `ENG-MAT-001` | strict definition/schema/range validation passes |
-| `ENG-MAT-002` | compiled evaluator is deterministic, total over its declared domain, and exposes breakpoints/components/admissibility |
-| `ENG-MAT-003` | bar and region material references resolve uniquely |
-| `ENG-MAT-004` | exact standard profile identity and applicability are complete |
-| `ENG-MAT-005` | clause trace, breakpoints, authoritative examples, and independent engineering review pass |
-| `ENG-MAT-006` | contribution ledger reproduces totals and anti-double-reduction tests pass |
-| `ENG-MAT-007` | ULS and service material sets cannot be mixed by type or orchestration |
+| `ENG-MAT-001` | strict schema, finite/range, reference, and model/profile consistency validation passes |
+| `ENG-MAT-002` | compiled evaluators are deterministic over their declared domains and expose tangents/limits |
+| `ENG-MAT-003` | stress-strain and equivalent-block routes cannot be mixed |
+| `ENG-MAT-004` | standard identity, edition, applicability, parameters, transition rule, and cap are traceable |
+| `ENG-MAT-005` | analytical, clause, transition, axial-cap, and independent comparison tests pass |
+| `ENG-MAT-006` | contribution ledgers reproduce totals and anti-double-reduction tests pass |
+| `ENG-MAT-007` | the result records actual sampling/convergence and cannot release after a failed gate |
 
-Until an entire profile passes these gates, the UI may show it only with a persistent preview or
-unverified label and report release remains blocked.
+Detailed formulas and defaults are in
+[`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-models-defaults-and-workflows.md);
+resistance sequencing is in
+[`../11-design-standards-and-resistance-formats.md`](../11-design-standards-and-resistance-formats.md).

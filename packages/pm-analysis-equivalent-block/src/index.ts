@@ -93,20 +93,39 @@ export const prepareBlockAnalysis = (
   }))
   const common = {
     concreteStrength: materialStore.concrete.fck,
-    steel,
-    resistanceFactors: basis.factors
+    steel
   }
   const model = profileId === 'aci-318-19-22-equivalent-block'
-    ? createAci318Model({
+    ? (() => {
+        if (basis.transition.type !== 'yield-plus-strain') {
+          throw new Error('The ACI 318 profile requires a yield-plus-strain transition rule.')
+        }
+        return createAci318Model({
         ...common,
+        resistanceFactors: {
+          ...basis.factors,
+          transitionExtraStrain: basis.transition.extraStrain
+        },
         transverseReinforcement: basis.transverseReinforcement === 'qualifying-spiral'
           ? 'qualifying-spiral'
           : 'tied'
-      })
-    : createKds142020Model({
+        })
+      })()
+    : (() => {
+        if (basis.transition.type !== 'fixed-or-yield-multiple') {
+          throw new Error('The KDS profile requires a fixed-or-yield-multiple transition rule.')
+        }
+        return createKds142020Model({
         ...common,
+        resistanceFactors: basis.factors,
+        transitionLimitRule: {
+          yieldStressThreshold: basis.transition.yieldStressThreshold,
+          fixedStrainLimit: basis.transition.fixedStrainLimit,
+          highStrengthYieldMultiple: basis.transition.highStrengthYieldMultiple
+        },
         transverseReinforcement: basis.transverseReinforcement
-      })
+        })
+      })()
   return { profileId, section: preparedSection, materialStore, designBasis: basis, model, geometry: section, rebars }
 }
 

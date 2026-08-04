@@ -23,6 +23,7 @@ import {
   createDefaultDesignBasis,
   designBasisRequiresOverrideReason,
   evaluateGlobalStrengthReduction,
+  resolveTensionControlledStrainLimit,
   type DesignBasis,
   type GlobalStrengthReductionBasis,
   type ResistanceClassification
@@ -369,6 +370,8 @@ export type StationDefinition =
   | { kind: 'neutral-axis-ratio'; cOverC1: number }
   | { kind: 'steel-strain'; strain: number }
   | { kind: 'steel-stress-ratio'; ratio: number }
+  | { kind: 'strength-reduction-transition-ratio'; ratio: number }
+  | { kind: 'strength-reduction-post-transition'; extraStrain: number }
   | { kind: 'extreme-tension-strain'; strain: number }
   | { kind: 'block-depth-ratio'; ratio: number }
   | { kind: 'pure-tension' }
@@ -415,13 +418,23 @@ export const stationDefinitionLabel = (station: StationDefinition): string => {
     if (Math.abs(station.strain) < 1e-12) return 'fs = 0'
     return `εs = ${station.strain}`
   }
+  if (station.kind === 'strength-reduction-transition-ratio') {
+    return `phi transition ${(station.ratio * 100).toFixed(1)}%`
+  }
+  if (station.kind === 'strength-reduction-post-transition') {
+    return `post-transition +${station.extraStrain}`
+  }
   return 'Station'
 }
 
 const criterionDefinition = (criterion: AnalysisStationCriterion): StationDefinition => {
   if (criterion.type === 'c-over-c1') return { kind: 'neutral-axis-ratio', cOverC1: criterion.ratio }
   if (criterion.type === 'steel-stress-ratio') return { kind: 'steel-stress-ratio', ratio: criterion.ratio }
-  return { kind: 'steel-strain', strain: criterion.strain }
+  if (criterion.type === 'steel-strain') return { kind: 'steel-strain', strain: criterion.strain }
+  if (criterion.type === 'strength-reduction-transition-ratio') {
+    return { kind: 'strength-reduction-transition-ratio', ratio: criterion.ratio }
+  }
+  return { kind: 'strength-reduction-post-transition', extraStrain: criterion.extraStrain }
 }
 
 /** Resolved schedule including the two mandatory poles. */
@@ -875,6 +888,8 @@ type StationSteelControl = StationSteelLimits & {
   definition: SteelMaterial
   /** Design yield stress fyd = fy / γs, MPa. */
   fyd: number
+  /** Specified yield stress used by code transition rules, MPa. */
+  yieldStress: number
 }
 
 const stationSteelControl = (
@@ -902,6 +917,7 @@ const stationSteelControl = (
     steel,
     definition,
     fyd: definition.fy / (definition.factors?.gammaS ?? 1),
+    yieldStress: definition.fy,
     epsY: steel.limits.epsYield ?? DEFAULT_STATION_STEEL_LIMITS.epsY,
     epsU: steel.limits.epsTensionUltimate ?? null
   }
@@ -955,9 +971,25 @@ const strainAtSteelStressRatio = (ratio: number, control: StationSteelControl) =
   return (low + high) / 2
 }
 
-const farTensionSteelStrain = (station: StationDefinition, control: StationSteelControl) => {
+const transitionLimitForStation = (basis: DesignBasis, control: StationSteelControl) =>
+  basis.format === 'globalResultantFactor'
+    ? resolveTensionControlledStrainLimit(basis, control.epsY, control.yieldStress)
+    : Math.max(control.epsY, 0.005)
+
+const farTensionSteelStrain = (
+  station: StationDefinition,
+  control: StationSteelControl,
+  basis: DesignBasis
+) => {
   if (station.kind === 'steel-strain') return station.strain
   if (station.kind === 'steel-stress-ratio') return strainAtSteelStressRatio(station.ratio, control)
+  if (station.kind === 'strength-reduction-transition-ratio') {
+    const upper = transitionLimitForStation(basis, control)
+    return -(control.epsY + station.ratio * (upper - control.epsY))
+  }
+  if (station.kind === 'strength-reduction-post-transition') {
+    return -(transitionLimitForStation(basis, control) + station.extraStrain)
+  }
   return 0
 }
 
@@ -969,6 +1001,7 @@ const previewStationStateFromExtents = (
   station: StationDefinition,
   epsCu: number,
   control: StationSteelControl,
+  designBasis: DesignBasis,
   globalPureTensionStrain: number,
   extents: ProjectedExtents
 ): StrainState => {
@@ -983,7 +1016,7 @@ const previewStationStateFromExtents = (
       : extents.tensionControl
   // A schedule strain past the controlling bar's declared rupture strain is not a reachable state.
   const requestedStrain =
-    station.kind === 'neutral-axis-ratio' ? 0 : farTensionSteelStrain(station, control)
+    station.kind === 'neutral-axis-ratio' ? 0 : farTensionSteelStrain(station, control, designBasis)
   const controlStrain = control.epsU === null ? requestedStrain : Math.max(requestedStrain, -control.epsU)
   const curvature = (epsCu - controlStrain) / Math.max(1e-9, compressionProjection - controlProjection)
   const c = Math.cos(beta)
@@ -1017,6 +1050,7 @@ export const previewStationState = (
   const control: StationSteelControl = {
     ...limits,
     fyd: 1,
+    yieldStress: 1,
     definition: {
       id: 0,
       name: 'Compatibility linear steel',
@@ -1038,6 +1072,7 @@ export const previewStationState = (
     definition,
     epsCu,
     control,
+    createDefaultDesignBasis(),
     pureTensionStrain(limits),
     projectedExtents(section, beta, origin, rebars)
   )
@@ -1250,13 +1285,14 @@ export const evaluatePreviewState = (
 /**
  * Build the configured strain-domain surface.
  *
- * Probe stations are persisted by stable ID. The default four-probe set is a measured low-cost
- * estimate for the legacy schedule; custom schedules should normally use `probe: "all"`. An empty
- * ID list deliberately skips the estimate and reports NaN rather than a false zero.
+ * Probe stations are persisted by stable ID. Production uses `probe: "all"`; the historical
+ * four-probe schedule remains only in explicit legacy options. An empty ID list deliberately skips
+ * the estimate and reports NaN rather than a false zero.
  */
 export const buildPreviewSurfaceFromPrepared = (
   prepared: PreparedAnalysis,
-  analysisOptions: AnalysisOptions = createDefaultAnalysisOptions()
+  analysisOptions: AnalysisOptions = createDefaultAnalysisOptions(),
+  designBasis: DesignBasis = createDefaultDesignBasis(prepared.materialStore)
 ): PreviewSurface => {
   const { section, rebars, materialStore, origin, fibers, materials } = prepared
   const meshReport = prepared.mesh.report
@@ -1335,6 +1371,7 @@ export const buildPreviewSurfaceFromPrepared = (
         descriptor.definition,
         epsCu,
         control,
+        designBasis,
         globalPureTensionStrain,
         extents
       )
@@ -1558,9 +1595,10 @@ const surfaceBounds = (points: PreviewSurfacePoint[]) => ({
 const controllingSteelEvidence = (
   prepared: PreparedAnalysis,
   state: StrainState
-): { tensileStrain: number; yieldStrain: number } => {
+): { tensileStrain: number; yieldStrain: number; yieldStress: number } => {
   let tensileStrain = 0
   let yieldStrain = Number.POSITIVE_INFINITY
+  let yieldStress = 400
   for (const bar of prepared.rebars) {
     const strain =
       state.e0 +
@@ -1575,12 +1613,14 @@ const controllingSteelEvidence = (
     if (!steel) continue
     tensileStrain = tension
     yieldStrain = steel.fy / steel.elasticModulus
+    yieldStress = steel.fy
   }
   if (!Number.isFinite(yieldStrain)) {
     const steel = prepared.materialStore.steel[0]
     yieldStrain = steel ? steel.fy / steel.elasticModulus : 0.002
+    yieldStress = steel?.fy ?? 400
   }
-  return { tensileStrain, yieldStrain }
+  return { tensileStrain, yieldStrain, yieldStress }
 }
 
 const designPointFromState = (
@@ -1602,7 +1642,8 @@ const designPointFromState = (
     const evaluation = evaluateGlobalStrengthReduction(
       basis,
       evidence.tensileStrain,
-      evidence.yieldStrain
+      evidence.yieldStrain,
+      evidence.yieldStress
     )
     const ledger = scaleLedger(nominalLedger, evaluation.phi)
     return {
@@ -1762,7 +1803,7 @@ export const buildDesignPreviewSurfaceFromPrepared = (
   analysisOptions: AnalysisOptions = createDefaultAnalysisOptions()
 ): PreviewSurface => {
   const materialSets = buildResistanceMaterialSets(sourceMaterials, designBasis)
-  const base = buildPreviewSurfaceFromPrepared(statePrepared, analysisOptions)
+  const base = buildPreviewSurfaceFromPrepared(statePrepared, analysisOptions, designBasis)
   const referencePrepared =
     JSON.stringify(materialSets.referenceMaterials) === JSON.stringify(statePrepared.materialStore)
       ? statePrepared

@@ -1,6 +1,6 @@
 import { createEmptyGeometryInput, type GeometryInput } from '@pm/geometry'
 import { createDefaultMaterialStore, type MaterialStore } from '@pm/materials'
-import { cloneDesignBasis, createDefaultDesignBasis } from '@pm/design'
+import { cloneDesignBasis } from '@pm/design'
 import { nextAvailableId } from './ids'
 import { cloneLoadingsInput, createEmptyLoadingsInput } from './loadings'
 import { cloneCalculationAnalysisOptions } from './analysis-options'
@@ -64,9 +64,7 @@ export const createProjectDocument = (snapshot: ProjectInputSnapshot): PmProject
     snapshot.analysis ?? createAnalysisOptionsForProfile(calculationProfileId)
   )
   const design = cloneDesignBasis(
-    snapshot.design ?? (snapshot.calculationProfileId
-      ? createDesignBasisForCalculationProfile(calculationProfileId)
-      : createDefaultDesignBasis(materials))
+    snapshot.design ?? createDesignBasisForCalculationProfile(calculationProfileId)
   )
 
   return {

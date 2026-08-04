@@ -54,6 +54,21 @@ loadcase row, then inspect the forward plots and lazy inverse detail in the same
 
 ## 2. Analysis orchestration
 
+Current schema v1 resolves one of two independent mechanics before preparation:
+
+```text
+strain-domain-surface-v1
+  -> @pm/analysis (stress-strain mesh, 25 stations, 36-direction adaptive seed)
+
+equivalent-block-surface-v1
+  -> @pm/analysis-equivalent-block
+  -> @pm/equivalent-block + selected KDS/ACI adapter
+```
+
+The orchestration may normalize both outputs to common Nominal/Design/Demand result contracts, but
+must never pass stress-strain mesh options into the block kernel or emulate a code block with fiber
+stress. Model-specific fields remain attached to each result. See `../12` for the exact workflows.
+
 `@pm/engine` owns use-case sequencing, not mathematical formulas:
 
 ```text

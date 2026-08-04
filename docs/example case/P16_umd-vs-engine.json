@@ -36,7 +36,7 @@
  },
  "surfaces": [
   {
-   "label": "24 directions (default)",
+   "label": "24 directions (historical comparison grid)",
    "directions": 24,
    "stations": 19,
    "poles": {

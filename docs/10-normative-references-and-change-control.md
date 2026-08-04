@@ -108,7 +108,7 @@ level. Do not silently change a formula to match an existing regression output.
 
 | v1 decision/problem | v2 resolution |
 |---|---|
-| 24×19 declared the full surface | It is only a seed; adaptive beta/state refinement controls interpolation error. |
+| Historical 24×19 grid declared the full surface | Retired: stress-strain production now uses 25 stations, 36 seed directions, and 0.5% adaptive angular refinement; block sampling remains independently adaptive. |
 | Strain direction `beta` or derived N.A. line angle reused as demand moment angle | Demand checks use `thetaLoad = atan2(Muy, Mux)` and geometric ray/plane intersections on the finished `P-Mx-My` surface. |
 | Extreme compression fiber taken from mesh centroid | Exact polygon support vertex defines the extreme edge. |
 | Universal `fy/Es` and hard-coded strain milestones | Adapter/material-derived breakpoints with monotonic validation. |

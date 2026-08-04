@@ -53,20 +53,22 @@ accidentally to the physical equilibrium solver.
 Only a successful result that carries a `CertifiedDesignDomain` brand can enter report-generation
 or downstream adequacy APIs. Preview surfaces use a different type.
 
-## 4. Runtime schemas and migrations
+## 4. Runtime schemas and current v1 policy
 
 Compile-time types do not validate JSON. Use a pinned runtime-schema package or an equivalent local
-validator for every public DTO. Schema versions are explicit:
+validator for every public DTO. The current pre-release project contract is strict version 1:
 
 ```ts
 interface VersionedRequest {
-  schemaVersion: '2.0';
+  schemaVersion: 1;
   engineRequestId: string;
 }
 ```
 
-Migrations are pure functions with fixtures for old versions. Never reinterpret an old standard
-edition or unit convention silently.
+No migration or backward-compatibility layer is implemented for the current project schema v1.
+Unsupported versions fail. If a future public version needs migration, it must be approved and
+implemented as an explicit, fixture-tested change; an old standard edition or unit convention may
+never be reinterpreted silently.
 
 ## 5. Errors, warnings, and fail-closed behavior
 

@@ -26,7 +26,7 @@ filesystem/network APIs, project UI state, or report libraries.
 | `@pm/ids` | positive integer allocation/gap fill | identity utilities only; no engineering meaning |
 | `@pm/geometry` | editor DTO, primitives/booleans, properties, rebar helpers | split public submodules for definitions, validation, normalization, exact properties, rebar validation, and analysis adapters |
 | `@pm/materials` | material DTOs, stores, model compilers, KDS helpers | definitions/validation/compilation only; no complete design-code claim in a material tag |
-| `@pm/project` | project v3 DTO, JSON parse/serialize, warnings, round-trip | persistence envelope and migrations; no numerical analysis or UI behavior |
+| `@pm/project` | strict project v1 DTO, JSON parse/serialize, warnings, round-trip | persistence envelope and profile/options registry; no numerical analysis or UI behavior; no migration layer in the pre-release v1 project |
 | `@structures/cad-drawing` | reusable view/navigation foundation | presentation only; never an analysis dependency |
 | `@pm/web` | current integrated editor | application composition only; move reusable domain/use-case logic into packages |
 
