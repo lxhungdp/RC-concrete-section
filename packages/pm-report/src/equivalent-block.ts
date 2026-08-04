@@ -216,7 +216,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   const engineContour = sliceFixedPContour(surface.points, demandP, surface.triangles)
   const engineBoundary = intersectFixedPContourWithMomentRay(engineContour, thetaLoad)
   const demand = input.loadcase
-    ? solveEquivalentBlockDemandFromPrepared(prepared, input.analysisOptions, input.loadcase)
+    ? solveEquivalentBlockDemandFromPrepared(prepared, input.analysisOptions, input.loadcase, designSurfaceCore)
     : null
 
   const workbook = await createWorkbook()
@@ -393,8 +393,8 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     ['φ and design resultants', 'formula', 'the transition rule is algebra over εt, εy and the named φ factors'],
     [`${sampledDirections.length} x station surface grid (MxMy_FixedP)`, 'engine value', 'avoids re-solving every state in the sheet; two sentinels flag a stale import'],
     ['Contour, ray query, plane cut', 'formula', 'this is the logic under audit, so it stays visible'],
-    ['Converged inverse state (Equilibrium)', 'engine value', 'bracketed scalar solve; the workbook verifies the state instead of re-deriving it'],
-    ['Equilibrium residual', 'formula', 'the workbook proves the stored state balances the demand']
+    ['Converged capacity-ray state (Equilibrium)', 'engine value', 'bracketed scalar solve on the design-surface boundary; the workbook verifies the state instead of re-deriving it'],
+    ['Capacity-state residual', 'formula', 'the workbook proves the stored state balances the scaled demand ray at capacity']
   ]
   provenance.forEach(([what, kind, why], index) => {
     const r = provRow + 1 + index
@@ -925,7 +925,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   // ==========================================================================
   const eqSheet = workbook.addWorksheet('Equilibrium', { views: [{ showGridLines: false }] })
   eqSheet.columns = [{ width: 4 }, { width: 34 }, { width: 20 }, { width: 12 }, { width: 66 }]
-  title(eqSheet, 1, 'CONVERGED EQUIVALENT-BLOCK STATE FOR THE FACTORED DEMAND', 4)
+  title(eqSheet, 1, 'CONVERGED EQUIVALENT-BLOCK CAPACITY STATE ON THE DEMAND RAY', 4)
   if (!demand || !demand.equivalentBlock) {
     eqSheet.getCell(3, 2).value = input.loadcase
       ? 'The solver did not converge on an equilibrium state for this demand.'
@@ -952,6 +952,12 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
       ['εt,ctrl', nominal.controllingTensileStrain, '-', `controlling bar ${nominal.controllingBarId ?? 'n/a'}`],
       ['φ*', phi, '-', String(designEval.metadata?.classification ?? '')],
       ['utilization (governing ray)', demand.utilization ?? 'not found', '-', 'factored demand against the design surface'],
+      [
+        'capacity load factor λ',
+        demand.utilization !== null && demand.utilization > 0 ? 1 / demand.utilization : 'not found',
+        '-',
+        'boundary capacity = λ × factored demand; utilization = 1/λ'
+      ],
       ['axial cap governed', demand.resistance?.axialCapApplied ? 'yes' : 'no', '']
     ]
     const rowOf = new Map<string, number>()
@@ -969,13 +975,14 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
       eqRow += 1
     }
     eqRow += 1
-    sectionHeading(eqSheet, eqRow, 'Residual against the factored demand', 4)
+    sectionHeading(eqSheet, eqRow, 'Residual against the scaled demand ray at capacity', 4)
     eqRow += 1
     const phiRow = rowOf.get('φ*')!
+    const lambdaRow = rowOf.get('capacity load factor λ')!
     const residuals: Array<[string, string, string]> = [
-      ['φPn* − Pu', `C${phiRow}*C${rowOf.get('Pn*')!}-Pu`, 'kN'],
-      ['φMnx* − Mux', `C${phiRow}*C${rowOf.get('Mnx*')!}-Mux`, 'kN·m'],
-      ['φMny* − Muy', `C${phiRow}*C${rowOf.get('Mny*')!}-Muy`, 'kN·m']
+      ['P capacity residual', `C${phiRow}*C${rowOf.get('Pn*')!}-C${lambdaRow}*Pu`, 'kN'],
+      ['Mx capacity residual', `C${phiRow}*C${rowOf.get('Mnx*')!}-C${lambdaRow}*Mux`, 'kN·m'],
+      ['My capacity residual', `C${phiRow}*C${rowOf.get('Mny*')!}-C${lambdaRow}*Muy`, 'kN·m']
     ]
     const residualRows: number[] = []
     for (const [label, formula, unit] of residuals) {
@@ -988,16 +995,18 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     }
     eqSheet.getCell(eqRow, 2).value = 'relative residual'
     eqSheet.getCell(eqRow, 2).font = { bold: true }
+    const designRows = [rowOf.get('Pn*')!, rowOf.get('Mnx*')!, rowOf.get('Mny*')!]
+    const demandNames = ['Pu', 'Mux', 'Muy']
     eqSheet.getCell(eqRow, 3).value = {
-      formula: `SQRT(${residualRows.map((r) => `C${r}^2`).join('+')})/MAX(1,SQRT(Pu^2+Mux^2+Muy^2))`
+      formula: `SQRT(${residualRows.map((r, index) => `(C${r}/MAX(1,ABS(C${phiRow}*C${designRows[index]}),ABS(C${lambdaRow}*${demandNames[index]})))^2`).join('+')})`
     }
     eqSheet.getCell(eqRow, 3).numFmt = '0.000E+00'
     eqSheet.getCell(eqRow, 5).value = {
-      formula: `IF(C${eqRow}<=0.0001,"in equilibrium with the factored demand","CHECK - the stored state does not balance the demand")`
+      formula: `IF(C${eqRow}<=0.0001,"capacity state reconciled with the scaled demand ray","CHECK - the stored state does not balance the scaled demand ray")`
     }
     eqSheet.getCell(eqRow, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
     noteCell(eqSheet, eqRow + 2, 2,
-      'The demand lies on the design surface, so the residual is the statement that the solved state reproduces exactly the factored demand it was solved for. It is not an independent check of the surface.')
+      'A general demand does not lie on the design surface. The proportional solver scales it by λ to the boundary; this residual verifies that boundary state. It is not an independent check of the surface.')
   }
 
   // ==========================================================================
@@ -1036,6 +1045,8 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     checkSheet.getCell(checkRow, 2).value = 'No load combination selected.'
   } else {
     const utilizationRow = checkRow + 3
+    const convergenceRow = utilizationRow + 2
+    const admissibilityRow = utilizationRow + 3
     const rows: Array<[string, number | string, string, string?]> = [
       ['Pu', input.loadcase.P / 1e3, 'kN'],
       ['Mux', input.loadcase.Mx / 1e6, 'kN·m'],
@@ -1068,7 +1079,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     checkSheet.getCell(checkRow + 1, 2).value = 'verdict'
     checkSheet.getCell(checkRow + 1, 2).font = { bold: true }
     checkSheet.getCell(checkRow + 1, 3).value = {
-      formula: `IF(NOT(ISNUMBER(C${utilizationRow})),"NOT CHECKED - no intersection",IF(C${utilizationRow}<=1,"ADEQUATE - factored demand is inside the design surface","INADEQUATE - factored demand exceeds the design surface"))`
+      formula: `IF(C${convergenceRow}<>"yes","NOT CHECKED - solver did not converge",IF(C${admissibilityRow}<>"yes","NOT CHECKED - strain state is not admissible",IF(NOT(ISNUMBER(C${utilizationRow})),"NOT CHECKED - no intersection",IF(C${utilizationRow}<=1,"ADEQUATE - factored demand is inside the design surface","INADEQUATE - factored demand exceeds the design surface"))))`
     }
     checkSheet.getCell(checkRow + 1, 3).font = { bold: true }
     noteCell(checkSheet, checkRow + 3, 2,

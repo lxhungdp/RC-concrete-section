@@ -28,7 +28,7 @@ import {
 } from '@pm/analysis'
 import {
   prepareBlockAnalysis,
-  solveEquivalentBlockDemandFromPrepared
+  solveEquivalentBlockDemandsFromPrepared
 } from '@pm/analysis-equivalent-block'
 import {
   clipPreparedSectionToHalfPlane,
@@ -442,8 +442,10 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       basis
     )
     const options = input.analysisOptions as EquivalentBlockAnalysisOptions
-    for (const loadcase of input.loadcases) {
-      const result = solveEquivalentBlockDemandFromPrepared(prepared, options, loadcase)
+    const solved = solveEquivalentBlockDemandsFromPrepared(prepared, options, input.loadcases)
+    for (let index = 0; index < input.loadcases.length; index += 1) {
+      const loadcase = input.loadcases[index]
+      const result = solved[index]
       results.set(loadcase.id, result)
       if (!wanted.has(loadcase.id)) continue
       detail.push(blockDetail(prepared, drawingSection, origin, loadcase, result, input.surface, curves))
@@ -643,7 +645,9 @@ const blockDetail = (
   const normalX = Math.cos(trace.neutralAxisAngle)
   const normalY = Math.sin(trace.neutralAxisAngle)
   const extents = projectedOuterExtents(drawingSection, normalX, normalY)
-  const neutralOffset = extents.maximum - trace.neutralAxisDepth
+  const originProjection = normalX * origin.x + normalY * origin.y
+  const neutralOffsetWorld = extents.maximum - trace.neutralAxisDepth
+  const neutralOffsetLocal = neutralOffsetWorld - originProjection
   const blockOffset = extents.maximum - trace.blockDepth
 
   return {
@@ -655,7 +659,7 @@ const blockDetail = (
       origin,
       normalX,
       normalY,
-      neutralOffset
+      neutralOffsetLocal
     ),
     compressionZone: {
       kind: 'block',
@@ -762,8 +766,10 @@ const fibreDetail = (
   const normalX = state.ky / curvature
   const normalY = state.kx / curvature
   const extents = projectedOuterExtents(drawingSection, normalX, normalY)
-  const zeroStrainOffset = -state.e0 / curvature
-  const compressionDepth = extents.maximum - zeroStrainOffset
+  const originProjection = normalX * origin.x + normalY * origin.y
+  const zeroStrainOffsetLocal = -state.e0 / curvature
+  const zeroStrainOffsetWorld = originProjection + zeroStrainOffsetLocal
+  const compressionDepth = extents.maximum - zeroStrainOffsetWorld
 
   // The report never re-solves: it re-evaluates the plane the solver converged on, so the ledger it
   // publishes is that state's own decomposition rather than a second calculation of it.
@@ -798,11 +804,11 @@ const fibreDetail = (
       origin,
       normalX,
       normalY,
-      zeroStrainOffset
+      zeroStrainOffsetLocal
     ),
     compressionZone: {
       kind: 'fibre',
-      polygons: clipCompressionZone(drawingSection, normalX, normalY, zeroStrainOffset, origin),
+      polygons: clipCompressionZone(drawingSection, normalX, normalY, zeroStrainOffsetWorld, origin),
       label: 'Compression zone, ε > 0 (drawing aid; the kernel integrates the mesh, not this polygon)'
     },
     depthProfile: {

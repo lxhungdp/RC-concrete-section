@@ -688,6 +688,25 @@ export const solveEquivalentBlockDemandFromPrepared = (
   }
 }
 
+/**
+ * Solve a load-combination batch against one loadcase-independent design surface.
+ *
+ * Keeping construction here makes surface reuse the default for reports and batch consumers.
+ */
+export const solveEquivalentBlockDemandsFromPrepared = (
+  prepared: PreparedBlockAnalysis,
+  options: EquivalentBlockAnalysisOptions,
+  loadcases: readonly LoadCombination[],
+  preparedDesignSurface?: EquivalentBlockDesignSurface
+): InversePreviewResult[] => {
+  if (loadcases.length === 0) return []
+  const designSurface =
+    preparedDesignSurface ?? buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  return loadcases.map((loadcase) =>
+    solveEquivalentBlockDemandFromPrepared(prepared, options, loadcase, designSurface)
+  )
+}
+
 export const buildEquivalentBlockFieldMapFromPrepared = (
   prepared: PreparedBlockAnalysis,
   state: BlockSectionState

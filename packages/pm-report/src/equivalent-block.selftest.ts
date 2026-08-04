@@ -199,6 +199,22 @@ const runCase = async (
     const value = engine.getCellValue(engine.simpleCellAddressFromString(address, id as number)!)
     return typeof value === 'number' ? value : Number.NaN
   }
+  const cellText = (sheet: string, address: string): string => {
+    const id = engine.getSheetId(sheet)
+    assert.ok(id !== undefined, `sheet ${sheet} exists`)
+    const value = engine.getCellValue(engine.simpleCellAddressFromString(address, id as number)!)
+    return typeof value === 'string' ? value : String(value ?? '')
+  }
+  const findLabelRow = (sheetName: string, label: string) => {
+    const sheet = readBack.getWorksheet(sheetName)
+    assert.ok(sheet, `sheet ${sheetName} exists`)
+    let found = 0
+    sheet.eachRow((row, rowNumber) => {
+      if (row.getCell(2).text === label) found = rowNumber
+    })
+    assert.ok(found > 0, `${sheetName} contains label ${label}`)
+    return found
+  }
 
   console.log('== 3. Rebuild the same states in the engine ==')
   const prepared = prepareBlockAnalysis(profileId, section, rebars, materials, designBasis)
@@ -278,6 +294,36 @@ const runCase = async (
   check('σblock = α·fck (MPa)', namedValue('sig_blk'), prepared.model.blockLaw.compressionStress, 1e-9)
   check('β1', namedValue('beta_1'), prepared.model.blockLaw.depthFactor, 1e-12)
   check('εcu', namedValue('ecu'), prepared.model.blockLaw.extremeCompressionStrain, 1e-12)
+
+  console.log('== 8. Capacity-ray residual and fail-closed verdict ==')
+  const residualRow = findLabelRow('Equilibrium', 'relative residual')
+  const capacityResidual = cellValue('Equilibrium', `C${residualRow}`)
+  pass(
+    'capacity state balances lambda x demand with dimensionless component scaling',
+    Number.isFinite(capacityResidual) && capacityResidual <= 1e-4,
+    `relative residual ${capacityResidual.toExponential(3)}`
+  )
+  pass(
+    'equilibrium sheet labels the state as a capacity-ray reconciliation',
+    cellText('Equilibrium', `E${residualRow}`).startsWith('capacity state reconciled')
+  )
+
+  const designSheetId = engine.getSheetId('Design_Check')
+  assert.ok(designSheetId !== undefined)
+  const convergenceRow = findLabelRow('Design_Check', 'solver converged')
+  const admissibilityRow = findLabelRow('Design_Check', 'strain admissible')
+  const verdictRow = findLabelRow('Design_Check', 'verdict')
+  engine.setCellContents({ sheet: designSheetId, row: convergenceRow - 1, col: 2 }, [['no']])
+  pass(
+    'verdict refuses a non-converged solve even when utilization is numeric',
+    cellText('Design_Check', `C${verdictRow}`).startsWith('NOT CHECKED - solver did not converge')
+  )
+  engine.setCellContents({ sheet: designSheetId, row: convergenceRow - 1, col: 2 }, [['yes']])
+  engine.setCellContents({ sheet: designSheetId, row: admissibilityRow - 1, col: 2 }, [['no']])
+  pass(
+    'verdict refuses a strain-inadmissible state even when utilization is below one',
+    cellText('Design_Check', `C${verdictRow}`).startsWith('NOT CHECKED - strain state is not admissible')
+  )
 }
 
 const run = async () => {

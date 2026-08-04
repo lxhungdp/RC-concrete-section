@@ -20,7 +20,8 @@ import {
   buildEquivalentBlockFieldMapFromPrepared,
   buildEquivalentBlockPreviewSurfaceFromPrepared,
   prepareBlockAnalysis,
-  solveEquivalentBlockDemandFromPrepared
+  solveEquivalentBlockDemandFromPrepared,
+  solveEquivalentBlockDemandsFromPrepared
 } from './index'
 
 const geometry: GeometryInput = {
@@ -289,19 +290,16 @@ test('a prepared design surface is reused across inverse load combinations', () 
     builds += 1
     return original(...args)
   }
-  const designSurface = buildEquivalentBlockDesignSurfaceFromPrepared(input.prepared, input.options)
-  assert.equal(builds, 1)
-
-  for (let index = 0; index < 4; index += 1) {
-    const inverse = solveEquivalentBlockDemandFromPrepared(input.prepared, input.options, {
+  const loadcases = Array.from({ length: 4 }, (_, index) => ({
       id: 100 + index,
       name: `cached demand ${index + 1}`,
-      actionBasis: 'factoredULS',
+      actionBasis: 'factoredULS' as const,
       P: 300_000 + index * 50_000,
       Mx: 80_000_000,
       My: 20_000_000
-    }, designSurface)
-    assert.ok(inverse.utilization !== null)
-  }
-  assert.equal(builds, 1, 'inverse checks must not rebuild a supplied loadcase-independent surface')
+    }))
+  const inverses = solveEquivalentBlockDemandsFromPrepared(input.prepared, input.options, loadcases)
+  assert.equal(inverses.length, loadcases.length)
+  assert.ok(inverses.every((inverse) => inverse.utilization !== null))
+  assert.equal(builds, 1, 'the batch API must build one loadcase-independent surface')
 })

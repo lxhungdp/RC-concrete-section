@@ -54,6 +54,11 @@ const decode = (bytes: Uint8Array) => {
   return text
 }
 
+const normalizedGeometry = (value: unknown) => JSON.stringify(
+  value,
+  (_key, item) => typeof item === 'number' ? Math.round(item * 1e7) / 1e7 : item
+)
+
 const runCase = async (relativePath: string, label: string, archive: boolean) => {
   console.log(`\n================ ${label}: ${relativePath} ================`)
   const parsed = parseProjectDocument(readFileSync(resolve(process.cwd(), relativePath), 'utf8'))
@@ -132,7 +137,52 @@ const runCase = async (relativePath: string, label: string, archive: boolean) =>
     }
   }
 
-  console.log('== 3. File structure ==')
+  console.log('== 3. Translation invariance of report drawings ==')
+  const dx = 1_234.5
+  const dy = -876.25
+  const translatedSection = {
+    ...section,
+    solids: section.solids.map((solid) => ({
+      ...solid,
+      outer: solid.outer.map((point) => ({ ...point, x: point.x + dx, y: point.y + dy })),
+      holes: solid.holes.map((hole) =>
+        hole.map((point) => ({ ...point, x: point.x + dx, y: point.y + dy }))
+      )
+    }))
+  }
+  const translatedRebars = rebars.map((bar) => ({ ...bar, x: bar.x + dx, y: bar.y + dy }))
+  const translatedModel = buildColumnReportModel({
+    ...input,
+    section: translatedSection,
+    rebars: translatedRebars
+  })
+  pass(
+    'centroid-local section drawing is invariant under world-coordinate translation',
+    normalizedGeometry(translatedModel.drawing.solids) === normalizedGeometry(model.drawing.solids) &&
+      normalizedGeometry(translatedModel.drawing.bars) === normalizedGeometry(model.drawing.bars)
+  )
+  const detailGeometry = (detail: (typeof model.details)[number]) => ({
+    neutralAxisLine: detail.neutralAxisLine,
+    compressionZone: detail.compressionZone?.polygons ?? null,
+    depthProfile: detail.depthProfile,
+    bars: detail.bars.map((bar) => ({
+      x: bar.x,
+      y: bar.y,
+      depth: bar.depth,
+      strain: bar.strain,
+      insideBlock: bar.insideBlock
+    }))
+  })
+  pass(
+    'neutral axis, compression zone, depth profile and bar evidence are translation invariant',
+    translatedModel.details.length === model.details.length &&
+      model.details.every((detail, index) =>
+        normalizedGeometry(detailGeometry(translatedModel.details[index])) ===
+        normalizedGeometry(detailGeometry(detail))
+      )
+  )
+
+  console.log('== 4. File structure ==')
   const bytes = renderColumnReport(model)
   const text = decode(bytes)
   pass('starts with a PDF header', text.startsWith('%PDF-1.4'))
@@ -157,7 +207,7 @@ const runCase = async (relativePath: string, label: string, archive: boolean) =>
   pass('page numbering is stamped', text.includes(`Page 1 of ${pageCount}`))
   pass('the watermark is present', text.includes('PREVIEW'))
 
-  console.log('== 4. Reproducibility ==')
+  console.log('== 5. Reproducibility ==')
   const again = renderColumnReport(buildColumnReportModel(input))
   pass('the same input produces byte-identical output',
     again.length === bytes.length && again.every((byte, index) => byte === bytes[index]))
