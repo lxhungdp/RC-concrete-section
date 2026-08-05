@@ -363,7 +363,6 @@ export function MaterialPanel({
         <div className="pm-section-title">
           <div>
             <h2>Design code &amp; calculation model</h2>
-            <p>The selected Code limits the calculation methods and concrete models that may be used.</p>
           </div>
         </div>
         <div className="pm-material-row-2">
@@ -405,10 +404,10 @@ export function MaterialPanel({
         <p className="pm-field-note">{profile.standard}</p>
         {profile.implementationStatus === 'preview' && (
           <p className="pm-material-blocked" role="status">
-            Preview only. This profile produces auditable results and reports but is not released for
-            production design. {profile.code === 'EN'
-              ? 'No National Annex is selected and the full EN strain-domain boundary remains under verification.'
-              : 'AS clause mapping, section-shape modifiers and independent engineering verification remain incomplete.'}
+            Preview only — not for production design.
+            {profile.code === 'EN'
+              ? ' No National Annex; EN strain-domain still under verification.'
+              : ' AS clause mapping and verification remain incomplete.'}
           </p>
         )}
       </section>
@@ -463,17 +462,9 @@ export function MaterialPanel({
             </div>
 
             {activeModel?.source === 'user-defined' && (
-              <div className="pm-material-blocked" role="status">
-                <strong>Modified material model.</strong> This curve is user-owned and is not the Code-default concrete model.
-                <label className="pm-field">
-                  <span>Reason for model override</span>
-                  <input
-                    value={designBasis.overrideReason}
-                    placeholder="State the approved project basis"
-                    onChange={(event) => onDesignBasisChange({ ...designBasis, overrideReason: event.target.value })}
-                  />
-                </label>
-              </div>
+              <p className="pm-material-blocked" role="status">
+                This curve is user-owned and is not the Code-default concrete model.
+              </p>
             )}
 
             {concreteSupportIssue ? (

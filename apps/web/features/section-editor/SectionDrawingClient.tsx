@@ -52,10 +52,12 @@ import {
   createEmptyLoadingsInput,
   DEFAULT_CALCULATION_PROFILE_ID,
   applyCalculationProfileToMaterials,
+  calculationProfile,
   createAnalysisOptionsForProfile,
   createDesignBasisForCalculationProfile,
   createDefaultAnalysisOptions,
   createProjectDocument,
+  designCode,
   parseProjectDocument,
   projectDocumentFileName,
   serializeProjectDocument,
@@ -108,7 +110,6 @@ import { SectionResultsPanel, type SectionResultsSummary } from './results/Secti
 import {
   createDemandCheckView,
   createSectionResultsView,
-  sliceAngleMax,
   type DemandCheckView,
   type SectionResultsView
 } from './results/results-view'
@@ -687,6 +688,10 @@ export function SectionDrawingClient() {
   }, [resultSurface])
 
   /** Everything the Section Results sidebar reports, assembled once per surface. */
+  const activeCalculationProfile = useMemo(
+    () => calculationProfile(calculationProfileId),
+    [calculationProfileId]
+  )
   const sectionResultsSummary = useMemo<SectionResultsSummary>(() => ({
     hasAppliedSection,
     status: surfaceStatus,
@@ -710,8 +715,13 @@ export function SectionDrawingClient() {
         }
       : null,
     warnings: resultSurface?.warnings ?? [],
-    mechanics: resultSurface?.mechanics ?? null
+    mechanics: resultSurface?.mechanics ?? null,
+    codeLabel: activeCalculationProfile.code
+      ? designCode(activeCalculationProfile.code).label
+      : 'User-defined',
+    methodLabel: activeCalculationProfile.methodLabel
   }), [
+    activeCalculationProfile,
     appliedSummary.area,
     betaCount,
     hasAppliedSection,
@@ -723,14 +733,6 @@ export function SectionDrawingClient() {
     surfaceStatus
   ])
 
-  /** Slider bounds for the fixed-P contour; a missing surface collapses to a disabled range. */
-  const fixedPRange = useMemo(
-    () => ({
-      min: resultSurface ? resultSurface.bounds.P[0] : 0,
-      max: resultSurface ? resultSurface.bounds.P[1] : 0
-    }),
-    [resultSurface]
-  )
   const gridLines = useMemo(() => buildGridLines(camera, size), [camera, size])
   const activeCentroidScreen = useMemo(
     () => worldToScreen(camera, activeSummary.centroid, size),
@@ -2556,10 +2558,9 @@ export function SectionDrawingClient() {
             summary={sectionResultsSummary}
             view={sectionResultsView}
             onViewChange={updateSectionResultsView}
-            angleSliderMax={sliceAngleMax(sectionResultsView)}
+            surface={resultSurface}
             fixedP={fixedResultP}
-            fixedPRange={fixedPRange}
-            onFixedPChange={setFixedResultP}
+            projectName={projectMeta.name || appliedGeometryInput.name || 'Column project'}
           />
         )}
 
@@ -2645,9 +2646,11 @@ export function SectionDrawingClient() {
             selectedLoadcaseId={selectedLoadcaseId}
             inverseResult={selectedLoadcaseId == null ? null : inverseResults[selectedLoadcaseId] ?? null}
             fixedP={fixedResultP}
+            onFixedPChange={setFixedResultP}
             view={sectionResultsView}
             demandView={demandCheckView}
             onViewChange={updateSectionResultsView}
+            onDemandViewChange={updateDemandCheckView}
             onSelectLoadcase={runInverseForLoadcase}
           />
         ) : activeModule === 'analysis' ? (

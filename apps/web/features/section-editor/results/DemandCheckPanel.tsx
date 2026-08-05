@@ -1,13 +1,12 @@
 'use client'
 
-import { Eye, EyeOff, FileText, Loader2, Maximize2 } from 'lucide-react'
+import { Eye, EyeOff, FileText, Loader2 } from 'lucide-react'
 import type { InversePreviewResult } from '@pm/analysis'
 import type { LoadCombination } from '@pm/project'
 import {
   DEMAND_CHART_IDS,
   demandChartLabel,
   toggleChartVisibility,
-  type DemandChartId,
   type DemandCheckView
 } from './results-view'
 
@@ -32,20 +31,8 @@ type Props = {
 const fmt = (value: number, digits = 3) =>
   Number.isFinite(value) ? value.toLocaleString('en-US', { maximumFractionDigits: digits }) : '—'
 
-const Check = ({
-  label,
-  checked,
-  onChange
-}: {
-  label: string
-  checked: boolean
-  onChange: (value: boolean) => void
-}) => (
-  <label className={`pm-field-check${checked ? ' is-on' : ''}`}>
-    <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-    {label}
-  </label>
-)
+const shortDemandLabel = (id: (typeof DEMAND_CHART_IDS)[number]) =>
+  id === 'heatmap' ? 'Field' : id === 'fixedP' ? 'Fixed-P' : 'Vertical'
 
 /**
  * Governing verdict for the selected combination.
@@ -86,6 +73,28 @@ export function DemandCheckPanel({
   }
   return (
     <>
+      <section className="pm-panel-section">
+        <h2 className="pm-chart-visibility-title">Charts</h2>
+        <div className="pm-chart-visibility-row" role="toolbar" aria-label="Chart visibility">
+          {DEMAND_CHART_IDS.map((id) => {
+            const on = view.visibleCharts[id]
+            return (
+              <button
+                key={id}
+                type="button"
+                className={`pm-chart-visibility-btn${on ? ' is-on' : ''}`}
+                aria-pressed={on}
+                title={on ? `Hide ${demandChartLabel(id)}` : `Show ${demandChartLabel(id)}`}
+                onClick={() => onViewChange(toggleChartVisibility(view, DEMAND_CHART_IDS, id))}
+              >
+                {on ? <Eye size={12} /> : <EyeOff size={12} />}
+                <span>{shortDemandLabel(id)}</span>
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
       <section className="pm-panel-section">
         <div className="pm-section-title">
           <div>
@@ -129,46 +138,6 @@ export function DemandCheckPanel({
               : `${quickCheck.checked}/${quickCheck.total} combinations have a utilization.`}
           </p>
         ) : null}
-      </section>
-
-      <section className="pm-panel-section">
-        <div className="pm-section-title">
-          <div>
-            <h2>Section field</h2>
-            <p>What the field plot draws for the solved state.</p>
-          </div>
-        </div>
-        <fieldset className="pm-result-radio-group" aria-label="Field quantity">
-          {(['strain', 'stress'] as const).map((mode) => (
-            <label key={mode} className={view.fieldMode === mode ? 'is-active' : ''}>
-              <input
-                type="radio"
-                name="demand-field-mode"
-                value={mode}
-                checked={view.fieldMode === mode}
-                onChange={() => onViewChange({ fieldMode: mode })}
-              />
-              {mode === 'strain' ? 'Strain' : 'Stress'}
-            </label>
-          ))}
-        </fieldset>
-        <div className="pm-result-check-row">
-          <Check
-            label="Neutral axis"
-            checked={view.showNeutralAxis}
-            onChange={(showNeutralAxis) => onViewChange({ showNeutralAxis })}
-          />
-          <Check
-            label="Resultant"
-            checked={view.showMoments}
-            onChange={(showMoments) => onViewChange({ showMoments })}
-          />
-          <Check
-            label="Rebar"
-            checked={view.includeRebar}
-            onChange={(includeRebar) => onViewChange({ includeRebar })}
-          />
-        </div>
       </section>
 
       <section className="pm-panel-section">
@@ -233,39 +202,6 @@ export function DemandCheckPanel({
             {reportMessage}
           </p>
         ) : null}
-      </section>
-
-      <section className="pm-panel-section">
-        <div className="pm-section-title">
-          <div>
-            <h2>Charts</h2>
-            <p>Which plots the stage shows, and which one gets the large panel.</p>
-          </div>
-        </div>
-        <div className="pm-chart-toggle-list">
-          {DEMAND_CHART_IDS.map((id: DemandChartId) => (
-            <div key={id} className={`pm-chart-toggle${view.visibleCharts[id] ? ' is-on' : ''}`}>
-              <button
-                type="button"
-                className="pm-chart-toggle-main"
-                onClick={() => onViewChange(toggleChartVisibility(view, DEMAND_CHART_IDS, id))}
-                title={view.visibleCharts[id] ? 'Hide this chart' : 'Show this chart'}
-              >
-                {view.visibleCharts[id] ? <Eye size={13} /> : <EyeOff size={13} />}
-                <span>{demandChartLabel(id)}</span>
-              </button>
-              <button
-                type="button"
-                className={`pm-chart-tool${view.primaryChart === id ? ' is-active' : ''}`}
-                disabled={!view.visibleCharts[id]}
-                title="Make this the large chart"
-                onClick={() => onViewChange({ primaryChart: id })}
-              >
-                <Maximize2 size={13} />
-              </button>
-            </div>
-          ))}
-        </div>
       </section>
     </>
   )

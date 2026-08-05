@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { FileSpreadsheet, Loader2, RotateCw } from 'lucide-react'
+import { EyeOff, FileSpreadsheet, Loader2, Maximize2, RotateCw } from 'lucide-react'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
 import type { DesignBasis } from '@pm/design'
@@ -29,7 +29,20 @@ import {
   isAnalysisAbort
 } from '../../../application/analysis/client'
 import { PlotlyChart, type PlotlyClickPayload } from './PlotlyChart'
-import type { DemandCheckView, SectionResultsView } from './results-view'
+import {
+  DEMAND_CHART_IDS,
+  SECTION_CHART_IDS,
+  sliceAngleMax,
+  snapSliceAngleDeg,
+  toggleChartVisibility,
+  uniqueSurfaceDirectionAnglesDeg,
+  directionAngleStepDeg,
+  type DemandChartId,
+  type DemandCheckView,
+  type SectionChartId,
+  type SectionResultsView,
+  type SurfaceResistanceMode
+} from './results-view'
 import { SectionFieldChart } from './SectionFieldChart'
 import {
   lineAngleDifferenceDeg,
@@ -59,12 +72,132 @@ type Props = {
   selectedLoadcaseId: number | null
   inverseResult: InversePreviewResult | null
   fixedP: number
+  onFixedPChange: (value: number) => void
   view: SectionResultsView
   demandView: DemandCheckView
-  /** Only the vertical-slice angle clamp writes back; every other control lives in the sidebar. */
   onViewChange: (patch: Partial<SectionResultsView>) => void
+  onDemandViewChange: (patch: Partial<DemandCheckView>) => void
   onSelectLoadcase: (id: number) => void
 }
+
+const SyncedControl = ({
+  label,
+  title,
+  value,
+  min,
+  max,
+  step,
+  unit,
+  disabled,
+  onChange
+}: {
+  /** Compact visible label (e.g. φ, P). */
+  label: string
+  /** Full name shown on hover. */
+  title?: string
+  value: number
+  min: number
+  max: number
+  step: number
+  unit: string
+  disabled?: boolean
+  onChange: (value: number) => void
+}) => (
+  <label className={`pm-synced-control${disabled ? ' is-locked' : ''}`} title={title ?? label}>
+    <span className="pm-synced-control-label">{label}</span>
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={Math.min(max, Math.max(min, value))}
+      disabled={disabled}
+      onChange={(event) => onChange(Number(event.target.value))}
+      aria-label={title ?? label}
+    />
+    <span className="pm-synced-control-value">
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={Number.isFinite(value) ? value : 0}
+        disabled={disabled}
+        onChange={(event) => onChange(Number(event.target.value) || 0)}
+        aria-label={title ?? label}
+      />
+      <em>{unit}</em>
+    </span>
+  </label>
+)
+
+const ResistanceVisibilityControls = ({
+  showDesign,
+  showNominal,
+  onShowDesign,
+  onShowNominal
+}: {
+  showDesign: boolean
+  showNominal: boolean
+  onShowDesign: (value: boolean) => void
+  onShowNominal: (value: boolean) => void
+}) => (
+  <>
+    <label className={`pm-field-check${showDesign ? ' is-on' : ''}`} title="Design resistance">
+      <input
+        type="checkbox"
+        checked={showDesign}
+        onChange={(event) => {
+          const next = event.target.checked
+          if (next || showNominal) onShowDesign(next)
+        }}
+      />
+      Mr
+    </label>
+    <label className={`pm-field-check${showNominal ? ' is-on' : ''}`} title="Nominal reference">
+      <input
+        type="checkbox"
+        checked={showNominal}
+        onChange={(event) => {
+          const next = event.target.checked
+          if (next || showDesign) onShowNominal(next)
+        }}
+      />
+      Mn
+    </label>
+  </>
+)
+
+const SurfaceResistanceControl = ({
+  value,
+  onChange
+}: {
+  value: SurfaceResistanceMode
+  onChange: (value: SurfaceResistanceMode) => void
+}) => (
+  <fieldset className="pm-result-radio-group" aria-label="3D resistance surface">
+    <label className={value === 'design' ? 'is-active' : ''} title="Design resistance surface">
+      <input
+        type="radio"
+        name="surface-resistance"
+        value="design"
+        checked={value === 'design'}
+        onChange={() => onChange('design')}
+      />
+      Mr
+    </label>
+    <label className={value === 'nominal' ? 'is-active' : ''} title="Nominal reference surface">
+      <input
+        type="radio"
+        name="surface-resistance"
+        value="nominal"
+        checked={value === 'nominal'}
+        onChange={() => onChange('nominal')}
+      />
+      Mn
+    </label>
+  </fieldset>
+)
 
 const fmt = (value: number, digits = 1) =>
   Math.abs(value) < 1e-9 ? '0' : value.toLocaleString('en-US', { maximumFractionDigits: digits })
@@ -265,9 +398,11 @@ export function ResultsWorkspace({
   selectedLoadcaseId,
   inverseResult,
   fixedP,
+  onFixedPChange,
   view,
   demandView,
   onViewChange,
+  onDemandViewChange,
   onSelectLoadcase
 }: Props) {
   const [exportState, setExportState] = useState<'idle' | 'working' | 'error'>('idle')
@@ -347,6 +482,35 @@ export function ResultsWorkspace({
   }, [activeAngle, isLoadcaseMode, selectedLoadcase])
 
   const activeFixedPKn = kn(activeFixedP)
+  const minPKn = surface ? kn(surface.bounds.P[0]) : 0
+  const maxPKn = surface ? kn(surface.bounds.P[1]) : 0
+  const surfaceDirectionAnglesDeg = useMemo(
+    () => (surface ? uniqueSurfaceDirectionAnglesDeg(surface.points.map((point) => point.beta)) : []),
+    [surface]
+  )
+  const angleSliderStep = directionAngleStepDeg(surfaceDirectionAnglesDeg)
+  const angleSliderMax = sliceAngleMax(view, surfaceDirectionAnglesDeg, angleSliderStep)
+  const setSliceAngle = (value: number) => {
+    onViewChange({
+      sliceAngle: snapSliceAngleDeg(value, surfaceDirectionAnglesDeg, angleSliderMax, angleSliderStep)
+    })
+  }
+
+  const setResistanceVisibility = (
+    patch: Partial<Pick<SectionResultsView, 'showDesignResistance' | 'showNominalReference'>>
+  ) => {
+    const next = { ...view, ...patch }
+    if (!next.showDesignResistance && !next.showNominalReference) return
+    onViewChange(patch)
+  }
+
+  const toggleSectionChart = (id: SectionChartId) => {
+    onViewChange(toggleChartVisibility(view, SECTION_CHART_IDS, id))
+  }
+
+  const toggleDemandChart = (id: DemandChartId) => {
+    onDemandViewChange(toggleChartVisibility(demandView, DEMAND_CHART_IDS, id))
+  }
 
   const contour = useMemo(
     () => (surface ? sliceFixedPContour(surface.points, activeFixedP, surface.triangles) : []),
@@ -390,12 +554,45 @@ export function ResultsWorkspace({
     [activeFixedP, surface, surfacePoints3d, view.surfaceResistanceMode]
   )
 
-  /** Drawing the opposite half already covers 180°-345°, so the slider range halves with it. */
+  /** Drawing the opposite half already covers angles past 180°, so the slider range halves with it. */
   useEffect(() => {
     if (!view.includeOppositeMoment) return
     const wrapped = normalizeAngleDeg(view.sliceAngle)
-    if (wrapped > 180) onViewChange({ sliceAngle: wrapped - 180 })
-  }, [onViewChange, view.includeOppositeMoment, view.sliceAngle])
+    if (wrapped > 180) {
+      onViewChange({
+        sliceAngle: snapSliceAngleDeg(
+          wrapped - 180,
+          surfaceDirectionAnglesDeg,
+          180,
+          angleSliderStep
+        )
+      })
+    }
+  }, [
+    angleSliderStep,
+    onViewChange,
+    surfaceDirectionAnglesDeg,
+    view.includeOppositeMoment,
+    view.sliceAngle
+  ])
+
+  /** Keep the stored angle on a solved direction once the surface (and its β ring) is known. */
+  useEffect(() => {
+    if (surfaceDirectionAnglesDeg.length === 0) return
+    const snapped = snapSliceAngleDeg(
+      view.sliceAngle,
+      surfaceDirectionAnglesDeg,
+      angleSliderMax,
+      angleSliderStep
+    )
+    if (Math.abs(snapped - view.sliceAngle) > 1e-6) onViewChange({ sliceAngle: snapped })
+  }, [
+    angleSliderMax,
+    angleSliderStep,
+    onViewChange,
+    surfaceDirectionAnglesDeg,
+    view.sliceAngle
+  ])
 
 
   const surfaceData = useMemo(() => {
@@ -1368,8 +1565,7 @@ export function ResultsWorkspace({
   }
 
   /**
-   * Chart frame. Parameters and visibility live in the sidebar now, so the header carries only the
-   * chart's identity and whatever status the plot itself computes.
+   * Chart frame: one compact header row — abbreviated controls with full names on hover.
    */
   const renderChartShell = ({
     id,
@@ -1377,6 +1573,9 @@ export function ResultsWorkspace({
     meta,
     primary,
     visible,
+    onMakePrimary,
+    onToggleVisible,
+    controls,
     footer,
     children
   }: {
@@ -1385,17 +1584,34 @@ export function ResultsWorkspace({
     meta?: string
     primary: boolean
     visible: boolean
+    onMakePrimary: () => void
+    onToggleVisible: () => void
+    controls?: ReactNode
     footer?: ReactNode
     children: ReactNode
   }) => {
     if (!visible) return null
     return (
       <article className={`pm-results-plot${primary ? ' is-primary' : ''}`} data-chart={id}>
-        <div className="pm-results-plot-title">
+        <div className="pm-results-plot-chrome">
           <div className="pm-results-plot-heading">
             <span>{title}</span>
             {meta ? <strong>{meta}</strong> : null}
           </div>
+          <div className="pm-results-plot-tools" role="group" aria-label="Chart layout">
+            <button
+              type="button"
+              className={`pm-chart-tool${primary ? ' is-active' : ''}`}
+              title="Make this the large chart"
+              onClick={onMakePrimary}
+            >
+              <Maximize2 size={14} />
+            </button>
+            <button type="button" className="pm-chart-tool" title="Hide chart" onClick={onToggleVisible}>
+              <EyeOff size={14} />
+            </button>
+          </div>
+          {controls ? <div className="pm-results-plot-actions">{controls}</div> : null}
         </div>
         <div className="pm-results-plot-body">
           <div className="pm-results-plot-canvas">{children}</div>
@@ -1407,8 +1623,7 @@ export function ResultsWorkspace({
 
   /**
    * Demand Check with nothing selected must not fall through to the capacity charts: those belong
-   * to Section Results, and showing them here would make the sidebar's chart list describe plots
-   * that are not on screen.
+   * to Section Results only.
    */
   if (viewMode === 'loadcase' && !selectedLoadcase) {
     return (
@@ -1460,6 +1675,63 @@ export function ResultsWorkspace({
             meta: inverseResult ? solverStatus(inverseResult).label : 'Solving…',
             primary: demandView.primaryChart === 'heatmap',
             visible: demandView.visibleCharts.heatmap,
+            onMakePrimary: () => onDemandViewChange({ primaryChart: 'heatmap' }),
+            onToggleVisible: () => toggleDemandChart('heatmap'),
+            controls: (
+              <div className="pm-section-field-toolbar" role="group" aria-label="Section field options">
+                <div className="pm-field-mode-toggle" role="group" aria-label="Field mode">
+                  <button
+                    type="button"
+                    className={demandView.fieldMode === 'strain' ? 'is-active' : ''}
+                    title="Strain field"
+                    onClick={() => onDemandViewChange({ fieldMode: 'strain' })}
+                  >
+                    ε
+                  </button>
+                  <button
+                    type="button"
+                    className={demandView.fieldMode === 'stress' ? 'is-active' : ''}
+                    title="Stress field"
+                    onClick={() => onDemandViewChange({ fieldMode: 'stress' })}
+                  >
+                    σ
+                  </button>
+                </div>
+                <label
+                  className={`pm-field-check${demandView.showNeutralAxis ? ' is-on' : ''}`}
+                  title="Neutral axis"
+                >
+                  <input
+                    type="checkbox"
+                    checked={demandView.showNeutralAxis}
+                    onChange={(event) => onDemandViewChange({ showNeutralAxis: event.target.checked })}
+                  />
+                  N.A.
+                </label>
+                <label
+                  className={`pm-field-check${demandView.showMoments ? ' is-on' : ''}`}
+                  title="Resultant"
+                >
+                  <input
+                    type="checkbox"
+                    checked={demandView.showMoments}
+                    onChange={(event) => onDemandViewChange({ showMoments: event.target.checked })}
+                  />
+                  R
+                </label>
+                <label
+                  className={`pm-field-check${demandView.includeRebar ? ' is-on' : ''}`}
+                  title="Rebar"
+                >
+                  <input
+                    type="checkbox"
+                    checked={demandView.includeRebar}
+                    onChange={(event) => onDemandViewChange({ includeRebar: event.target.checked })}
+                  />
+                  As
+                </label>
+              </div>
+            ),
             footer: inverseResult ? (
               <div className="pm-section-field-metrics">
                 <article className="pm-field-metric-card">
@@ -1651,20 +1923,86 @@ export function ResultsWorkspace({
           {renderChartShell({
             id: 'fixedP',
             title: 'Fixed-P Mx-My',
-            meta: `${fmt(activeFixedPKn, 1)} kN`,
+            meta: `P = ${fmt(activeFixedPKn, 1)} kN`,
             primary: demandView.primaryChart === 'fixedP',
             visible: demandView.visibleCharts.fixedP,
+            onMakePrimary: () => onDemandViewChange({ primaryChart: 'fixedP' }),
+            onToggleVisible: () => toggleDemandChart('fixedP'),
+            controls: (
+              <>
+                <SyncedControl
+                  label="P"
+                  title="Axial force"
+                  value={Number(activeFixedPKn.toFixed(1))}
+                  min={minPKn}
+                  max={maxPKn}
+                  step={Math.max(1, Math.round((maxPKn - minPKn) / 240))}
+                  unit="kN"
+                  disabled
+                  onChange={() => undefined}
+                />
+                <label
+                  className={`pm-field-check${view.showFixedPAngleRays ? ' is-on' : ''}`}
+                  title="Angle rays"
+                >
+                  <input
+                    type="checkbox"
+                    checked={view.showFixedPAngleRays}
+                    onChange={(event) => onViewChange({ showFixedPAngleRays: event.target.checked })}
+                  />
+                  Rays
+                </label>
+                <ResistanceVisibilityControls
+                  showDesign={view.showDesignResistance}
+                  showNominal={view.showNominalReference}
+                  onShowDesign={(showDesignResistance) => setResistanceVisibility({ showDesignResistance })}
+                  onShowNominal={(showNominalReference) => setResistanceVisibility({ showNominalReference })}
+                />
+              </>
+            ),
             children: <PlotlyChart data={contourData} layout={contourLayout} config={plotConfig} />
           })}
 
           {renderChartShell({
             id: 'vertical',
             title: 'Vertical slice',
-            meta: `${fmt(activeAngle, 0)}°${verticalSlice.closed ? '' : ' · OPEN'}${
-              axialCapPKn == null ? '' : ` · axial cap ${fmt(axialCapPKn, 0)} kN`
-            }`,
+            meta: axialCapPKn == null ? undefined : `P = ${fmt(axialCapPKn, 0)} kN`,
             primary: demandView.primaryChart === 'vertical',
             visible: demandView.visibleCharts.vertical,
+            onMakePrimary: () => onDemandViewChange({ primaryChart: 'vertical' }),
+            onToggleVisible: () => toggleDemandChart('vertical'),
+            controls: (
+              <>
+                <SyncedControl
+                  label="φ"
+                  title="Angle"
+                  value={Number(activeAngle.toFixed(0))}
+                  min={0}
+                  max={360}
+                  step={1}
+                  unit="deg"
+                  disabled
+                  onChange={() => undefined}
+                />
+                <label
+                  className={`pm-field-check${view.includeOppositeMoment ? ' is-on' : ''}`}
+                  title="Opposite half"
+                >
+                  <input
+                    type="checkbox"
+                    checked={view.includeOppositeMoment}
+                    onChange={(event) => onViewChange({ includeOppositeMoment: event.target.checked })}
+                  />
+                  Opp
+                </label>
+                <ResistanceVisibilityControls
+                  showDesign={view.showDesignResistance}
+                  showNominal={view.showNominalReference}
+                  onShowDesign={(showDesignResistance) => setResistanceVisibility({ showDesignResistance })}
+                  onShowNominal={(showNominalReference) => setResistanceVisibility({ showNominalReference })}
+                />
+              </>
+            ),
             children: <PlotlyChart data={verticalData} layout={verticalLayout} config={plotConfig} />
           })}
 
@@ -1685,29 +2023,114 @@ export function ResultsWorkspace({
         {renderChartShell({
           id: 'vertical',
           title: 'Vertical slice',
-          meta: `${fmt(view.sliceAngle, 0)}°${verticalSlice.closed ? '' : ' · OPEN'}${
-            axialCapPKn == null ? '' : ` · axial cap ${fmt(axialCapPKn, 0)} kN`
-          }`,
+          meta: axialCapPKn == null ? undefined : `P = ${fmt(axialCapPKn, 0)} kN`,
           primary: view.primaryChart === 'vertical',
           visible: view.visibleCharts.vertical,
+          onMakePrimary: () => onViewChange({ primaryChart: 'vertical' }),
+          onToggleVisible: () => toggleSectionChart('vertical'),
+          controls: (
+            <>
+              <SyncedControl
+                label="φ"
+                title="Angle"
+                value={view.sliceAngle}
+                min={0}
+                max={angleSliderMax}
+                step={angleSliderStep}
+                unit="deg"
+                onChange={setSliceAngle}
+              />
+              <label
+                className={`pm-field-check${view.includeOppositeMoment ? ' is-on' : ''}`}
+                title="Opposite half"
+              >
+                <input
+                  type="checkbox"
+                  checked={view.includeOppositeMoment}
+                  onChange={(event) => onViewChange({ includeOppositeMoment: event.target.checked })}
+                />
+                Opp
+              </label>
+              <ResistanceVisibilityControls
+                showDesign={view.showDesignResistance}
+                showNominal={view.showNominalReference}
+                onShowDesign={(showDesignResistance) => setResistanceVisibility({ showDesignResistance })}
+                onShowNominal={(showNominalReference) => setResistanceVisibility({ showNominalReference })}
+              />
+            </>
+          ),
           children: <PlotlyChart data={verticalData} layout={verticalLayout} config={plotConfig} />
         })}
 
         {renderChartShell({
           id: 'surface3d',
           title: '3D P-Mx-My',
-          meta: `${surfacePoints3d.length} pts · ${view.surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'}`,
+          meta: `${surfacePoints3d.length} pts · ${view.surfaceResistanceMode === 'design' ? 'Mr' : 'Mn'}`,
           primary: view.primaryChart === 'surface3d',
           visible: view.visibleCharts.surface3d,
+          onMakePrimary: () => onViewChange({ primaryChart: 'surface3d' }),
+          onToggleVisible: () => toggleSectionChart('surface3d'),
+          controls: (
+            <>
+              <SurfaceResistanceControl
+                value={view.surfaceResistanceMode}
+                onChange={(surfaceResistanceMode) => onViewChange({ surfaceResistanceMode })}
+              />
+              <label
+                className={`pm-field-check${view.showSceneAxes ? ' is-on' : ''}`}
+                title="Scene axes"
+              >
+                <input
+                  type="checkbox"
+                  checked={view.showSceneAxes}
+                  onChange={(event) => onViewChange({ showSceneAxes: event.target.checked })}
+                />
+                XYZ
+              </label>
+            </>
+          ),
           children: <PlotlyChart data={surfaceData} layout={surfaceLayout} config={plotConfig} onClick={handle3dClick} />
         })}
 
         {renderChartShell({
           id: 'fixedP',
           title: 'Fixed-P Mx-My',
-          meta: `${fmt(kn(fixedP), 1)} kN`,
+          meta: `P = ${fmt(kn(fixedP), 1)} kN`,
           primary: view.primaryChart === 'fixedP',
           visible: view.visibleCharts.fixedP,
+          onMakePrimary: () => onViewChange({ primaryChart: 'fixedP' }),
+          onToggleVisible: () => toggleSectionChart('fixedP'),
+          controls: (
+            <>
+              <SyncedControl
+                label="P"
+                title="Axial force"
+                value={Number(kn(fixedP).toFixed(1))}
+                min={minPKn}
+                max={maxPKn}
+                step={Math.max(1, Math.round((maxPKn - minPKn) / 240))}
+                unit="kN"
+                onChange={(value) => onFixedPChange(value * 1000)}
+              />
+              <label
+                className={`pm-field-check${view.showFixedPAngleRays ? ' is-on' : ''}`}
+                title="Angle rays"
+              >
+                <input
+                  type="checkbox"
+                  checked={view.showFixedPAngleRays}
+                  onChange={(event) => onViewChange({ showFixedPAngleRays: event.target.checked })}
+                />
+                Rays
+              </label>
+              <ResistanceVisibilityControls
+                showDesign={view.showDesignResistance}
+                showNominal={view.showNominalReference}
+                onShowDesign={(showDesignResistance) => setResistanceVisibility({ showDesignResistance })}
+                onShowNominal={(showNominalReference) => setResistanceVisibility({ showNominalReference })}
+              />
+            </>
+          ),
           children: <PlotlyChart data={contourData} layout={contourLayout} config={plotConfig} />
         })}
 

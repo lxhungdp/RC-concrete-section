@@ -2908,27 +2908,160 @@ body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {
   padding: 2px 0;
 }
 
+.pm-chart-data-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.pm-chart-data-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pm-chart-data-toolbar .pm-chart-visibility-title {
+  margin: 0;
+}
+
+.pm-chart-data-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--foreground-muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.pm-chart-data-export:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--foreground) 28%, var(--border));
+  color: var(--foreground);
+}
+
+.pm-chart-data-export:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.pm-chart-data-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-chart-data-table-wrap {
+  max-height: min(42vh, 360px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--foreground) 1.5%, var(--card));
+}
+
+.pm-chart-data-table {
+  font-size: 0.66rem;
+}
+
+.pm-chart-data-table th,
+.pm-chart-data-table td {
+  padding: 3px 5px;
+  vertical-align: top;
+}
+
+.pm-chart-data-table td:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 0;
+}
+
+.pm-chart-data-table td:nth-child(n + 3) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+
+.pm-chart-visibility-title {
+  margin: 0 0 6px;
+  color: var(--foreground);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.pm-chart-visibility-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  min-width: 0;
+}
+
+.pm-chart-visibility-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--foreground-muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.pm-chart-visibility-btn span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-chart-visibility-btn:hover {
+  border-color: color-mix(in srgb, var(--foreground) 28%, var(--border));
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 4%, var(--card));
+}
+
+.pm-chart-visibility-btn.is-on {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--card));
+  color: var(--accent);
+}
+
+.pm-chart-visibility-btn.is-on:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--card));
+}
+
 .pm-chart-restore {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 30px;
   padding: 0 11px;
-  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--accent-border));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 14%, var(--card));
-  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--foreground-muted);
   font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  font-weight: 650;
   cursor: pointer;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .pm-chart-restore:hover {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 22%, var(--card));
-  color: var(--accent);
+  border-color: color-mix(in srgb, var(--foreground) 28%, var(--border));
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 4%, var(--card));
 }
 
 .pm-results-grid {
@@ -2994,6 +3127,8 @@ body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {
   border-radius: 8px;
   background: var(--card);
   overflow: hidden;
+  container-type: inline-size;
+  container-name: pm-plot;
 }
 
 .pm-results-plot.is-primary {
@@ -3011,24 +3146,214 @@ body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {
   min-width: 0;
 }
 
+/**
+ * Results chart chrome: one compact row — title, abbreviated controls, layout tools.
+ * Full names live in `title` tooltips on the controls.
+ */
+.pm-results-plot-chrome {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-width: 0;
+  color: var(--foreground);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
 .pm-results-plot-heading {
   display: grid;
-  gap: 1px;
+  gap: 0;
+  flex: 0 1 auto;
   min-width: 0;
 }
 
+.pm-results-plot-heading > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pm-results-plot-heading strong {
+  display: none;
   color: var(--foreground-muted);
   font-size: 0.68rem;
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-results-plot-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+  order: 3;
 }
 
 .pm-results-plot-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pm-chart-tool {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--foreground-muted);
+  cursor: pointer;
+}
+
+.pm-chart-tool:hover {
+  border-color: var(--border);
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.pm-chart-tool.is-active {
+  border-color: var(--accent-border);
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.pm-synced-control {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
+  color: var(--foreground-muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  min-width: 0;
+}
+
+.pm-synced-control-label {
   flex-shrink: 0;
-  max-width: 100%;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.pm-synced-control input[type='range'] {
+  width: 56px;
+  min-width: 40px;
+  accent-color: var(--accent);
+}
+
+.pm-synced-control-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.pm-synced-control input[type='number'] {
+  width: 42px;
+  height: 22px;
+  padding: 1px 3px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--foreground);
+  outline: none;
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pm-synced-control em {
+  font-style: normal;
+  color: var(--foreground-muted);
+  font-size: 0.58rem;
+  font-weight: 700;
+}
+
+.pm-synced-control.is-locked {
+  opacity: 0.72;
+}
+
+.pm-synced-control.is-locked input {
+  cursor: default;
+}
+
+/* Narrow secondary charts: drop the range track, keep φ/P + number + unit. */
+@container pm-plot (max-width: 439px) {
+  .pm-results-plot-chrome {
+    gap: 3px 4px;
+  }
+
+  .pm-results-plot-heading strong {
+    display: none;
+  }
+
+  .pm-synced-control input[type='range'] {
+    display: none;
+  }
+
+  .pm-field-check {
+    height: 22px;
+    padding: 0 5px;
+    border-radius: 4px;
+    font-size: 0.58rem;
+    gap: 2px;
+  }
+
+  .pm-field-check input {
+    width: 10px;
+    height: 10px;
+  }
+
+  .pm-result-radio-group {
+    height: 22px;
+    gap: 4px;
+    padding: 0 5px;
+    border-radius: 4px;
+  }
+
+  .pm-result-radio-group label {
+    font-size: 0.58rem;
+    gap: 2px;
+  }
+
+  .pm-result-radio-group input {
+    width: 10px;
+    height: 10px;
+  }
+
+  .pm-section-field-toolbar {
+    gap: 3px;
+    flex-wrap: nowrap;
+  }
+
+  .pm-field-mode-toggle button {
+    height: 22px;
+    min-width: 22px;
+    padding: 0 5px;
+    font-size: 0.7rem;
+  }
+}
+
+/* Wide primary: show meta under the title and a longer range track. */
+@container pm-plot (min-width: 440px) {
+  .pm-results-plot-heading strong {
+    display: block;
+  }
+
+  .pm-synced-control input[type='range'] {
+    width: 72px;
+  }
+
+  .pm-synced-control input[type='number'] {
+    width: 48px;
+  }
 }
 
 .pm-results-plot-body {
@@ -3073,70 +3398,6 @@ body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {
   font-size: 0.66rem;
 }
 
-.pm-chart-tool {
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--foreground-muted);
-  cursor: pointer;
-}
-
-.pm-chart-tool:hover {
-  border-color: var(--border);
-  color: var(--foreground);
-  background: color-mix(in srgb, var(--foreground) 4%, transparent);
-}
-
-.pm-chart-tool.is-active {
-  border-color: var(--accent-border);
-  color: var(--accent);
-  background: var(--accent-muted);
-}
-
-.pm-synced-control {
-  display: inline-grid;
-  grid-template-columns: auto minmax(56px, 88px) 58px auto;
-  align-items: center;
-  gap: 5px;
-  color: var(--foreground-muted);
-  font-size: 0.66rem;
-  font-weight: 600;
-}
-
-.pm-synced-control input[type='range'] {
-  width: 100%;
-  accent-color: var(--accent);
-}
-
-.pm-synced-control input[type='number'] {
-  width: 64px;
-  height: 26px;
-  padding: 2px 5px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--input-bg);
-  color: var(--foreground);
-  outline: none;
-  font-variant-numeric: tabular-nums;
-}
-
-.pm-synced-control em {
-  font-style: normal;
-  color: var(--foreground-muted);
-}
-
-.pm-synced-control.is-locked {
-  opacity: 0.72;
-}
-
-.pm-synced-control.is-locked input {
-  cursor: not-allowed;
-}
-
 .pm-field-mode-toggle {
   display: inline-flex;
   padding: 2px;
@@ -3174,13 +3435,13 @@ body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {
 .pm-field-check {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 26px;
-  padding: 0 8px;
+  gap: 3px;
+  height: 22px;
+  padding: 0 6px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 5px;
   color: var(--foreground-muted);
-  font-size: 0.64rem;
+  font-size: 0.6rem;
   font-weight: 700;
   cursor: pointer;
   user-select: none;
@@ -3201,21 +3462,21 @@ body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {
 .pm-result-radio-group {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   min-width: 0;
-  height: 26px;
+  height: 22px;
   margin: 0;
-  padding: 0 8px;
+  padding: 0 6px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 5px;
 }
 
 .pm-result-radio-group label {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   color: var(--foreground-muted);
-  font-size: 0.64rem;
+  font-size: 0.6rem;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
