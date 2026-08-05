@@ -53,6 +53,7 @@ import {
   DEFAULT_CALCULATION_PROFILE_ID,
   applyCalculationProfileToMaterials,
   calculationProfile,
+  calculationProfileAcceptsDesignBasis,
   createAnalysisOptionsForProfile,
   createDesignBasisForCalculationProfile,
   createDefaultAnalysisOptions,
@@ -583,7 +584,11 @@ export function SectionDrawingClient() {
     setCalculationProfileId(profileId)
     setMaterialStore((current) => applyCalculationProfileToMaterials(current, profileId))
     setAnalysisOptions(createAnalysisOptionsForProfile(profileId))
-    setDesignBasis(createDesignBasisForCalculationProfile(profileId))
+    setDesignBasis((current) =>
+      calculationProfileAcceptsDesignBasis(profileId, current)
+        ? current
+        : createDesignBasisForCalculationProfile(profileId)
+    )
     setAnalysisSubTab('points')
   }
 

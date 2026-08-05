@@ -6,6 +6,7 @@ import {
   buildSectionFieldMapFromPrepared,
   checkLoadcaseUtilizationFromSurface,
   checkLoadcasesUtilizationFromSurface,
+  codeAdjustedDemandOfCheck,
   prepareAnalysis,
   sliceFixedPContour,
   solveInversePreviewFromPrepared,
@@ -209,6 +210,10 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
         loadcase.P,
         (surfaceCache?.key === key ? surfaceCache.value : surface).triangles
       )
+      const designCheck = checkLoadcaseUtilizationFromSurface(
+        surfaceCache?.key === key ? surfaceCache.value : surface,
+        loadcase
+      )
       const inverse = solveInversePreviewFromPrepared(
         preparedFor({
           section,
@@ -218,11 +223,8 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
           designBasis: request.payload.designBasis
         }),
         loadcase,
-        contour
-      )
-      const designCheck = checkLoadcaseUtilizationFromSurface(
-        surfaceCache?.key === key ? surfaceCache.value : surface,
-        loadcase
+        contour,
+        codeAdjustedDemandOfCheck(designCheck)
       )
       const result = applyDesignCheckToInverse(inverse, designCheck)
       workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })

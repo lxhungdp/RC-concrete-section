@@ -13,7 +13,12 @@ export const DEFAULT_USER_BLOCK_EPS_CU = 0.003
 export const userBlockCompressionStress = (material: ConcreteMaterial) => {
   const model = material.stressStrain.type === 'user-block' ? material.stressStrain : null
   const alpha = model?.alpha ?? material.factors?.alpha ?? DEFAULT_USER_BLOCK_ALPHA
-  return (alpha / (material.factors?.gammaC ?? 1)) * material.fck
+  return (
+    alpha /
+    (material.factors?.gammaC ?? 1) *
+    (material.factors?.resistanceScale ?? 1) *
+    material.fck
+  )
 }
 
 /**

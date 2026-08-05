@@ -549,9 +549,18 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
           ['Axial cap', designBasis.axialCapEnabled ? 'Enabled' : 'Disabled', '', 'Project setting']
         ]
       : [
-          ['αcc', designBasis.factors.alphaCc, '-', 'Concrete design-strength coefficient'],
-          ['γc', designBasis.factors.gammaC, '-', 'Concrete material partial factor'],
-          ['γs', designBasis.factors.gammaS, '-', 'Reinforcement material partial factor']
+          ...designBasis.factors.concrete.components.map((component) => [
+            component.symbol,
+            component.value,
+            '-',
+            `${component.label}; ${component.operation}; ${component.clauseRef}`
+          ] as [string, string | number, string, string]),
+          ...designBasis.factors.reinforcement.components.map((component) => [
+            component.symbol,
+            component.value,
+            '-',
+            `${component.label}; ${component.operation}; ${component.clauseRef}`
+          ] as [string, string | number, string, string])
         ]
   factorRows.forEach(([label, value, unit, note], index) => {
     const r = designRow + 1 + index

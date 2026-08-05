@@ -17,7 +17,10 @@ export const resolveEc2ParabolicRectangularParams = (material: ConcreteMaterial)
   const n = positiveOr(model?.n, 2)
   const alphaSource =
     material.factors?.gammaC !== undefined ? material.factors?.alpha ?? model?.alpha : model?.alpha ?? material.factors?.alpha
-  const alpha = positiveOr(alphaSource, 1) / positiveOr(material.factors?.gammaC, 1)
+  const alpha =
+    positiveOr(alphaSource, 1) /
+    positiveOr(material.factors?.gammaC, 1) *
+    positiveOr(material.factors?.resistanceScale, 1)
   return { epsC2, epsCu2, n, peak: alpha * material.fck, ignoreTension: material.limits.ignoreTension }
 }
 

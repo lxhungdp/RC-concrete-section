@@ -5,6 +5,7 @@ import {
   buildSectionFieldMapFromPrepared,
   checkLoadcaseUtilizationFromSurface,
   checkLoadcasesUtilizationFromSurface,
+  codeAdjustedDemandOfCheck,
   prepareAnalysis,
   sliceFixedPContour,
   solveInversePreviewFromPrepared,
@@ -245,12 +246,13 @@ export const checkLoadcaseAsync = (
         )
       }
       const contour = sliceFixedPContour(payload.surface.points, payload.loadcase.P, payload.surface.triangles)
+      const designCheck = checkLoadcaseUtilizationFromSurface(payload.surface, payload.loadcase)
       const inverse = solveInversePreviewFromPrepared(
         fallbackPreparedFor({ ...payload, analysisOptions: payload.surface.analysisOptions }),
         payload.loadcase,
-        contour
+        contour,
+        codeAdjustedDemandOfCheck(designCheck)
       )
-      const designCheck = checkLoadcaseUtilizationFromSurface(payload.surface, payload.loadcase)
       return {
         ...inverse,
         utilization: designCheck.proportionalUtilization,

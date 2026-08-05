@@ -2,7 +2,13 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createEmptyGeometryInput } from '@pm/geometry'
 import { compileConcreteMaterial, compileSteelMaterial, createDefaultMaterialStore } from '@pm/materials'
-import { buildResistanceMaterialSets } from '@pm/design'
+import {
+  buildResistanceMaterialSets,
+  createKdsAppendixDesignBasis,
+  materialFactorComponent,
+  resolveMaterialFactorExpression,
+  setMaterialFactorComponentValue
+} from '@pm/design'
 import {
   DESIGN_CODES,
   activeConcreteModelId,
@@ -63,9 +69,9 @@ test('EN profile applies EC2 materials and round-trips its design-material resis
   assert.equal(materials.concrete.stressStrain.type, 'ec2-parabolic-rectangular')
   assert.ok(materials.steel.every((steel) => steel.standard === 'EC2'))
   assert.equal(basis.format, 'designMaterialReevaluation')
-  assert.equal(basis.factors.alphaCc, 1)
-  assert.equal(basis.factors.gammaC, 1.5)
-  assert.equal(basis.factors.gammaS, 1.15)
+  assert.equal(materialFactorComponent(basis, 'alphaCc')?.value, 1)
+  assert.equal(materialFactorComponent(basis, 'gammaC')?.value, 1.5)
+  assert.equal(materialFactorComponent(basis, 'gammaS')?.value, 1.15)
 
   const document = createProjectDocument({
     calculationProfileId: profileId,
@@ -75,6 +81,47 @@ test('EN profile applies EC2 materials and round-trips its design-material resis
   })
   const parsed = parseProjectDocument(document)
   assert.equal(parsed.ok, true, parsed.ok ? 'EN project parsed' : parsed.error)
+})
+
+test('both KDS mechanics round-trip the independently selected Appendix material-factor route', () => {
+  const design = createKdsAppendixDesignBasis()
+  for (const profileId of ['kds-2024-stress-strain', 'kds-142020-equivalent-block'] as const) {
+    const document = createProjectDocument({
+      calculationProfileId: profileId,
+      geometry: createEmptyGeometryInput({ id: 1, name: `KDS Appendix ${profileId}` }),
+      materials: applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId),
+      design
+    })
+    const parsed = parseProjectDocument(document)
+    assert.equal(parsed.ok, true, parsed.ok ? `${profileId} parsed` : parsed.error)
+    if (!parsed.ok) continue
+    assert.equal(parsed.document.inputs.design.profileId, 'kds-142020-2022-appendix-material-factors')
+    assert.equal(parsed.document.inputs.design.format, 'designMaterialReevaluation')
+  }
+})
+
+test('legacy EN scalar partial factors migrate to the generic factor-expression schema', () => {
+  const profileId = 'en-1992-1-1-2004-stress-strain' as const
+  const document = createProjectDocument({
+    calculationProfileId: profileId,
+    geometry: createEmptyGeometryInput({ id: 1, name: 'Legacy EN migration' }),
+    materials: applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId),
+    design: createDesignBasisForCalculationProfile(profileId)
+  })
+  const legacy = structuredClone(document) as unknown as {
+    inputs: { design: Record<string, unknown> }
+  }
+  legacy.inputs.design.basisVersion = 1
+  legacy.inputs.design.factors = { alphaCc: 0.9, gammaC: 1.6, gammaS: 1.2 }
+  delete legacy.inputs.design.compressionEndpoint
+
+  const parsed = parseProjectDocument(legacy)
+  assert.equal(parsed.ok, true, parsed.ok ? 'legacy EN parsed' : parsed.error)
+  if (!parsed.ok || parsed.document.inputs.design.format !== 'designMaterialReevaluation') return
+  assert.equal(parsed.document.inputs.design.basisVersion, 2)
+  assert.equal(materialFactorComponent(parsed.document.inputs.design, 'alphaCc')?.value, 0.9)
+  assert.equal(materialFactorComponent(parsed.document.inputs.design, 'gammaC')?.value, 1.6)
+  assert.equal(materialFactorComponent(parsed.document.inputs.design, 'gammaS')?.value, 1.2)
 })
 
 test('a user curve is a concrete-model choice under a Code, not a Custom standard', () => {
@@ -93,15 +140,21 @@ test('a user curve is a concrete-model choice under a Code, not a Custom standar
 test('EN DesignBasis is the canonical owner of partial factors even if a material snapshot is stale', () => {
   const profileId = 'en-1992-1-1-2004-stress-strain' as const
   const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
-  const basis = createDesignBasisForCalculationProfile(profileId)
-  if (basis.format !== 'designMaterialReevaluation') throw new Error('Expected EN design-material basis')
-  basis.factors.alphaCc = 0.9
-  basis.factors.gammaC = 1.6
-  basis.factors.gammaS = 1.2
+  const initial = createDesignBasisForCalculationProfile(profileId)
+  if (initial.format !== 'designMaterialReevaluation') throw new Error('Expected EN design-material basis')
+  const basis = setMaterialFactorComponentValue(
+    setMaterialFactorComponentValue(
+      setMaterialFactorComponentValue(initial, 'alphaCc', 0.9),
+      'gammaC',
+      1.6
+    ),
+    'gammaS',
+    1.2
+  )
   const resolved = buildResistanceMaterialSets(materials, basis)
-  assert.equal(resolved.designMaterials.concrete.factors?.alpha, 0.9)
-  assert.equal(resolved.designMaterials.concrete.factors?.gammaC, 1.6)
-  assert.ok(resolved.designMaterials.steel.every((steel) => steel.factors?.gammaS === 1.2))
+  assert.equal(resolved.designMaterials.concrete.factors?.resistanceScale, 0.9 / 1.6)
+  assert.equal(resolveMaterialFactorExpression(basis.factors.concrete), 0.9 / 1.6)
+  assert.ok(resolved.designMaterials.steel.every((steel) => steel.factors?.resistanceScale === 1 / 1.2))
   assert.equal(resolved.referenceMaterials.concrete.factors?.gammaC, undefined)
   assert.ok(resolved.referenceMaterials.steel.every((steel) => steel.factors?.gammaS === undefined))
 

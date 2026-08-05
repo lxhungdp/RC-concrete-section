@@ -18,7 +18,10 @@ export const resolveKdsParabolicParams = (material: ConcreteMaterial): KdsParabo
     material.factors?.gammaC !== undefined
       ? material.factors?.alpha ?? model?.alpha
       : model?.alpha ?? material.factors?.alpha
-  const alpha = positiveOr(alphaSource, 0.85) / positiveOr(material.factors?.gammaC, 1)
+  const alpha =
+    positiveOr(alphaSource, 0.85) /
+    positiveOr(material.factors?.gammaC, 1) *
+    positiveOr(material.factors?.resistanceScale, 1)
   return { eps0, epsCu, n, peak: alpha * material.fck }
 }
 

@@ -2,11 +2,12 @@ import type { MaterialStandard, MaterialStore } from '@pm/materials'
 import { AS_3600_2018_PROVENANCE } from '@pm/code-as3600'
 import { EN1992_2004_PROVENANCE } from '@pm/code-en1992'
 
-export const DESIGN_BASIS_VERSION = 1 as const
+export const DESIGN_BASIS_VERSION = 2 as const
 
 export type ResistanceFormat = 'globalResultantFactor' | 'designMaterialReevaluation'
 export type DesignProfileId =
   | 'kds-2024-current-set'
+  | 'kds-142020-2022-appendix-material-factors'
   /** Legacy identifier retained so previously saved project files remain readable. */
   | 'kds-basic-2021-2022'
   | 'aci-318-19-22'
@@ -54,10 +55,31 @@ export type TensionControlledLimitRule =
       highStrengthYieldMultiple: number
     }
 
+export type MaterialFactorOperation = 'multiply' | 'divide'
+
+export type MaterialFactorComponent = {
+  /** Stable semantic key used by editors and migrations, never a display label. */
+  id: 'alphaCc' | 'gammaC' | 'gammaS' | 'phiC' | 'phiS'
+  symbol: string
+  label: string
+  operation: MaterialFactorOperation
+  value: number
+  clauseRef: string
+}
+
+export type MaterialFactorExpression = {
+  characteristicSymbol: 'fck' | 'fyk'
+  designSymbol: 'fcd' | 'fyd'
+  components: MaterialFactorComponent[]
+}
+
+/**
+ * A standard-neutral recipe for compiling characteristic material definitions into design laws.
+ * KDS Appendix and EN 1992 differ only in the declared factor components and clause provenance.
+ */
 export type DesignMaterialFactors = {
-  alphaCc: number
-  gammaC: number
-  gammaS: number
+  concrete: MaterialFactorExpression
+  reinforcement: MaterialFactorExpression
 }
 
 type DesignBasisCommon = {
@@ -82,6 +104,13 @@ export type GlobalStrengthReductionBasis = DesignBasisCommon & {
 export type DesignMaterialBasis = DesignBasisCommon & {
   format: 'designMaterialReevaluation'
   factors: DesignMaterialFactors
+  /** Pure compression uses eps_c0 for the KDS Appendix and eps_cu for EN. */
+  compressionEndpoint: 'ultimate-strain' | 'peak-stress-strain'
+  minimumEccentricity?: {
+    constantMm: number
+    depthFactor: number
+    clauseRef: string
+  }
 }
 
 export type DesignBasis = GlobalStrengthReductionBasis | DesignMaterialBasis
@@ -225,9 +254,88 @@ export const createEn1992DesignBasis = (): DesignMaterialBasis => ({
   verificationStatus: 'draft',
   format: 'designMaterialReevaluation',
   factors: {
-    alphaCc: 1,
-    gammaC: 1.5,
-    gammaS: 1.15
+    concrete: {
+      characteristicSymbol: 'fck',
+      designSymbol: 'fcd',
+      components: [
+        {
+          id: 'alphaCc',
+          symbol: 'αcc',
+          label: 'Concrete design-strength coefficient',
+          operation: 'multiply',
+          value: 1,
+          clauseRef: 'EN 1992-1-1:2004, 3.1.6(1)P'
+        },
+        {
+          id: 'gammaC',
+          symbol: 'γC',
+          label: 'Concrete material partial factor',
+          operation: 'divide',
+          value: 1.5,
+          clauseRef: 'EN 1992-1-1:2004, 2.4.2.4 and selected National Annex'
+        }
+      ]
+    },
+    reinforcement: {
+      characteristicSymbol: 'fyk',
+      designSymbol: 'fyd',
+      components: [{
+        id: 'gammaS',
+        symbol: 'γS',
+        label: 'Reinforcement material partial factor',
+        operation: 'divide',
+        value: 1.15,
+        clauseRef: 'EN 1992-1-1:2004, 2.4.2.4 and selected National Annex'
+      }]
+    }
+  },
+  compressionEndpoint: 'ultimate-strain',
+  modified: false,
+  overrideReason: ''
+})
+
+export const createKdsAppendixDesignBasis = (): DesignMaterialBasis => ({
+  basisVersion: DESIGN_BASIS_VERSION,
+  profileId: 'kds-142020-2022-appendix-material-factors',
+  identity: identity(
+    'MOLIT/KDS',
+    'KDS 14 20 20:2022 Appendix — Separate design using material factors',
+    '2022',
+    'kds-142020-2022-appendix-design-material-reevaluation'
+  ),
+  verificationStatus: 'draft',
+  format: 'designMaterialReevaluation',
+  factors: {
+    concrete: {
+      characteristicSymbol: 'fck',
+      designSymbol: 'fcd',
+      components: [{
+        id: 'phiC',
+        symbol: 'φc',
+        label: 'Concrete material coefficient',
+        operation: 'multiply',
+        value: 0.65,
+        clauseRef: 'KDS 14 20 20:2022 Appendix, 2.2(1)①'
+      }]
+    },
+    reinforcement: {
+      characteristicSymbol: 'fyk',
+      designSymbol: 'fyd',
+      components: [{
+        id: 'phiS',
+        symbol: 'φs',
+        label: 'Reinforcement and prestressing-steel material coefficient',
+        operation: 'multiply',
+        value: 0.90,
+        clauseRef: 'KDS 14 20 20:2022 Appendix, 2.2(1)②'
+      }]
+    }
+  },
+  compressionEndpoint: 'peak-stress-strain',
+  minimumEccentricity: {
+    constantMm: 15,
+    depthFactor: 0.03,
+    clauseRef: 'KDS 14 20 20:2022 Appendix, 3.2, equations (3-4) and (3-5)'
   },
   modified: false,
   overrideReason: ''
@@ -288,19 +396,27 @@ export const cloneDesignBasis = <T extends DesignBasis>(basis: T): T =>
 const cloneMaterials = (materials: MaterialStore): MaterialStore =>
   JSON.parse(JSON.stringify(materials)) as MaterialStore
 
-const withoutPartialFactors = (materials: MaterialStore, concreteAlpha?: number): MaterialStore => {
+const withoutResistanceFactors = (materials: MaterialStore): MaterialStore => {
   const reference = cloneMaterials(materials)
+  /**
+   * Older EN project files stored the design alpha in the model and the characteristic alpha in
+   * factors.alpha. Recover the characteristic law while migrating them into the two-pass model.
+   */
+  const referenceAlpha = reference.concrete.factors?.gammaC !== undefined
+    ? reference.concrete.factors?.alpha
+    : undefined
   reference.concrete.factors = {
     ...reference.concrete.factors,
-    ...(concreteAlpha === undefined ? {} : { alpha: concreteAlpha }),
-    gammaC: undefined
+    ...(referenceAlpha === undefined ? {} : { alpha: referenceAlpha }),
+    gammaC: undefined,
+    resistanceScale: undefined
   }
-  if (concreteAlpha !== undefined && 'alpha' in reference.concrete.stressStrain) {
-    reference.concrete.stressStrain.alpha = concreteAlpha
+  if (referenceAlpha !== undefined && 'alpha' in reference.concrete.stressStrain) {
+    reference.concrete.stressStrain.alpha = referenceAlpha
   }
   reference.steel = reference.steel.map((steel) => ({
     ...steel,
-    factors: { ...steel.factors, gammaS: undefined },
+    factors: { ...steel.factors, gammaS: undefined, resistanceScale: undefined },
     limits: {
       ...steel.limits,
       epsY: steel.fy / steel.elasticModulus
@@ -309,47 +425,141 @@ const withoutPartialFactors = (materials: MaterialStore, concreteAlpha?: number)
   return reference
 }
 
-export const buildResistanceMaterialSets = (
-  materials: MaterialStore,
-  basis: DesignBasis
-): {
+export const resolveMaterialFactorExpression = (expression: MaterialFactorExpression): number =>
+  expression.components.reduce(
+    (value, component) => component.operation === 'multiply'
+      ? value * component.value
+      : value / component.value,
+    1
+  )
+
+export const materialFactorComponent = (
+  basis: DesignMaterialBasis,
+  id: MaterialFactorComponent['id']
+): MaterialFactorComponent | undefined => [
+  ...basis.factors.concrete.components,
+  ...basis.factors.reinforcement.components
+].find((component) => component.id === id)
+
+export const setMaterialFactorComponentValue = (
+  basis: DesignMaterialBasis,
+  id: MaterialFactorComponent['id'],
+  value: number
+): DesignMaterialBasis => {
+  const next = cloneDesignBasis(basis)
+  for (const expression of [next.factors.concrete, next.factors.reinforcement]) {
+    const component = expression.components.find((candidate) => candidate.id === id)
+    if (component) component.value = value
+  }
+  return next
+}
+
+export type ResistanceMaterialSets = {
+  /** Material set whose events govern the Design surface strain-state schedule. */
   stateMaterials: MaterialStore
   referenceMaterials: MaterialStore
   designMaterials: MaterialStore
-} => {
+  concreteDesignMultiplier: number
+  reinforcementDesignMultiplier: number
+}
+
+export const buildResistanceMaterialSets = (
+  materials: MaterialStore,
+  basis: DesignBasis
+): ResistanceMaterialSets => {
+  const referenceMaterials = withoutResistanceFactors(materials)
   if (basis.format === 'globalResultantFactor') {
-    const referenceMaterials = withoutPartialFactors(materials)
     return {
       stateMaterials: referenceMaterials,
       referenceMaterials,
-      designMaterials: referenceMaterials
+      designMaterials: referenceMaterials,
+      concreteDesignMultiplier: 1,
+      reinforcementDesignMultiplier: 1
     }
   }
 
-  const referenceMaterials = withoutPartialFactors(materials, 1)
-  const designMaterials = cloneMaterials(materials)
+  const concreteDesignMultiplier = resolveMaterialFactorExpression(basis.factors.concrete)
+  const reinforcementDesignMultiplier = resolveMaterialFactorExpression(basis.factors.reinforcement)
+  const designMaterials = cloneMaterials(referenceMaterials)
   designMaterials.concrete.factors = {
     ...designMaterials.concrete.factors,
-    alpha: basis.factors.alphaCc,
-    gammaC: basis.factors.gammaC
-  }
-  if ('alpha' in designMaterials.concrete.stressStrain) {
-    designMaterials.concrete.stressStrain.alpha = basis.factors.alphaCc
+    gammaC: undefined,
+    resistanceScale: concreteDesignMultiplier
   }
   designMaterials.steel = designMaterials.steel.map((steel) => ({
     ...steel,
-    factors: { ...steel.factors, gammaS: basis.factors.gammaS },
+    factors: {
+      ...steel.factors,
+      gammaS: undefined,
+      resistanceScale: reinforcementDesignMultiplier
+    },
     limits: {
       ...steel.limits,
-      epsY: steel.fy / basis.factors.gammaS / steel.elasticModulus
+      epsY: steel.fy * reinforcementDesignMultiplier / steel.elasticModulus
     }
   }))
   return {
     stateMaterials: designMaterials,
     referenceMaterials,
-    designMaterials
+    designMaterials,
+    concreteDesignMultiplier,
+    reinforcementDesignMultiplier
   }
 }
+
+export type MinimumEccentricityCandidate = {
+  Mx: number
+  My: number
+  eccentricityMm: number
+}
+
+/**
+ * KDS 14 20 20:2022 Appendix 3.2(2) with equations (3-4) and (3-5) is a factored-demand rule, not a
+ * horizontal capacity cap. This resolves the candidate demands a caller must check; returning an
+ * empty list means the raw demand already satisfies the clause and must be checked unchanged.
+ *
+ * `projectedDepth(nx, ny)` returns the outer-boundary extent of the section along `(nx, ny)`.
+ *
+ * A single candidate is returned when the demand already has a moment direction: the clause sets a
+ * floor on that direction, so the moment is scaled up along it. With no moment at all the clause
+ * gives no direction, so both principal axes are offered and the caller retains the governing one.
+ */
+export const minimumEccentricityCandidates = (
+  basis: DesignBasis,
+  demand: { P: number; Mx: number; My: number },
+  projectedDepth: (nx: number, ny: number) => number
+): MinimumEccentricityCandidate[] => {
+  const rule = basis.format === 'designMaterialReevaluation' ? basis.minimumEccentricity : undefined
+  if (!rule || !(demand.P > 0)) return []
+  const eccentricity = (nx: number, ny: number) =>
+    rule.constantMm + rule.depthFactor * projectedDepth(nx, ny)
+
+  const moment = Math.hypot(demand.Mx, demand.My)
+  if (moment > 1e-12) {
+    /**
+     * `Mx` is the moment about the section x-axis and therefore pairs with the y-eccentricity, so
+     * the demand eccentricity direction is `(My, Mx)/|M|` in this codebase's sign convention.
+     */
+    const limit = demand.P * eccentricity(demand.My / moment, demand.Mx / moment)
+    if (moment >= limit) return []
+    const scale = limit / moment
+    return [{
+      Mx: demand.Mx * scale,
+      My: demand.My * scale,
+      eccentricityMm: limit / demand.P
+    }]
+  }
+
+  const aboutX = eccentricity(0, 1)
+  const aboutY = eccentricity(1, 0)
+  return [
+    { Mx: demand.P * aboutX, My: 0, eccentricityMm: aboutX },
+    { Mx: 0, My: demand.P * aboutY, eccentricityMm: aboutY }
+  ]
+}
+
+export const minimumEccentricityMessage = (eccentricityMm: number) =>
+  `KDS Appendix minimum eccentricity e_min = ${eccentricityMm.toFixed(3)} mm governs the checked moment.`
 
 export const evaluateGlobalStrengthReduction = (
   basis: GlobalStrengthReductionBasis,
@@ -425,6 +635,8 @@ export const designBasisRequiresOverrideReason = (basis: DesignBasis): boolean =
   const defaults =
     basis.profileId === 'aci-318-19-22'
       ? createAci318DesignBasis()
+      : basis.profileId === 'kds-142020-2022-appendix-material-factors'
+        ? createKdsAppendixDesignBasis()
       : basis.profileId === 'en-1992-1-1-2004-default'
         ? createEn1992DesignBasis()
         : basis.profileId === 'as-3600-2018-amd2'
@@ -442,7 +654,11 @@ export const designBasisRequiresOverrideReason = (basis: DesignBasis): boolean =
   return (
     basis.format === 'designMaterialReevaluation' &&
     defaults.format === 'designMaterialReevaluation' &&
-    !sameNumbers(basis.factors, defaults.factors)
+    (
+      JSON.stringify(basis.factors) !== JSON.stringify(defaults.factors) ||
+      basis.compressionEndpoint !== defaults.compressionEndpoint ||
+      JSON.stringify(basis.minimumEccentricity) !== JSON.stringify(defaults.minimumEccentricity)
+    )
   )
 }
 
@@ -477,9 +693,35 @@ export const designBasisIssues = (basis: DesignBasis): string[] => {
       issues.push('Tension-controlled phi must not be below compression-controlled phi.')
     }
   } else {
-    if (!finiteBetween(basis.factors.alphaCc, 0.1, 1.5)) issues.push('alphaCc is outside the supported range.')
-    if (!finiteBetween(basis.factors.gammaC, 1, 3)) issues.push('gammaC is outside the supported range.')
-    if (!finiteBetween(basis.factors.gammaS, 1, 3)) issues.push('gammaS is outside the supported range.')
+    for (const [family, expression] of [
+      ['concrete', basis.factors.concrete],
+      ['reinforcement', basis.factors.reinforcement]
+    ] as const) {
+      if (expression.components.length === 0) issues.push(`${family} material-factor expression is empty.`)
+      for (const component of expression.components) {
+        if (!finiteBetween(component.value, 0.1, 3)) {
+          issues.push(`${component.id} is outside the supported range.`)
+        }
+      }
+      const multiplier = resolveMaterialFactorExpression(expression)
+      if (!finiteBetween(multiplier, 0.1, 1.5)) {
+        issues.push(`${family} resolved design-strength multiplier is outside the supported range.`)
+      }
+    }
+    if (
+      basis.compressionEndpoint !== 'ultimate-strain' &&
+      basis.compressionEndpoint !== 'peak-stress-strain'
+    ) {
+      issues.push('compressionEndpoint is unsupported.')
+    }
+    if (basis.minimumEccentricity) {
+      if (!finiteBetween(basis.minimumEccentricity.constantMm, 0, 100)) {
+        issues.push('minimumEccentricity.constantMm is outside the supported range.')
+      }
+      if (!finiteBetween(basis.minimumEccentricity.depthFactor, 0, 1)) {
+        issues.push('minimumEccentricity.depthFactor is outside the supported range.')
+      }
+    }
   }
   return issues
 }
@@ -493,3 +735,87 @@ export const designBasisLabel = (basis: DesignBasis) =>
   `${basis.identity.document} — ${basis.format === 'globalResultantFactor' ? 'Global strength reduction' : 'Design material strengths'}`
 
 export const designBasisHash = (basis: DesignBasis) => JSON.stringify(basis)
+
+export type DesignProfileReference = {
+  document: string
+  clause: string
+  subject: string
+  url?: string
+}
+
+export type DesignProfileGuidance = {
+  title: string
+  summary: string
+  referenceCurve: string
+  designCurve: string
+  doNotCombine: string
+  references: DesignProfileReference[]
+}
+
+const KDS_142010_KCSC_URL = 'https://www.kcsc.re.kr/standardCode/viewer/KDS%2014%2020%2010:2022-01-11'
+const KDS_142020_KCSC_URL = 'https://www.kcsc.re.kr/standardCode/viewer/KDS%2014%2020%2020:2022-01-11'
+const JRC_EC2_URL = 'https://eurocodes.jrc.ec.europa.eu/EN-Eurocodes/eurocode-2-design-concrete-structures'
+
+export const designProfileGuidance = (profileId: DesignProfileId): DesignProfileGuidance => {
+  if (profileId === 'kds-142020-2022-appendix-material-factors') {
+    return {
+      title: 'KDS Appendix material-factor method',
+      summary:
+        'An alternative section-strength method. Concrete and reinforcement laws are reevaluated with phi_c = 0.65 and phi_s = 0.90 at each compatible strain state.',
+      referenceCurve:
+        'Reference uses the same Appendix strain domain with material coefficients set to 1.0. It is an audit curve, not the KDS Main-method nominal curve.',
+      designCurve:
+        'Design uses reduced material strengths from the beginning. Per Appendix 3.1: pure compression reaches eps_c0, an internal neutral axis uses eps_cu, and the all-compression domain transitions continuously between those limits; minimum eccentricity is a demand verification rule.',
+      doNotCombine:
+        'Do not additionally apply the KDS Main global phi or its 0.80/0.85 maximum axial-compression cap. Appendix 2.2(2) is a localized pretensioned-member transfer/development-length modifier, not a general RC P-M factor.',
+      references: [
+        { document: 'KDS 14 20 20:2022 Appendix', clause: '1.1', subject: 'Scope and status as an alternative method', url: KDS_142020_KCSC_URL },
+        { document: 'KDS 14 20 20:2022 Appendix', clause: '2.1 and 2.2(1)', subject: 'Design-strength assumptions and material coefficients', url: KDS_142020_KCSC_URL },
+        { document: 'KDS 14 20 20:2022 Appendix', clause: '2.2(2)', subject: 'Separate strength modifier for pretensioned members with insufficient tendon development; outside this reinforced-concrete section scope', url: KDS_142020_KCSC_URL },
+        { document: 'KDS 14 20 20:2022 Appendix', clause: '3.1', subject: 'Strain and neutral-axis limits', url: KDS_142020_KCSC_URL },
+        { document: 'KDS 14 20 20:2022 Appendix', clause: '3.2, equations (3-4)–(3-5)', subject: 'Design axial strength and minimum factored moment/eccentricity', url: KDS_142020_KCSC_URL }
+      ]
+    }
+  }
+  if (profileId === 'en-1992-1-1-2004-default') {
+    return {
+      title: 'EN 1992 design-material method',
+      summary:
+        'Characteristic material laws are reevaluated with fcd = alpha_cc fck / gamma_C and fyd = fyk / gamma_S. Recommended values are used until a National Annex is selected.',
+      referenceCurve:
+        'Reference uses characteristic strengths and is supplied for audit and comparison; EC2 design verification is based on the Design curve.',
+      designCurve:
+        'Design preserves elastic modulus and characteristic-strength-dependent strain parameters while replacing the concrete and steel strength ordinates.',
+      doNotCombine:
+        'Do not add an ACI/KDS-style global strength-reduction factor unless an explicitly selected EN edition or National Annex requires another stage.',
+      references: [
+        { document: 'EN 1992-1-1:2004', clause: '2.4.2.4', subject: 'Partial factors for materials', url: JRC_EC2_URL },
+        { document: 'EN 1992-1-1:2004', clause: '3.1.6–3.1.7 and Table 3.1', subject: 'Concrete design strength and stress-strain laws', url: JRC_EC2_URL },
+        { document: 'EN 1992-1-1:2004', clause: '3.2.7–3.2.8', subject: 'Reinforcement design stress-strain laws', url: JRC_EC2_URL }
+      ]
+    }
+  }
+  if (profileId === 'kds-2024-current-set' || profileId === 'kds-basic-2021-2022') {
+    return {
+      title: 'KDS Main global-strength-reduction method',
+      summary:
+        'The section is first evaluated with nominal material laws. A strain-state-dependent global phi is then applied to the complete P-M resultant.',
+      referenceCurve: 'Nominal is the unfactored section-strength curve from the selected KDS material model.',
+      designCurve:
+        'Design applies the KDS compression/transition/tension phi and then the applicable 0.80 or 0.85 maximum axial-compression limit.',
+      doNotCombine: 'Do not also reduce concrete by 0.65 and reinforcement by 0.90; those belong to the separate Appendix method.',
+      references: [
+        { document: 'KDS 14 20 10:2021', clause: '4.2.3', subject: 'Design strength and strength-reduction factors', url: KDS_142010_KCSC_URL },
+        { document: 'KDS 14 20 20:2022', clause: '4.1.1–4.1.2', subject: 'Section-strength assumptions and maximum axial strength', url: KDS_142020_KCSC_URL }
+      ]
+    }
+  }
+  return {
+    title: 'Resistance profile information',
+    summary: 'The selected profile defines how reference section strength becomes design resistance.',
+    referenceCurve: 'Reference is evaluated before resistance treatment.',
+    designCurve: 'Design includes every resistance stage declared by the selected profile.',
+    doNotCombine: 'Only stages declared by the selected profile are applied.',
+    references: [{ document: 'Selected design standard', clause: 'See profile identity', subject: 'Resistance provisions' }]
+  }
+}

@@ -1,13 +1,16 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, RotateCcw } from 'lucide-react'
+import { ChevronDown, ExternalLink, Info, RotateCcw } from 'lucide-react'
 import {
   createAci318DesignBasis,
   createAs3600DesignBasis,
   createCustomDesignBasis,
   createEn1992DesignBasis,
+  createKdsAppendixDesignBasis,
   createKdsBasicDesignBasis,
+  designProfileGuidance,
+  resolveMaterialFactorExpression,
   designBasisIssues,
   designBasisRequiresOverrideReason,
   type DesignBasis,
@@ -24,6 +27,7 @@ const clone = <T,>(value: T): T => structuredClone(value)
 const profileDefaults = (profileId: DesignProfileId): DesignBasis => {
   if (profileId === 'aci-318-19-22') return createAci318DesignBasis()
   if (profileId === 'en-1992-1-1-2004-default') return createEn1992DesignBasis()
+  if (profileId === 'kds-142020-2022-appendix-material-factors') return createKdsAppendixDesignBasis()
   if (profileId === 'as-3600-2018-amd2') return createAs3600DesignBasis()
   if (profileId === 'custom-user-defined') return createCustomDesignBasis()
   return createKdsBasicDesignBasis()
@@ -89,6 +93,7 @@ const DesignSelect = ({
 
 export function DesignBasisPanel({ value, onChange }: Props) {
   const [draft, setDraft] = useState<DesignBasis>(() => clone(value))
+  const [showMethodInfo, setShowMethodInfo] = useState(false)
   useEffect(() => setDraft(clone(value)), [value])
 
   const issues = useMemo(() => designBasisIssues(draft), [draft])
@@ -104,6 +109,10 @@ export function DesignBasisPanel({ value, onChange }: Props) {
 
   const isUserDefinedProfile = draft.profileId === 'custom-user-defined'
   const isAs3600Profile = draft.profileId === 'as-3600-2018-amd2'
+  const isKdsProfile = draft.profileId === 'kds-2024-current-set' ||
+    draft.profileId === 'kds-basic-2021-2022' ||
+    draft.profileId === 'kds-142020-2022-appendix-material-factors'
+  const guidance = useMemo(() => designProfileGuidance(draft.profileId), [draft.profileId])
 
   const update = (mutate: (next: DesignBasis) => void) => {
     const next = clone(draft)
@@ -144,6 +153,56 @@ export function DesignBasisPanel({ value, onChange }: Props) {
         <span>{draft.identity.document}</span>
         <strong className={`is-${draft.verificationStatus}`}>{draft.verificationStatus}</strong>
       </div>
+
+      {isKdsProfile && (
+        <DesignSelect
+          label="KDS resistance method"
+          value={draft.profileId === 'kds-142020-2022-appendix-material-factors' ? draft.profileId : 'kds-2024-current-set'}
+          onChange={(profileId) => publishIfValid(
+            profileId === 'kds-142020-2022-appendix-material-factors'
+              ? createKdsAppendixDesignBasis()
+              : createKdsBasicDesignBasis()
+          )}
+        >
+          <option value="kds-2024-current-set">Main method — global φ and axial cap</option>
+          <option value="kds-142020-2022-appendix-material-factors">Appendix — material coefficients φc / φs</option>
+        </DesignSelect>
+      )}
+
+      <button
+        type="button"
+        className="pm-design-info-toggle"
+        aria-expanded={showMethodInfo}
+        onClick={() => setShowMethodInfo((current) => !current)}
+      >
+        <Info size={14} aria-hidden="true" />
+        {showMethodInfo ? 'Hide standard information' : 'Show method and standard references'}
+        <ChevronDown size={14} aria-hidden="true" className={showMethodInfo ? 'is-open' : ''} />
+      </button>
+
+      {showMethodInfo && (
+        <div className="pm-design-method-info">
+          <strong>{guidance.title}</strong>
+          <p>{guidance.summary}</p>
+          <dl>
+            <div><dt>Reference curve</dt><dd>{guidance.referenceCurve}</dd></div>
+            <div><dt>Design curve</dt><dd>{guidance.designCurve}</dd></div>
+            <div><dt>Do not combine</dt><dd>{guidance.doNotCombine}</dd></div>
+          </dl>
+          <ul>
+            {guidance.references.map((reference) => (
+              <li key={`${reference.document}-${reference.clause}`}>
+                {reference.url ? (
+                  <a href={reference.url} target="_blank" rel="noreferrer">
+                    {reference.document}, §{reference.clause} <ExternalLink size={12} aria-hidden="true" />
+                  </a>
+                ) : <span>{reference.document}, §{reference.clause}</span>}
+                <small>{reference.subject}</small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {draft.format === 'globalResultantFactor' ? (
         <>
@@ -355,18 +414,25 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                 }
               />
             </div>
-            <label className={`pm-field-check pm-design-cap-check${draft.axialCapEnabled ? ' is-on' : ''}`}>
-              <input
-                type="checkbox"
-                checked={draft.axialCapEnabled}
-                onChange={(event) =>
-                  update((next) => {
-                    if (next.format === 'globalResultantFactor') next.axialCapEnabled = event.target.checked
-                  })
-                }
-              />
-              Apply maximum axial-compression limit
-            </label>
+            {isUserDefinedProfile ? (
+              <label className={`pm-field-check pm-design-cap-check${draft.axialCapEnabled ? ' is-on' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={draft.axialCapEnabled}
+                  onChange={(event) =>
+                    update((next) => {
+                      if (next.format === 'globalResultantFactor') next.axialCapEnabled = event.target.checked
+                    })
+                  }
+                />
+                Apply maximum axial-compression limit
+              </label>
+            ) : (
+              <p className="pm-design-help">
+                This limit is mandatory for the selected code profile. An uncapped curve may be
+                shown only as a diagnostic and is never used for the Design check.
+              </p>
+            )}
             <p className="pm-design-help">
               Limits the usable design compression to the selected fraction of the factored
               compression pole. The defaults are 0.80 for ties/other and 0.85 for a qualifying
@@ -381,50 +447,41 @@ export function DesignBasisPanel({ value, onChange }: Props) {
             <span>Materials are reevaluated at the same strain state</span>
           </div>
           <div className="pm-design-factor-grid">
-            <NumericFactor
-              label="αcc"
-              value={draft.factors.alphaCc}
-              min={0.1}
-              max={1.5}
-              step={0.01}
-              readOnly
-              help="Concrete design-strength coefficient applied before the concrete partial factor."
-              onChange={(factor) =>
-                update((next) => {
-                  if (next.format === 'designMaterialReevaluation') next.factors.alphaCc = factor
-                })
-              }
-            />
-            <NumericFactor
-              label="γc"
-              value={draft.factors.gammaC}
-              min={1}
-              max={3}
-              step={0.05}
-              readOnly
-              help="Concrete material partial factor."
-              onChange={(factor) =>
-                update((next) => {
-                  if (next.format === 'designMaterialReevaluation') next.factors.gammaC = factor
-                })
-              }
-            />
-            <NumericFactor
-              label="γs"
-              value={draft.factors.gammaS}
-              min={1}
-              max={3}
-              step={0.05}
-              readOnly
-              help="Reinforcement material partial factor."
-              onChange={(factor) =>
-                update((next) => {
-                  if (next.format === 'designMaterialReevaluation') next.factors.gammaS = factor
-                })
-              }
-            />
+            {[...draft.factors.concrete.components, ...draft.factors.reinforcement.components].map((component) => (
+              <NumericFactor
+                key={component.id}
+                label={component.symbol}
+                value={component.value}
+                min={0.1}
+                max={3}
+                step={component.id.startsWith('gamma') ? 0.05 : 0.01}
+                readOnly
+                help={`${component.label}. ${component.clauseRef}`}
+                onChange={() => undefined}
+              />
+            ))}
           </div>
-          <p className="pm-design-help">Material partial factors are edited in Materials so the displayed fcd/fyd values and the design-material snapshot share one canonical source.</p>
+          <dl className="pm-design-definitions">
+            <div>
+              <dt>Concrete multiplier</dt>
+              <dd>{resolveMaterialFactorExpression(draft.factors.concrete).toFixed(5)}</dd>
+            </div>
+            <div>
+              <dt>Steel multiplier</dt>
+              <dd>{resolveMaterialFactorExpression(draft.factors.reinforcement).toFixed(5)}</dd>
+            </div>
+            <div>
+              <dt>Resultant φ</dt>
+              <dd>Not applied</dd>
+            </div>
+          </dl>
+          {draft.minimumEccentricity && (
+            <p className="pm-design-help">
+              Minimum eccentricity verification: e_min = {draft.minimumEccentricity.constantMm} + {draft.minimumEccentricity.depthFactor}h mm.
+              This is a demand-side rule, not a horizontal capacity cap.
+            </p>
+          )}
+          <p className="pm-design-help">Material-factor values are edited in Materials; the resistance profile remains their canonical source.</p>
         </div>
       )}
 

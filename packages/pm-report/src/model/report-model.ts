@@ -16,6 +16,7 @@
 import {
   applyDesignCheckToInverse,
   checkLoadcaseUtilizationFromSurface,
+  codeAdjustedDemandOfCheck,
   evaluatePreparedState,
   intersectSurfaceWithDemandRay,
   prepareAnalysis,
@@ -458,9 +459,15 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       const contour = sliceFixedPContour(input.surface.points, loadcase.P, input.surface.triangles)
       // The inverse gives the equilibrium state; adequacy is the design-surface ray. Both, composed
       // exactly as the application composes them.
+      const designCheck = checkLoadcaseUtilizationFromSurface(input.surface, loadcase)
       const result = applyDesignCheckToInverse(
-        solveInversePreviewFromPrepared(prepared, loadcase, contour),
-        checkLoadcaseUtilizationFromSurface(input.surface, loadcase)
+        solveInversePreviewFromPrepared(
+          prepared,
+          loadcase,
+          contour,
+          codeAdjustedDemandOfCheck(designCheck)
+        ),
+        designCheck
       )
       results.set(loadcase.id, result)
       if (!wanted.has(loadcase.id)) continue
@@ -602,9 +609,18 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
             ]
         : [
             ['Format', 'Design material reevaluation'],
-            ['αcc', fmt(basis.factors.alphaCc, 3)],
-            ['γc', fmt(basis.factors.gammaC, 3)],
-            ['γs', fmt(basis.factors.gammaS, 3)]
+            ...basis.factors.concrete.components.map((component) => [
+              `${component.symbol} · concrete`,
+              `${fmt(component.value, 3)} (${component.operation})`
+            ] as LabelledValue),
+            ...basis.factors.reinforcement.components.map((component) => [
+              `${component.symbol} · reinforcement`,
+              `${fmt(component.value, 3)} (${component.operation})`
+            ] as LabelledValue),
+            ['Compression endpoint', basis.compressionEndpoint],
+            ['Minimum eccentricity', basis.minimumEccentricity
+              ? `${basis.minimumEccentricity.constantMm} + ${basis.minimumEccentricity.depthFactor}h mm`
+              : 'not prescribed by this profile']
           ],
     sampling: [
       ['Surface points', String(input.surface.points.length)],

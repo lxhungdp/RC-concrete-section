@@ -7,7 +7,10 @@ export const stressAciWhitneyConcrete = (material: ConcreteMaterial, strain: num
   const epsCu = model?.epsCu ?? material.limits.epsCu
   const alphaSource =
     material.factors?.gammaC !== undefined ? material.factors?.alpha ?? model?.alpha : model?.alpha ?? material.factors?.alpha
-  const alpha = (alphaSource ?? 0.85) / (material.factors?.gammaC ?? 1)
+  const alpha =
+    (alphaSource ?? 0.85) /
+    (material.factors?.gammaC ?? 1) *
+    (material.factors?.resistanceScale ?? 1)
   if (strain <= 0 && material.limits.ignoreTension) return 0
   if (strain <= 0 || strain > epsCu) return 0
   return alpha * material.fck
@@ -20,7 +23,10 @@ export const compileAciWhitneyConcrete = (material: ConcreteMaterial): CompiledM
     material.factors?.gammaC !== undefined
       ? material.factors?.alpha ?? model?.alpha
       : model?.alpha ?? material.factors?.alpha
-  const peak = ((alphaSource ?? 0.85) / (material.factors?.gammaC ?? 1)) * material.fck
+  const peak =
+    ((alphaSource ?? 0.85) / (material.factors?.gammaC ?? 1)) *
+    (material.factors?.resistanceScale ?? 1) *
+    material.fck
   return {
     id: material.id,
     family: 'concrete',

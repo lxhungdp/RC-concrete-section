@@ -24,6 +24,7 @@ marks that profile modified; legacy custom profile IDs remain readable for schem
 |---|---|---|---|
 | KDS 2024 - Stress-strain integration | full stress-strain integration | KDS concrete curve at integration points | KDS global resultant factor and cap |
 | KDS 14 20 20 - Equivalent rectangular block | exact clipped block `a=beta1 c` | `eta 0.85 fck` in the active block | KDS global resultant factor and cap |
+| Either KDS mechanics + Appendix resistance route | selected mechanics is unchanged | characteristic reference plus a separately solved reduced-material law | `0.65` concrete and `0.90` reinforcement; Appendix 3.1 strain domains; minimum eccentricity; no global phi/cap |
 | ACI 318-19(22) - Whitney equivalent block | exact clipped block `a=beta1 c` | `0.85 f'c` in the active block | ACI state-dependent phi and cap |
 | EN 1992-1-1:2004 - Stress-strain preview | full stress-strain integration | EN parabolic-rectangular design law | material-strength reevaluation; no global phi |
 | AS 3600:2018 Amd 1-2 - Equivalent rectangular block preview | exact clipped block `a=gamma c` | `alpha2 f'c` in the active block | AS Table 2.2.2 action/state-dependent capacity factor |
@@ -96,6 +97,10 @@ For every ULS state:
 For global-resultant profiles, phi multiplies the complete `P-Mx-My` ledger once. It is not embedded
 again in material stresses, and factored Demand is not reduced. For a design-material profile, the
 same strain state is reevaluated with design material strengths instead of applying a global factor.
+The generic factor-expression layer represents both KDS multiplication factors and EN partial-factor
+division without mechanics-specific branches. KDS Appendix additionally owns its 3.1 strain-domain
+limits (`epsilon_c0` at pure compression, `epsilon_cu` for an internal neutral axis, and the
+all-compression pivot between them) and `e_min = 15 + 0.03h` demand rule.
 
 ## 7. Persisted and reported evidence
 
@@ -109,15 +114,13 @@ analysis options, and DesignBasis. The target accepted-result/report contract ex
 - phi classification, controlling tensile/yield strains, and tension-controlled limit;
 - axial-cap status and actual surface refinement evidence.
 
-All current persisted calculation code is v1 and there is no migration/backward-compatibility
-layer. Within v1, the parser can derive a missing DesignBasis from material source and apply the
-other defaults documented in the parser contract. This does not create another schema version or an
-approved profile-selection workflow.
+The project document remains schema v1, while its embedded DesignBasis is version 2. The parser can
+derive a missing basis and migrates legacy EN scalar partial factors to generic factor expressions;
+canonical exports write the current basis explicitly.
 
-Current export boundary: the stress-strain result workbook exposes a subset of this evidence,
-including `Design_Check`; the equivalent-block result workbook is not implemented and the UI blocks
-that export rather than reusing the fiber ledger. Mesh Excel/DXF exports are likewise specific to
-stress-strain integration.
+Both stress-strain and equivalent-block result workbooks expose `Design_Check` and their
+mechanics-specific audit ledgers. The equivalent-block workbook uses clipped-block geometry rather
+than reusing the fiber ledger. Mesh Excel/DXF exports remain specific to stress-strain integration.
 
 ## 8. Current status
 

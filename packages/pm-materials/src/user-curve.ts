@@ -25,10 +25,11 @@ const compileUserCurve = (
 
 export const compileConcreteUserCurve = (material: ConcreteMaterial) => {
   const model = material.stressStrain.type === 'user-curve' ? material.stressStrain : null
+  const scale = material.factors?.resistanceScale ?? 1
   return compileUserCurve(
     material.id,
     'concrete',
-    model?.points ?? [],
+    (model?.points ?? []).map((point) => ({ ...point, stress: point.stress * scale })),
     { epsCompressionUltimate: material.limits.epsCu },
     model?.zeroTension ?? material.limits.ignoreTension
   )

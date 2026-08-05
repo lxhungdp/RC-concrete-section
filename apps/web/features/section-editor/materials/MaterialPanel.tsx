@@ -1,10 +1,15 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Plus, X } from 'lucide-react'
+import { ChevronDown, ExternalLink, Info, Plus, X } from 'lucide-react'
 import {
-  buildResistanceMaterialSets,
+  designProfileGuidance,
   designBasisRequiresOverrideReason,
+  createKdsAppendixDesignBasis,
+  createKdsBasicDesignBasis,
+  resolveMaterialFactorExpression,
+  setMaterialFactorComponentValue,
+  type MaterialFactorComponent,
   type DesignBasis
 } from '@pm/design'
 import {
@@ -184,6 +189,53 @@ function StressStrainCurve({ material }: { material: ConcreteMaterial | SteelMat
   )
 }
 
+function FactorInformation({
+  basis,
+  family
+}: {
+  basis: Extract<DesignBasis, { format: 'designMaterialReevaluation' }>
+  family: 'concrete' | 'reinforcement'
+}) {
+  const guidance = designProfileGuidance(basis.profileId)
+  const expression = basis.factors[family]
+  return (
+    <div className="pm-material-factor-info">
+      <p>{family === 'concrete' ? guidance.designCurve : guidance.summary}</p>
+      <p className="pm-material-factor-equation">
+        {expression.designSymbol} = {expression.characteristicSymbol}
+        {expression.components.map((component) => (
+          <span key={component.id}>
+            {' '}{component.operation === 'multiply' ? '×' : '÷'} {component.symbol}
+          </span>
+        ))}
+        {' '}= {resolveMaterialFactorExpression(expression).toFixed(5)} {expression.characteristicSymbol}
+      </p>
+      <ul>
+        {expression.components.map((component) => (
+          <li key={component.id}>
+            <strong>{component.symbol} = {component.value}</strong>
+            <span>{component.label}</span>
+            <small>{component.clauseRef}</small>
+          </li>
+        ))}
+      </ul>
+      <p className="pm-material-factor-warning">{guidance.doNotCombine}</p>
+      <div className="pm-material-factor-references">
+        {guidance.references.map((reference) => reference.url ? (
+          <a
+            key={`${reference.document}-${reference.clause}`}
+            href={reference.url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {reference.document}, §{reference.clause} <ExternalLink size={12} aria-hidden="true" />
+          </a>
+        ) : null)}
+      </div>
+    </div>
+  )
+}
+
 function UserCurveEditor({
   points,
   onChange
@@ -276,6 +328,8 @@ export function MaterialPanel({
   const isCustomProfile = profile.materialStandard === 'CUSTOM'
   const concreteSupportIssue = isBlockMechanics ? null : concreteModelSupportIssue(store.concrete)
   const [activePage, setActivePage] = useState<MaterialPage>('concrete')
+  const [showConcreteFactorInfo, setShowConcreteFactorInfo] = useState(false)
+  const [showSteelFactorInfo, setShowSteelFactorInfo] = useState(false)
   const activeSteel = store.steel.find((material) => material.id === store.defaults.steelMaterialId) ?? store.steel[0]
   const kdsBlockResolution = useMemo(() => {
     if (calculationProfileId !== 'kds-142020-equivalent-block') return { parameters: null, error: '' }
@@ -287,17 +341,17 @@ export function MaterialPanel({
   }, [calculationProfileId, store.concrete.fck])
   const kdsBlockParameters = kdsBlockResolution.parameters
 
-  const updateDesignMaterialFactor = (key: 'alphaCc' | 'gammaC' | 'gammaS', value: number) => {
+  const updateDesignMaterialFactor = (key: MaterialFactorComponent['id'], value: number) => {
     if (designBasis.format !== 'designMaterialReevaluation') return
-    const next: DesignBasis = structuredClone(designBasis)
-    if (next.format !== 'designMaterialReevaluation') return
-    const [minimum, maximum] = key === 'alphaCc' ? [0.1, 1.5] : [1, 3]
-    next.factors[key] = Math.min(maximum, Math.max(minimum, value))
+    const [minimum, maximum] = key.startsWith('gamma') ? [1, 3] : [0.1, 1.5]
+    const next = setMaterialFactorComponentValue(
+      designBasis,
+      key,
+      Math.min(maximum, Math.max(minimum, value))
+    )
     next.modified = true
     next.verificationStatus = 'draft'
     onDesignBasisChange(next)
-    /** Material factor fields are a derived runtime snapshot; DesignBasis remains the canonical owner. */
-    onChange(buildResistanceMaterialSets(store, next).designMaterials)
   }
 
   const selectConcreteModel = (modelId: ConcreteModelId) => {
@@ -401,6 +455,24 @@ export function MaterialPanel({
             </select>
           </label>
         </div>
+        {profile.code === 'KDS' && (
+          <label className="pm-field pm-material-field-full">
+            <span>Resistance method</span>
+            <select
+              value={designBasis.profileId === 'kds-142020-2022-appendix-material-factors'
+                ? designBasis.profileId
+                : 'kds-2024-current-set'}
+              onChange={(event) => onDesignBasisChange(
+                event.target.value === 'kds-142020-2022-appendix-material-factors'
+                  ? createKdsAppendixDesignBasis()
+                  : createKdsBasicDesignBasis()
+              )}
+            >
+              <option value="kds-2024-current-set">KDS Main — global φ and maximum axial limit</option>
+              <option value="kds-142020-2022-appendix-material-factors">KDS 14 20 20:2022 Appendix — material coefficients</option>
+            </select>
+          </label>
+        )}
         <p className="pm-field-note">{profile.standard}</p>
         {profile.implementationStatus === 'preview' && (
           <p className="pm-material-blocked" role="status">
@@ -779,47 +851,50 @@ export function MaterialPanel({
 
               {designBasis.format === 'designMaterialReevaluation' && (
                 <>
+                  <div className="pm-material-factor-heading">
+                    <div>
+                      <strong>Concrete design-strength factors</strong>
+                      <small>{designBasis.identity.document}</small>
+                    </div>
+                    <button
+                      type="button"
+                      className="pm-material-info-button"
+                      aria-expanded={showConcreteFactorInfo}
+                      onClick={() => setShowConcreteFactorInfo((current) => !current)}
+                    >
+                      <Info size={14} aria-hidden="true" />
+                      Details
+                      <ChevronDown size={13} aria-hidden="true" className={showConcreteFactorInfo ? 'is-open' : ''} />
+                    </button>
+                  </div>
                   <div className="pm-material-row-3">
+                    {designBasis.factors.concrete.components.map((component) => (
+                      <label className="pm-field" key={component.id}>
+                        <span>{component.symbol}</span>
+                        <input
+                          type="number"
+                          step={component.id.startsWith('gamma') ? '0.05' : '0.01'}
+                          min={component.id.startsWith('gamma') ? 1 : 0.1}
+                          value={component.value}
+                          onChange={(event) => updateDesignMaterialFactor(
+                            component.id,
+                            numberValue(event.target.value, component.value)
+                          )}
+                        />
+                      </label>
+                    ))}
                     <label className="pm-field">
-                      <span>αcc</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min={0.1}
-                        value={designBasis.factors.alphaCc}
-                        onChange={(event) => updateDesignMaterialFactor(
-                          'alphaCc',
-                          numberValue(event.target.value, designBasis.factors.alphaCc)
-                        )}
-                      />
-                    </label>
-                    <label className="pm-field">
-                      <span>γc</span>
-                      <input
-                        type="number"
-                        step="0.05"
-                        min={1}
-                        value={designBasis.factors.gammaC}
-                        onChange={(event) => updateDesignMaterialFactor(
-                          'gammaC',
-                          numberValue(event.target.value, designBasis.factors.gammaC)
-                        )}
-                      />
-                    </label>
-                    <label className="pm-field">
-                      <span>fcd</span>
+                      <span>{designBasis.factors.concrete.designSymbol}</span>
                       <input
                         type="number"
                         readOnly
                         value={Number(
-                          (
-                            (designBasis.factors.alphaCc * store.concrete.fck) /
-                            designBasis.factors.gammaC
-                          ).toFixed(3)
+                          (resolveMaterialFactorExpression(designBasis.factors.concrete) * store.concrete.fck).toFixed(3)
                         )}
                       />
                     </label>
                   </div>
+                  {showConcreteFactorInfo && <FactorInformation basis={designBasis} family="concrete" />}
                   {designBasisRequiresOverrideReason(designBasis) && (
                     <label className="pm-field">
                       <span>Reason for partial-factor modification</span>
@@ -1035,29 +1110,52 @@ export function MaterialPanel({
                 </div>
 
                 {designBasis.format === 'designMaterialReevaluation' && (
-                  <div className="pm-material-row-2">
-                    <label className="pm-field">
-                      <span>γs</span>
-                      <input
-                        type="number"
-                        step="0.05"
-                        min={1}
-                        value={designBasis.factors.gammaS}
-                        onChange={(event) => updateDesignMaterialFactor(
-                          'gammaS',
-                          numberValue(event.target.value, designBasis.factors.gammaS)
-                        )}
-                      />
-                    </label>
-                    <label className="pm-field">
-                      <span>fyd</span>
-                      <input
-                        type="number"
-                        readOnly
-                        value={Number((activeSteel.fy / designBasis.factors.gammaS).toFixed(3))}
-                      />
-                    </label>
-                  </div>
+                  <>
+                    <div className="pm-material-factor-heading">
+                      <div>
+                        <strong>Steel design-strength factors</strong>
+                        <small>{designBasis.identity.document}</small>
+                      </div>
+                      <button
+                        type="button"
+                        className="pm-material-info-button"
+                        aria-expanded={showSteelFactorInfo}
+                        onClick={() => setShowSteelFactorInfo((current) => !current)}
+                      >
+                        <Info size={14} aria-hidden="true" />
+                        Details
+                        <ChevronDown size={13} aria-hidden="true" className={showSteelFactorInfo ? 'is-open' : ''} />
+                      </button>
+                    </div>
+                    <div className="pm-material-row-2">
+                      {designBasis.factors.reinforcement.components.map((component) => (
+                        <label className="pm-field" key={component.id}>
+                          <span>{component.symbol}</span>
+                          <input
+                            type="number"
+                            step={component.id.startsWith('gamma') ? '0.05' : '0.01'}
+                            min={component.id.startsWith('gamma') ? 1 : 0.1}
+                            value={component.value}
+                            onChange={(event) => updateDesignMaterialFactor(
+                              component.id,
+                              numberValue(event.target.value, component.value)
+                            )}
+                          />
+                        </label>
+                      ))}
+                      <label className="pm-field">
+                        <span>{designBasis.factors.reinforcement.designSymbol}</span>
+                        <input
+                          type="number"
+                          readOnly
+                          value={Number((
+                            activeSteel.fy * resolveMaterialFactorExpression(designBasis.factors.reinforcement)
+                          ).toFixed(3))}
+                        />
+                      </label>
+                    </div>
+                    {showSteelFactorInfo && <FactorInformation basis={designBasis} family="reinforcement" />}
+                  </>
                 )}
 
                 {activeSteel.stressStrain.type === 'user-curve' && (

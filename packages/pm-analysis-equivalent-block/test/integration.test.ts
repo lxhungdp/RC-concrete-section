@@ -2,10 +2,15 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import test from 'node:test'
-import { sliceMomentPlane } from '@pm/analysis'
-import { solveProportionalRayCapacity, type CapacityEvaluator } from '@pm/equivalent-block'
+import { checkLoadcaseUtilizationFromSurface, sliceMomentPlane } from '@pm/analysis'
+import {
+  solveProportionalRayCapacity,
+  type CapacityEvaluator,
+  type NominalBlockEvaluation
+} from '@pm/equivalent-block'
 import { geometryInputRebars, sectionGeometryFromGeometryInput, type GeometryInput } from '@pm/geometry'
 import { createDefaultMaterialStore } from '@pm/materials'
+import { createKdsAppendixDesignBasis } from '@pm/design'
 import {
   applyCalculationProfileToMaterials,
   createAnalysisOptionsForProfile,
@@ -317,6 +322,144 @@ test('a prepared design surface is reused across inverse load combinations', () 
   assert.ok(inverses.every((inverse) => inverse.utilization !== null))
   assert.equal(builds, 1, 'the batch API must build one loadcase-independent surface')
 })
+
+test('KDS Appendix block route reevaluates materials, uses eps_c0, omits phi/cap, and enforces e_min', () => {
+  const profileId = 'kds-142020-equivalent-block' as const
+  const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
+  const design = createKdsAppendixDesignBasis()
+  const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
+  options.directions.seedCount = 12
+  options.directions.refinement = { type: 'fixed' }
+  options.neutralAxisStations.refinement = { type: 'fixed' }
+  const prepared = prepareBlockAnalysis(
+    profileId,
+    sectionGeometryFromGeometryInput(geometry),
+    geometryInputRebars(geometry),
+    materials,
+    design
+  )
+
+  assert.ok(Math.abs(
+    prepared.designModel.blockLaw.compressionStress /
+    prepared.referenceModel.blockLaw.compressionStress - 0.65
+  ) < 1e-12)
+  const referenceSteel = prepared.referenceModel.steelLaws['1']!
+  const designSteel = prepared.designModel.steelLaws['1']!
+  assert.equal(designSteel.stressAt(0.0005), referenceSteel.stressAt(0.0005), 'Es remains unchanged')
+  assert.ok(Math.abs(designSteel.stressAt(0.01) / referenceSteel.stressAt(0.01) - 0.90) < 1e-12)
+  assert.equal(
+    prepared.designModel.blockLaw.compressionPivotStrain,
+    materials.concrete.limits.eps0
+  )
+  assert.equal(prepared.designModel.blockLaw.extremeCompressionStrain, materials.concrete.limits.epsCu)
+
+  const designSurface = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options, designSurface)
+  assert.equal(designSurface.topology.closed, true)
+  const allCompressionState = designSurface.points.find((point) =>
+    point.state && point.state.neutralAxisDepth > 1.1 * 700
+  )?.state
+  assert.ok(allCompressionState)
+  const allCompressionEvaluation = prepared.designModel
+    .bindNominalEvaluator(prepared.section)(allCompressionState).source as NominalBlockEvaluation
+  assert.ok(allCompressionEvaluation.diagnostics.extremeCompressionStrain > materials.concrete.limits.eps0!)
+  assert.ok(allCompressionEvaluation.diagnostics.extremeCompressionStrain < materials.concrete.limits.epsCu)
+  assert.ok(surface.points.every((point) => point.surfaceRole !== 'axial-cap'))
+  assert.ok(surface.points.every((point) => point.resistance?.factor == null))
+  assert.ok(surface.nominalPoints.length > 0, 'the characteristic reference surface remains available')
+
+  const compression = surface.points.reduce((maximum, point) => point.P > maximum.P ? point : maximum)
+  const solved = solveEquivalentBlockDemandFromPrepared(prepared, options, {
+    id: 81,
+    name: 'Appendix minimum eccentricity',
+    actionBasis: 'factoredULS',
+    P: 0.25 * compression.P,
+    Mx: 0,
+    My: 0
+  }, designSurface)
+  assert.ok(solved.codeAdjustedDemand)
+  assert.ok(
+    solved.minimumEccentricityMm === 15 + 0.03 * 500 ||
+    solved.minimumEccentricityMm === 15 + 0.03 * 700,
+    'zero-moment demand checks both principal projected depths and retains the governing direction'
+  )
+  assert.ok(Math.hypot(solved.codeAdjustedDemand!.Mx, solved.codeAdjustedDemand!.My) > 0)
+
+  const check = checkLoadcaseUtilizationFromSurface(surface, {
+    id: 81,
+    name: 'Appendix minimum eccentricity',
+    actionBasis: 'factoredULS',
+    P: 0.25 * compression.P,
+    Mx: 0,
+    My: 0
+  })
+  assert.equal(
+    check.minimumEccentricityMm,
+    solved.minimumEccentricityMm,
+    'the loadcase table and the inverse must resolve the same governing principal axis'
+  )
+  assert.deepEqual(check.codeAdjustedDemand, solved.codeAdjustedDemand)
+})
+
+/**
+ * KDS Appendix 3.2(1) equations (3-2) and (3-3) carry no eta, so the concentric design axial
+ * strength is model independent. Below fck = 40 MPa eta is 1.00 and the defect this covers is
+ * invisible, which is why the fixture runs at fck = 60 MPa where Table 4.1-2 gives eta = 0.95.
+ */
+for (const [fck, fy, equation] of [[30, 400, '(3-2)'], [60, 400, '(3-2)'], [60, 600, '(3-3)']] as const) {
+  test(`KDS Appendix block route reports clause ${equation} design axial strength at fck ${fck} / fy ${fy}`, () => {
+    const profileId = 'kds-142020-equivalent-block' as const
+    const store = createDefaultMaterialStore()
+    const materials = applyCalculationProfileToMaterials({
+      ...store,
+      concrete: { ...store.concrete, fck },
+      steel: store.steel.map((steel) => ({
+        ...steel,
+        fy,
+        limits: { ...steel.limits, epsY: fy / steel.elasticModulus }
+      }))
+    }, profileId)
+    const design = createKdsAppendixDesignBasis()
+    const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
+    options.directions.seedCount = 12
+    options.directions.refinement = { type: 'fixed' }
+    options.neutralAxisStations.refinement = { type: 'fixed' }
+    const prepared = prepareBlockAnalysis(
+      profileId,
+      sectionGeometryFromGeometryInput(geometry),
+      geometryInputRebars(geometry),
+      materials,
+      design
+    )
+
+    const Ag = 500 * 700
+    const Ast = geometryInputRebars(geometry).reduce(
+      (sum, bar) => sum + (Math.PI / 4) * bar.dia * bar.dia,
+      0
+    )
+    const steel = materials.steel[0]!
+    const eps0 = materials.concrete.limits.eps0!
+    const designYieldStrain = (0.9 * steel.fy) / steel.elasticModulus
+    assert.equal(designYieldStrain <= eps0 ? '(3-2)' : '(3-3)', equation, 'clause branch under test')
+    const steelStress = designYieldStrain <= eps0 ? 0.9 * steel.fy : eps0 * steel.elasticModulus
+    const Pdo = 0.65 * 0.85 * fck * (Ag - Ast) + steelStress * Ast
+
+    const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+    const compression = Math.max(...surface.points.map((point) => point.P))
+    assert.ok(
+      Math.abs(compression / Pdo - 1) < 1e-9,
+      `Appendix ${equation} expects ${Pdo} N, the block surface reported ${compression} N`
+    )
+
+    const etaDisclosure = surface.warnings.some((warning) => warning.includes('carry no eta'))
+    assert.equal(
+      etaDisclosure,
+      prepared.appendixPoleDivergesFromBlockLimit,
+      'the interpolated band above the block limit must be disclosed exactly when eta < 1'
+    )
+    assert.equal(etaDisclosure, fck > 40)
+  })
+}
 
 test('canonical My migration preserves the physical ray load factor and utilization', () => {
   const parsed = parseProjectDocument(readFileSync(

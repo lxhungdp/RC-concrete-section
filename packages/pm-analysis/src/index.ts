@@ -23,7 +23,10 @@ import {
   createDefaultDesignBasis,
   designBasisRequiresOverrideReason,
   evaluateGlobalStrengthReduction,
+  minimumEccentricityCandidates,
+  minimumEccentricityMessage,
   resolveTensionControlledStrainLimit,
+  type MinimumEccentricityCandidate,
   type DesignBasis,
   type GlobalStrengthReductionBasis,
   type ResistanceClassification
@@ -49,6 +52,7 @@ export type AnalysisErrorCode =
   | 'MESH_RESOURCE_LIMIT'
   | 'INVALID_ANALYSIS_OPTIONS'
   | 'MESH_NOT_VERIFIED'
+  | 'INVALID_MATERIAL'
 
 export class AnalysisInputError extends Error {
   readonly code: AnalysisErrorCode
@@ -207,6 +211,8 @@ export type PreviewSurface = {
     label: string
     kind: 'code-endpoint'
   }>
+  /** Outer-boundary vertices used by code demand rules such as KDS Appendix e_min. */
+  sectionBoundaryPoints?: Array<{ x: number; y: number }>
   bounds: {
     P: [number, number]
     Mx: [number, number]
@@ -294,6 +300,9 @@ export type InversePreviewResult = {
   admissibility: StrainAdmissibility
   loadcaseId: number
   demand: LoadCombination
+  /** Demand after a code-prescribed minimum-eccentricity rule, when applicable. */
+  codeAdjustedDemand?: LoadCombination
+  minimumEccentricityMm?: number
   state: StrainState
   response: Resultant
   residual: Resultant
@@ -312,6 +321,9 @@ export type InversePreviewResult = {
 export type LoadcaseQuickCheckResult = {
   loadcaseId: number
   demand: LoadCombination
+  /** Demand after a code-prescribed minimum-eccentricity rule, when applicable. */
+  codeAdjustedDemand?: LoadCombination
+  minimumEccentricityMm?: number
   utilization: number | null
   proportionalUtilization: number | null
   fixedPUtilization: number | null
@@ -937,7 +949,10 @@ const stationSteelControl = (
   return {
     steel,
     definition,
-    fyd: definition.fy / (definition.factors?.gammaS ?? 1),
+    fyd:
+      definition.fy /
+      (definition.factors?.gammaS ?? 1) *
+      (definition.factors?.resistanceScale ?? 1),
     yieldStress: definition.fy,
     epsY: steel.limits.epsYield ?? DEFAULT_STATION_STEEL_LIMITS.epsY,
     epsU: steel.limits.epsTensionUltimate ?? null
@@ -1021,12 +1036,13 @@ const previewStationStateFromExtents = (
   beta: number,
   station: StationDefinition,
   epsCu: number,
+  pureCompressionStrain: number,
   control: StationSteelControl,
   designBasis: DesignBasis,
   globalPureTensionStrain: number,
   extents: ProjectedExtents
 ): StrainState => {
-  if (station.kind === 'pure-compression') return { e0: epsCu, kx: 0, ky: 0 }
+  if (station.kind === 'pure-compression') return { e0: pureCompressionStrain, kx: 0, ky: 0 }
   if (station.kind === 'pure-tension') return { e0: globalPureTensionStrain, kx: 0, ky: 0 }
 
   const compressionProjection = extents.max
@@ -1039,11 +1055,31 @@ const previewStationStateFromExtents = (
   const requestedStrain =
     station.kind === 'neutral-axis-ratio' ? 0 : farTensionSteelStrain(station, control, designBasis)
   const controlStrain = control.epsU === null ? requestedStrain : Math.max(requestedStrain, -control.epsU)
-  const curvature = (epsCu - controlStrain) / Math.max(1e-9, compressionProjection - controlProjection)
+  let compressionBoundaryStrain = epsCu
+  if (
+    station.kind === 'neutral-axis-ratio' &&
+    designBasis.format === 'designMaterialReevaluation' &&
+    designBasis.compressionEndpoint === 'peak-stress-strain'
+  ) {
+    const neutralAxisDepth = compressionProjection - controlProjection
+    const sectionDepth = extents.max - extents.min
+    if (neutralAxisDepth > sectionDepth) {
+      // KDS Appendix 3.1 distinguishes pure compression (eps_c0), flexure with the neutral
+      // axis inside the section (eps_cu), and the all-compression domain between them. The
+      // latter rotates about the standard compression pivot, producing a continuous strain
+      // boundary from uniform eps_c0 to eps_cu when the neutral axis reaches the far edge.
+      const pivotDepth = (1 - pureCompressionStrain / epsCu) * sectionDepth
+      compressionBoundaryStrain =
+        pureCompressionStrain * neutralAxisDepth /
+        Math.max(1e-9, neutralAxisDepth - pivotDepth)
+    }
+  }
+  const curvature = (compressionBoundaryStrain - controlStrain) /
+    Math.max(1e-9, compressionProjection - controlProjection)
   const c = Math.cos(beta)
   const s = Math.sin(beta)
   return {
-    e0: epsCu - curvature * compressionProjection,
+    e0: compressionBoundaryStrain - curvature * compressionProjection,
     kx: curvature * c,
     ky: curvature * s
   }
@@ -1091,6 +1127,7 @@ export const previewStationState = (
   return previewStationStateFromExtents(
     beta,
     definition,
+    epsCu,
     epsCu,
     control,
     createDefaultDesignBasis(),
@@ -1308,6 +1345,35 @@ export const evaluatePreviewState = (
 ): ResultantLedger => evaluatePreparedState(prepareAnalysis(section, rebars, materialStore, meshOptions, origin), state)
 
 /**
+ * Resolve the uniform strain that defines pure compression for the selected basis.
+ *
+ * KDS 14 20 20:2022 Appendix 3.1(2) reaches the ultimate state at `eps_c0`, not at `eps_cu`. A
+ * missing `eps_c0` is a fatal input, never a silent fall back to `eps_cu`: for reinforcement whose
+ * design yield strain exceeds `eps_c0` the two limits select different branches of Appendix
+ * equations (3-2) and (3-3) and overstate the steel term of the design axial strength.
+ */
+export const resolvePureCompressionStrain = (
+  materialStore: MaterialStore,
+  designBasis: DesignBasis
+): number => {
+  const epsCu = materialStore.concrete.limits.epsCu
+  if (
+    designBasis.format !== 'designMaterialReevaluation' ||
+    designBasis.compressionEndpoint !== 'peak-stress-strain'
+  ) {
+    return epsCu
+  }
+  const eps0 = materialStore.concrete.limits.eps0
+  if (!(typeof eps0 === 'number' && Number.isFinite(eps0) && eps0 > 0 && eps0 <= epsCu)) {
+    throw new AnalysisInputError(
+      'INVALID_MATERIAL',
+      `${designBasis.identity.document} evaluates pure compression at the peak-stress strain, so concrete material ${materialStore.concrete.id} requires a positive eps_c0 not greater than eps_cu.`
+    )
+  }
+  return eps0
+}
+
+/**
  * Build the configured strain-domain surface.
  *
  * Probe stations are persisted by stable ID. Production uses `probe: "all"`; the historical
@@ -1322,6 +1388,7 @@ export const buildPreviewSurfaceFromPrepared = (
   const { section, rebars, materialStore, origin, fibers, materials } = prepared
   const meshReport = prepared.mesh.report
   const epsCu = materialStore.concrete.limits.epsCu
+  const pureCompressionStrain = resolvePureCompressionStrain(materialStore, designBasis)
   const stations = analysisStations(analysisOptions)
   const seedBetas = analysisDirections(analysisOptions)
   const warnings: string[] = []
@@ -1395,6 +1462,7 @@ export const buildPreviewSurfaceFromPrepared = (
         beta,
         descriptor.definition,
         epsCu,
+        pureCompressionStrain,
         control,
         designBasis,
         globalPureTensionStrain,
@@ -1568,6 +1636,7 @@ export const buildPreviewSurfaceFromPrepared = (
       My: [Math.min(...My), Math.max(...My)]
     },
     mesh: meshReport,
+    sectionBoundaryPoints: sectionBoundaryPoints(section),
     stations,
     directions: sortedBetas(),
     analysisOptions: cloneAnalysisOptions(analysisOptions),
@@ -1858,10 +1927,21 @@ export const buildDesignPreviewSurfaceFromPrepared = (
           statePrepared.origin
         )
 
+  /**
+   * A design-material profile has two real material-event schedules (for example fyk/Es and
+   * fyd/Es). Build the displayed Reference surface from its own schedule while retaining the
+   * point-wise reference evaluation at every Design state for the resistance audit trace.
+   */
+  const referenceBase = designBasis.format === 'designMaterialReevaluation'
+    ? buildPreviewSurfaceFromPrepared(referencePrepared, analysisOptions, designBasis)
+    : base
+
   const evaluated = base.points.map((point) =>
     designPointFromState(point, referencePrepared, designPrepared, designBasis)
   )
-  const nominalPoints = evaluated.map((item) => item.nominal)
+  const nominalPoints = designBasis.format === 'designMaterialReevaluation'
+    ? referenceBase.points
+    : evaluated.map((item) => item.nominal)
   const uncappedDesign = evaluated.map((item) => item.design)
   const points =
     designBasis.format === 'globalResultantFactor'
@@ -1884,6 +1964,9 @@ export const buildDesignPreviewSurfaceFromPrepared = (
     ...base,
     points,
     nominalPoints,
+    nominalTriangles: designBasis.format === 'designMaterialReevaluation'
+      ? referenceBase.triangles
+      : base.triangles,
     bounds: surfaceBounds(points),
     warnings,
     designBasis: cloneDesignBasis(designBasis)
@@ -2325,7 +2408,7 @@ export const intersectSurfaceWithDemandRay = (
   return best
 }
 
-export const checkLoadcaseUtilizationFromSurface = (
+const checkRawLoadcaseUtilizationFromSurface = (
   surface: PreviewSurface,
   loadcase: LoadCombination
 ): LoadcaseQuickCheckResult => {
@@ -2355,6 +2438,64 @@ export const checkLoadcaseUtilizationFromSurface = (
   }
 }
 
+export const projectedBoundaryDepth = (
+  points: ReadonlyArray<{ x: number; y: number }>,
+  nx: number,
+  ny: number
+) => {
+  let minimum = Number.POSITIVE_INFINITY
+  let maximum = Number.NEGATIVE_INFINITY
+  for (const point of points) {
+    const projection = nx * point.x + ny * point.y
+    minimum = Math.min(minimum, projection)
+    maximum = Math.max(maximum, projection)
+  }
+  return maximum - minimum
+}
+
+/**
+ * Outer-boundary vertices of every solid, structurally typed so the stress-strain `SectionGeometry`
+ * and the prepared equivalent-block section both feed one implementation.
+ */
+export const sectionBoundaryPoints = (
+  section: { solids: ReadonlyArray<{ outer: ReadonlyArray<{ x: number; y: number }> }> }
+): Array<{ x: number; y: number }> =>
+  section.solids.flatMap((solid) => solid.outer.map(({ x, y }) => ({ x, y })))
+
+/**
+ * KDS Appendix 3.2 makes minimum eccentricity a factored-demand rule. It is deliberately applied
+ * here, not as a horizontal capacity cap. The candidate demands come from `@pm/design` so the
+ * stress-strain and equivalent-block mechanics apply one identical rule.
+ */
+export const checkLoadcaseUtilizationFromSurface = (
+  surface: PreviewSurface,
+  loadcase: LoadCombination
+): LoadcaseQuickCheckResult => {
+  const boundary = surface.sectionBoundaryPoints ?? []
+  const candidates = boundary.length === 0
+    ? []
+    : minimumEccentricityCandidates(surface.designBasis, loadcase, (nx, ny) =>
+      projectedBoundaryDepth(boundary, nx, ny))
+  if (candidates.length === 0) return checkRawLoadcaseUtilizationFromSurface(surface, loadcase)
+
+  const checked = candidates.map((candidate) => {
+    const adjusted = { ...loadcase, Mx: candidate.Mx, My: candidate.My }
+    const result = checkRawLoadcaseUtilizationFromSurface(surface, adjusted)
+    return {
+      ...result,
+      demand: loadcase,
+      codeAdjustedDemand: adjusted,
+      minimumEccentricityMm: candidate.eccentricityMm,
+      message: `${result.message} ${minimumEccentricityMessage(candidate.eccentricityMm)}`
+    }
+  })
+  return checked.reduce((governing, candidate) =>
+    (candidate.utilization ?? Number.POSITIVE_INFINITY) > (governing.utilization ?? Number.POSITIVE_INFINITY)
+      ? candidate
+      : governing
+  )
+}
+
 export const checkLoadcasesUtilizationFromSurface = (
   surface: PreviewSurface,
   loadcases: LoadCombination[]
@@ -2381,7 +2522,7 @@ export const applyDesignCheckToInverse = (
   resistance: check.resistance
 })
 
-export const solveInversePreviewFromPrepared = (
+const solveRawInversePreviewFromPrepared = (
   prepared: PreparedAnalysis,
   loadcase: LoadCombination,
   contour: PreviewContourPoint[]
@@ -2484,15 +2625,64 @@ export const solveInversePreviewFromPrepared = (
   }
 }
 
+/**
+ * The minimum-eccentricity demand a design check resolved, or `null` when the clause did not bite.
+ *
+ * With no applied moment the clause offers one candidate per principal axis and the governing one
+ * has to be chosen by utilization. That choice belongs to the design-surface check, whose
+ * proportional ray is the governing number; the inverse's own fixed-P ratio is diagnostic only
+ * (`docs/11` §13) and selecting with it made the two mechanics report different principal axes.
+ */
+export const codeAdjustedDemandOfCheck = (
+  check: LoadcaseQuickCheckResult
+): MinimumEccentricityCandidate | null =>
+  check.codeAdjustedDemand !== undefined && check.minimumEccentricityMm !== undefined
+    ? {
+      Mx: check.codeAdjustedDemand.Mx,
+      My: check.codeAdjustedDemand.My,
+      eccentricityMm: check.minimumEccentricityMm
+    }
+    : null
+
+/**
+ * Solve section equilibrium for one demand.
+ *
+ * Pass `codeDemand` from `codeAdjustedDemandOfCheck` so the reported equilibrium state belongs to
+ * the demand that was actually checked. Omitting it solves the raw demand.
+ */
+export const solveInversePreviewFromPrepared = (
+  prepared: PreparedAnalysis,
+  loadcase: LoadCombination,
+  contour: PreviewContourPoint[],
+  codeDemand?: MinimumEccentricityCandidate | null
+): InversePreviewResult => {
+  if (!codeDemand) return solveRawInversePreviewFromPrepared(prepared, loadcase, contour)
+  const adjusted = { ...loadcase, Mx: codeDemand.Mx, My: codeDemand.My }
+  const result = solveRawInversePreviewFromPrepared(prepared, adjusted, contour)
+  return {
+    ...result,
+    demand: loadcase,
+    codeAdjustedDemand: adjusted,
+    minimumEccentricityMm: codeDemand.eccentricityMm,
+    message: `${result.message} ${minimumEccentricityMessage(codeDemand.eccentricityMm)}`
+  }
+}
+
 export const solveInversePreview = (
   section: SectionGeometry,
   rebars: GeometryInputRebarView[],
   materialStore: MaterialStore,
   loadcase: LoadCombination,
   contour: PreviewContourPoint[],
-  meshOptions: ConcreteMeshOptions = {}
+  meshOptions: ConcreteMeshOptions = {},
+  codeDemand?: MinimumEccentricityCandidate | null
 ): InversePreviewResult =>
-  solveInversePreviewFromPrepared(prepareAnalysis(section, rebars, materialStore, meshOptions), loadcase, contour)
+  solveInversePreviewFromPrepared(
+    prepareAnalysis(section, rebars, materialStore, meshOptions),
+    loadcase,
+    contour,
+    codeDemand
+  )
 
 export type SectionFieldSample = {
   x: number

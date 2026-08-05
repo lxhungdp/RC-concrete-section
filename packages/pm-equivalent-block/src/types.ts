@@ -55,6 +55,12 @@ export type EquivalentBlockLaw = {
   compressionStress: number
   depthFactor: number
   extremeCompressionStrain: number
+  /**
+   * Optional all-compression strain-domain pivot. When declared, a neutral axis outside the
+   * section transitions continuously from uniform compression at this strain to the extreme
+   * compression strain as the neutral axis reaches the far edge.
+   */
+  compressionPivotStrain?: number
   subtractDisplacedConcrete: boolean
 }
 
@@ -120,6 +126,7 @@ export type BarBlockEvaluation = {
 
 export type BlockEvaluationDiagnostics = {
   projectedSectionDepth: number
+  extremeCompressionStrain: number
   compressionEdgeProjection: number
   neutralAxisProjection: number
   blockBoundaryProjection: number

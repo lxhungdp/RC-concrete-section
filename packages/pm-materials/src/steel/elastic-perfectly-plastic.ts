@@ -1,7 +1,10 @@
 import type { CompiledMaterial, SteelMaterial } from '../types'
 import { clamp } from '../math'
 
-const designFy = (material: SteelMaterial) => material.fy / (material.factors?.gammaS ?? 1)
+const designFy = (material: SteelMaterial) =>
+  material.fy /
+  (material.factors?.gammaS ?? 1) *
+  (material.factors?.resistanceScale ?? 1)
 
 export const stressElasticPerfectlyPlasticSteel = (material: SteelMaterial, strain: number) =>
   clamp(material.elasticModulus * strain, -designFy(material), designFy(material))

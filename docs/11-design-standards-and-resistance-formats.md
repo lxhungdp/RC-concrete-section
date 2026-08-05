@@ -257,6 +257,40 @@ the concrete, reinforcement, and prestressing stress-strain relations. Consequen
 - compute and store a characteristic/nominal reference evaluation for audit, then independently
   evaluate the Appendix design material laws at the same state.
 
+The implemented Appendix route also carries the method-specific analysis boundary instead of
+borrowing the Main-body cap:
+
+- Appendix 1.1 and 2.1–2.2 establish this as a separate design route and define the material
+  coefficients;
+- Appendix 3.1 distinguishes the strain domains: pure compression reaches `epsilon_c0`; a neutral
+  axis inside the section uses the flexural limit `epsilon_cu`; and the all-compression domain
+  between them follows the compatible compression pivot. The implementation retains all three;
+- Appendix 3.2(1) equations (3-2) and (3-3) prescribe the design axial strength `P_do` directly.
+  That clause carries no `eta`, so it is **model independent**: the stress-strain integration and
+  the equivalent block must both close the design surface on it. Closing the block surface on its
+  own `eta`-reduced concentric limit instead is a defect — it is invisible below `fck = 40 MPa`
+  where `eta = 1.00`, and understates `P_do` by `1 - eta` above it. Where `eta < 1` the last surface
+  band between the block's concentric limit and `P_do` is an interpolation the block law does not
+  itself evaluate, and the analysis result must disclose that in its warnings;
+- Appendix 3.2(2) equations (3-4) and (3-5) prescribe the minimum eccentricity
+  `e_min = 15 + 0.03h` mm. It modifies the checked demand moment; it is not a horizontal
+  `0.80P0`/`0.85P0` surface cap. With no applied moment the clause offers one candidate per
+  principal axis, and the governing one is selected by the design-surface proportional utilization —
+  never by the inverse solver's fixed-P ratio, which `13` records as diagnostic only. The two
+  mechanics may still select different principal axes when the candidates are near-tied, because
+  each retains the worse candidate on its own resistance surface;
+- the Main-body state-dependent `phi = 0.65...0.85` and maximum axial-compression cap are therefore
+  inactive. Applying either after the Appendix material factors is a prohibited double reduction.
+
+Because Appendix 3.1(2) evaluates pure compression at `epsilon_c0`, a concrete definition without
+`epsilon_c0` is a typed fatal error under this route, never a fall back to `epsilon_cu`. The two
+limits select different branches of equations (3-2) and (3-3) whenever the design yield strain
+`phi_s f_y / E_s` exceeds `epsilon_c0`, so the fall back would overstate the steel term.
+
+The calculation mechanics remains an independent selection. Both the stress-strain integration
+and the KDS equivalent-block adapter can use this Appendix resistance route; choosing the route does
+not silently switch the concrete model.
+
 The UI label shall be `KDS 14 20 20:2022 — Appendix material-factor method`, not merely `KDS`.
 
 ## 7. Other standard families
@@ -401,6 +435,10 @@ The repository implements two independent mechanics and the common resistance fo
 - stress-strain integration for the KDS current profile;
 - exact equivalent rectangular blocks for KDS 14 20 20 and ACI 318-19(22);
 - `globalResultantFactor` for those KDS and ACI calculation profiles;
+- the selectable KDS 14 20 20:2022 Appendix `designMaterialReevaluation` route for both KDS
+  mechanics. It solves characteristic and reduced-material surfaces independently, uses
+  `0.65fck`, `0.90fyk`, the Appendix 3.1 compression-domain limits, and the minimum-
+  eccentricity demand rule without an additional global `phi` or axial cap;
 - a selectable `designMaterialReevaluation` preview profile exists for EN 1992-1-1:2004; it has no
   National Annex and retains an explicit warning that the tension-controlled boundary still uses
   the concrete-pivot domain rather than a complete EC2 strain domain;
@@ -408,11 +446,16 @@ The repository implements two independent mechanics and the common resistance fo
   `epsCu = 0.003` and action/state-dependent capacity factors. It is not verified or releasable; the
   general-prismatic shape assumption and omitted member-level checks are disclosed in UI/reports/docs.
 
-Canonical project schema-v1 exports persist the complete basis and loadcases are explicitly
+Canonical project schema-v1 exports persist DesignBasis version 2 inside project schema v1 and
+loadcases are explicitly
 factored ULS actions. The parser's remaining omitted-field defaults are listed as pre-release debt
 in `development/02` and `development/06`.
 The result DTO contains both `nominalPoints` and governing design `points`. Analysis Options owns
-the model-specific sampling controls, factors, transverse-reinforcement class, and optional axial cap.
+the model-specific sampling controls and the applied resistance basis. Materials presents the KDS
+resistance-route selection independently from the concrete model; factor equations and exact
+clause/source links remain collapsed until the user requests details. Global-factor profiles expose
+transverse-reinforcement class and their code axial cap; design-material profiles expose factor
+components, strain endpoint, and minimum-eccentricity rule instead.
 The single calculation-profile selection itself lives in Materials and updates these defaults atomically.
 Results does not edit that basis. The 3D plot uses a light Nominal/Design radio selector and renders
 only one surface at a time. The two-dimensional plots may show both curves; when both are visible,

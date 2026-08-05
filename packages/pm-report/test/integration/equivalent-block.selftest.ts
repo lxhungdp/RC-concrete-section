@@ -32,6 +32,7 @@ import {
   prepareBlockAnalysis
 } from '@pm/analysis-equivalent-block'
 import type { NominalBlockEvaluation } from '@pm/equivalent-block'
+import { createKdsAppendixDesignBasis } from '@pm/design'
 import { buildEquivalentBlockWorkbook, equivalentBlockWorkbookFileName } from '../../src/excel/equivalent-block'
 
 const OUT_DIR = resolve(process.cwd(), 'docs/examples/reference-case/generated')
@@ -47,12 +48,14 @@ const CASES = [
     file: 'docs/examples/reference-case/projects/PM-advanced (7) 2D.pm-project.json',
     rebindTo: 'kds-142020-equivalent-block' as const,
     thetaDeg: 15,
-    archive: true
+    archive: true,
+    appendix: false
   },
-  { file: 'docs/examples/equivalent-block/ACI-EB-01-rectangle-8-bars.pm-project.json', rebindTo: null, thetaDeg: 0, archive: false },
-  { file: 'docs/examples/equivalent-block/ACI-EB-01-rectangle-8-bars.pm-project.json', rebindTo: 'as-3600-2018-amd2-equivalent-block' as const, thetaDeg: 0, archive: false },
-  { file: 'docs/examples/equivalent-block/KDS-EB-02-hollow-8-bars.pm-project.json', rebindTo: null, thetaDeg: 30, archive: false },
-  { file: 'docs/examples/equivalent-block/ACI-EB-03-l-shape-8-bars.pm-project.json', rebindTo: null, thetaDeg: 45, archive: false }
+  { file: 'docs/examples/equivalent-block/KDS-EB-01-rectangle-8-bars.pm-project.json', rebindTo: null, thetaDeg: 0, archive: false, appendix: true },
+  { file: 'docs/examples/equivalent-block/ACI-EB-01-rectangle-8-bars.pm-project.json', rebindTo: null, thetaDeg: 0, archive: false, appendix: false },
+  { file: 'docs/examples/equivalent-block/ACI-EB-01-rectangle-8-bars.pm-project.json', rebindTo: 'as-3600-2018-amd2-equivalent-block' as const, thetaDeg: 0, archive: false, appendix: false },
+  { file: 'docs/examples/equivalent-block/KDS-EB-02-hollow-8-bars.pm-project.json', rebindTo: null, thetaDeg: 30, archive: false, appendix: false },
+  { file: 'docs/examples/equivalent-block/ACI-EB-03-l-shape-8-bars.pm-project.json', rebindTo: null, thetaDeg: 45, archive: false, appendix: false }
 ] as const
 
 const failures: string[] = []
@@ -98,7 +101,8 @@ const runCase = async (
   relativePath: string,
   thetaDeg: number,
   rebindTo: EquivalentBlockProfileId | null,
-  archive: boolean
+  archive: boolean,
+  appendix: boolean
 ) => {
   console.log(`\n================ ${relativePath} @ θ = ${thetaDeg}° ================`)
   const parsed = parseProjectDocument(readFileSync(resolve(process.cwd(), relativePath), 'utf8'))
@@ -112,7 +116,9 @@ const runCase = async (
   const materials = rebindTo
     ? applyCalculationProfileToMaterials(document.inputs.materials, rebindTo)
     : document.inputs.materials
-  const designBasis = rebindTo
+  const designBasis = appendix
+    ? createKdsAppendixDesignBasis()
+    : rebindTo
     ? createDesignBasisForCalculationProfile(rebindTo)
     : document.inputs.design
   const options = (rebindTo
@@ -120,6 +126,7 @@ const runCase = async (
     : document.inputs.analysis) as EquivalentBlockAnalysisOptions
   const loadcase = document.inputs.loadings.combinations[0]
   if (rebindTo) console.log(`      rebound from ${document.inputs.calculationProfileId} to ${rebindTo}`)
+  if (appendix) console.log('      KDS Appendix material-factor resistance route')
 
   console.log('== 1. Build the workbook ==')
   const started = Date.now()
@@ -329,7 +336,7 @@ const runCase = async (
 
 const run = async () => {
   for (const testCase of CASES) {
-    await runCase(testCase.file, testCase.thetaDeg, testCase.rebindTo, testCase.archive)
+    await runCase(testCase.file, testCase.thetaDeg, testCase.rebindTo, testCase.archive, testCase.appendix)
   }
   if (failures.length > 0) {
     console.error(`\n${failures.length} check(s) failed:`)

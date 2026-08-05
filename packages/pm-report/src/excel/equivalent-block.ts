@@ -30,9 +30,9 @@ import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore, SteelMaterial } from '@pm/materials'
 import {
   designBasisRequiresOverrideReason,
+  resolveMaterialFactorExpression,
   resolveTensionControlledStrainLimit,
-  type DesignBasis,
-  type GlobalStrengthReductionBasis
+  type DesignBasis
 } from '@pm/design'
 import {
   calculationProfile,
@@ -91,15 +91,6 @@ const TAU = 2 * Math.PI
 const wrap = (angle: number) => ((angle % TAU) + TAU) % TAU
 const deg = (radians: number) => (radians * 180) / Math.PI
 
-const assertBlockBasis = (basis: DesignBasis): GlobalStrengthReductionBasis => {
-  if (basis.format !== 'globalResultantFactor') {
-    throw new ExcelExportError(
-      'The equivalent-block workbook requires a global resultant strength-reduction basis; this project uses design-material reevaluation.'
-    )
-  }
-  return basis
-}
-
 /** Smallest signed difference between two directions on the circle. */
 const angularDistance = (a: number, b: number) => {
   const raw = wrap(a - b)
@@ -118,7 +109,8 @@ export const equivalentBlockWorkbookFileName = (
 export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelInput) => {
   const { section, rebars, materialStore } = input
   if (rebars.length === 0) throw new ExcelExportError('The section has no reinforcement to report.')
-  const basis = assertBlockBasis(input.designBasis)
+  const basis = input.designBasis
+  const usesDesignMaterials = basis.format === 'designMaterialReevaluation'
   const usesAs3600CapacityFactors = input.calculationProfileId === 'as-3600-2018-amd2-equivalent-block'
   const profile = calculationProfile(input.calculationProfileId)
 
@@ -151,14 +143,19 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   const barSteelId = [...usedSteelIds][0]
   const barSteel = materialStore.steel.find((item) => String(item.id) === barSteelId) ?? steel
   const sLaw = steelLaw(barSteel)
-  const fyModel = steelDesignFy(barSteel)
-  const epsY = barSteel.limits?.epsY ?? fyModel / barSteel.elasticModulus
+  const designSteelLaw = prepared.designModel.steelLaws[String(barSteelId)]
+  const fyModel = designSteelLaw?.yieldStrain !== undefined
+    ? designSteelLaw.yieldStrain * barSteel.elasticModulus
+    : steelDesignFy(barSteel)
+  const epsY = designSteelLaw?.yieldStrain ?? barSteel.limits?.epsY ?? fyModel / barSteel.elasticModulus
   const epsU = barSteel.limits?.epsU
 
   const designSurfaceCore = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, input.analysisOptions)
   const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, input.analysisOptions, designSurfaceCore)
-  const nominalEvaluator = prepared.model.bindNominalEvaluator(prepared.section)
-  const designEvaluator = prepared.model.bindDesignEvaluator(prepared.section)
+  // Under a design-material basis these are the design-material resultants and an identity design
+  // evaluator. The characteristic reference is the independently sampled `nominalPoints` surface.
+  const nominalEvaluator = prepared.designModel.bindNominalEvaluator(prepared.section)
+  const designEvaluator = prepared.designModel.bindDesignEvaluator(prepared.section)
 
   // ---- audited direction: snap to a direction the solver actually sampled -----------------
   const sampledDirections = [...new Set(designSurfaceCore.directions.map(wrap))].sort((a, b) => a - b)
@@ -271,6 +268,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     { row: row++, label: usesAs3600CapacityFactors ? "σblock = α₂·f'c" : 'σblock = α·fck', value: blockLaw.compressionStress, unit: 'MPa', name: 'sig_blk', formula: 'alpha*fck' },
     { row: row++, label: usesAs3600CapacityFactors ? 'γ' : 'β1', value: blockLaw.depthFactor, unit: '-', name: 'beta_1', note: usesAs3600CapacityFactors ? 'AS 3600 block depth a = γ·c' : 'block depth a = β1·c' },
     { row: row++, label: 'εcu', value: blockLaw.extremeCompressionStrain, unit: '-', name: 'ecu', note: 'extreme compression fibre strain' },
+    { row: row++, label: 'εc,pivot', value: blockLaw.compressionPivotStrain ?? 0, unit: '-', name: 'ec_pivot', note: blockLaw.compressionPivotStrain === undefined ? 'not active' : 'all-compression strain-domain pivot; pure compression reaches εc0 while an internal neutral axis reaches εcu' },
     { row: row++, label: 'displaced concrete deducted', value: blockLaw.subtractDisplacedConcrete ? 'yes' : 'no', unit: '', note: 'bars inside the block carry σs − σblock' }
   ]
   if (usesAs3600CapacityFactors) {
@@ -287,12 +285,24 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   sectionHeading(inputSheet, row, 'Reinforcement', 4)
   row += 1
   const appliesSteelGamma = barSteel.factors?.gammaS !== undefined
+  const steelResistanceScale = usesDesignMaterials
+    ? resolveMaterialFactorExpression(basis.factors.reinforcement)
+    : 1
+  const factorReferences = (expression: { components: ReadonlyArray<{ clauseRef: string }> }) =>
+    [...new Set(expression.components.map((component) => component.clauseRef))].join('; ')
   const steelInputs: NamedInput[] = [
     { row: row++, label: 'standard', value: barSteel.standard, unit: '', note: barSteel.name },
     { row: row++, label: 'Es', value: barSteel.elasticModulus, unit: 'MPa', name: 'Es' },
     { row: row++, label: 'fy (characteristic)', value: barSteel.fy, unit: 'MPa', name: 'fy_char' },
     { row: row++, label: 'γs', value: barSteel.factors?.gammaS ?? 1, unit: '-', name: 'gamma_s', note: appliesSteelGamma ? 'material partial factor' : 'not applied by this material family' },
-    { row: row++, label: 'fy (model)', value: fyModel, unit: 'MPa', name: 'fy', formula: appliesSteelGamma ? 'fy_char/gamma_s' : 'fy_char' },
+    ...(usesDesignMaterials ? [{
+      row: row++, label: 'reinforcement resistance multiplier', value: steelResistanceScale,
+      unit: '-', name: 'steel_res_scale', note: factorReferences(basis.factors.reinforcement)
+    }] : []),
+    {
+      row: row++, label: 'fy (model)', value: fyModel, unit: 'MPa', name: 'fy',
+      formula: usesDesignMaterials ? 'fy_char*steel_res_scale' : appliesSteelGamma ? 'fy_char/gamma_s' : 'fy_char'
+    },
     { row: row++, label: 'εy = fy/Es', value: epsY, unit: '-', name: 'epsy', formula: 'fy/Es' },
     { row: row++, label: 'εu (declared)', value: epsU ?? 'not declared', unit: '-', name: epsU === undefined ? undefined : 'epsu', note: epsU === undefined ? 'rupture is not enforced' : 'tensile rupture limit enforced by the solver' },
     { row: row++, label: 'law', value: sLaw.description, unit: '', note: '' }
@@ -301,21 +311,40 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   row += 1
   sectionHeading(inputSheet, row, 'Strength reduction and axial cap', 4)
   row += 1
-  const compressionPhi = basis.transverseReinforcement === 'qualifying-spiral'
-    ? basis.factors.phiCompressionSpiral
-    : basis.factors.phiCompressionOther
-  const capRatio = basis.transverseReinforcement === 'qualifying-spiral'
-    ? basis.factors.axialCapSpiral
-    : basis.factors.axialCapOther
-  const tensionLimit = resolveTensionControlledStrainLimit(basis, epsY, barSteel.fy)
-  const resistanceInputs: NamedInput[] = [
-    { row: row++, label: 'transverse reinforcement', value: basis.transverseReinforcement, unit: '', note: 'selects the compression-controlled φ and the cap ratio' },
-    { row: row++, label: 'φ compression (active)', value: compressionPhi, unit: '-', name: 'phi_c' },
-    { row: row++, label: 'φ tension', value: basis.factors.phiTension, unit: '-', name: 'phi_t' },
-    { row: row++, label: 'εt,limit', value: tensionLimit, unit: '-', name: 'ept_lim', note: basis.transition.type === 'yield-plus-strain' ? `εy + ${basis.transition.extraStrain}` : `fixed ${basis.transition.fixedStrainLimit} at or below fy = ${basis.transition.yieldStressThreshold} MPa, else ${basis.transition.highStrengthYieldMultiple}·εy` },
-    { row: row++, label: 'axial cap ratio', value: capRatio, unit: '-', name: 'cap_r' },
-    { row: row++, label: 'axial cap applied', value: basis.axialCapEnabled ? 'yes' : 'no', unit: '', note: 'clips the design surface at cap ratio × the factored compression pole' }
-  ]
+  const compressionPhi = basis.format === 'globalResultantFactor'
+    ? basis.transverseReinforcement === 'qualifying-spiral'
+      ? basis.factors.phiCompressionSpiral
+      : basis.factors.phiCompressionOther
+    : 1
+  const capRatio = basis.format === 'globalResultantFactor'
+    ? basis.transverseReinforcement === 'qualifying-spiral'
+      ? basis.factors.axialCapSpiral
+      : basis.factors.axialCapOther
+    : 1
+  const tensionLimit = basis.format === 'globalResultantFactor'
+    ? resolveTensionControlledStrainLimit(basis, epsY, barSteel.fy)
+    : epsY
+  const resistanceInputs: NamedInput[] = basis.format === 'globalResultantFactor'
+    ? [
+        { row: row++, label: 'resistance format', value: 'global resultant factor', unit: '', note: 'one φ scales the complete P-Mx-My resultant' },
+        { row: row++, label: 'transverse reinforcement', value: basis.transverseReinforcement, unit: '', note: 'selects the compression-controlled φ and the cap ratio' },
+        { row: row++, label: 'φ compression (active)', value: compressionPhi, unit: '-', name: 'phi_c' },
+        { row: row++, label: 'φ tension', value: basis.factors.phiTension, unit: '-', name: 'phi_t' },
+        { row: row++, label: 'εt,limit', value: tensionLimit, unit: '-', name: 'ept_lim', note: basis.transition.type === 'yield-plus-strain' ? `εy + ${basis.transition.extraStrain}` : `fixed ${basis.transition.fixedStrainLimit} at or below fy = ${basis.transition.yieldStressThreshold} MPa, else ${basis.transition.highStrengthYieldMultiple}·εy` },
+        { row: row++, label: 'axial cap ratio', value: capRatio, unit: '-', name: 'cap_r' },
+        { row: row++, label: 'axial cap applied', value: basis.axialCapEnabled ? 'yes' : 'no', unit: '', note: 'clips the design surface at cap ratio × the factored compression pole' }
+      ]
+    : [
+        { row: row++, label: 'resistance format', value: 'two-pass design-material reevaluation', unit: '', note: 'characteristic reference and reduced-material design surfaces are solved independently' },
+        { row: row++, label: 'concrete resistance multiplier', value: resolveMaterialFactorExpression(basis.factors.concrete), unit: '-', note: factorReferences(basis.factors.concrete) },
+        { row: row++, label: 'reinforcement resistance multiplier', value: steelResistanceScale, unit: '-', note: factorReferences(basis.factors.reinforcement) },
+        { row: row++, label: 'resultant φ', value: 1, unit: '-', name: 'phi_c', note: 'not applied; material strengths are already reduced' },
+        { row: row++, label: 'resultant φ (tension)', value: 1, unit: '-', name: 'phi_t', note: 'not applied' },
+        { row: row++, label: 'transition placeholder', value: tensionLimit, unit: '-', name: 'ept_lim', note: 'not used by the design-material route' },
+        { row: row++, label: 'axial cap ratio', value: 1, unit: '-', name: 'cap_r', note: 'not applied' },
+        { row: row++, label: 'compression strain boundary', value: basis.compressionEndpoint === 'peak-stress-strain' ? 'εc0' : 'εcu', unit: '', note: factorReferences(basis.factors.concrete) },
+        { row: row++, label: 'minimum eccentricity', value: basis.minimumEccentricity ? `${basis.minimumEccentricity.constantMm} + ${basis.minimumEccentricity.depthFactor}h mm` : 'not applied', unit: '', note: basis.minimumEccentricity?.clauseRef ?? '' }
+      ]
   if (usesAs3600CapacityFactors) {
     resistanceInputs.push({
       row: row++,
@@ -735,7 +764,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   ]
   title(steelSheet, 1, 'REINFORCEMENT LEDGER — EVERY BAR AT EVERY STATION', 13)
   noteCell(steelSheet, 2, 2,
-    'ε = εcu·(1 − depth/c) with depth measured from the compression edge along the block normal. A bar inside the block carries σs − σblock, because the block already counted the concrete it displaces.')
+    'ε = εc,max·(1 − depth/c), with depth measured from the compression edge. Normally εc,max = εcu. For the KDS Appendix all-compression domain, εc,max follows the εc0 compression pivot until the neutral axis reaches the far edge. A bar inside the block carries σs − σblock.')
   steelSheet.mergeCells('B2:P3')
   steelSheet.getRow(2).height = 28
   headerRow(steelSheet, 5, [
@@ -754,7 +783,9 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
       steelSheet.getCell(r, 4).value = { formula: `INDEX(Blk_c,MATCH(B${r},Blk_St,0))` }
       steelSheet.getCell(r, 5).value = { formula: `INDEX(Bar_U,MATCH(C${r},Bar_No,0))` }
       steelSheet.getCell(r, 6).value = { formula: `u_max-E${r}` }
-      steelSheet.getCell(r, 7).value = { formula: `ecu*(1-F${r}/D${r})` }
+      steelSheet.getCell(r, 7).value = {
+        formula: `IF(AND(ec_pivot>0,D${r}>d_theta),ec_pivot*D${r}/(D${r}-(1-ec_pivot/ecu)*d_theta),ecu)*(1-F${r}/D${r})`
+      }
       steelSheet.getCell(r, 8).value = { formula: `MAX(0,-G${r})` }
       steelSheet.getCell(r, 9).value = { formula: sLaw.scalar(`G${r}`) }
       steelSheet.getCell(r, 10).value = { formula: `IF(E${r}>=u_max-beta_1*D${r}-blk_tol,1,0)` }
@@ -786,8 +817,9 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     { width: 14 }, { width: 24 }
   ]
   title(pmSheet, 1, 'NOMINAL AND DESIGN RESULTANTS AT θ', 14)
-  noteCell(pmSheet, 2, 2,
-    'P = Cc + ΣFs. φ interpolates linearly between φc at εy and φt at εt,limit on the controlling (most tensile) bar — the same rule the adapter applies, written out. The engine columns are the solver\'s own design resultants; the Δ column is the reconciliation.')
+  noteCell(pmSheet, 2, 2, usesDesignMaterials
+    ? 'P = Cc + ΣFs using the reduced concrete and reinforcement strengths. Resultant φ = 1: no second resistance factor is applied. The characteristic reference surface is solved independently.'
+    : 'P = Cc + ΣFs. φ interpolates linearly between φc at εy and φt at εt,limit on the controlling (most tensile) bar — the same rule the adapter applies, written out. The engine columns are the solver\'s own design resultants; the Δ column is the reconciliation.')
   pmSheet.mergeCells('B2:Q4')
   pmSheet.getRow(2).height = 34
   headerRow(pmSheet, 6, [
@@ -809,10 +841,10 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     pmSheet.getCell(r, 7).value = { formula: `Block!K${blockRow}+SUM(Steel!N${range.first}:N${range.last})` }
     pmSheet.getCell(r, 8).value = { formula: `Block!L${blockRow}+SUM(Steel!O${range.first}:O${range.last})` }
     pmSheet.getCell(r, 9).value = { formula: `MAX(Steel!H${range.first}:H${range.last})` }
-    pmSheet.getCell(r, 10).value = usesAs3600CapacityFactors
+    pmSheet.getCell(r, 10).value = usesAs3600CapacityFactors || usesDesignMaterials
       ? station.phi
       : { formula: `IF(I${r}<=epsy,phi_c,IF(I${r}>=ept_lim,phi_t,phi_c+(phi_t-phi_c)*(I${r}-epsy)/(ept_lim-epsy)))` }
-    pmSheet.getCell(r, 11).value = usesAs3600CapacityFactors
+    pmSheet.getCell(r, 11).value = usesAs3600CapacityFactors || usesDesignMaterials
       ? station.classification
       : { formula: `IF(I${r}<=epsy,"compression",IF(I${r}>=ept_lim,"tension","transition"))` }
     pmSheet.getCell(r, 12).value = { formula: `J${r}*F${r}` }
@@ -1051,9 +1083,9 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     ['calculation profile', profile.label, ''],
     ['resistance profile', basis.identity.document, '', basis.identity.methodId],
     ['verification status', basis.verificationStatus, '', 'preview status only; not an engineering approval'],
-    ['resistance format', 'global resultant factor', '', 'one φ scales the complete P-Mx-My resultant'],
-    ['transverse reinforcement', basis.transverseReinforcement, ''],
-    ['axial cap', basis.axialCapEnabled ? `${capRatio} × factored compression pole` : 'not applied', ''],
+    ['resistance format', usesDesignMaterials ? 'two-pass design-material reevaluation' : 'global resultant factor', '', usesDesignMaterials ? 'material strengths are reduced before equilibrium; no resultant φ is added' : 'one φ scales the complete P-Mx-My resultant'],
+    ['transverse reinforcement', basis.format === 'globalResultantFactor' ? basis.transverseReinforcement : 'not used by this resistance route', ''],
+    ['axial cap', basis.format === 'globalResultantFactor' && basis.axialCapEnabled ? `${capRatio} × factored compression pole` : 'not applied', ''],
     ['demand basis', input.loadcase?.actionBasis ?? 'none selected', '', 'the governing check accepts factored ULS only']
   ]
   for (const [label, value, unit, note] of checkEntries) {

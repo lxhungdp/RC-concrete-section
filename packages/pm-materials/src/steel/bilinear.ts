@@ -1,6 +1,9 @@
 import type { CompiledMaterial, SteelMaterial } from '../types'
 
-const designFy = (material: SteelMaterial) => material.fy / (material.factors?.gammaS ?? 1)
+const designFy = (material: SteelMaterial) =>
+  material.fy /
+  (material.factors?.gammaS ?? 1) *
+  (material.factors?.resistanceScale ?? 1)
 
 type BilinearParams = {
   elasticModulus: number

@@ -33,6 +33,12 @@ export type ConcreteMaterial = {
   factors?: {
     alpha?: number
     gammaC?: number
+    /**
+     * Resistance-profile multiplier applied to the stress ordinate while the characteristic
+     * strength and strain-shape parameters remain unchanged. This is the runtime representation
+     * used by two-pass material-law reevaluation (for example KDS phi_c or EN alpha_cc/gamma_C).
+     */
+    resistanceScale?: number
   }
 }
 
@@ -95,6 +101,8 @@ export type SteelMaterial = {
   }
   factors?: {
     gammaS?: number
+    /** Design yield-strength multiplier; the elastic modulus is never scaled. */
+    resistanceScale?: number
   }
 }
 

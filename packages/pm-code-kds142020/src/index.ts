@@ -70,6 +70,13 @@ export type CreateKds142020ModelInput = {
     axialCapOther: number
     axialCapSpiral: number
   }
+  /** Strength ordinates only; KDS table parameters continue to be resolved from characteristic fck. */
+  materialStrengthMultipliers?: {
+    concrete: number
+    reinforcement: number
+  }
+  /** Appendix pure compression is evaluated at eps_c0 rather than a synthetic steel plateau. */
+  compressionEndpoint?: 'steel-plateau' | 'peak-stress-strain'
 }
 
 export type KdsResistanceClassification = 'compression-controlled' | 'transition' | 'tension-controlled'
@@ -239,6 +246,13 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
     fixedStrainLimit: 0.005,
     highStrengthYieldMultiple: 2.5
   }
+  const materialStrengthMultipliers = input.materialStrengthMultipliers ?? {
+    concrete: 1,
+    reinforcement: 1
+  }
+  if (Object.values(materialStrengthMultipliers).some((value) => !positiveFinite(value) || value > 1.5)) {
+    throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'KDS material-strength multipliers must be positive, finite, and no greater than 1.5.')
+  }
   if (Object.values(resistanceFactors).some((value) => !positiveFinite(value))) {
     throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'KDS resistance factors must be positive and finite.')
   }
@@ -257,16 +271,30 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
   const parameters = resolveKds142020BlockParameters(input.concreteStrength, input.blockParameterOverride)
   const steelLaws: SteelLawRegistry = Object.fromEntries(Object.entries(input.steel).map(([id, definition]) => [
     id,
-    createElasticPerfectlyPlasticSteelLaw(definition.elasticModulus, definition.yieldStress, definition.ultimateStrain)
+    createElasticPerfectlyPlasticSteelLaw(
+      definition.elasticModulus,
+      definition.yieldStress * materialStrengthMultipliers.reinforcement,
+      definition.ultimateStrain
+    )
   ]))
   const blockLaw: EquivalentBlockLaw = {
-    compressionStress: parameters.eta * 0.85 * input.concreteStrength,
+    compressionStress:
+      parameters.eta *
+      0.85 *
+      input.concreteStrength *
+      materialStrengthMultipliers.concrete,
     depthFactor: parameters.beta1,
     extremeCompressionStrain: parameters.extremeCompressionStrain,
+    ...(input.compressionEndpoint === 'peak-stress-strain'
+      ? { compressionPivotStrain: parameters.peakCompressionStrain }
+      : {}),
     subtractDisplacedConcrete: true
   }
   const barStrainEvents = Object.values(input.steel).flatMap((definition) => {
-    const yieldStrain = definition.yieldStress / definition.elasticModulus
+    const yieldStrain =
+      definition.yieldStress *
+      materialStrengthMultipliers.reinforcement /
+      definition.elasticModulus
     const tensionLimit = definition.yieldStress <= transitionLimitRule.yieldStressThreshold
       ? transitionLimitRule.fixedStrainLimit
       : transitionLimitRule.highStrengthYieldMultiple * yieldStrain
@@ -317,26 +345,43 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
   }
   const nominalEndpoints = (section: PreparedEquivalentBlockSection) => {
     const endpointStrain = uniformSteelEndpointStrain(section, steelLaws)
+    const compressionStrain = input.compressionEndpoint === 'peak-stress-strain'
+      ? parameters.peakCompressionStrain
+      : endpointStrain
     const tension = evaluateUniformSectionState(section, steelLaws, {
       concreteStress: 0,
       steelStrain: -endpointStrain,
       subtractDisplacedConcrete: false
     })
     const compression = evaluateUniformSectionState(section, steelLaws, {
-      concreteStress: 0.85 * input.concreteStrength,
-      steelStrain: endpointStrain,
+      concreteStress: 0.85 * input.concreteStrength * materialStrengthMultipliers.concrete,
+      steelStrain: compressionStrain,
       subtractDisplacedConcrete: true
     })
     return {
       tension: { resultants: tension.resultants, metadata: { state: 'pure-tension', standard: KDS_142020_PROVENANCE.methodId } } as CapacityEndpoint,
-      compression: { resultants: compression.resultants, metadata: { state: 'pure-compression-P0', standard: KDS_142020_PROVENANCE.methodId } } as CapacityEndpoint
+      compression: {
+        resultants: compression.resultants,
+        metadata: {
+          state: input.compressionEndpoint === 'peak-stress-strain'
+            ? 'appendix-design-axial-strength-Pdo'
+            : 'pure-compression-P0',
+          standard: KDS_142020_PROVENANCE.methodId,
+          clauseRef: input.compressionEndpoint === 'peak-stress-strain'
+            ? 'KDS 14 20 20:2022 Appendix, 3.2(1), equations (3-2) and (3-3)'
+            : 'KDS 14 20 20:2022, 4.1.2(7)'
+        }
+      } as CapacityEndpoint
     }
   }
   const physicalCompressionEndpoint = (section: PreparedEquivalentBlockSection): CapacityEndpoint => {
     const endpointStrain = uniformSteelEndpointStrain(section, steelLaws)
+    const compressionStrain = input.compressionEndpoint === 'peak-stress-strain'
+      ? parameters.peakCompressionStrain
+      : endpointStrain
     const compression = evaluateUniformSectionState(section, steelLaws, {
       concreteStress: blockLaw.compressionStress,
-      steelStrain: endpointStrain,
+      steelStrain: compressionStrain,
       subtractDisplacedConcrete: true
     })
     return {
@@ -348,6 +393,25 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
       }
     }
   }
+  /**
+   * Which concentric endpoint closes the surface.
+   *
+   * The Main body only defines `P0` as a code reference point, so the surface is closed by the
+   * physical `eta`-reduced block limit and `P0` stays a marker. The Appendix instead prescribes the
+   * design axial strength itself in 3.2(1) equations (3-2) and (3-3), and that clause carries no
+   * `eta`: it is model independent, so the parabola-rectangle and the equivalent block must both
+   * report it. Closing the Appendix surface on the `eta`-reduced value understated `P_do` by
+   * `1 - eta` whenever `fck > 40 MPa` and made the two mechanics disagree on the same basis.
+   */
+  const surfaceCompressionPole = (section: PreparedEquivalentBlockSection): CapacityEndpoint =>
+    input.compressionEndpoint === 'peak-stress-strain'
+      ? nominalEndpoints(section).compression
+      : physicalCompressionEndpoint(section)
+
+  /** True when the Appendix pole and the block's own concentric limit are not the same point. */
+  const appendixPoleDivergesFromBlockLimit =
+    input.compressionEndpoint === 'peak-stress-strain' && parameters.eta < 1
+
   const designEndpoints = (section: PreparedEquivalentBlockSection) => {
     const nominal = nominalEndpoints(section)
     return {
@@ -369,9 +433,9 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
       ...options,
       steelLaws,
       barStrainEvents,
-      extremeCompressionStrain: parameters.extremeCompressionStrain,
+      extremeCompressionStrain: blockLaw.extremeCompressionStrain,
       tensionPole: endpoints.tension,
-      compressionPole: physicalCompressionEndpoint(section)
+      compressionPole: surfaceCompressionPole(section)
     })
   }
   const buildDesignSurface = (
@@ -380,16 +444,16 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
   ): CapacitySurface => {
     const { applyAxialCap = true, ...surfaceOptions } = options
     const endpoints = designEndpoints(section)
-    const physicalCompression = physicalCompressionEndpoint(section)
+    const compressionPole = surfaceCompressionPole(section)
     const surface = buildCapacitySurface(section, bindDesignEvaluator(section), {
       ...surfaceOptions,
       steelLaws,
       barStrainEvents,
-      extremeCompressionStrain: parameters.extremeCompressionStrain,
+      extremeCompressionStrain: blockLaw.extremeCompressionStrain,
       tensionPole: endpoints.tension,
       compressionPole: {
-        resultants: scaleResultants(physicalCompression.resultants, compressionPhi),
-        metadata: { ...physicalCompression.metadata, phi: compressionPhi }
+        resultants: scaleResultants(compressionPole.resultants, compressionPhi),
+        metadata: { ...compressionPole.metadata, phi: compressionPhi }
       }
     })
     return applyAxialCap ? clipCapacitySurfaceByAxialCap(surface, axialCap(section)) : surface
@@ -401,10 +465,14 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
     blockLaw,
     steelLaws,
     transverseReinforcement: input.transverseReinforcement,
+    materialStrengthMultipliers,
+    compressionEndpoint: input.compressionEndpoint ?? 'steel-plateau',
+    appendixPoleDivergesFromBlockLimit,
     bindNominalEvaluator,
     bindDesignEvaluator,
     nominalEndpoints,
     physicalCompressionEndpoint,
+    surfaceCompressionPole,
     designEndpoints,
     axialCap,
     buildNominalSurface,

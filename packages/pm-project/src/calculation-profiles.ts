@@ -3,6 +3,7 @@ import {
   createAs3600DesignBasis,
   createCustomDesignBasis,
   createEn1992DesignBasis,
+  createKdsAppendixDesignBasis,
   createKdsBasicDesignBasis,
   type DesignBasis,
   type DesignProfileId,
@@ -91,6 +92,8 @@ export type CalculationProfile = {
   materialStandard: MaterialStandard
   designProfileId: DesignProfileId
   resistanceFormat: ResistanceFormat
+  /** Resistance methods compatible with this mechanics/material-standard selection. */
+  allowedDesignProfileIds?: readonly DesignProfileId[]
   /** Availability of the calculation route; engineering approval remains on DesignBasis. */
   implementationStatus: 'available' | 'preview' | 'legacy'
   /** Legacy custom profiles remain readable but are not presented as design standards. */
@@ -158,6 +161,10 @@ export const CALCULATION_PROFILES: readonly CalculationProfile[] = [
     materialStandard: 'KDS',
     designProfileId: 'kds-2024-current-set',
     resistanceFormat: 'globalResultantFactor',
+    allowedDesignProfileIds: [
+      'kds-2024-current-set',
+      'kds-142020-2022-appendix-material-factors'
+    ],
     implementationStatus: 'available',
     visibleInStandardWorkflow: true
   },
@@ -181,6 +188,10 @@ export const CALCULATION_PROFILES: readonly CalculationProfile[] = [
     materialStandard: 'KDS',
     designProfileId: 'kds-2024-current-set',
     resistanceFormat: 'globalResultantFactor',
+    allowedDesignProfileIds: [
+      'kds-2024-current-set',
+      'kds-142020-2022-appendix-material-factors'
+    ],
     implementationStatus: 'available',
     visibleInStandardWorkflow: true
   },
@@ -347,8 +358,18 @@ export const createDesignBasisForCalculationProfile = (id: CalculationProfileId)
     case 'as-3600-2018-amd2': return createAs3600DesignBasis()
     case 'kds-2024-current-set':
     case 'kds-basic-2021-2022': return createKdsBasicDesignBasis()
+    case 'kds-142020-2022-appendix-material-factors': return createKdsAppendixDesignBasis()
     default: return designProfileId satisfies never
   }
+}
+
+export const calculationProfileAcceptsDesignBasis = (
+  profileId: CalculationProfileId,
+  basis: DesignBasis
+) => {
+  const profile = calculationProfile(profileId)
+  const allowed = profile.allowedDesignProfileIds ?? [profile.designProfileId]
+  return allowed.includes(basis.profileId)
 }
 
 /** Which concrete models a profile's mechanics can actually evaluate. */
@@ -460,19 +481,20 @@ export const applyCalculationProfileToMaterials = (
           n: 2,
           epsC2: 0.002,
           epsCu2: 0.0035,
-          alpha: EN1992_ALPHA_CC / EN1992_GAMMA_C
+          alpha: EN1992_ALPHA_CC
         },
         factors: {
           ...store.concrete.factors,
           alpha: EN1992_ALPHA_CC,
-          gammaC: EN1992_GAMMA_C
+          gammaC: undefined,
+          resistanceScale: undefined
         }
       })
       store.steel = store.steel.map((steel) => applyEn1992SteelDerived({
         ...steel,
         standard: 'EC2',
         stressStrain: { type: 'elastic-perfectly-plastic' },
-        factors: { ...steel.factors, gammaS: EN1992_GAMMA_S }
+        factors: { ...steel.factors, gammaS: undefined, resistanceScale: undefined }
       }))
       return store
     case 'as-3600-2018-amd2-equivalent-block':

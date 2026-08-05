@@ -1551,6 +1551,130 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.pm-material-factor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 3px;
+}
+
+.pm-material-factor-heading > div {
+  display: grid;
+  gap: 1px;
+}
+
+.pm-material-factor-heading strong {
+  color: var(--foreground-secondary);
+  font-size: 0.69rem;
+}
+
+.pm-material-factor-heading small {
+  color: var(--foreground-muted);
+  font-size: 0.59rem;
+  line-height: 1.3;
+}
+
+.pm-material-info-button,
+.pm-design-info-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 4%, var(--card));
+  color: var(--foreground-muted);
+  cursor: pointer;
+  font-size: 0.62rem;
+  font-weight: 650;
+}
+
+.pm-material-info-button {
+  min-height: 27px;
+  padding: 0 8px;
+}
+
+.pm-material-info-button:hover,
+.pm-design-info-toggle:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  color: var(--accent);
+}
+
+.pm-material-info-button svg:last-child,
+.pm-design-info-toggle svg:last-child {
+  transition: transform var(--ui-transition);
+}
+
+.pm-material-info-button svg.is-open,
+.pm-design-info-toggle svg.is-open {
+  transform: rotate(180deg);
+}
+
+.pm-material-factor-info {
+  display: grid;
+  gap: 7px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border-subtle));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 3%, var(--card));
+  color: var(--foreground-muted);
+  font-size: 0.62rem;
+  line-height: 1.45;
+}
+
+.pm-material-factor-info p,
+.pm-material-factor-info ul {
+  margin: 0;
+}
+
+.pm-material-factor-equation {
+  color: var(--foreground-secondary);
+  font-family: var(--font-mono, monospace);
+  font-weight: 650;
+}
+
+.pm-material-factor-info ul {
+  display: grid;
+  gap: 5px;
+  padding: 0;
+  list-style: none;
+}
+
+.pm-material-factor-info li {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 1px 7px;
+}
+
+.pm-material-factor-info li strong {
+  color: var(--foreground-secondary);
+}
+
+.pm-material-factor-info li small {
+  grid-column: 2;
+}
+
+.pm-material-factor-warning {
+  padding-left: 7px;
+  border-left: 2px solid #d97706;
+}
+
+.pm-material-factor-references {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.pm-material-factor-references a,
+.pm-design-method-info a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent);
+  text-decoration: none;
+}
+
 .pm-material-blocked {
   margin: 2px 0 0;
   padding: 8px 10px;
@@ -2584,6 +2708,72 @@ body[data-jscad-theme="dark"] .pm-design-select-wrap select {
 .pm-design-basis-identity strong.is-draft {
   background: color-mix(in srgb, #f59e0b 14%, transparent);
   color: #b45309;
+}
+
+.pm-design-info-toggle {
+  width: 100%;
+  min-height: 31px;
+  padding: 0 9px;
+}
+
+.pm-design-info-toggle svg:last-child {
+  margin-left: auto;
+}
+
+.pm-design-method-info {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border-subtle));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 3%, var(--card));
+  color: var(--foreground-muted);
+  font-size: 0.62rem;
+  line-height: 1.45;
+}
+
+.pm-design-method-info > strong {
+  color: var(--foreground-secondary);
+  font-size: 0.69rem;
+}
+
+.pm-design-method-info p,
+.pm-design-method-info dl,
+.pm-design-method-info ul {
+  margin: 0;
+}
+
+.pm-design-method-info dl {
+  display: grid;
+  gap: 5px;
+}
+
+.pm-design-method-info dl div {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 7px;
+}
+
+.pm-design-method-info dt {
+  color: var(--foreground-secondary);
+  font-weight: 700;
+}
+
+.pm-design-method-info dd {
+  margin: 0;
+}
+
+.pm-design-method-info ul {
+  display: grid;
+  gap: 5px;
+  padding: 7px 0 0;
+  border-top: 1px solid var(--border-subtle);
+  list-style: none;
+}
+
+.pm-design-method-info li {
+  display: grid;
+  gap: 1px;
 }
 
 body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {

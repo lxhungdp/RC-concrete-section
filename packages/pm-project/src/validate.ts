@@ -5,9 +5,12 @@ import {
   DESIGN_BASIS_VERSION,
   assertValidDesignBasis,
   createDefaultDesignBasis,
+  createEn1992DesignBasis,
+  createKdsAppendixDesignBasis,
   type DesignBasis,
   type DesignProfileId,
-  type GlobalStrengthReductionFactors
+  type GlobalStrengthReductionFactors,
+  type MaterialFactorExpression
 } from '@pm/design'
 import { isValidEntityId } from './ids'
 import {
@@ -29,7 +32,12 @@ import {
   type EquivalentBlockAnalysisOptions,
   type DirectionProbe
 } from './analysis-options'
-import { CONCRETE_MODELS_FOR_MECHANICS, calculationProfile, isCalculationProfileId } from './calculation-profiles'
+import {
+  CONCRETE_MODELS_FOR_MECHANICS,
+  calculationProfile,
+  calculationProfileAcceptsDesignBasis,
+  isCalculationProfileId
+} from './calculation-profiles'
 import {
   PM_PROJECT_SCHEMA,
   PM_PROJECT_VERSION,
@@ -242,7 +250,8 @@ const parseConcrete = (value: unknown): ConcreteMaterial => {
   if (isRecord(value.factors)) {
     concrete.factors = {
       alpha: isFiniteNumber(value.factors.alpha) ? value.factors.alpha : undefined,
-      gammaC: isFiniteNumber(value.factors.gammaC) ? value.factors.gammaC : undefined
+      gammaC: isFiniteNumber(value.factors.gammaC) ? value.factors.gammaC : undefined,
+      resistanceScale: isFiniteNumber(value.factors.resistanceScale) ? value.factors.resistanceScale : undefined
     }
   }
 
@@ -297,7 +306,8 @@ const parseSteel = (value: unknown, path: string): SteelMaterial => {
   }
   if (isRecord(value.factors)) {
     steel.factors = {
-      gammaS: isFiniteNumber(value.factors.gammaS) ? value.factors.gammaS : undefined
+      gammaS: isFiniteNumber(value.factors.gammaS) ? value.factors.gammaS : undefined,
+      resistanceScale: isFiniteNumber(value.factors.resistanceScale) ? value.factors.resistanceScale : undefined
     }
   }
 
@@ -698,7 +708,7 @@ const parseAnalysis = (value: unknown): CalculationAnalysisOptions => {
 const parseDesignBasis = (value: unknown | undefined, materials: MaterialStore): DesignBasis => {
   if (value === undefined) return createDefaultDesignBasis(materials)
   assertRecord(value, 'inputs.design must be an object')
-  assert(value.basisVersion === DESIGN_BASIS_VERSION, 'inputs.design.basisVersion is unsupported')
+  assert(value.basisVersion === 1 || value.basisVersion === DESIGN_BASIS_VERSION, 'inputs.design.basisVersion is unsupported')
   assertRecord(value.identity, 'inputs.design.identity must be an object')
   for (const key of ['organization', 'document', 'edition', 'methodId', 'profileVersion'] as const) {
     assert(isString(value.identity[key]), `inputs.design.identity.${key} must be a string`)
@@ -706,6 +716,7 @@ const parseDesignBasis = (value: unknown | undefined, materials: MaterialStore):
   assert(
     value.profileId === 'kds-2024-current-set' ||
       value.profileId === 'kds-basic-2021-2022' ||
+      value.profileId === 'kds-142020-2022-appendix-material-factors' ||
       value.profileId === 'aci-318-19-22' ||
       value.profileId === 'en-1992-1-1-2004-default' ||
       value.profileId === 'as-3600-2018-amd2' ||
@@ -794,17 +805,70 @@ const parseDesignBasis = (value: unknown | undefined, materials: MaterialStore):
     }
   } else {
     assert(value.format === 'designMaterialReevaluation', 'inputs.design.format is unsupported')
-    for (const key of ['alphaCc', 'gammaC', 'gammaS'] as const) {
-      assert(isFiniteNumber(factors[key]), `inputs.design.factors.${key} must be finite`)
+    const parseExpression = (input: unknown, path: string): MaterialFactorExpression => {
+      assertRecord(input, `${path} must be an object`)
+      assert(
+        input.characteristicSymbol === 'fck' || input.characteristicSymbol === 'fyk',
+        `${path}.characteristicSymbol is invalid`
+      )
+      assert(input.designSymbol === 'fcd' || input.designSymbol === 'fyd', `${path}.designSymbol is invalid`)
+      assert(Array.isArray(input.components) && input.components.length > 0, `${path}.components must be a non-empty array`)
+      const components = input.components.map((component, index) => {
+        assertRecord(component, `${path}.components[${index}] must be an object`)
+        assert(
+          component.id === 'alphaCc' || component.id === 'gammaC' || component.id === 'gammaS' ||
+          component.id === 'phiC' || component.id === 'phiS',
+          `${path}.components[${index}].id is invalid`
+        )
+        assert(isString(component.symbol), `${path}.components[${index}].symbol must be a string`)
+        assert(isString(component.label), `${path}.components[${index}].label must be a string`)
+        assert(component.operation === 'multiply' || component.operation === 'divide', `${path}.components[${index}].operation is invalid`)
+        assert(isFiniteNumber(component.value), `${path}.components[${index}].value must be finite`)
+        assert(isString(component.clauseRef), `${path}.components[${index}].clauseRef must be a string`)
+        return {
+          id: component.id,
+          symbol: component.symbol,
+          label: component.label,
+          operation: component.operation,
+          value: component.value,
+          clauseRef: component.clauseRef
+        }
+      })
+      return {
+        characteristicSymbol: input.characteristicSymbol,
+        designSymbol: input.designSymbol,
+        components
+      } as MaterialFactorExpression
     }
+    let materialFactors: Extract<DesignBasis, { format: 'designMaterialReevaluation' }>['factors']
+    if (isRecord(factors.concrete) && isRecord(factors.reinforcement)) {
+      materialFactors = {
+        concrete: parseExpression(factors.concrete, 'inputs.design.factors.concrete'),
+        reinforcement: parseExpression(factors.reinforcement, 'inputs.design.factors.reinforcement')
+      }
+    } else {
+      /** Version-1 EN projects stored three EC2-specific scalar fields. */
+      for (const key of ['alphaCc', 'gammaC', 'gammaS'] as const) {
+        assert(isFiniteNumber(factors[key]), `inputs.design.factors.${key} must be finite`)
+      }
+      const migrated = createEn1992DesignBasis().factors
+      migrated.concrete.components.find((component) => component.id === 'alphaCc')!.value = factors.alphaCc as number
+      migrated.concrete.components.find((component) => component.id === 'gammaC')!.value = factors.gammaC as number
+      migrated.reinforcement.components.find((component) => component.id === 'gammaS')!.value = factors.gammaS as number
+      materialFactors = migrated
+    }
+    const profileDefault = value.profileId === 'kds-142020-2022-appendix-material-factors'
+      ? createKdsAppendixDesignBasis()
+      : createEn1992DesignBasis()
     design = {
       ...common,
       format: 'designMaterialReevaluation',
-      factors: {
-        alphaCc: factors.alphaCc as number,
-        gammaC: factors.gammaC as number,
-        gammaS: factors.gammaS as number
-      }
+      factors: materialFactors,
+      compressionEndpoint:
+        value.compressionEndpoint === 'peak-stress-strain' || value.compressionEndpoint === 'ultimate-strain'
+          ? value.compressionEndpoint
+          : profileDefault.compressionEndpoint,
+      ...(profileDefault.minimumEccentricity ? { minimumEccentricity: profileDefault.minimumEccentricity } : {})
     }
   }
   assertValidDesignBasis(design)
@@ -858,7 +922,7 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
     'inputs.calculationProfileId and inputs.analysis.methodId select different mechanics'
   )
   assert(
-    design.format === profile.resistanceFormat && design.profileId === profile.designProfileId,
+    calculationProfileAcceptsDesignBasis(profile.id, design),
     'inputs.calculationProfileId and inputs.design select different standards or resistance formats'
   )
   assert(

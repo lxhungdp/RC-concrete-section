@@ -125,6 +125,30 @@ const assertLaw = (law: EquivalentBlockLaw) => {
   ) {
     throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', 'Equivalent block parameters must be finite and positive.')
   }
+  if (
+    law.compressionPivotStrain !== undefined &&
+    (!(law.compressionPivotStrain > 0) ||
+      law.compressionPivotStrain > law.extremeCompressionStrain ||
+      !Number.isFinite(law.compressionPivotStrain))
+  ) {
+    throw new EquivalentBlockInputError(
+      'INVALID_BLOCK_LAW',
+      'The compression-pivot strain must be positive, finite, and no greater than the extreme compression strain.'
+    )
+  }
+}
+
+export const resolveEquivalentBlockExtremeCompressionStrain = (
+  law: EquivalentBlockLaw,
+  neutralAxisDepth: number,
+  projectedSectionDepth: number
+) => {
+  const pivotStrain = law.compressionPivotStrain
+  if (pivotStrain === undefined || neutralAxisDepth <= projectedSectionDepth) {
+    return law.extremeCompressionStrain
+  }
+  const pivotDepth = (1 - pivotStrain / law.extremeCompressionStrain) * projectedSectionDepth
+  return pivotStrain * neutralAxisDepth / Math.max(1e-12, neutralAxisDepth - pivotDepth)
 }
 
 export const evaluateEquivalentBlock = (
@@ -148,6 +172,11 @@ export const evaluateEquivalentBlock = (
   const compressionEdgeProjection = extents.maximum
   const projectedSectionDepth = extents.depth
   const neutralAxisProjection = compressionEdgeProjection - state.neutralAxisDepth
+  const extremeCompressionStrain = resolveEquivalentBlockExtremeCompressionStrain(
+    law,
+    state.neutralAxisDepth,
+    projectedSectionDepth
+  )
   const blockDepth = law.depthFactor * state.neutralAxisDepth
   const blockBoundaryProjection = compressionEdgeProjection - blockDepth
   const clipped = clipPreparedSectionToHalfPlane(section, normalX, normalY, blockBoundaryProjection)
@@ -167,7 +196,7 @@ export const evaluateEquivalentBlock = (
     }
     const projection = normalX * bar.x + normalY * bar.y
     const projectedDepth = compressionEdgeProjection - projection
-    const strain = law.extremeCompressionStrain * (1 - projectedDepth / state.neutralAxisDepth)
+    const strain = extremeCompressionStrain * (1 - projectedDepth / state.neutralAxisDepth)
     const steelStress = steelLaw.stressAt(strain)
     if (!Number.isFinite(steelStress)) {
       throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', `Steel law ${bar.steelLawId} returned a non-finite stress.`)
@@ -223,6 +252,7 @@ export const evaluateEquivalentBlock = (
     controllingYieldStrain: controlling?.yieldStrain,
     diagnostics: {
       projectedSectionDepth,
+      extremeCompressionStrain,
       compressionEdgeProjection,
       neutralAxisProjection,
       blockBoundaryProjection,

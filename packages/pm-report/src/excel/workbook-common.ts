@@ -216,9 +216,14 @@ export const concreteAlphaSource = (material: ConcreteMaterial) => {
 }
 
 export const concreteEffectiveAlpha = (material: ConcreteMaterial) =>
-  concreteAlphaSource(material) / (material.factors?.gammaC ?? 1)
+  concreteAlphaSource(material) /
+  (material.factors?.gammaC ?? 1) *
+  (material.factors?.resistanceScale ?? 1)
 
-export const steelDesignFy = (material: SteelMaterial) => material.fy / (material.factors?.gammaS ?? 1)
+export const steelDesignFy = (material: SteelMaterial) =>
+  material.fy /
+  (material.factors?.gammaS ?? 1) *
+  (material.factors?.resistanceScale ?? 1)
 
 export const concreteModelParameters = (material: ConcreteMaterial) => {
   const model = material.stressStrain

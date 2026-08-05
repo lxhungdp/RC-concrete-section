@@ -17,8 +17,10 @@ resistance used for a factored ULS check. The engineering requirements remain au
 - construction of reference, state and design material sets;
 - state-dependent global-strength-reduction evaluation.
 
-`@pm/project` writes `inputs.design` directly in the sole current project schema version 1. There is
-no migration or backward-compatibility layer. As a parser-v1 rule, a missing basis is synthesized;
+`@pm/project` writes `inputs.design` directly in the current project schema version 1. DesignBasis
+version 2 replaces the old EN-only scalar fields with standard-neutral factor expressions. The
+parser migrates legacy EN `alphaCc/gammaC/gammaS` snapshots to those expressions. As a parser-v1
+rule, a missing basis is synthesized;
 canonical exports always contain it. `calculationProfileId`, materials, analysis
 options, and the DesignBasis must be mutually consistent after parsing.
 Every load combination is explicitly tagged `actionBasis: "factoredULS"`.
@@ -67,8 +69,35 @@ For a global-resultant profile, embedded `gammaC` and `gammaS` fields are remove
 evaluation. One state factor is then applied to the complete ledger (`concrete`, `steelGross`,
 `displacedConcrete`, `steel`, and `total`). This is the anti-double-reduction boundary.
 
-For a design-material profile, reference and design laws are independently evaluated at the same
-stored strain state. No global scalar is inferred from the final resultants.
+For a design-material profile, reference and design laws are independently evaluated on the same
+declared strain-domain topology. No global scalar is inferred from the final resultants. The
+standard-neutral expression compiler supports ordered multiply/divide components, so KDS
+`fcd=0.65fck`, `fyd=0.90fyk` and EN `fcd=alpha_cc fck/gamma_c`, `fyd=fyk/gamma_s` use one pipeline.
+Only strength ordinates are changed: steel `Es` and characteristic concrete strain parameters are
+not scaled.
+
+The KDS Appendix route implements the 3.1 strain domains: uniform compression reaches
+`epsilon_c0`; an internal neutral axis reaches `epsilon_cu`; and an outside neutral axis uses the
+continuous all-compression pivot between those limits. A concrete definition without `epsilon_c0`
+is an `AnalysisInputError` with code `INVALID_MATERIAL`, not a fall back to `epsilon_cu`.
+
+Both mechanics close the Appendix design surface on the 3.2(1) equations (3-2)/(3-3) design axial
+strength, which carries no `eta` and is therefore model independent. `createKds142020Model` selects
+that pole through `surfaceCompressionPole`; the `eta`-reduced concentric block limit remains
+available as `physicalCompressionEndpoint` and still closes the Main-body surfaces, where the
+maximum-axial cap removes the band. When `eta < 1` the prepared block analysis reports
+`appendixPoleDivergesFromBlockLimit` and the preview surface warns that the final band up to the
+pole is an interpolation.
+
+`e_min = 15 + 0.03h` is applied to demand, and the route has neither a global resultant factor nor
+the Main-body maximum-axial cap. `minimumEccentricityCandidates` in `@pm/design` is the single
+implementation for both mechanics. For biaxial nonzero moment, `h` is the section depth projected on
+the demand eccentricity direction; a zero-moment axial demand yields one candidate per principal
+axis. The governing candidate is resolved by design-surface proportional utilization:
+`checkLoadcaseUtilizationFromSurface` owns that choice, and `solveInversePreviewFromPrepared`
+receives it through `codeAdjustedDemandOfCheck` so the reported equilibrium state belongs to the
+demand that was checked. Selecting with the inverse's own fixed-P ratio made the two mechanics
+report different principal axes for the same section.
 
 The maximum axial-compression operation is applied after the state factor. A row crossing is
 interpolated and clipped stations are projected onto radial rings between the axial centre and that
@@ -126,15 +155,17 @@ Detailed fibre/bar sheets audit the constitutive evaluation. For a global-result
 remain the nominal/reference ledger and `Design_Check` records the separate global factor. For a
 design-material method they evaluate the design material laws directly.
 
-Equivalent-block result export is intentionally unavailable. It requires a dedicated block ledger
-based on clipped area/centroid, `c`, `a`, `beta1`, block stress, compatible bar strains, resistance
-stages, admissibility, and exact-refinement evidence; the fiber workbook must not be reused.
+Equivalent-block result export uses its dedicated clipped-block ledger: clipped area/centroid,
+`c`, `a`, `beta1`, block stress, compatible bar strains, resistance stages, admissibility, and
+exact-refinement evidence. For the KDS Appendix it publishes reduced concrete/steel strengths and
+an identity resultant factor, preventing the workbook from applying `phi` a second time.
 
 ## 6. Implemented profiles and release status
 
 | Profile | Format | Software status |
 |---|---|---|
 | KDS 2024 current set; resistance clauses KDS 14 20 10:2021 + KDS 14 20 20:2022 | global resultant factor | `draft` preview |
+| KDS 14 20 20:2022 Appendix, independently selectable for either KDS mechanics | design-material reevaluation; Appendix 3.1 strain domains; minimum eccentricity | `draft` preview |
 | ACI 318-19, reapproved 2022 | global resultant factor | `draft` preview |
 | EN 1992-1-1:2004 default recommended factors, no National Annex | selectable stress-strain/design-material profile with an explicit non-EC2 strain-domain warning | `draft` preview only |
 | AS 3600:2018 incorporating Amendments 1 and 2 | equivalent rectangular block with `alpha2`, `gamma`, concrete strain `0.003`, and Table 2.2.2 axial/bending capacity-factor interpolation | `draft` preview only |
@@ -153,6 +184,19 @@ engineer approves the exact project jurisdiction and code edition.
 - paired nominal/design topology and global ledger scaling;
 - axial-cap application;
 - design-material reevaluation;
+- exact KDS Appendix concrete/steel ordinate ratios, unchanged steel modulus, 3.1 strain domains,
+  absence of global factor/cap, and minimum-eccentricity demand adjustment;
+- independent hand evaluation of Appendix equations (3-2) and (3-3) against the surface compression
+  pole, run at `fck = 30` and `fck = 60` so the `eta < 1` case is exercised, and at `fy = 400` and
+  `fy = 600` so both clause branches are exercised. The same fixture matrix runs against the
+  equivalent block in `packages/pm-analysis-equivalent-block/test/integration.test.ts`;
+- the typed rejection of a concrete definition with no `epsilon_c0` under the Appendix route, and
+  its continued acceptance under the Main body;
+- agreement between the loadcase-table check and the inverse solver on the governing
+  minimum-eccentricity principal axis, and the untouched raw-demand path when the clause does not
+  bite or the demand is tensile;
+- KDS Main-versus-Appendix comparison at pure tension, compression, and zero axial force;
+- EN recommended-factor regression and legacy scalar-factor migration;
 - 3D proportional demand-ray utilization.
 
 The project round-trip test covers schema version 1, factored ULS action basis and design-profile
