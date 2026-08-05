@@ -17,10 +17,12 @@ The current stress-strain default is 25 stations with nine mandatory code-aware 
 default is independent: 37 initial neutral-axis states, bar-controlled code/rupture event stations,
 24 seed directions, and 0.75% adaptive station and direction refinement.
 
-KDS current-set and ACI 318-19(22) equivalent-block profiles are implemented as draft previews. Two
-`Custom` profiles — one per mechanics — let a project declare its own material laws, block
-parameters and resistance rules; they carry no clause traceability and report as `user-defined`
-rather than `draft`.
+The Materials workflow now selects `Code -> calculation method -> concrete model`. KDS exposes both
+implemented mechanics, ACI exposes its implemented equivalent block, and EN 1992-1-1:2004 exposes a
+design-material stress-strain preview with an explicit no-National-Annex/strain-domain warning. AS
+3600 is registered but disabled until the exact 2018 Amendments 1 and 2 rules are mapped from licensed
+text. Legacy `Custom` profile files remain readable, while new user customization is a concrete-model
+choice under a Code and is reported as a modified profile.
 Nominal, Design, and factored ULS Demand are separate result stages. See
 [`docs/12-calculation-models-defaults-and-workflows.md`](docs/12-calculation-models-defaults-and-workflows.md)
 for formulas, workflow, fields, defaults, and benchmark evidence.
@@ -104,6 +106,8 @@ converged and every sampled demand ray intersected the surface.
   cap reached.
 - A global resistance factor is applied once to the complete resultant ledger; factored demand is
   not reduced again.
+- EN material partial factors have one canonical owner in `DesignBasis`; Materials edits that source
+  and displays derived `fcd/fyd`, while Design Resistance shows the same values read-only.
 
 Every dependency is pinned and CI uses the lockfile. Reference workbooks are regression oracles,
 not design-code authority.

@@ -1,6 +1,6 @@
 # 10 — References, Traceability, and Current-v1 Decision Record
 
-Access review date: **2026-07-23**.
+Access review date: **2026-08-05**.
 
 This file records the sources used to shape the generic architecture. It does not reproduce
 licensed design-code provisions. A production code adapter must add its own clause-level normative
@@ -49,6 +49,23 @@ different edition, so "latest" is never selected implicitly.
 
 An EN 1992 profile must lock the exact part/edition and National Annex. Partial material factors
 must not be replaced by KDS/ACI values or by a universal final resultant factor.
+
+### Australia
+
+- The NCC 2022 amendment register identifies AS 3600:2018 with Amendments 1 and 2 as the referenced
+  concrete-structures edition in that NCC context:
+  <https://ncc.abcb.gov.au/editions/ncc-2022/adopted/volume-one/preface/list-amendments-ncc-2022-volume-one>
+- Standards Australia identifies `AS 3600:2018 Sup 1:2022` as the companion commentary to
+  AS 3600:2018:
+  <https://www.standards.org.au/news/revised-document-to-help-industry-prepare-for-earthquakes>
+- Standards Australia's public-comment catalogue is the authoritative place to identify a draft;
+  a draft is not a governing published edition and must never replace the adopted standard
+  implicitly:
+  <https://comment.standards.org.au/>
+
+The AS registry entry is therefore calculation-disabled. Enabling it requires the licensed
+AS 3600 clauses, an edition/amendment/adoption identity, clause-level coefficient and limit mapping,
+independent benchmark examples, and engineering review. No KDS or ACI fallback is allowed.
 
 ## 2. Computational credibility and software V&V
 

@@ -29,10 +29,14 @@ their workbooks, the demand solvers, plots, and field UI use these same componen
 backend-specific transform. The convention is tested on an asymmetric section so `My = 0` symmetry
 cannot hide a regression.
 
-### 1.1 Custom profiles
+### 1.1 User-defined concrete models and legacy Custom profiles
 
-Each mechanics has one `Custom` profile. It runs the same kernel as its published siblings and
-changes nothing about the mechanics; what it changes is where the parameters come from.
+The current standard workflow does not present `Custom` as a Code. The selected Code exposes the
+concrete models it permits. KDS stress-strain currently permits its default parabolic law or a
+user-defined curve; the latter marks the Code profile modified and requires an audit reason.
+
+The two schema-v1 `custom-*` profiles remain readable for backward compatibility. They run the same
+kernel as their published siblings and change only where the parameters come from.
 
 | Item | Published profile | Custom profile |
 |---|---|---|
@@ -42,6 +46,10 @@ changes nothing about the mechanics; what it changes is where the parameters com
 | Steel law | elastic-perfectly-plastic | elastic-perfectly-plastic, bilinear, or a user table |
 | `phi` factors, transition rule, axial cap | code defaults, deviations need a narrative | user input, no narrative required |
 | Status | `draft` pending named review | `user-defined`, outside the review ladder |
+
+EN does not yet offer a generic user curve: design-material reevaluation needs a declared
+characteristic-to-design curve transformation, and blindly scaling the entire tabulated curve would
+incorrectly reduce elastic stiffness.
 
 Two guards keep this from becoming a way to smuggle an unevaluable state into a kernel:
 

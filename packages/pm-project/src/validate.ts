@@ -730,6 +730,7 @@ const parseDesignBasis = (value: unknown | undefined, materials: MaterialStore):
     profileId: value.profileId as DesignProfileId,
     verificationStatus: value.verificationStatus as DesignBasis['verificationStatus'],
     modified: value.modified,
+    ...(value.materialModelModified === true ? { materialModelModified: true } : {}),
     overrideReason: value.overrideReason
   }
 
@@ -799,7 +800,15 @@ const parseDesignBasis = (value: unknown | undefined, materials: MaterialStore):
 
 export const collectProjectWarnings = (document: PmProjectDocument): string[] => {
   const warnings: string[] = []
+  const profile = calculationProfile(document.inputs.calculationProfileId)
   const steelIds = new Set(document.inputs.materials.steel.map((item) => item.id))
+
+  if (profile.implementationStatus === 'preview') {
+    warnings.push(`${profile.label} is preview-only and must not be represented as released design output`)
+  }
+  if (document.inputs.design.materialModelModified) {
+    warnings.push('The selected concrete model modifies the Code-default calculation profile')
+  }
 
   if (!steelIds.has(document.inputs.materials.defaults.steelMaterialId)) {
     warnings.push('defaults.steelMaterialId does not match any steel material; the first steel will be used on open')
@@ -836,7 +845,7 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
     'inputs.calculationProfileId and inputs.analysis.methodId select different mechanics'
   )
   assert(
-    design.format === 'globalResultantFactor' && design.profileId === profile.designProfileId,
+    design.format === profile.resistanceFormat && design.profileId === profile.designProfileId,
     'inputs.calculationProfileId and inputs.design select different standards or resistance formats'
   )
   assert(
@@ -849,10 +858,26 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
    * so the model has to be checked against the mechanics that will evaluate it: a block law cannot
    * reach the fibre kernel, and a fibre law carries no `β1` for the block kernel.
    */
-  if (profile.materialStandard === 'CUSTOM') {
+  const profileAcceptsMaterialModel = profile.materialStandard === 'CUSTOM'
+    ? CONCRETE_MODELS_FOR_MECHANICS[profile.mechanics].includes(materials.concrete.stressStrain.type)
+    : profile.concreteModels.some(
+        (model) => model.materialModelType === materials.concrete.stressStrain.type
+      )
+  assert(
+    profileAcceptsMaterialModel,
+    `inputs.materials.concrete.stressStrain.type "${materials.concrete.stressStrain.type}" is not permitted by ${profile.id}`
+  )
+  const selectedModel = profile.concreteModels.find(
+    (model) => model.materialModelType === materials.concrete.stressStrain.type
+  )
+  if (profile.code !== null && selectedModel?.source === 'user-defined') {
     assert(
-      CONCRETE_MODELS_FOR_MECHANICS[profile.mechanics].includes(materials.concrete.stressStrain.type),
-      `inputs.materials.concrete.stressStrain.type "${materials.concrete.stressStrain.type}" cannot be evaluated by the ${profile.mechanics} mechanics`
+      design.materialModelModified === true && design.modified,
+      'a user-defined concrete model under a design Code must be recorded as a modified profile'
+    )
+    assert(
+      design.overrideReason.trim().length > 0,
+      'a user-defined concrete model under a design Code requires an override reason'
     )
   }
   return {

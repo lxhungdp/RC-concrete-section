@@ -16,6 +16,7 @@ behavior, or package ownership.
 | 5 | [`05-coding-quality-and-ai-workflow.md`](05-coding-quality-and-ai-workflow.md) | Testing discipline, review workflow, AI coding constraints. |
 | 6 | [`06-current-state-and-roadmap.md`](06-current-state-and-roadmap.md) | Current implementation status and phased delivery order. |
 | 7 | [`07-design-resistance-implementation.md`](07-design-resistance-implementation.md) | Nominal/design separation, factored ULS checks, UI, workbook and verification status. |
+| 8 | [`08-standard-code-method-model-registry.md`](08-standard-code-method-model-registry.md) | Code -> method -> concrete-model capabilities, EN factor ownership, AS fail-closed scope. |
 
 The numbered root files are technical references, not competing implementation instructions. The
 control map names the single owner for each rule or parameter.

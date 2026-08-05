@@ -24,7 +24,7 @@ import type {
   CombinationDetail,
   InteractionCurve,
   XY
-} from '../report-model'
+} from '../model/report-model'
 
 const AXIS_COLOR = REPORT_COLORS.rule
 const num = (value: number, digits = 2) =>

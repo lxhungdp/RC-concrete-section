@@ -136,7 +136,8 @@ stages, admissibility, and exact-refinement evidence; the fiber workbook must no
 |---|---|---|
 | KDS 2024 current set; resistance clauses KDS 14 20 10:2021 + KDS 14 20 20:2022 | global resultant factor | `draft` preview |
 | ACI 318-19, reapproved 2022 | global resultant factor | `draft` preview |
-| EN 1992-1-1:2004 default recommended factors, no National Annex | design-material reevaluation helper only; not a calculation-profile selector item | `draft` preview |
+| EN 1992-1-1:2004 default recommended factors, no National Annex | selectable stress-strain/design-material profile with an explicit non-EC2 strain-domain warning | `draft` preview only |
+| AS 3600:2018 incorporating Amendments 1 and 2 | registry entry only; no normative coefficient mapping is shipped | fail-closed / not implemented |
 
 No profile is marked `reviewed` or `verified`. Results and workbooks must not be represented as
 certified or released design output
@@ -145,7 +146,7 @@ engineer approves the exact project jurisdiction and code edition.
 
 ## 7. Automated evidence
 
-`packages/pm-analysis/src/design-resistance.test.ts` covers:
+`packages/pm-analysis/test/design-resistance.test.ts` covers:
 
 - compression, transition and tension factor breakpoints;
 - removal of embedded material factors for global-factor profiles;

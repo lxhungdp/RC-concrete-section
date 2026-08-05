@@ -1,10 +1,11 @@
 # Materials and Design-Standard Rules
 
-## 1. One user selection, separate internal responsibilities
+## 1. Hierarchical user selection, one coherent resolved profile
 
-The Materials page exposes one calculation-profile selector so the user cannot create an accidental
+The Materials page exposes `Code -> calculation method -> concrete model`. Each lower choice is
+restricted by the selected Code's capability registry, so the user cannot create an accidental
 combination of mechanics, material law, standard, factors, and analysis defaults. Internally, the
-selection resolves four separate objects:
+selection still resolves four separate objects:
 
 1. serializable concrete and steel material definitions;
 2. compiled runtime material evaluators;
@@ -14,6 +15,9 @@ selection resolves four separate objects:
 The UI simplicity does not collapse these responsibilities in code. A material tag alone is never
 proof of a complete standard check.
 
+`Custom` is not a design Code. A user curve is a concrete-model choice under an applicable Code and
+marks that profile modified; legacy custom profile IDs remain readable for schema-v1 compatibility.
+
 ## 2. Implemented calculation profiles
 
 | User profile | Mechanics | Concrete resistance | Resistance treatment |
@@ -21,6 +25,10 @@ proof of a complete standard check.
 | KDS 2024 - Stress-strain integration | full stress-strain integration | KDS concrete curve at integration points | KDS global resultant factor and cap |
 | KDS 14 20 20 - Equivalent rectangular block | exact clipped block `a=beta1 c` | `eta 0.85 fck` in the active block | KDS global resultant factor and cap |
 | ACI 318-19(22) - Whitney equivalent block | exact clipped block `a=beta1 c` | `0.85 f'c` in the active block | ACI state-dependent phi and cap |
+| EN 1992-1-1:2004 - Stress-strain preview | full stress-strain integration | EN parabolic-rectangular design law | material-strength reevaluation; no global phi |
+
+AS 3600:2018 Amendments 1 and 2 is registered but has no executable profile. It remains disabled
+until licensed clauses and the current amendment set are mapped and independently reviewed.
 
 The material compiler deliberately rejects an ACI Whitney definition in the fiber/stress-strain
 kernel. That is a routing guard, not a missing ACI capability: the ACI calculation profile routes to

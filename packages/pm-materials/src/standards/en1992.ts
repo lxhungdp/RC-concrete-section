@@ -1,6 +1,7 @@
 import type { ConcreteMaterial, SteelMaterial } from '../types'
 
-export const EN1992_ALPHA_CC = 0.85
+/** EN 1992-1-1:2004 recommended value; a National Annex may replace this NDP. */
+export const EN1992_ALPHA_CC = 1
 export const EN1992_GAMMA_C = 1.5
 export const EN1992_GAMMA_S = 1.15
 export const EN1992_STEEL_ES = 200000

@@ -42,15 +42,17 @@ import {
   type LoadCombination
 } from '@pm/project'
 
+type PreparedBlockModel =
+  | ReturnType<typeof createAci318Model>
+  | ReturnType<typeof createKds142020Model>
+  | ReturnType<typeof createCustomBlockModel>
+
 export type PreparedBlockAnalysis = {
   profileId: EquivalentBlockProfileId
   section: PreparedEquivalentBlockSection
   materialStore: MaterialStore
   designBasis: GlobalStrengthReductionBasis
-  model:
-    | ReturnType<typeof createAci318Model>
-    | ReturnType<typeof createKds142020Model>
-    | ReturnType<typeof createCustomBlockModel>
+  model: PreparedBlockModel
   geometry: SectionGeometry
   rebars: GeometryInputRebarView[]
 }
@@ -103,6 +105,71 @@ const customSteelLaw = (steel: MaterialStore['steel'][number]): CustomSteelLawDe
   return { type: 'elastic-perfectly-plastic' }
 }
 
+type BlockModelResolutionInput = {
+  materialStore: MaterialStore
+  basis: GlobalStrengthReductionBasis
+  common: {
+    concreteStrength: number
+    steel: Record<string, {
+      elasticModulus: number
+      yieldStress: number
+      ultimateStrain: number | undefined
+    }>
+  }
+}
+
+type BlockModelResolver = (input: BlockModelResolutionInput) => PreparedBlockModel
+
+/**
+ * Code-specific policy registry at the project bridge. The equivalent-block mechanics package
+ * receives only the resolved model and remains independent of KDS, ACI, or future AS adapters.
+ */
+const BLOCK_MODEL_RESOLVERS: Record<EquivalentBlockProfileId, BlockModelResolver> = {
+  'custom-equivalent-block': ({ materialStore, basis }) => createCustomBlockModel({
+    concreteStrength: materialStore.concrete.fck,
+    block: customBlockDefinition(materialStore.concrete),
+    steel: Object.fromEntries(materialStore.steel.map((item) => [String(item.id), {
+      elasticModulus: item.elasticModulus,
+      yieldStress: item.fy,
+      ultimateStrain: item.limits?.epsU,
+      law: customSteelLaw(item)
+    }])),
+    resistanceFactors: basis.factors,
+    transitionRule: basis.transition,
+    transverseReinforcement: basis.transverseReinforcement
+  }),
+  'aci-318-19-22-equivalent-block': ({ common, basis }) => {
+    if (basis.transition.type !== 'yield-plus-strain') {
+      throw new Error('The ACI 318 profile requires a yield-plus-strain transition rule.')
+    }
+    return createAci318Model({
+      ...common,
+      resistanceFactors: {
+        ...basis.factors,
+        transitionExtraStrain: basis.transition.extraStrain
+      },
+      transverseReinforcement: basis.transverseReinforcement === 'qualifying-spiral'
+        ? 'qualifying-spiral'
+        : 'tied'
+    })
+  },
+  'kds-142020-equivalent-block': ({ common, basis }) => {
+    if (basis.transition.type !== 'fixed-or-yield-multiple') {
+      throw new Error('The KDS profile requires a fixed-or-yield-multiple transition rule.')
+    }
+    return createKds142020Model({
+      ...common,
+      resistanceFactors: basis.factors,
+      transitionLimitRule: {
+        yieldStressThreshold: basis.transition.yieldStressThreshold,
+        fixedStrainLimit: basis.transition.fixedStrainLimit,
+        highStrengthYieldMultiple: basis.transition.highStrengthYieldMultiple
+      },
+      transverseReinforcement: basis.transverseReinforcement
+    })
+  }
+}
+
 export const prepareBlockAnalysis = (
   profileId: CalculationProfileId,
   section: SectionGeometry,
@@ -151,51 +218,7 @@ export const prepareBlockAnalysis = (
     concreteStrength: materialStore.concrete.fck,
     steel
   }
-  const model = profileId === 'custom-equivalent-block'
-    ? createCustomBlockModel({
-        concreteStrength: materialStore.concrete.fck,
-        block: customBlockDefinition(materialStore.concrete),
-        steel: Object.fromEntries(materialStore.steel.map((item) => [String(item.id), {
-          elasticModulus: item.elasticModulus,
-          yieldStress: item.fy,
-          ultimateStrain: item.limits?.epsU,
-          law: customSteelLaw(item)
-        }])),
-        resistanceFactors: basis.factors,
-        transitionRule: basis.transition,
-        transverseReinforcement: basis.transverseReinforcement
-      })
-    : profileId === 'aci-318-19-22-equivalent-block'
-    ? (() => {
-        if (basis.transition.type !== 'yield-plus-strain') {
-          throw new Error('The ACI 318 profile requires a yield-plus-strain transition rule.')
-        }
-        return createAci318Model({
-        ...common,
-        resistanceFactors: {
-          ...basis.factors,
-          transitionExtraStrain: basis.transition.extraStrain
-        },
-        transverseReinforcement: basis.transverseReinforcement === 'qualifying-spiral'
-          ? 'qualifying-spiral'
-          : 'tied'
-        })
-      })()
-    : (() => {
-        if (basis.transition.type !== 'fixed-or-yield-multiple') {
-          throw new Error('The KDS profile requires a fixed-or-yield-multiple transition rule.')
-        }
-        return createKds142020Model({
-        ...common,
-        resistanceFactors: basis.factors,
-        transitionLimitRule: {
-          yieldStressThreshold: basis.transition.yieldStressThreshold,
-          fixedStrainLimit: basis.transition.fixedStrainLimit,
-          highStrengthYieldMultiple: basis.transition.highStrengthYieldMultiple
-        },
-        transverseReinforcement: basis.transverseReinforcement
-        })
-      })()
+  const model = BLOCK_MODEL_RESOLVERS[profileId]({ materialStore, basis, common })
   return { profileId, section: preparedSection, materialStore, designBasis: basis, model, geometry: section, rebars }
 }
 

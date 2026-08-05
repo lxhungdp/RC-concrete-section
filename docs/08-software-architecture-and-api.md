@@ -157,7 +157,7 @@ Never loosen engineering tolerances as a hidden performance optimization.
 
 ### 8.1 Implemented fixtures and measured baseline
 
-`packages/pm-analysis/src/bench/sections.ts` holds the fixture set required above: a compact square,
+`packages/pm-analysis/bench/sections.ts` holds the fixture set required above: a compact square,
 an asymmetric 60-bar wall, a circular and a hollow-circular pier, a thin-walled box, a concave
 L-shaped core, the verified reference case, and the same geometry driven by a tabulated material law.
 `npm run bench` runs each in its own process and reports min-of-N per stage.

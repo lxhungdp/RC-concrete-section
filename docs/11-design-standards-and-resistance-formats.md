@@ -276,8 +276,9 @@ edition, amendment, jurisdiction, and clause set pass the verification gates in 
 The first production release should enable only profiles whose `status` is `verified`. Draft rows
 may be visible in a developer registry but must be rejected by certification/report APIs.
 
-Current material UI support for `KDS`, `ACI318`, `EC2`, and `CUSTOM` is not this registry. It is a
-serializable material-source layer that chooses stress-strain families and stores their parameters.
+The current UI now resolves the public `KDS`, `ACI`, `EN`, and disabled `AS` choices through the
+calculation-profile registry. The lower-level `KDS`, `ACI318`, `EC2`, and `CUSTOM` material values
+remain a serializable material-source layer; they are not themselves the public Code registry.
 For EN 1992 preview, `alpha_cc`, `gamma_c`, and `gamma_s` are applied inside the material laws, so a
 later EN resistance profile must recognize that it is using a design-material reevaluation path and
 must not apply another global ACI/KDS-style factor. For the implemented ACI 318-19(22)
@@ -393,15 +394,18 @@ Before a profile is `verified`, test at least:
 Source access alone does not make an adapter verified. The profile-specific traceability bundle
 must identify every implemented clause, edition, amendment, interpretation, test, and reviewer.
 
-## 13. Implemented preview boundary (2026-08-04)
+## 13. Implemented preview boundary (2026-08-05)
 
 The repository implements two independent mechanics and the common resistance formats:
 
 - stress-strain integration for the KDS current profile;
 - exact equivalent rectangular blocks for KDS 14 20 20 and ACI 318-19(22);
 - `globalResultantFactor` for those KDS and ACI calculation profiles;
-- a `designMaterialReevaluation` basis exists for EN 1992-1-1:2004 preview work, but EC2 is not yet
-  exposed as a complete calculation profile in the main selector.
+- a selectable `designMaterialReevaluation` preview profile exists for EN 1992-1-1:2004; it has no
+  National Annex and retains an explicit warning that the tension-controlled boundary still uses
+  the concrete-pivot domain rather than a complete EC2 strain domain;
+- AS 3600:2018 Amendments 1 and 2 is present only in the Code registry and is calculation-disabled
+  until licensed clause mapping and independent review are complete.
 
 Canonical project schema-v1 exports persist the complete basis and loadcases are explicitly
 factored ULS actions. The parser's remaining omitted-field defaults are listed as pre-release debt

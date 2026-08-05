@@ -1584,7 +1584,7 @@ export const buildPreviewSurfaceFromPrepared = (
       tolerance
     },
     comparison: {
-      workbook: 'docs/example case/PM-advanced (7) 2D.xlsx',
+      workbook: 'docs/examples/reference-case/source/PM-advanced (7) 2D.xlsx',
       notes: [
         'Reference workbook uses fck=30 MPa, ecu=0.0033, KDS parabolic concrete, Es=200000 MPa, fy=400 MPa.',
         'Reference Summary P0 at 0 degrees: nominal P=33981.43 kN, factored P=23443.29 kN.',

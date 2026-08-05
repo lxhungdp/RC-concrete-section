@@ -8,7 +8,7 @@
 export { columnReportFileName, renderColumnReport } from './column-report'
 export { A4_LANDSCAPE, A4_PORTRAIT } from './writer'
 
-import { buildColumnReportModel, type ReportInput } from '../report-model'
+import { buildColumnReportModel, type ReportInput } from '../model/report-model'
 import { columnReportFileName, renderColumnReport } from './column-report'
 
 export const buildColumnReportPdf = (input: ReportInput) => {

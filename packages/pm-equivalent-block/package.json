@@ -8,7 +8,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "node --import tsx --test src/*.test.ts",
-    "bench": "tsx ../../bench/equivalent-block.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "bench": "tsx ../../bench/equivalent-block/run.ts"
   }
 }

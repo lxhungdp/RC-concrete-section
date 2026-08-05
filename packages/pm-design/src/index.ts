@@ -63,6 +63,8 @@ type DesignBasisCommon = {
   profileId: DesignProfileId
   verificationStatus: ProfileVerificationStatus
   modified: boolean
+  /** True when a user-selected material model replaces the profile's code-default model. */
+  materialModelModified?: boolean
   overrideReason: string
 }
 
@@ -220,7 +222,7 @@ export const createEn1992DesignBasis = (): DesignMaterialBasis => ({
   verificationStatus: 'draft',
   format: 'designMaterialReevaluation',
   factors: {
-    alphaCc: 0.85,
+    alphaCc: 1,
     gammaC: 1.5,
     gammaS: 1.15
   },
@@ -377,6 +379,7 @@ export const designBasisRequiresOverrideReason = (basis: DesignBasis): boolean =
   if (!basis.modified) return false
   /** A user-defined profile has no code default to deviate from; every value is already the user's. */
   if (basis.profileId === 'custom-user-defined') return false
+  if (basis.materialModelModified) return true
   const defaults =
     basis.profileId === 'aci-318-19-22'
       ? createAci318DesignBasis()

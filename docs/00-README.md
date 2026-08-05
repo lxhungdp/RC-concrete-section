@@ -51,15 +51,15 @@ Current UI note:
 
 ## 3. Current Implementation Status
 
-As of 2026-08-04:
+As of 2026-08-05:
 
 - Geometry editor, material editor, rebar input, project JSON round trip, Results preview plots, and
   loadcase entry are implemented as **preview** capability.
-- The material editor uses one calculation-profile selector for KDS stress-strain integration, KDS
-  equivalent block, ACI 318-19(22) equivalent block, or one of the two `Custom` profiles. It
-  atomically updates mechanics, material defaults, resistance basis, and model-specific analysis
-  options. A `Custom` profile additionally exposes the constitutive model itself: concrete law and
-  its parameters, steel law, block `beta1`/`alpha`/`epsCu`, and the tension-controlled limit rule.
+- The material editor uses hierarchical `Code -> calculation method -> concrete model` selection.
+  KDS offers both implemented mechanics, ACI offers its implemented block route, EN offers an
+  explicitly limited preview, and AS is visible but disabled pending licensed clause mapping.
+  Legacy custom project IDs remain readable but `Custom` is not a design Code. A user-defined KDS
+  concrete curve is recorded as a modified profile with an audit reason.
 - The current Results charts use Plotly for interactive visualization, but the underlying
   calculation is still a preview kernel.
 - Two independent calculation kernels are implemented: stress-strain integration and the
@@ -74,9 +74,9 @@ As of 2026-08-04:
   governing 3D proportional check; Fixed-P utilization is a secondary diagnostic.
 - The KDS 2024 current-set profiles (with resistance clauses explicitly traced to KDS 14 20 10:2021
   and KDS 14 20 20:2022) and ACI 318-19(22) block profile are implemented as `draft` design
-  previews; no profile is approved for released engineering use. The two `Custom` profiles are
-  `user-defined`: they invent no normative value, and they claim none. EN material/design helpers remain
-  lower-level preview capability and are not exposed as a complete calculation profile.
+  previews; no profile is approved for released engineering use. EN 1992-1-1:2004 is selectable only
+  as a preview with no National Annex and an explicit strain-domain warning. AS 3600 calculation is
+  fail-closed. Legacy `Custom` profiles are `user-defined`: they invent no normative value and claim none.
 - The stress-strain Excel preview result export includes an explicit `Design_Check` audit sheet. The separate
   Section-mesh Excel export includes formula-based area and first-moment recomputation so the
   integration mesh can be independently inspected.

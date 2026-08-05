@@ -125,16 +125,16 @@ At minimum:
 Concrete definitions support KDS parabolic, ACI Whitney block, EC2 parabolic-rectangular, and user
 curve discriminants. Steel supports elastic-perfectly-plastic, bilinear, and user curves.
 
-The Materials editor exposes one calculation-profile selector. Its current choices are KDS 2024
-stress-strain integration, KDS 14 20 20 equivalent block, and ACI 318-19(22) equivalent block. One
-change atomically derives the material source/model, mechanics, resistance basis, and matching
-analysis-options DTO. A second independent mechanics or standard selector must not be introduced,
-because it would allow contradictory states such as an ACI block profile with stress-strain options.
+The Materials editor exposes hierarchical Code, calculation-method, and concrete-model selectors.
+They are not independent free-form selectors: every lower choice comes from the selected profile's
+capability registry. A change atomically derives the material source/model, mechanics, resistance
+basis, and matching analysis-options DTO, preventing contradictory states such as an ACI block
+profile with stress-strain options.
 
 The lower-level material enums `KDS`, `ACI318`, `EC2`, and `CUSTOM` remain serializable definition
-fields. EC2 and Custom material families do not currently appear as complete calculation profiles in
-the main selector; adding one requires a complete profile and matching numerical route, not only a
-new combobox label.
+fields. EN appears only as a limited preview calculation profile; legacy Custom IDs remain readable
+but Custom is not a Code. AS is registered and disabled. Enabling a standard still requires a
+complete profile and matching numerical route, not only a combobox label.
 
 ### Implemented compilation
 
@@ -143,7 +143,8 @@ functions and a small limit record. The UI uses these functions to draw preview 
 
 Concrete compilers currently read `factors.alpha` and `factors.gammaC` when present and use the
 effective multiplier `alpha / gammaC`. Steel compilers currently read `factors.gammaS` when present
-and use `fy / gammaS` as the model yield stress. The Excel export must mirror these effective values
+and use `fy / gammaS` as the model yield stress. For EN these material fields are derived runtime
+snapshots; `DesignBasis.factors` is the canonical editable source. The Excel export must mirror these effective values
 in its named inputs (`alpha`, `fy`) while also displaying the characteristic/source values for audit.
 
 This is a useful package boundary, but the current compiler is not an analysis acceptance boundary:

@@ -10,7 +10,7 @@
     "./report-model": "./src/report-model.ts"
   },
   "scripts": {
-    "test": "tsx src/excel.selftest.ts"
+    "test": "tsx test/integration/excel.selftest.ts"
   },
   "dependencies": {
     "@pm/analysis": "0.1.0",

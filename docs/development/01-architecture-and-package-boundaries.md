@@ -146,3 +146,58 @@ policy.
 
 Numerically relevant dependency updates receive change classification and full affected regression,
 not automatic merge after type checking alone.
+
+## 10. Physical repository layout
+
+The physical tree follows ownership and execution role. Folder names are plural, lowercase, and
+stable; spaces are prohibited in new paths.
+
+```text
+apps/web/
+  app/                         Next.js route entry points only
+  application/analysis/        worker client, serializable contract, presentation DTO packing
+  features/section-editor/
+    analysis/                   analysis configuration and mesh workspace
+    design/                     resistance-basis UI
+    geometry/                   section/rebar input and geometry file adapters
+    loadings/                   loadcase input
+    materials/                  material and calculation-profile input
+    results/                    result view state, plots and demand evidence
+    shared/                     feature-local presentation utilities
+  test/                         web unit tests, grouped by feature/application concern
+  workers/                      worker runtime entry points only
+
+packages/<workspace-package>/
+  src/                          production runtime and public exports only
+  test/                         unit/integration verification; never exported
+  bench/                        package-owned performance fixtures and baselines, when needed
+
+docs/examples/
+  equivalent-block/            compact generated project fixtures
+  reference-case/              archived external/reference workbooks and reports
+
+tools/
+  fixtures/                     deterministic fixture generators
+  verification/                engineering comparison and verification utilities
+
+bench/
+  equivalent-block/            block-kernel performance work
+  stress-strain/               fibre/strain-domain performance work
+  cross-model/                 comparisons spanning mechanics
+```
+
+Rules:
+
+- `src` cannot contain files named `*.test.ts`, `*.selftest.ts`, benchmark runners, or reference
+  fixtures;
+- tests may import a package through its public API, or use a relative `../src` import when the test
+  intentionally verifies an internal package contract;
+- examples are immutable verification inputs unless a named generator owns them; generated report
+  outputs must not appear as unexplained source changes;
+- worker clients and workers share types only through `application/analysis/worker-contract.ts`;
+  neither side imports the other's runtime module;
+- moving a public module requires a compatibility export or an explicit API change record. Moving
+  test/bench/docs files requires updating every script and traceability reference in the same patch.
+
+`npm run check:structure` enforces the non-negotiable physical rules and runs before the full test
+pipeline. Extend that gate whenever a new repository-level layout invariant is adopted.

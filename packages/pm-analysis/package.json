@@ -4,13 +4,10 @@
   "private": true,
   "type": "module",
   "main": "src/index.ts",
-  "exports": {
-    ".": "./src/index.ts",
-    "./reference-case": "./src/reference-case.ts"
-  },
+  "exports": { ".": "./src/index.ts" },
   "scripts": {
-    "test": "tsx src/analysis.selftest.ts",
-    "fixture:reference-json": "tsx src/reference-case.write.ts"
+    "test": "tsx test/integration/analysis.selftest.ts",
+    "fixture:reference-json": "tsx test/fixtures/write-reference-case.ts"
   },
   "dependencies": {
     "@pm/design": "0.1.0",

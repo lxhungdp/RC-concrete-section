@@ -48,6 +48,9 @@ type PmProjectDocument = {
       | 'kds-2024-stress-strain'
       | 'kds-142020-equivalent-block'
       | 'aci-318-19-22-equivalent-block'
+      | 'en-1992-1-1-2004-stress-strain'
+      | 'custom-stress-strain'
+      | 'custom-equivalent-block'
     geometry: GeometryInput
     materials: MaterialStore
     loadings: { combinations: LoadCombination[] }
@@ -67,11 +70,15 @@ array position or display name.
 defaults, resistance basis, and analysis-options family. Changing it in Materials must atomically
 replace dependent defaults:
 
+The UI presents Code, method, and concrete model separately, but the capability registry resolves
+them back to this atomic compatibility key. They are not independent unvalidated schema fields.
+
 | Profile | Mechanics | Analysis DTO | Resistance basis |
 |---|---|---|---|
 | `kds-2024-stress-strain` | stress-strain integration | `strain-domain-surface-v1` | KDS global resultant factor |
 | `kds-142020-equivalent-block` | equivalent rectangular block | `equivalent-block-surface-v1` | KDS global resultant factor |
 | `aci-318-19-22-equivalent-block` | equivalent rectangular block | `equivalent-block-surface-v1` | ACI global resultant factor |
+| `en-1992-1-1-2004-stress-strain` | stress-strain integration | `strain-domain-surface-v1` | EN design-material reevaluation, preview only |
 | `custom-stress-strain` | stress-strain integration | `strain-domain-surface-v1` | user-defined global resultant factor |
 | `custom-equivalent-block` | equivalent rectangular block | `equivalent-block-surface-v1` | user-defined global resultant factor |
 
