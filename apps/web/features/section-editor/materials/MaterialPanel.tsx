@@ -10,6 +10,8 @@ import {
 import {
   aciBeta1,
   applyAci318ConcreteDerived,
+  applyAs3600ConcreteDerived,
+  applyAs3600SteelDerived,
   applyEn1992ConcreteDerived,
   applyEn1992SteelDerived,
   applyKdsConcreteDerived,
@@ -61,6 +63,8 @@ const standardLabel = (standard: ConcreteMaterial['standard'] | SteelMaterial['s
       return 'ACI 318'
     case 'EC2':
       return 'EN 1992-1-1 (EC2)'
+    case 'AS3600':
+      return 'AS 3600:2018'
     case 'CUSTOM':
       return 'Custom'
     default:
@@ -100,6 +104,7 @@ const modelName = (type: ConcreteMaterial['stressStrain']['type'] | SteelMateria
     'kds-parabolic': 'KDS Parabola-Rectangle',
     'aci-whitney-block': 'ACI Whitney Block',
     'ec2-parabolic-rectangular': 'EC2 Parabola-Rectangle',
+    'as3600-equivalent-block': 'AS 3600 Equivalent Block',
     'elastic-perfectly-plastic': 'Elastic Perfectly Plastic',
     bilinear: 'Bilinear',
     'user-curve': 'User-Defined Curve',
@@ -119,6 +124,8 @@ const concreteFormula = (material: ConcreteMaterial) => {
       return `σc = ${formatFormulaNumber(material.stressStrain.alpha)} fck over equivalent block, β1 = ${formatFormulaNumber(material.stressStrain.beta1, 2)}`
     case 'ec2-parabolic-rectangular':
       return `σc = ${formatFormulaNumber(material.stressStrain.alpha)} fck [1 - (1 - ε / εc2)^${formatFormulaNumber(material.stressStrain.n, 2)}], then plateau`
+    case 'as3600-equivalent-block':
+      return `σc = α₂ f'c = ${formatFormulaNumber(material.stressStrain.alpha2)} f'c over a = γc = ${formatFormulaNumber(material.stressStrain.gamma, 3)} c`
     case 'user-curve':
       return 'σc is linearly interpolated from user-defined ε-σ points'
     case 'user-block':
@@ -398,7 +405,10 @@ export function MaterialPanel({
         <p className="pm-field-note">{profile.standard}</p>
         {profile.implementationStatus === 'preview' && (
           <p className="pm-material-blocked" role="status">
-            Preview only. This profile is not released for production design; EN currently has no selected National Annex and its full strain-domain boundary remains under verification.
+            Preview only. This profile produces auditable results and reports but is not released for
+            production design. {profile.code === 'EN'
+              ? 'No National Annex is selected and the full EN strain-domain boundary remains under verification.'
+              : 'AS clause mapping, section-shape modifiers and independent engineering verification remain incomplete.'}
           </p>
         )}
       </section>
@@ -487,6 +497,7 @@ export function MaterialPanel({
                       if (next.standard === 'KDS') return applyKdsConcreteDerived(next)
                       if (next.standard === 'ACI318') return applyAci318ConcreteDerived(next)
                       if (next.standard === 'EC2') return applyEn1992ConcreteDerived(next)
+                      if (next.standard === 'AS3600') return applyAs3600ConcreteDerived(next)
                       if (next.stressStrain.type === 'aci-whitney-block') {
                         return {
                           ...next,
@@ -649,6 +660,15 @@ export function MaterialPanel({
                       No code table is applied. β1, α and εcu are the values this project declares; the surface,
                       the φ transition and the axial cap all follow the Design Basis you edit here.
                     </p>
+                  </>
+                ) : store.concrete.stressStrain.type === 'as3600-equivalent-block' ? (
+                  <>
+                    <div className="pm-material-row-3">
+                      <label className="pm-field"><span>γ</span><input readOnly value={Number(store.concrete.stressStrain.gamma.toFixed(4))} /></label>
+                      <label className="pm-field"><span>α₂</span><input readOnly value={Number(store.concrete.stressStrain.alpha2.toFixed(4))} /></label>
+                      <label className="pm-field"><span>εcu</span><input readOnly value={store.concrete.stressStrain.epsCu} /></label>
+                    </div>
+                    <p className="pm-field-note">AS 3600 preview block: concrete stress is α₂·f'c over a = γ·c; stress is zero outside the compression block.</p>
                   </>
                 ) : (
                   <>
@@ -934,7 +954,9 @@ export function MaterialPanel({
                       updateSteel(activeSteel.id, (material) => {
                         const fy = numberValue(event.target.value, material.fy)
                         const next = { ...material, fy, limits: { ...material.limits, epsY: fy / material.elasticModulus } }
-                        return next.standard === 'EC2' ? applyEn1992SteelDerived(next) : next
+                        if (next.standard === 'EC2') return applyEn1992SteelDerived(next)
+                        if (next.standard === 'AS3600') return applyAs3600SteelDerived(next)
+                        return next
                       })
                     }
                   />
@@ -949,7 +971,9 @@ export function MaterialPanel({
                       updateSteel(activeSteel.id, (material) => {
                         const elasticModulus = numberValue(event.target.value, material.elasticModulus)
                         const next = { ...material, elasticModulus, limits: { ...material.limits, epsY: material.fy / elasticModulus } }
-                        return next.standard === 'EC2' ? applyEn1992SteelDerived(next) : next
+                        if (next.standard === 'EC2') return applyEn1992SteelDerived(next)
+                        if (next.standard === 'AS3600') return applyAs3600SteelDerived(next)
+                        return next
                       })
                     }
                   />

@@ -1,5 +1,6 @@
 import {
   createAci318DesignBasis,
+  createAs3600DesignBasis,
   createCustomDesignBasis,
   createEn1992DesignBasis,
   createKdsBasicDesignBasis,
@@ -10,6 +11,8 @@ import {
 import {
   applyAci318ConcreteDerived,
   applyAci318SteelDerived,
+  applyAs3600ConcreteDerived,
+  applyAs3600SteelDerived,
   applyEn1992ConcreteDerived,
   applyEn1992SteelDerived,
   applyKdsConcreteDerived,
@@ -36,6 +39,7 @@ export const CALCULATION_PROFILE_IDS = [
   'kds-142020-equivalent-block',
   'aci-318-19-22-equivalent-block',
   'en-1992-1-1-2004-stress-strain',
+  'as-3600-2018-amd2-equivalent-block',
   'custom-stress-strain',
   'custom-equivalent-block'
 ] as const
@@ -48,6 +52,7 @@ export type ConcreteModelId =
   | 'kds-equivalent-rectangular-block'
   | 'aci-whitney-equivalent-block'
   | 'en1992-parabolic-rectangular'
+  | 'as3600-equivalent-rectangular-block'
   | 'user-stress-strain-curve'
   | 'user-equivalent-rectangular-block'
 
@@ -129,9 +134,9 @@ export const DESIGN_CODES: readonly DesignCodeDescriptor[] = [
     id: 'AS',
     label: 'AS',
     description: 'AS 3600 concrete structures',
-    implementationStatus: 'not-implemented',
+    implementationStatus: 'preview',
     unavailableReason:
-      'AS 3600:2018 with Amendments 1 and 2 requires a licensed clause mapping and independent engineering verification before calculation can be enabled.'
+      'Preview calculation only: clause mapping and independent engineering verification are incomplete.'
   }
 ] as const
 
@@ -224,6 +229,28 @@ export const CALCULATION_PROFILES: readonly CalculationProfile[] = [
     visibleInStandardWorkflow: true
   },
   {
+    id: 'as-3600-2018-amd2-equivalent-block',
+    label: 'AS 3600:2018 Amd 1–2 — Equivalent rectangular block (preview)',
+    shortLabel: 'AS 3600 — Equivalent block',
+    code: 'AS',
+    organization: 'Standards Australia',
+    standard: 'AS 3600:2018 incorporating Amendments 1 and 2',
+    mechanics: 'equivalent-rectangular-block',
+    methodLabel: 'Equivalent rectangular stress block',
+    defaultConcreteModelId: 'as3600-equivalent-rectangular-block',
+    concreteModels: [{
+      id: 'as3600-equivalent-rectangular-block',
+      label: 'AS 3600 equivalent rectangular block',
+      materialModelType: 'as3600-equivalent-block',
+      source: 'code-default'
+    }],
+    materialStandard: 'AS3600',
+    designProfileId: 'as-3600-2018-amd2',
+    resistanceFormat: 'globalResultantFactor',
+    implementationStatus: 'preview',
+    visibleInStandardWorkflow: true
+  },
+  {
     id: 'custom-stress-strain',
     label: 'Custom — Stress–strain integration',
     shortLabel: 'Custom — Stress–strain',
@@ -297,7 +324,11 @@ export const activeConcreteModelId = (
  * Narrowed by mechanics rather than by excluding one id, so adding a fibre profile can never leave
  * it silently routed to a block adapter.
  */
-export type EquivalentBlockProfileId = 'kds-142020-equivalent-block' | 'aci-318-19-22-equivalent-block' | 'custom-equivalent-block'
+export type EquivalentBlockProfileId =
+  | 'kds-142020-equivalent-block'
+  | 'aci-318-19-22-equivalent-block'
+  | 'as-3600-2018-amd2-equivalent-block'
+  | 'custom-equivalent-block'
 
 export const isEquivalentBlockProfileId = (id: CalculationProfileId): id is EquivalentBlockProfileId =>
   calculationProfile(id).mechanics === 'equivalent-rectangular-block'
@@ -313,6 +344,7 @@ export const createDesignBasisForCalculationProfile = (id: CalculationProfileId)
     case 'custom-user-defined': return createCustomDesignBasis()
     case 'aci-318-19-22': return createAci318DesignBasis()
     case 'en-1992-1-1-2004-default': return createEn1992DesignBasis()
+    case 'as-3600-2018-amd2': return createAs3600DesignBasis()
     case 'kds-2024-current-set':
     case 'kds-basic-2021-2022': return createKdsBasicDesignBasis()
     default: return designProfileId satisfies never
@@ -325,7 +357,7 @@ export const CONCRETE_MODELS_FOR_MECHANICS: Record<
   ReadonlyArray<ConcreteMaterial['stressStrain']['type']>
 > = {
   'stress-strain-integration': ['user-curve', 'kds-parabolic', 'ec2-parabolic-rectangular'],
-  'equivalent-rectangular-block': ['user-block']
+  'equivalent-rectangular-block': ['user-block', 'aci-whitney-block', 'as3600-equivalent-block', 'kds-parabolic']
 }
 
 export const CUSTOM_STEEL_MODELS: ReadonlyArray<SteelMaterial['stressStrain']['type']> = [
@@ -441,6 +473,16 @@ export const applyCalculationProfileToMaterials = (
         standard: 'EC2',
         stressStrain: { type: 'elastic-perfectly-plastic' },
         factors: { ...steel.factors, gammaS: EN1992_GAMMA_S }
+      }))
+      return store
+    case 'as-3600-2018-amd2-equivalent-block':
+      store.concrete = applyAs3600ConcreteDerived({
+        ...store.concrete,
+        standard: 'AS3600'
+      })
+      store.steel = store.steel.map((steel) => applyAs3600SteelDerived({
+        ...steel,
+        standard: 'AS3600'
       }))
       return store
     case 'kds-2024-stress-strain':

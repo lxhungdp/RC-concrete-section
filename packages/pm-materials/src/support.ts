@@ -34,6 +34,12 @@ export const UNSUPPORTED_CONCRETE_MODELS: Partial<Record<ConcreteStressStrainMod
       'The equivalent rectangular (Whitney) block cannot run in the local fibre kernel: β1 is not a pointwise stress-strain parameter. Select the ACI 318 equivalent-block calculation profile so a = β1·c is evaluated by the implemented resultant-level adapter.',
     reference: 'docs/12-calculation-models-defaults-and-workflows.md §3'
   },
+  'as3600-equivalent-block': {
+    modelType: 'as3600-equivalent-block',
+    reason:
+      'The AS 3600 equivalent rectangular block is a resultant equivalence. Select the AS 3600 equivalent-block calculation profile so alpha2 and gamma are applied by the code adapter.',
+    reference: 'docs/12-calculation-models-defaults-and-workflows.md'
+  },
   'user-block': {
     modelType: 'user-block',
     reason:
@@ -92,5 +98,6 @@ export const strainDomainMismatch = (material: ConcreteMaterial): StrainDomainMi
 
 /** Concrete sources whose default model is currently blocked, so the UI can disable them up front. */
 export const BLOCKED_CONCRETE_STANDARDS: Partial<Record<MaterialStandard, ModelSupportIssue>> = {
-  ACI318: UNSUPPORTED_CONCRETE_MODELS['aci-whitney-block']!
+  ACI318: UNSUPPORTED_CONCRETE_MODELS['aci-whitney-block']!,
+  AS3600: UNSUPPORTED_CONCRETE_MODELS['as3600-equivalent-block']!
 }

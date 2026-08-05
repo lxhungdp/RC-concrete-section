@@ -18,10 +18,10 @@ default is independent: 37 initial neutral-axis states, bar-controlled code/rupt
 24 seed directions, and 0.75% adaptive station and direction refinement.
 
 The Materials workflow now selects `Code -> calculation method -> concrete model`. KDS exposes both
-implemented mechanics, ACI exposes its implemented equivalent block, and EN 1992-1-1:2004 exposes a
-design-material stress-strain preview with an explicit no-National-Annex/strain-domain warning. AS
-3600 is registered but disabled until the exact 2018 Amendments 1 and 2 rules are mapped from licensed
-text. Legacy `Custom` profile files remain readable, while new user customization is a concrete-model
+implemented mechanics, ACI exposes its implemented equivalent block, EN 1992-1-1:2004 exposes a
+design-material stress-strain preview, and AS 3600:2018 Amendments 1 and 2 exposes an equivalent-block
+preview. EN has no selected National Annex and an incomplete strain-domain boundary; AS has explicit
+shape/member-analysis limitations. Legacy `Custom` profile files remain readable, while new user customization is a concrete-model
 choice under a Code and is reported as a modified profile.
 Nominal, Design, and factored ULS Demand are separate result stages. See
 [`docs/12-calculation-models-defaults-and-workflows.md`](docs/12-calculation-models-defaults-and-workflows.md)
@@ -48,6 +48,8 @@ packages/pm-analysis/             Stress-strain forward/inverse/surface kernel
 packages/pm-equivalent-block/     Standard-independent rectangular-block kernel
 packages/pm-code-kds142020/       KDS 14 20 20 block adapter
 packages/pm-code-aci318/          ACI 318 Whitney-block adapter
+packages/pm-code-en1992/          EN 1992 material/design policy adapter
+packages/pm-code-as3600/          AS 3600 equivalent-block/capacity-factor adapter
 packages/pm-code-custom/          User-defined block adapter; derives nothing from a code table
 packages/pm-analysis-equivalent-block/  Project/result bridge for block profiles
 packages/pm-report/               Result workbooks (both mechanics), mesh Excel/DXF, and the PDF report

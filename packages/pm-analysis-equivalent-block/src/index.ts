@@ -12,6 +12,7 @@ import {
   type SurfaceStation
 } from '@pm/analysis'
 import { createAci318Model } from '@pm/code-aci318'
+import { createAs3600Model } from '@pm/code-as3600'
 import {
   createCustomBlockModel,
   type CustomBlockDefinition,
@@ -44,6 +45,7 @@ import {
 
 type PreparedBlockModel =
   | ReturnType<typeof createAci318Model>
+  | ReturnType<typeof createAs3600Model>
   | ReturnType<typeof createKds142020Model>
   | ReturnType<typeof createCustomBlockModel>
 
@@ -151,6 +153,24 @@ const BLOCK_MODEL_RESOLVERS: Record<EquivalentBlockProfileId, BlockModelResolver
       transverseReinforcement: basis.transverseReinforcement === 'qualifying-spiral'
         ? 'qualifying-spiral'
         : 'tied'
+    })
+  },
+  'as-3600-2018-amd2-equivalent-block': ({ common, basis }) => {
+    if (basis.transition.type !== 'yield-plus-strain') {
+      throw new Error('The AS 3600 preview profile requires its declared capacity-factor policy.')
+    }
+    return createAs3600Model({
+      ...common,
+      compressionPhiClass: basis.transverseReinforcement === 'qualifying-spiral'
+        ? 'short-column-high-permanent-load'
+        : 'ordinary',
+      resistanceFactors: {
+        phiCompressionOrdinary: basis.factors.phiCompressionOther,
+        phiCompressionShortColumnHighPermanentLoad: basis.factors.phiCompressionSpiral,
+        phiBendingMinimum: basis.factors.phiCompressionSpiral,
+        phiBendingMaximum: basis.factors.phiTension,
+        phiTension: basis.factors.phiTension
+      }
     })
   },
   'kds-142020-equivalent-block': ({ common, basis }) => {

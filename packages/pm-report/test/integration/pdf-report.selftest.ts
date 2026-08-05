@@ -15,6 +15,9 @@ import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geome
 import { buildResistanceMaterialSets } from '@pm/design'
 import {
   analysisMeshKernelOptions,
+  applyCalculationProfileToMaterials,
+  createAnalysisOptionsForProfile,
+  createDesignBasisForCalculationProfile,
   isEquivalentBlockProfileId,
   parseProjectDocument,
   type AnalysisOptions,
@@ -31,12 +34,26 @@ const CASES = [
   {
     file: 'docs/examples/reference-case/projects/PM-advanced (7) 2D.pm-project.json',
     label: 'stress-strain',
-    archive: true
+    archive: true,
+    rebindTo: null
   },
   {
     file: 'docs/examples/equivalent-block/ACI-EB-01-rectangle-8-bars.pm-project.json',
     label: 'equivalent-block',
-    archive: true
+    archive: true,
+    rebindTo: null
+  },
+  {
+    file: 'docs/examples/equivalent-block/ACI-EB-01-rectangle-8-bars.pm-project.json',
+    label: 'as-3600-preview',
+    archive: false,
+    rebindTo: 'as-3600-2018-amd2-equivalent-block' as const
+  },
+  {
+    file: 'docs/examples/reference-case/projects/PM-advanced (7) 2D.pm-project.json',
+    label: 'en-1992-preview',
+    archive: false,
+    rebindTo: 'en-1992-1-1-2004-stress-strain' as const
   }
 ] as const
 
@@ -59,7 +76,15 @@ const normalizedGeometry = (value: unknown) => JSON.stringify(
   (_key, item) => typeof item === 'number' ? Math.round(item * 1e7) / 1e7 : item
 )
 
-const runCase = async (relativePath: string, label: string, archive: boolean) => {
+const runCase = async (
+  relativePath: string,
+  label: string,
+  archive: boolean,
+  rebindTo:
+    | 'as-3600-2018-amd2-equivalent-block'
+    | 'en-1992-1-1-2004-stress-strain'
+    | null
+) => {
   console.log(`\n================ ${label}: ${relativePath} ================`)
   const parsed = parseProjectDocument(readFileSync(resolve(process.cwd(), relativePath), 'utf8'))
   assert.ok(parsed.ok, `${relativePath} must parse`)
@@ -68,7 +93,16 @@ const runCase = async (relativePath: string, label: string, archive: boolean) =>
   const geometry = document.inputs.geometry
   const section = sectionGeometryFromGeometryInput(geometry)
   const rebars = geometryInputRebars(geometry)
-  const profileId = document.inputs.calculationProfileId
+  const profileId = rebindTo ?? document.inputs.calculationProfileId
+  const materialStore = rebindTo
+    ? applyCalculationProfileToMaterials(document.inputs.materials, rebindTo)
+    : document.inputs.materials
+  const designBasis = rebindTo
+    ? createDesignBasisForCalculationProfile(rebindTo)
+    : document.inputs.design
+  const analysisOptions = rebindTo
+    ? createAnalysisOptionsForProfile(rebindTo)
+    : document.inputs.analysis
   const loadcases = document.inputs.loadings.combinations
 
   const surface = isEquivalentBlockProfileId(profileId)
@@ -76,13 +110,13 @@ const runCase = async (relativePath: string, label: string, archive: boolean) =>
         profileId,
         section,
         rebars,
-        document.inputs.materials,
-        document.inputs.design,
-        document.inputs.analysis as EquivalentBlockAnalysisOptions
+        materialStore,
+        designBasis,
+        analysisOptions as EquivalentBlockAnalysisOptions
       )
     : (() => {
-        const options = document.inputs.analysis as AnalysisOptions
-        const stateMaterials = buildResistanceMaterialSets(document.inputs.materials, document.inputs.design).stateMaterials
+        const options = analysisOptions as AnalysisOptions
+        const stateMaterials = buildResistanceMaterialSets(materialStore, designBasis).stateMaterials
         const prepared = prepareAnalysis(section, rebars, stateMaterials, analysisMeshKernelOptions(options))
         return buildPreviewSurfaceFromPrepared(prepared, options, document.inputs.design)
       })()
@@ -93,9 +127,9 @@ const runCase = async (relativePath: string, label: string, archive: boolean) =>
     calculationProfileId: profileId,
     section,
     rebars,
-    materialStore: document.inputs.materials,
-    designBasis: document.inputs.design,
-    analysisOptions: document.inputs.analysis,
+    materialStore,
+    designBasis,
+    analysisOptions,
     surface,
     loadcases,
     // Every combination gets a worked page, which is also the heaviest path through the renderer.
@@ -224,7 +258,9 @@ const runCase = async (relativePath: string, label: string, archive: boolean) =>
 }
 
 const run = async () => {
-  for (const testCase of CASES) await runCase(testCase.file, testCase.label, testCase.archive)
+  for (const testCase of CASES) {
+    await runCase(testCase.file, testCase.label, testCase.archive, testCase.rebindTo)
+  }
   if (failures.length > 0) {
     console.error(`\n${failures.length} check(s) failed:`)
     for (const line of failures) console.error(`  ${line}`)

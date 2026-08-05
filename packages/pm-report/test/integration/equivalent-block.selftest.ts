@@ -50,6 +50,7 @@ const CASES = [
     archive: true
   },
   { file: 'docs/examples/equivalent-block/ACI-EB-01-rectangle-8-bars.pm-project.json', rebindTo: null, thetaDeg: 0, archive: false },
+  { file: 'docs/examples/equivalent-block/ACI-EB-01-rectangle-8-bars.pm-project.json', rebindTo: 'as-3600-2018-amd2-equivalent-block' as const, thetaDeg: 0, archive: false },
   { file: 'docs/examples/equivalent-block/KDS-EB-02-hollow-8-bars.pm-project.json', rebindTo: null, thetaDeg: 30, archive: false },
   { file: 'docs/examples/equivalent-block/ACI-EB-03-l-shape-8-bars.pm-project.json', rebindTo: null, thetaDeg: 45, archive: false }
 ] as const

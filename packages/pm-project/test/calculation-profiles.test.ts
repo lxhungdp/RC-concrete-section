@@ -20,12 +20,12 @@ test('the standard registry separates Code from calculation method and excludes 
   assert.equal(calculationProfilesForCode('KDS').length, 2)
   assert.equal(calculationProfilesForCode('ACI').length, 1)
   assert.equal(calculationProfilesForCode('EN').length, 1)
-  assert.equal(calculationProfilesForCode('AS').length, 0)
-  assert.equal(DESIGN_CODES.find((code) => code.id === 'AS')?.implementationStatus, 'not-implemented')
+  assert.equal(calculationProfilesForCode('AS').length, 1)
+  assert.equal(DESIGN_CODES.find((code) => code.id === 'AS')?.implementationStatus, 'preview')
 })
 
 test('every selectable profile declares a coherent resistance format and concrete-model capability', () => {
-  for (const code of ['KDS', 'ACI', 'EN'] as const) {
+  for (const code of ['KDS', 'ACI', 'EN', 'AS'] as const) {
     for (const profile of calculationProfilesForCode(code)) {
       const basis = createDesignBasisForCalculationProfile(profile.id)
       assert.equal(basis.profileId, profile.designProfileId)
@@ -33,6 +33,26 @@ test('every selectable profile declares a coherent resistance format and concret
       assert.ok(profile.concreteModels.some((model) => model.id === profile.defaultConcreteModelId))
     }
   }
+})
+
+test('AS profile applies AS 3600 block materials and round-trips as preview', () => {
+  const profileId = 'as-3600-2018-amd2-equivalent-block' as const
+  const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
+  const basis = createDesignBasisForCalculationProfile(profileId)
+  assert.equal(materials.concrete.standard, 'AS3600')
+  assert.equal(materials.concrete.stressStrain.type, 'as3600-equivalent-block')
+  assert.ok(materials.steel.every((steel) => steel.standard === 'AS3600'))
+  assert.equal(basis.profileId, 'as-3600-2018-amd2')
+  assert.equal(basis.verificationStatus, 'draft')
+
+  const document = createProjectDocument({
+    calculationProfileId: profileId,
+    geometry: createEmptyGeometryInput({ id: 1, name: 'AS preview' }),
+    materials,
+    design: basis
+  })
+  const parsed = parseProjectDocument(document)
+  assert.equal(parsed.ok, true, parsed.ok ? 'AS project parsed' : parsed.error)
 })
 
 test('EN profile applies EC2 materials and round-trips its design-material resistance basis', () => {

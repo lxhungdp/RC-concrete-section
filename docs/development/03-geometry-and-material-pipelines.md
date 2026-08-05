@@ -133,7 +133,7 @@ profile with stress-strain options.
 
 The lower-level material enums `KDS`, `ACI318`, `EC2`, and `CUSTOM` remain serializable definition
 fields. EN appears only as a limited preview calculation profile; legacy Custom IDs remain readable
-but Custom is not a Code. AS is registered and disabled. Enabling a standard still requires a
+but Custom is not a Code. AS is executable only as a disclosed `draft` preview. Releasing a standard still requires a
 complete profile and matching numerical route, not only a combobox label.
 
 ### Implemented compilation

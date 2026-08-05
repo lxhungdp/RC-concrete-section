@@ -63,6 +63,41 @@ const forbiddenLegacyPaths = [
   'docs/example case'
 ]
 
+const requiredStandardAdapters = [
+  'packages/pm-code-kds142020',
+  'packages/pm-code-aci318',
+  'packages/pm-code-en1992',
+  'packages/pm-code-as3600'
+]
+
+for (const adapterPath of requiredStandardAdapters) {
+  if (!existsSync(resolve(root, adapterPath, 'src/index.ts'))) {
+    issues.push(`${adapterPath}: selectable standards require a code-owned adapter entry point`)
+  }
+  if (!existsSync(resolve(root, adapterPath, 'test'))) {
+    issues.push(`${adapterPath}: code adapters require a package-local test directory`)
+  }
+}
+
+for (const legacyTool of [
+  'tools/generate-equivalent-block-examples.ts',
+  'tools/p16-umd-comparison.ts',
+  'tools/p16-umd-verification.ts'
+]) {
+  if (existsSync(resolve(root, legacyTool))) issues.push(`${legacyTool}: legacy root tool must not be recreated`)
+}
+
+const reportRoot = resolve(root, 'packages/pm-report/src')
+if (existsSync(reportRoot)) {
+  const allowedFacades = new Set(['index.ts', 'report-model.ts'])
+  for (const entry of readdirSync(reportRoot)) {
+    const path = resolve(reportRoot, entry)
+    if (statSync(path).isFile() && sourceExtensions.has(extension(entry)) && !allowedFacades.has(entry)) {
+      issues.push(`packages/pm-report/src/${entry}: report implementations belong in a concern folder`)
+    }
+  }
+}
+
 for (const legacyPath of forbiddenLegacyPaths) {
   if (existsSync(resolve(root, legacyPath))) issues.push(`${legacyPath}: legacy layout must not be recreated`)
 }

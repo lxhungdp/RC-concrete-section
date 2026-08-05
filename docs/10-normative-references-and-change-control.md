@@ -63,9 +63,10 @@ must not be replaced by KDS/ACI values or by a universal final resultant factor.
   implicitly:
   <https://comment.standards.org.au/>
 
-The AS registry entry is therefore calculation-disabled. Enabling it requires the licensed
-AS 3600 clauses, an edition/amendment/adoption identity, clause-level coefficient and limit mapping,
-independent benchmark examples, and engineering review. No KDS or ACI fallback is allowed.
+The AS 3600:2018 Amendments 1 and 2 adapter is enabled only as a watermarked `draft` preview. Its
+edition identity, stress-block coefficients and capacity-factor path are explicit and it uses no KDS
+or ACI fallback. Certification remains disabled until licensed clause-by-clause review, independent
+benchmark examples, section-shape classification and member-level limit checks are complete.
 
 ## 2. Computational credibility and software V&V
 

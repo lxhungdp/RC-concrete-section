@@ -119,6 +119,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   const { section, rebars, materialStore } = input
   if (rebars.length === 0) throw new ExcelExportError('The section has no reinforcement to report.')
   const basis = assertBlockBasis(input.designBasis)
+  const usesAs3600CapacityFactors = input.calculationProfileId === 'as-3600-2018-amd2-equivalent-block'
   const profile = calculationProfile(input.calculationProfileId)
 
   const prepared = prepareBlockAnalysis(
@@ -266,12 +267,21 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   const concreteInputs: NamedInput[] = [
     { row: row++, label: 'standard', value: materialStore.concrete.standard, unit: '', note: materialStore.concrete.name },
     { row: row++, label: 'fck', value: materialStore.concrete.fck, unit: 'MPa', name: 'fck', note: 'characteristic/input strength' },
-    { row: row++, label: 'α (σblock/fck)', value: blockStressFactor, unit: '-', name: 'alpha', note: 'resolved by the code adapter; KDS writes it as η·0.85, ACI as 0.85' },
-    { row: row++, label: 'σblock = α·fck', value: blockLaw.compressionStress, unit: 'MPa', name: 'sig_blk', formula: 'alpha*fck' },
-    { row: row++, label: 'β1', value: blockLaw.depthFactor, unit: '-', name: 'beta_1', note: 'block depth a = β1·c' },
+    { row: row++, label: usesAs3600CapacityFactors ? "α₂ (σblock/f'c)" : 'α (σblock/fck)', value: blockStressFactor, unit: '-', name: 'alpha', note: usesAs3600CapacityFactors ? 'AS 3600 stress factor resolved by the code adapter' : 'resolved by the code adapter; KDS writes it as η·0.85, ACI as 0.85' },
+    { row: row++, label: usesAs3600CapacityFactors ? "σblock = α₂·f'c" : 'σblock = α·fck', value: blockLaw.compressionStress, unit: 'MPa', name: 'sig_blk', formula: 'alpha*fck' },
+    { row: row++, label: usesAs3600CapacityFactors ? 'γ' : 'β1', value: blockLaw.depthFactor, unit: '-', name: 'beta_1', note: usesAs3600CapacityFactors ? 'AS 3600 block depth a = γ·c' : 'block depth a = β1·c' },
     { row: row++, label: 'εcu', value: blockLaw.extremeCompressionStrain, unit: '-', name: 'ecu', note: 'extreme compression fibre strain' },
     { row: row++, label: 'displaced concrete deducted', value: blockLaw.subtractDisplacedConcrete ? 'yes' : 'no', unit: '', note: 'bars inside the block carry σs − σblock' }
   ]
+  if (usesAs3600CapacityFactors) {
+    concreteInputs.push({
+      row: row++,
+      label: 'Workbook named-range aliases',
+      value: 'alpha = α₂; beta_1 = γ',
+      unit: '',
+      note: "sigma_block = alpha2*f'c and a = gamma*c; legacy workbook names remain stable"
+    })
+  }
 
   row += 1
   sectionHeading(inputSheet, row, 'Reinforcement', 4)
@@ -306,6 +316,15 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     { row: row++, label: 'axial cap ratio', value: capRatio, unit: '-', name: 'cap_r' },
     { row: row++, label: 'axial cap applied', value: basis.axialCapEnabled ? 'yes' : 'no', unit: '', note: 'clips the design surface at cap ratio × the factored compression pole' }
   ]
+  if (usesAs3600CapacityFactors) {
+    resistanceInputs.push({
+      row: row++,
+      label: 'AS capacity-factor evaluation',
+      value: 'code adapter',
+      unit: '',
+      note: 'Table 2.2.2 bending/axial interaction; PM_Angle carries the evaluated phi for audit'
+    })
+  }
 
   row += 1
   sectionHeading(inputSheet, row, 'Analysis', 4)
@@ -391,7 +410,13 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     ['u_max, Dθ', 'engine value', 'support extremum over the boundary at θ'],
     ['Station depths c', 'engine value', 'solved so a bar sits exactly at a code/rupture strain'],
     ['Strain, stress, force, moment ledger', 'formula', 'the audit trail a reviewer follows term by term'],
-    ['φ and design resultants', 'formula', 'the transition rule is algebra over εt, εy and the named φ factors'],
+    [
+      'φ and design resultants',
+      usesAs3600CapacityFactors ? 'engine value + formula resultants' : 'formula',
+      usesAs3600CapacityFactors
+        ? 'AS 3600 Table 2.2.2 axial/bending interaction is evaluated by the code adapter; multiplication into P-M-M remains visible'
+        : 'the transition rule is algebra over εt, εy and the named φ factors'
+    ],
     [`${sampledDirections.length} x station surface grid (MxMy_FixedP)`, 'engine value', 'avoids re-solving every state in the sheet; two sentinels flag a stale import'],
     ['Contour, ray query, plane cut', 'formula', 'this is the logic under audit, so it stays visible'],
     ['Converged capacity-ray state (Equilibrium)', 'engine value', 'bracketed scalar solve on the design-surface boundary; the workbook verifies the state instead of re-deriving it'],
@@ -784,12 +809,12 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     pmSheet.getCell(r, 7).value = { formula: `Block!K${blockRow}+SUM(Steel!N${range.first}:N${range.last})` }
     pmSheet.getCell(r, 8).value = { formula: `Block!L${blockRow}+SUM(Steel!O${range.first}:O${range.last})` }
     pmSheet.getCell(r, 9).value = { formula: `MAX(Steel!H${range.first}:H${range.last})` }
-    pmSheet.getCell(r, 10).value = {
-      formula: `IF(I${r}<=epsy,phi_c,IF(I${r}>=ept_lim,phi_t,phi_c+(phi_t-phi_c)*(I${r}-epsy)/(ept_lim-epsy)))`
-    }
-    pmSheet.getCell(r, 11).value = {
-      formula: `IF(I${r}<=epsy,"compression",IF(I${r}>=ept_lim,"tension","transition"))`
-    }
+    pmSheet.getCell(r, 10).value = usesAs3600CapacityFactors
+      ? station.phi
+      : { formula: `IF(I${r}<=epsy,phi_c,IF(I${r}>=ept_lim,phi_t,phi_c+(phi_t-phi_c)*(I${r}-epsy)/(ept_lim-epsy)))` }
+    pmSheet.getCell(r, 11).value = usesAs3600CapacityFactors
+      ? station.classification
+      : { formula: `IF(I${r}<=epsy,"compression",IF(I${r}>=ept_lim,"tension","transition"))` }
     pmSheet.getCell(r, 12).value = { formula: `J${r}*F${r}` }
     pmSheet.getCell(r, 13).value = { formula: `J${r}*G${r}` }
     pmSheet.getCell(r, 14).value = { formula: `J${r}*H${r}` }

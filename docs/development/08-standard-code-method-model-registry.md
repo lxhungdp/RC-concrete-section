@@ -28,14 +28,14 @@ and is recorded as a modified Code profile.
 | KDS | stress-strain integration; equivalent rectangular block | available calculation routes; KDS remains the default and highest regression priority |
 | ACI | equivalent rectangular block | available calculation route |
 | EN | EN 1992-1-1:2004 stress-strain preview | design-material reevaluation is implemented; no National Annex is selected and the full EC2 strain-domain boundary is not verified |
-| AS | none | registry entry only; calculation is disabled until AS 3600:2018 Amendments 1 and 2 are mapped from licensed text and independently reviewed |
+| AS | AS 3600:2018 Amendments 1 and 2 equivalent-block preview | executable and reportable; independent clause verification, shape classification and member-level checks remain open |
 
 `implementationStatus` describes route availability only. `DesignBasis.verificationStatus` remains
 the engineering review/release state. The two must never be collapsed.
 
-AS is deliberately fail-closed. A draft AS 3600:2026 also exists as of August 2026, so an adapter
-must name the exact edition/amendments; it may not be called `latest` and may not copy coefficients
-from an uncontrolled secondary source.
+AS remains fail-closed for certification but is executable as a watermarked preview. The adapter is
+explicitly named for AS 3600:2018 incorporating Amendments 1 and 2. A draft AS 3600:2026 also exists
+as of August 2026 and is not used or described as the governing edition.
 
 ## 3. Concrete-model customization
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, RotateCcw } from 'lucide-react'
 import {
   createAci318DesignBasis,
+  createAs3600DesignBasis,
   createCustomDesignBasis,
   createEn1992DesignBasis,
   createKdsBasicDesignBasis,
@@ -23,6 +24,7 @@ const clone = <T,>(value: T): T => structuredClone(value)
 const profileDefaults = (profileId: DesignProfileId): DesignBasis => {
   if (profileId === 'aci-318-19-22') return createAci318DesignBasis()
   if (profileId === 'en-1992-1-1-2004-default') return createEn1992DesignBasis()
+  if (profileId === 'as-3600-2018-amd2') return createAs3600DesignBasis()
   if (profileId === 'custom-user-defined') return createCustomDesignBasis()
   return createKdsBasicDesignBasis()
 }
@@ -101,6 +103,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
   }
 
   const isUserDefinedProfile = draft.profileId === 'custom-user-defined'
+  const isAs3600Profile = draft.profileId === 'as-3600-2018-amd2'
 
   const update = (mutate: (next: DesignBasis) => void) => {
     const next = clone(draft)
@@ -145,7 +148,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
       {draft.format === 'globalResultantFactor' ? (
         <>
           <DesignSelect
-            label="Transverse reinforcement"
+            label={isAs3600Profile ? 'AS compression-factor class' : 'Transverse reinforcement'}
             value={draft.transverseReinforcement}
             onChange={(classification) =>
                 update((next) => {
@@ -155,11 +158,17 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                 })
               }
           >
-              <option value="other">Ties / other</option>
-              <option value="qualifying-spiral">Qualifying spiral</option>
+              <option value="other">
+                {isAs3600Profile ? 'Ordinary column (phi_o = 0.60)' : 'Ties / other'}
+              </option>
+              <option value="qualifying-spiral">
+                {isAs3600Profile ? 'Short column, Q/G >= 0.25 (phi_o = 0.65)' : 'Qualifying spiral'}
+              </option>
           </DesignSelect>
           <p className="pm-design-help">
-            {draft.transverseReinforcement === 'qualifying-spiral'
+            {isAs3600Profile
+              ? 'AS 3600 Table 2.2.2 uses phi_o = 0.65 for the declared short-column high-permanent-load case; otherwise this preview uses 0.60.'
+              : draft.transverseReinforcement === 'qualifying-spiral'
               ? 'Continuous helical reinforcement that satisfies every code requirement for a qualifying spiral. A circular section alone is not sufficient.'
               : 'Closed hoops and crossties, or any transverse reinforcement that does not qualify as a code-compliant continuous spiral.'}
           </p>
@@ -169,6 +178,12 @@ export function DesignBasisPanel({ value, onChange }: Props) {
               <strong>Strength reduction</strong>
               <span>Applied to the complete P-Mx-My resultant</span>
             </div>
+            {isAs3600Profile && (
+              <p className="pm-design-help">
+                The AS adapter evaluates bending phi from k_uo and interpolates combined axial
+                compression/tension using the balanced and pure-tension axial capacities.
+              </p>
+            )}
             {/* A code profile owns its transition shape; a user-defined profile chooses one. */}
             {isUserDefinedProfile && (
               <DesignSelect
@@ -196,12 +211,14 @@ export function DesignBasisPanel({ value, onChange }: Props) {
             )}
             <div className="pm-design-factor-grid">
               <NumericFactor
-                label="φc · ties"
+                label={isAs3600Profile ? 'φo · ordinary' : 'φc · ties'}
                 value={draft.factors.phiCompressionOther}
                 min={0.1}
                 max={1}
                 step={0.01}
-                help="Compression-controlled strength-reduction factor for tied or other columns."
+                help={isAs3600Profile
+                  ? 'AS compression factor for ordinary reinforced-concrete sections.'
+                  : 'Compression-controlled strength-reduction factor for tied or other columns.'}
                 onChange={(factor) =>
                   update((next) => {
                     if (next.format === 'globalResultantFactor') next.factors.phiCompressionOther = factor
@@ -209,12 +226,14 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                 }
               />
               <NumericFactor
-                label="φc · spiral"
+                label={isAs3600Profile ? 'φo · Q/G >= 0.25' : 'φc · spiral'}
                 value={draft.factors.phiCompressionSpiral}
                 min={0.1}
                 max={1}
                 step={0.01}
-                help="Compression-controlled factor available only to a code-qualifying spiral."
+                help={isAs3600Profile
+                  ? 'AS compression factor for a short column with Q/G at least 0.25.'
+                  : 'Compression-controlled factor available only to a code-qualifying spiral.'}
                 onChange={(factor) =>
                   update((next) => {
                     if (next.format === 'globalResultantFactor') next.factors.phiCompressionSpiral = factor
@@ -222,7 +241,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                 }
               />
               <NumericFactor
-                label="φt"
+                label={isAs3600Profile ? 'φ · pure tension' : 'φt'}
                 value={draft.factors.phiTension}
                 min={0.1}
                 max={1}
@@ -242,9 +261,12 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                 min={0.000001}
                 max={0.05}
                 step={0.0001}
-                help={draft.transition.type === 'yield-plus-strain'
-                  ? 'ACI: the tension-controlled limit is εy + Δεt.'
-                  : 'KDS: fixed tension-controlled strain limit at or below the threshold grade.'}
+                readOnly={isAs3600Profile}
+                help={isAs3600Profile
+                  ? 'Compatibility field retained by the common design schema; the AS adapter derives phi from k_uo and does not use it.'
+                  : draft.transition.type === 'yield-plus-strain'
+                    ? 'ACI: the tension-controlled limit is εy + Δεt.'
+                    : 'KDS: fixed tension-controlled strain limit at or below the threshold grade.'}
                 onChange={(factor) =>
                   update((next) => {
                     if (next.format !== 'globalResultantFactor') return
@@ -253,7 +275,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                   })
                 }
               />
-              {draft.transition.type === 'fixed-or-yield-multiple' && (
+              {!isAs3600Profile && draft.transition.type === 'fixed-or-yield-multiple' && (
                 <>
                   <NumericFactor
                     label="fy threshold (MPa)"
@@ -300,7 +322,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
             </dl>
           </div>
 
-          <div className="pm-design-group">
+          {!isAs3600Profile && <div className="pm-design-group">
             <div className="pm-design-group-title">
               <strong>Axial compression limit</strong>
               <span>Creates the horizontal cap visible at the top of a P-M slice</span>
@@ -350,7 +372,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
               compression pole. The defaults are 0.80 for ties/other and 0.85 for a qualifying
               spiral; this produces the horizontal cap on a P-M slice.
             </p>
-          </div>
+          </div>}
         </>
       ) : (
         <div className="pm-design-group">

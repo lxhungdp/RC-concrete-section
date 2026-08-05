@@ -1,4 +1,5 @@
 import { compileAciWhitneyConcrete } from './concrete/aci-whitney'
+import { compileAs3600BlockConcrete } from './concrete/as3600-block'
 import { compileEc2ParabolicRectangularConcrete } from './concrete/ec2-parabolic-rectangular'
 import { compileKdsParabolicConcrete } from './concrete/kds-parabolic'
 import { compileUserBlockConcrete } from './concrete/user-block'
@@ -19,6 +20,8 @@ export const compileConcreteMaterial = (material: ConcreteMaterial): CompiledMat
       return compileKdsParabolicConcrete(material)
     case 'aci-whitney-block':
       return compileAciWhitneyConcrete(material)
+    case 'as3600-equivalent-block':
+      return compileAs3600BlockConcrete(material)
     case 'user-block':
       return compileUserBlockConcrete(material)
     case 'ec2-parabolic-rectangular':

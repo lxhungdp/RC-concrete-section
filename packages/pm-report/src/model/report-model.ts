@@ -509,8 +509,18 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       'This document reports a preview calculation. It is not an accepted design result and must not be released as a design report.',
       `Resistance is reported in two stages: Nominal is the reference before the resistance treatment, Design is the usable resistance. Only the Design surface is compared with factored ULS demand.`,
       profile.mechanics === 'equivalent-rectangular-block'
-        ? 'Concrete compression is the code-equivalent rectangular block over a = β1·c, obtained by exact polygon clipping. There is no concrete integration mesh, and the stress between a and c is zero.'
+        ? profile.code === 'AS'
+          ? "Concrete compression uses the AS 3600 equivalent block σc = α₂·f'c over a = γ·c, obtained by exact polygon clipping. There is no concrete integration mesh, and stress is zero outside the compression block."
+          : 'Concrete compression is the code-equivalent rectangular block over a = β1·c, obtained by exact polygon clipping. There is no concrete integration mesh, and the stress between a and c is zero.'
         : 'Concrete compression is integrated from the material stress-strain law over a verified triangle/quadrature mesh of the section.',
+      ...(profile.code === 'EN'
+        ? ['EN 1992 preview uses recommended material factors without a National Annex. The tension-controlled surface boundary is not yet a complete EC2 strain-domain implementation.']
+        : []),
+      ...(profile.code === 'AS'
+        ? [
+            'AS 3600 preview assumes a general prismatic stress block. Circular/narrowing-width modifiers, minimum eccentricity, slenderness, second-order effects and independent clause verification are outside this section report.'
+          ]
+        : []),
       ...(basis.verificationStatus === 'user-defined'
         ? ['The resistance rules and material parameters in this report were declared by the project. They carry no clause traceability, and this software makes no claim that they satisfy any design standard.']
         : []),
@@ -544,6 +554,13 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
             ['σblock', `${fmt(userBlockCompressionStress(concrete), 3)} MPa`]
           ] as LabelledValue[])
         : []),
+      ...(concrete.stressStrain.type === 'as3600-equivalent-block'
+        ? ([
+            ['alpha2', fmt(concrete.stressStrain.alpha2, 4)],
+            ['gamma', fmt(concrete.stressStrain.gamma, 4)],
+            ["sigma_block", `${fmt(concrete.stressStrain.alpha2 * concrete.fck, 3)} MPa`]
+          ] as LabelledValue[])
+        : []),
       ...(concrete.elasticModulus !== undefined ? [['Ec', `${fmt(concrete.elasticModulus, 0)} MPa`] as LabelledValue] : []),
       ['Tension', concrete.limits.ignoreTension ? 'ignored' : 'included']
     ],
@@ -559,7 +576,19 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
     ],
     resistanceBasis:
       basis.format === 'globalResultantFactor'
-        ? [
+        ? profile.code === 'AS'
+          ? [
+              ['Format', 'AS 3600 action/state-dependent capacity factor'],
+              ['Compression-factor class', basis.transverseReinforcement === 'qualifying-spiral'
+                ? 'short column with Q/G >= 0.25'
+                : 'ordinary column'],
+              ['phi_o ordinary', fmt(basis.factors.phiCompressionOther, 3)],
+              ['phi_o short column Q/G >= 0.25', fmt(basis.factors.phiCompressionSpiral, 3)],
+              ['phi bending range', `${fmt(basis.factors.phiCompressionSpiral, 3)} to ${fmt(basis.factors.phiTension, 3)}`],
+              ['phi tension', fmt(basis.factors.phiTension, 3)],
+              ['Axial cap', 'not applied; phi_o governs the compression pole']
+            ]
+          : [
             ['Format', 'Global resultant strength-reduction factor'],
             ['Transverse reinforcement', basis.transverseReinforcement],
             ['φ compression (ties)', fmt(basis.factors.phiCompressionOther, 3)],
@@ -570,7 +599,7 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
             ['Axial cap', basis.axialCapEnabled
               ? `${fmt(basis.transverseReinforcement === 'qualifying-spiral' ? basis.factors.axialCapSpiral : basis.factors.axialCapOther, 3)} × factored compression pole`
               : 'not applied']
-          ]
+            ]
         : [
             ['Format', 'Design material reevaluation'],
             ['αcc', fmt(basis.factors.alphaCc, 3)],

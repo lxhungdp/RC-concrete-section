@@ -12,7 +12,7 @@ concrete resistance kernel or their surface-station algorithm.
 | Item | Stress-strain integration | Equivalent rectangular stress block |
 |---|---|---|
 | Method ID | `strain-domain-surface-v1` | `equivalent-block-surface-v1` |
-| Calculation profile | `kds-2024-stress-strain` or `custom-stress-strain` | `kds-142020-equivalent-block`, `aci-318-19-22-equivalent-block` or `custom-equivalent-block` |
+| Calculation profile | `kds-2024-stress-strain`, `en-1992-1-1-2004-stress-strain` or `custom-stress-strain` | `kds-142020-equivalent-block`, `aci-318-19-22-equivalent-block`, `as-3600-2018-amd2-equivalent-block` or `custom-equivalent-block` |
 | Concrete state | stress is evaluated from strain at every integration point | constant compression stress acts only inside a clipped block of depth `a` |
 | Concrete discretization | verified triangle/quadrature mesh | exact polygon/half-plane clipping; no concrete fiber mesh |
 | Primary state variable | compatible strain plane `(eps0, kx, ky)` | block-normal angle and neutral-axis depth `c` |

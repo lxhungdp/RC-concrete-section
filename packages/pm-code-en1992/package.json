@@ -1,5 +1,5 @@
 {
-  "name": "@pm/materials",
+  "name": "@pm/code-en1992",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,9 +7,7 @@
   "exports": {
     ".": "./src/index.ts"
   },
-  "dependencies": {
-    "@pm/code-as3600": "0.1.0",
-    "@pm/code-en1992": "0.1.0",
-    "@pm/ids": "0.1.0"
+  "scripts": {
+    "test": "node --import tsx --test test/*.test.ts"
   }
 }

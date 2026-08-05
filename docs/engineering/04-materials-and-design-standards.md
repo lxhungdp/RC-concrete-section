@@ -26,9 +26,11 @@ marks that profile modified; legacy custom profile IDs remain readable for schem
 | KDS 14 20 20 - Equivalent rectangular block | exact clipped block `a=beta1 c` | `eta 0.85 fck` in the active block | KDS global resultant factor and cap |
 | ACI 318-19(22) - Whitney equivalent block | exact clipped block `a=beta1 c` | `0.85 f'c` in the active block | ACI state-dependent phi and cap |
 | EN 1992-1-1:2004 - Stress-strain preview | full stress-strain integration | EN parabolic-rectangular design law | material-strength reevaluation; no global phi |
+| AS 3600:2018 Amd 1-2 - Equivalent rectangular block preview | exact clipped block `a=gamma c` | `alpha2 f'c` in the active block | AS Table 2.2.2 action/state-dependent capacity factor |
 
-AS 3600:2018 Amendments 1 and 2 is registered but has no executable profile. It remains disabled
-until licensed clauses and the current amendment set are mapped and independently reviewed.
+The AS route produces preview surfaces, demand checks, Excel workbooks and PDF reports. It is not a
+released member-design implementation: section-shape reductions, slenderness, minimum eccentricity,
+second-order effects and independent clause verification remain explicit release blockers.
 
 The material compiler deliberately rejects an ACI Whitney definition in the fiber/stress-strain
 kernel. That is a routing guard, not a missing ACI capability: the ACI calculation profile routes to

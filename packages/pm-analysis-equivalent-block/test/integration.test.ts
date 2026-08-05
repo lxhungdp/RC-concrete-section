@@ -158,7 +158,12 @@ test('equivalent-block example projects parse and solve with their shipped produ
   }
 })
 
-for (const profileId of ['kds-142020-equivalent-block', 'aci-318-19-22-equivalent-block', 'custom-equivalent-block'] as const) {
+for (const profileId of [
+  'kds-142020-equivalent-block',
+  'aci-318-19-22-equivalent-block',
+  'as-3600-2018-amd2-equivalent-block',
+  'custom-equivalent-block'
+] as const) {
   test(`${profileId}: surface, inverse and exact block field`, () => {
     const input = build(profileId)
     const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(input.prepared, input.options)
@@ -166,7 +171,15 @@ for (const profileId of ['kds-142020-equivalent-block', 'aci-318-19-22-equivalen
     assert.ok(surface.points.length > 100)
     assert.ok(surface.triangles && surface.triangles.length > 100)
     assert.ok(surface.points.every((point) => Number.isFinite(point.P + point.Mx + point.My)))
-    assertCardinalSlicesHaveNoCapToTensionChord(surface, profileId)
+    if (profileId === 'as-3600-2018-amd2-equivalent-block') {
+      assert.equal(
+        surface.points.some((point) => point.surfaceRole === 'axial-cap'),
+        false,
+        'AS 3600 preview applies phi_o at pure compression and does not invent an ACI/KDS axial cap'
+      )
+    } else {
+      assertCardinalSlicesHaveNoCapToTensionChord(surface, profileId)
+    }
     assert.ok(
       surface.stations.some((station) => station.definition.kind === 'bar-tension-strain'),
       'code transition events must retain controlling-bar semantics in the shared result DTO'

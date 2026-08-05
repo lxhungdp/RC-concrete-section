@@ -276,8 +276,8 @@ edition, amendment, jurisdiction, and clause set pass the verification gates in 
 The first production release should enable only profiles whose `status` is `verified`. Draft rows
 may be visible in a developer registry but must be rejected by certification/report APIs.
 
-The current UI now resolves the public `KDS`, `ACI`, `EN`, and disabled `AS` choices through the
-calculation-profile registry. The lower-level `KDS`, `ACI318`, `EC2`, and `CUSTOM` material values
+The current UI resolves the public `KDS`, `ACI`, `EN`, and `AS` choices through the
+calculation-profile registry. The lower-level `KDS`, `ACI318`, `EC2`, `AS3600`, and `CUSTOM` material values
 remain a serializable material-source layer; they are not themselves the public Code registry.
 For EN 1992 preview, `alpha_cc`, `gamma_c`, and `gamma_s` are applied inside the material laws, so a
 later EN resistance profile must recognize that it is using a design-material reevaluation path and
@@ -404,8 +404,9 @@ The repository implements two independent mechanics and the common resistance fo
 - a selectable `designMaterialReevaluation` preview profile exists for EN 1992-1-1:2004; it has no
   National Annex and retains an explicit warning that the tension-controlled boundary still uses
   the concrete-pivot domain rather than a complete EC2 strain domain;
-- AS 3600:2018 Amendments 1 and 2 is present only in the Code registry and is calculation-disabled
-  until licensed clause mapping and independent review are complete.
+- AS 3600:2018 Amendments 1 and 2 has an executable equivalent-block preview using `alpha2`, `gamma`,
+  `epsCu = 0.003` and action/state-dependent capacity factors. It is not verified or releasable; the
+  general-prismatic shape assumption and omitted member-level checks are disclosed in UI/reports/docs.
 
 Canonical project schema-v1 exports persist the complete basis and loadcases are explicitly
 factored ULS actions. The parser's remaining omitted-field defaults are listed as pre-release debt

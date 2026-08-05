@@ -143,7 +143,8 @@ const parseConcrete = (value: unknown): ConcreteMaterial => {
   assert(value.id === CONCRETE_MATERIAL_ID, `inputs.materials.concrete.id must be ${CONCRETE_MATERIAL_ID}`)
   assert(isString(value.name), 'inputs.materials.concrete.name must be a string')
   assert(
-    value.standard === 'KDS' || value.standard === 'ACI318' || value.standard === 'EC2' || value.standard === 'CUSTOM',
+    value.standard === 'KDS' || value.standard === 'ACI318' || value.standard === 'EC2' ||
+      value.standard === 'AS3600' || value.standard === 'CUSTOM',
     'inputs.materials.concrete.standard is invalid'
   )
   assert(isFiniteNumber(value.fck), 'inputs.materials.concrete.fck must be a finite number')
@@ -191,6 +192,16 @@ const parseConcrete = (value: unknown): ConcreteMaterial => {
       epsC2: value.stressStrain.epsC2,
       epsCu2: value.stressStrain.epsCu2,
       alpha: value.stressStrain.alpha
+    }
+  } else if (modelType === 'as3600-equivalent-block') {
+    assert(isFiniteNumber(value.stressStrain.alpha2), 'concrete.stressStrain.alpha2 must be a finite number')
+    assert(isFiniteNumber(value.stressStrain.gamma), 'concrete.stressStrain.gamma must be a finite number')
+    assert(isFiniteNumber(value.stressStrain.epsCu), 'concrete.stressStrain.epsCu must be a finite number')
+    stressStrain = {
+      type: 'as3600-equivalent-block',
+      alpha2: value.stressStrain.alpha2,
+      gamma: value.stressStrain.gamma,
+      epsCu: value.stressStrain.epsCu
     }
   } else if (modelType === 'user-block') {
     assert(isFiniteNumber(value.stressStrain.beta1), 'concrete.stressStrain.beta1 must be a finite number')
@@ -243,7 +254,8 @@ const parseSteel = (value: unknown, path: string): SteelMaterial => {
   assertEntityId(value.id, `${path}.id`)
   assert(isString(value.name), `${path}.name must be a string`)
   assert(
-    value.standard === 'KDS' || value.standard === 'ACI318' || value.standard === 'EC2' || value.standard === 'CUSTOM',
+    value.standard === 'KDS' || value.standard === 'ACI318' || value.standard === 'EC2' ||
+      value.standard === 'AS3600' || value.standard === 'CUSTOM',
     `${path}.standard is invalid`
   )
   assert(isFiniteNumber(value.fy), `${path}.fy must be a finite number`)
@@ -696,6 +708,7 @@ const parseDesignBasis = (value: unknown | undefined, materials: MaterialStore):
       value.profileId === 'kds-basic-2021-2022' ||
       value.profileId === 'aci-318-19-22' ||
       value.profileId === 'en-1992-1-1-2004-default' ||
+      value.profileId === 'as-3600-2018-amd2' ||
       value.profileId === 'custom-user-defined',
     'inputs.design.profileId is unsupported'
   )

@@ -1,7 +1,7 @@
 import { nextAvailableId } from './ids'
 
 export type StrainSignConvention = 'compression-positive'
-export type MaterialStandard = 'KDS' | 'ACI318' | 'EC2' | 'CUSTOM'
+export type MaterialStandard = 'KDS' | 'ACI318' | 'EC2' | 'AS3600' | 'CUSTOM'
 
 /** Implicit units: stress MPa (N/mm²). Not stored in project JSON. */
 export type MaterialStore = {
@@ -56,6 +56,12 @@ export type ConcreteStressStrainModel =
       epsC2: number
       epsCu2: number
       alpha: number
+    }
+  | {
+      type: 'as3600-equivalent-block'
+      alpha2: number
+      gamma: number
+      epsCu: number
     }
   | {
       type: 'user-curve'

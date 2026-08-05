@@ -351,7 +351,7 @@ does not yet cover accepted-result hashing, PDF rendering, or true cooperative c
 ## 9. Delivery status and remaining order
 
 1. **Implemented preview:** Results-sidebar combinations, project round trip, analysis-option
-   validation, two independent mechanics, three draft calculation profiles, adaptive preview
+   validation, two independent mechanics, five selectable code calculation routes, adaptive preview
    surfaces/checks, model-specific fields, stress-strain Excel, and mesh Excel/DXF.
 2. **Next integrity work:** confirm and test the documented parser-v1 defaults, add shared typed
    issues, canonical hashing, and

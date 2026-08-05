@@ -57,7 +57,7 @@ As of 2026-08-05:
   loadcase entry are implemented as **preview** capability.
 - The material editor uses hierarchical `Code -> calculation method -> concrete model` selection.
   KDS offers both implemented mechanics, ACI offers its implemented block route, EN offers an
-  explicitly limited preview, and AS is visible but disabled pending licensed clause mapping.
+  explicitly limited stress-strain preview, and AS offers an equivalent-block preview.
   Legacy custom project IDs remain readable but `Custom` is not a design Code. A user-defined KDS
   concrete curve is recorded as a modified profile with an audit reason.
 - The current Results charts use Plotly for interactive visualization, but the underlying
@@ -75,8 +75,9 @@ As of 2026-08-05:
 - The KDS 2024 current-set profiles (with resistance clauses explicitly traced to KDS 14 20 10:2021
   and KDS 14 20 20:2022) and ACI 318-19(22) block profile are implemented as `draft` design
   previews; no profile is approved for released engineering use. EN 1992-1-1:2004 is selectable only
-  as a preview with no National Annex and an explicit strain-domain warning. AS 3600 calculation is
-  fail-closed. Legacy `Custom` profiles are `user-defined`: they invent no normative value and claim none.
+  as a preview with no National Annex and an explicit strain-domain warning. AS 3600:2018 Amendments
+  1 and 2 is also `draft`: it produces auditable results but is not verified for released design.
+  Legacy `Custom` profiles are `user-defined`: they invent no normative value and claim none.
 - The stress-strain Excel preview result export includes an explicit `Design_Check` audit sheet. The separate
   Section-mesh Excel export includes formula-based area and first-moment recomputation so the
   integration mesh can be independently inspected.

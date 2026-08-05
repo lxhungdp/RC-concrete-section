@@ -1,4 +1,6 @@
 import type { MaterialStandard, MaterialStore } from '@pm/materials'
+import { AS_3600_2018_PROVENANCE } from '@pm/code-as3600'
+import { EN1992_2004_PROVENANCE } from '@pm/code-en1992'
 
 export const DESIGN_BASIS_VERSION = 1 as const
 
@@ -9,6 +11,7 @@ export type DesignProfileId =
   | 'kds-basic-2021-2022'
   | 'aci-318-19-22'
   | 'en-1992-1-1-2004-default'
+  | 'as-3600-2018-amd2'
   /** User-owned resistance rules; carries no clause traceability by construction. */
   | 'custom-user-defined'
 
@@ -212,7 +215,7 @@ export const createEn1992DesignBasis = (): DesignMaterialBasis => ({
   identity: {
     ...identity(
       'CEN',
-      'EN 1992-1-1:2004',
+      EN1992_2004_PROVENANCE.document,
       '2004',
       'en-1992-design-material-reevaluation'
     ),
@@ -230,9 +233,48 @@ export const createEn1992DesignBasis = (): DesignMaterialBasis => ({
   overrideReason: ''
 })
 
+/**
+ * AS 3600 Table 2.2.2 preview mapping.
+ *
+ * The shared global-factor shape retains persistence compatibility. For this profile only,
+ * `phiCompressionOther` is phi_o for an ordinary column and `phiCompressionSpiral` stores the
+ * alternative phi_o for a short column with Q/G >= 0.25. The AS adapter owns the actual
+ * bending/axial interpolation and does not use the generic strain-transition evaluator.
+ */
+export const createAs3600DesignBasis = (): GlobalStrengthReductionBasis => ({
+  basisVersion: DESIGN_BASIS_VERSION,
+  profileId: 'as-3600-2018-amd2',
+  identity: {
+    ...identity(
+      'Standards Australia',
+      AS_3600_2018_PROVENANCE.document,
+      '2018 incorporating Amendments 1 and 2',
+      AS_3600_2018_PROVENANCE.methodId
+    ),
+    jurisdiction: 'Australia',
+    amendment: 'Amendments 1 and 2'
+  },
+  verificationStatus: 'draft',
+  format: 'globalResultantFactor',
+  transverseReinforcement: 'other',
+  factors: {
+    phiCompressionOther: 0.6,
+    phiCompressionSpiral: 0.65,
+    phiTension: 0.85,
+    axialCapOther: 1,
+    axialCapSpiral: 1
+  },
+  /** Retained by the generic schema; the AS adapter evaluates Table 2.2.2 directly. */
+  transition: { type: 'yield-plus-strain', extraStrain: 0.003 },
+  axialCapEnabled: false,
+  modified: false,
+  overrideReason: ''
+})
+
 export const createDefaultDesignBasisForStandard = (standard: MaterialStandard): DesignBasis => {
   if (standard === 'ACI318') return createAci318DesignBasis()
   if (standard === 'EC2') return createEn1992DesignBasis()
+  if (standard === 'AS3600') return createAs3600DesignBasis()
   if (standard === 'CUSTOM') return createCustomDesignBasis()
   return createKdsBasicDesignBasis()
 }
@@ -385,6 +427,8 @@ export const designBasisRequiresOverrideReason = (basis: DesignBasis): boolean =
       ? createAci318DesignBasis()
       : basis.profileId === 'en-1992-1-1-2004-default'
         ? createEn1992DesignBasis()
+        : basis.profileId === 'as-3600-2018-amd2'
+          ? createAs3600DesignBasis()
         : createKdsBasicDesignBasis()
 
   if (basis.format !== defaults.format) return true

@@ -8,6 +8,7 @@
   "dependencies": {
     "@pm/analysis": "0.1.0",
     "@pm/code-aci318": "0.1.0",
+    "@pm/code-as3600": "0.1.0",
     "@pm/code-custom": "0.1.0",
     "@pm/code-kds142020": "0.1.0",
     "@pm/design": "0.1.0",
