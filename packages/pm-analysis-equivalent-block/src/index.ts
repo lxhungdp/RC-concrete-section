@@ -4,6 +4,7 @@ import {
   stationDefinitionLabel,
   type DesignResistanceTrace,
   type EquivalentBlockStateTrace,
+  type ExactDirectionCurve,
   type InversePreviewResult,
   type PreviewSurface,
   type PreviewSurfacePoint,
@@ -303,7 +304,25 @@ export const prepareBlockAnalysis = (
   }
 }
 
-const surfaceOptions = (options: EquivalentBlockAnalysisOptions) => ({
+const componentResultants = (evaluation: CapacityEvaluation<unknown>) => {
+  const source = evaluation.source as { nominal?: NominalBlockEvaluation } | NominalBlockEvaluation | undefined
+  const nominal = source && 'nominal' in source ? source.nominal : source as NominalBlockEvaluation | undefined
+  if (!nominal) return []
+  const steel = nominal.bars.reduce(
+    (sum, bar) => ({ P: sum.P + bar.force, Mx: sum.Mx + bar.Mx, My: sum.My + bar.My }),
+    { P: 0, Mx: 0, My: 0 }
+  )
+  return [
+    { P: nominal.concrete.force, Mx: nominal.concrete.Mx, My: nominal.concrete.My },
+    steel
+  ]
+}
+
+const surfaceOptions = (
+  options: EquivalentBlockAnalysisOptions,
+  componentAware = false,
+  stationProbeAngles?: readonly number[]
+) => ({
   // Project/report order is compression -> tension, shared with the strain-domain DTO.
   // The low-level block mesher traverses increasing neutral-axis depth, so it consumes the reverse.
   stations: [...options.neutralAxisStations.values].reverse(),
@@ -325,8 +344,13 @@ const surfaceOptions = (options: EquivalentBlockAnalysisOptions) => ({
     ? options.neutralAxisStations.refinement.maxPasses
     : 0,
   maxStations: options.neutralAxisStations.refinement.type === 'adaptive'
-    ? options.neutralAxisStations.refinement.maxStations
-    : options.neutralAxisStations.values.length
+    ? Math.max(
+        options.neutralAxisStations.values.length,
+        options.neutralAxisStations.refinement.maxStations - 2
+      )
+    : options.neutralAxisStations.values.length,
+  ...(stationProbeAngles?.length ? { stationProbeAngles } : {}),
+  ...(componentAware ? { componentResultants } : {})
 })
 
 const projectedDepth = (section: PreparedEquivalentBlockSection, angle: number) => {
@@ -419,15 +443,8 @@ const nearestStation = (
   const state = point.state
   if (!state) return 0
   if (point.station) {
-    const sourceKey = point.station.type === 'depth-ratio' || point.station.type === 'bar-tension-yield-ratio'
-      ? `${point.station.type}:${point.station.ratio}`
-      : `${point.station.type}:${point.station.strain}`
-    const exactIndex = surface.stations.findIndex((station) => {
-      const key = station.type === 'depth-ratio' || station.type === 'bar-tension-yield-ratio'
-        ? `${station.type}:${station.ratio}`
-        : `${station.type}:${station.strain}`
-      return key === sourceKey
-    })
+    const sourceKey = JSON.stringify(point.station)
+    const exactIndex = surface.stations.findIndex((station) => JSON.stringify(station) === sourceKey)
     if (exactIndex >= 0) return surface.stations.length - exactIndex
   }
   const ratio = state.neutralAxisDepth / projectedDepth(section, state.neutralAxisAngle)
@@ -435,7 +452,9 @@ const nearestStation = (
     ? station.ratio
     : station.type === 'bar-tension-yield-ratio'
       ? 1 / (1 + station.ratio * 0.002 / epsCu)
-      : 1 / (1 + station.strain / epsCu)
+      : station.type === 'extreme-tension-strain' || station.type === 'bar-tension-strain'
+        ? 1 / (1 + station.strain / epsCu)
+        : Number.POSITIVE_INFINITY
   let best = 0
   for (let index = 1; index < surface.stations.length; index += 1) {
     if (Math.abs(stationRatio(surface.stations[index]) - ratio) < Math.abs(stationRatio(surface.stations[best]) - ratio)) best = index
@@ -449,7 +468,8 @@ const convertSurfacePoints = (
   law: EquivalentBlockLaw,
   beta1: number,
   compressionStress: number,
-  includeResistance = false
+  includeResistance = false,
+  stationDescriptors?: SurfaceStation[]
 ): PreviewSurfacePoint[] => surface.points.map((point) => {
   const state = strainState(section, point.state, law)
   const surfaceRole = point.kind === 'state'
@@ -461,7 +481,14 @@ const convertSurfacePoints = (
         : point.kind
   // Poles and the synthetic axial-cap face have no unique neutral-axis direction. The zero value is
   // only a finite plotting placeholder; topology and station diagnostics must use surfaceRole.
-  const beta = point.state ? wrap(Math.PI / 2 - point.state.neutralAxisAngle) : 0
+  const meridianAngle = typeof point.metadata?.meridianAngle === 'number'
+    ? point.metadata.meridianAngle
+    : null
+  const beta = point.state
+    ? wrap(Math.PI / 2 - point.state.neutralAxisAngle)
+    : meridianAngle === null
+      ? 0
+      : wrap(Math.PI / 2 - meridianAngle)
   const resultants = point.resultants
   const station = nearestStation(surface, section, point, law.extremeCompressionStrain)
   return {
@@ -480,7 +507,7 @@ const convertSurfacePoints = (
         ? 'pure-compression'
         : point.kind === 'axial-cap'
           ? null
-          : `station-${station}`,
+          : stationDescriptors?.[station]?.id ?? `station-${station}`,
     surfaceRole,
     state,
     ledger: zeroLedger(resultants),
@@ -490,19 +517,49 @@ const convertSurfacePoints = (
   }
 })
 
-const blockStations = (surface: CapacitySurface): SurfaceStation[] => [
-  { id: 'pure-compression', label: 'Pure compression', definition: { kind: 'pure-compression' } },
-  ...[...surface.stations].reverse().map((station, index) => {
+const blockStationLabel = (station: CapacitySurface['stations'][number]) => {
+  if (station.type === 'cover-gap-ratio') return `cover-gap = ${station.ratio}`
+  if (station.type === 'tension-depth-ratio') return `c→0 = ${station.ratio}`
+  if (station.type === 'adaptive-depth-interpolation') return `adaptive c = ${station.ratio}`
+  return station.type
+}
+
+const stableStationHash = (value: unknown) => {
+  const text = JSON.stringify(value)
+  let hash = 0x811c9dc5
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(36)
+}
+
+const blockStations = (
+  surface: CapacitySurface,
+  fixedValues: EquivalentBlockAnalysisOptions['neutralAxisStations']['values']
+): SurfaceStation[] => [
+  { id: 'pure-compression', label: 'Pure compression', definition: { kind: 'pure-compression' }, fixed: true },
+  ...[...surface.stations].reverse().map((station) => {
     const definition = station.type === 'depth-ratio'
       ? { kind: 'block-depth-ratio' as const, ratio: station.ratio }
       : station.type === 'bar-tension-yield-ratio'
         ? { kind: 'bar-tension-yield-ratio' as const, ratio: station.ratio }
       : station.type === 'bar-tension-strain'
         ? { kind: 'bar-tension-strain' as const, strain: station.strain }
-        : { kind: 'extreme-tension-strain' as const, strain: station.strain }
-    return { id: `station-${index + 1}` as const, label: stationDefinitionLabel(definition), definition }
+      : station.type === 'extreme-tension-strain'
+        ? { kind: 'extreme-tension-strain' as const, strain: station.strain }
+        : { kind: 'block-adaptive' as const, label: blockStationLabel(station) }
+    const fixedIndex = fixedValues.findIndex((value) => JSON.stringify(value) === JSON.stringify(station))
+    return {
+      id: fixedIndex >= 0
+        ? `station-${fixedIndex + 1}` as const
+        : `adaptive-station-block-${stableStationHash(station)}` as const,
+      label: stationDefinitionLabel(definition),
+      definition,
+      fixed: fixedIndex >= 0
+    }
   }),
-  { id: 'pure-tension', label: 'Pure tension', definition: { kind: 'pure-tension' } }
+  { id: 'pure-tension', label: 'Pure tension', definition: { kind: 'pure-tension' }, fixed: true }
 ]
 
 const bounds = (points: PreviewSurfacePoint[]) => {
@@ -524,30 +581,54 @@ const bounds = (points: PreviewSurfacePoint[]) => {
 
 export const buildEquivalentBlockDesignSurfaceFromPrepared = (
   prepared: PreparedBlockAnalysis,
-  options: EquivalentBlockAnalysisOptions
+  options: EquivalentBlockAnalysisOptions,
+  stationProbeAngles?: readonly number[]
 ): EquivalentBlockDesignSurface => prepared.designBasis.format === 'designMaterialReevaluation'
-  ? prepared.designModel.buildNominalSurface(prepared.section, surfaceOptions(options))
+  ? prepared.designModel.buildNominalSurface(prepared.section, surfaceOptions(options, true, stationProbeAngles))
   : prepared.designModel.buildDesignSurface(prepared.section, {
-      ...surfaceOptions(options),
+      ...surfaceOptions(options, false, stationProbeAngles),
       applyAxialCap: prepared.designBasis.axialCapEnabled
     })
 
 export const buildEquivalentBlockPreviewSurfaceFromPrepared = (
   prepared: PreparedBlockAnalysis,
   options: EquivalentBlockAnalysisOptions,
-  preparedDesignSurface?: EquivalentBlockDesignSurface
+  preparedDesignSurface?: EquivalentBlockDesignSurface,
+  stationProbeAngles?: readonly number[]
 ): PreviewSurface => {
-  const settings = surfaceOptions(options)
+  const settings = surfaceOptions(options, false, stationProbeAngles)
   const nominal = prepared.referenceModel.buildNominalSurface(prepared.section, settings)
-  const design = preparedDesignSurface ?? buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  const design = preparedDesignSurface ?? buildEquivalentBlockDesignSurfaceFromPrepared(
+    prepared,
+    options,
+    stationProbeAngles
+  )
+  const fixedOptions = cloneCalculationAnalysisOptions(options)
+  fixedOptions.neutralAxisStations.refinement = { type: 'fixed' }
+  fixedOptions.directions.refinement = { type: 'fixed' }
+  const fixedSettings = surfaceOptions(fixedOptions)
+  const nominalFixedCore = prepared.referenceModel.buildNominalSurface(prepared.section, fixedSettings)
+  const designFixedCore = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, fixedOptions)
   const beta1 = prepared.designModel.blockLaw.depthFactor
   const compressionStress = prepared.designModel.blockLaw.compressionStress
+  const nominalStationDescriptors = blockStations(nominal, options.neutralAxisStations.values)
+  const designStationDescriptors = blockStations(design, options.neutralAxisStations.values)
+  const nominalFixedStationDescriptors = blockStations(
+    nominalFixedCore,
+    options.neutralAxisStations.values
+  )
+  const designFixedStationDescriptors = blockStations(
+    designFixedCore,
+    options.neutralAxisStations.values
+  )
   const nominalPoints = convertSurfacePoints(
     nominal,
     prepared.section,
     prepared.referenceModel.blockLaw,
     prepared.referenceModel.blockLaw.depthFactor,
-    prepared.referenceModel.blockLaw.compressionStress
+    prepared.referenceModel.blockLaw.compressionStress,
+    false,
+    nominalStationDescriptors
   )
   const points = convertSurfacePoints(
     design,
@@ -555,7 +636,26 @@ export const buildEquivalentBlockPreviewSurfaceFromPrepared = (
     prepared.designModel.blockLaw,
     beta1,
     compressionStress,
-    prepared.designBasis.format === 'globalResultantFactor'
+    prepared.designBasis.format === 'globalResultantFactor',
+    designStationDescriptors
+  )
+  const nominalFixedPoints = convertSurfacePoints(
+    nominalFixedCore,
+    prepared.section,
+    prepared.referenceModel.blockLaw,
+    prepared.referenceModel.blockLaw.depthFactor,
+    prepared.referenceModel.blockLaw.compressionStress,
+    false,
+    nominalFixedStationDescriptors
+  )
+  const designFixedPoints = convertSurfacePoints(
+    designFixedCore,
+    prepared.section,
+    prepared.designModel.blockLaw,
+    beta1,
+    compressionStress,
+    prepared.designBasis.format === 'globalResultantFactor',
+    designFixedStationDescriptors
   )
   if (prepared.designBasis.format === 'designMaterialReevaluation') {
     const referenceEvaluator = prepared.referenceModel.bindNominalEvaluator(prepared.section)
@@ -604,6 +704,18 @@ export const buildEquivalentBlockPreviewSurfaceFromPrepared = (
     nominalPoints,
     triangles: design.triangles,
     nominalTriangles: nominal.triangles,
+    designFixed: {
+      points: designFixedPoints,
+      triangles: designFixedCore.triangles,
+      directions: designFixedCore.directions.map((angle) => wrap(Math.PI / 2 - angle)).sort((a, b) => a - b),
+      stations: designFixedStationDescriptors
+    },
+    nominalFixed: {
+      points: nominalFixedPoints,
+      triangles: nominalFixedCore.triangles,
+      directions: nominalFixedCore.directions.map((angle) => wrap(Math.PI / 2 - angle)).sort((a, b) => a - b),
+      stations: nominalFixedStationDescriptors
+    },
     codeReferencePoints: [{
       id: 'nominal-p0',
       label: prepared.designBasis.format === 'designMaterialReevaluation'
@@ -636,7 +748,7 @@ export const buildEquivalentBlockPreviewSurfaceFromPrepared = (
       ok: true,
       warnings: ['No integration mesh: concrete compression is evaluated by exact polygon clipping.']
     },
-    stations: blockStations(design),
+    stations: designStationDescriptors,
     directions: design.directions.map((angle) => wrap(Math.PI / 2 - angle)).sort((a, b) => a - b),
     analysisOptions: cloneCalculationAnalysisOptions(options),
     directionError: {
@@ -645,10 +757,21 @@ export const buildEquivalentBlockPreviewSurfaceFromPrepared = (
       probedStationIds: design.stations.map((_, index) => `station-${index + 1}` as const),
       maxRelativeP: design.maxDirectionalInterpolationError,
       maxRelativeMoment: design.maxDirectionalInterpolationError,
+      maxRelativeComponent: design.maxDirectionalInterpolationError,
       worstBeta: 0,
-      refinementPasses: 0,
+      refinementPasses: design.directionRefinementPasses,
       withinTolerance: design.directionRefinementConverged,
       tolerance
+    },
+    stationError: {
+      stations: design.stations.length + 2,
+      fixedStations: options.neutralAxisStations.values.length + 2,
+      maxRelative: design.maxStationInterpolationError,
+      refinementPasses: design.stationRefinementPasses,
+      withinTolerance: design.stationRefinementConverged,
+      tolerance: options.neutralAxisStations.refinement.type === 'adaptive'
+        ? options.neutralAxisStations.refinement.tolerance
+        : Number.POSITIVE_INFINITY
     },
     strainDomain: 'concrete-pivot-ultimate',
     warnings,
@@ -667,6 +790,49 @@ export const buildEquivalentBlockPreviewSurface = (
   prepareBlockAnalysis(profileId, section, rebars, materialStore, designBasis),
   options
 )
+
+const angularDistance = (left: number, right: number) => {
+  const difference = Math.abs(wrap(left) - wrap(right))
+  return Math.min(difference, TAU - difference)
+}
+
+/**
+ * Evaluate the requested β exactly. The low-level closed mesher needs four support meridians for
+ * topology, but only the requested meridian is returned and no angular interpolation enters it.
+ */
+export const buildEquivalentBlockExactDirectionCurveFromPrepared = (
+  prepared: PreparedBlockAnalysis,
+  options: EquivalentBlockAnalysisOptions,
+  beta: number
+): ExactDirectionCurve => {
+  const normalizedBeta = wrap(beta)
+  const exactOptions = cloneCalculationAnalysisOptions(options)
+  exactOptions.directions.seedCount = 4
+  exactOptions.directions.startDeg = wrap(Math.PI / 2 - normalizedBeta) * 180 / Math.PI
+  exactOptions.directions.refinement = { type: 'fixed' }
+  const exactNeutralAxisAngle = wrap(Math.PI / 2 - normalizedBeta)
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(
+    prepared,
+    exactOptions,
+    undefined,
+    [exactNeutralAxisAngle]
+  )
+  const meridian = (points: PreviewSurfacePoint[]) => points
+    .filter((point) =>
+      point.surfaceRole === 'pure-compression' ||
+      point.surfaceRole === 'pure-tension' ||
+      angularDistance(point.beta, normalizedBeta) <= 1e-10
+    )
+    .sort((left, right) => left.station - right.station)
+  return {
+    beta: normalizedBeta,
+    designAdaptive: meridian(surface.points),
+    designFixed: meridian(surface.designFixed?.points ?? surface.points),
+    nominalFixed: meridian(surface.nominalFixed?.points ?? surface.nominalPoints),
+    stations: surface.stations,
+    stationError: surface.stationError
+  }
+}
 
 const evaluationTrace = (
   prepared: PreparedBlockAnalysis,

@@ -23,6 +23,7 @@ const timed = <T>(run: () => T) => {
 
 const fixedBlockOptions = (directions: number): EquivalentBlockAnalysisOptions => {
   const options = createDefaultEquivalentBlockAnalysisOptions()
+  options.neutralAxisStations.refinement = { type: 'fixed' }
   options.directions = { seedCount: directions, startDeg: 0, refinement: { type: 'fixed' } }
   return options
 }
@@ -36,6 +37,11 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
   const rebars = geometryInputRebars(fixture.geometry)
   const design = createDesignBasisForCalculationProfile('kds-142020-equivalent-block')
   const curveOptions = createDefaultAnalysisOptions()
+  // The cross-model benchmark measures equivalent-block candidates below. Keep this companion
+  // stress-strain timing on the production fixed display grid; adaptive stress-strain convergence
+  // has its own dedicated bench:strain-sampling suite.
+  curveOptions.stations.refinement = { type: 'fixed' }
+  curveOptions.directions.refinement = { type: 'fixed', probe: 'all' }
   const curve = timed(() => buildDesignPreviewSurface(section, rebars, fixture.materials, design, undefined, curveOptions))
   const blockMaterials = applyCalculationProfileToMaterials(fixture.materials, 'kds-142020-equivalent-block')
   const prepared = prepareBlockAnalysis('kds-142020-equivalent-block', section, rebars, blockMaterials, design)
@@ -47,14 +53,10 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
 
   const candidates = [
     {
-      name: 'block-unified-22x24-fixed',
-      options: (() => {
-        const options = createDefaultEquivalentBlockAnalysisOptions()
-        options.directions.refinement = { type: 'fixed' }
-        return options
-      })()
+      name: 'block-unified-22x36-fixed',
+      options: fixedBlockOptions(36)
     },
-    { name: 'block-unified-22x24-adaptive', options: createDefaultEquivalentBlockAnalysisOptions() }
+    { name: 'block-unified-22x36-adaptive', options: createDefaultEquivalentBlockAnalysisOptions() }
   ]
   for (const candidate of candidates) {
     const built = timed(() => buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, candidate.options))

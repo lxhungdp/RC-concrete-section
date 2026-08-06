@@ -1,10 +1,11 @@
 /**
- * Fixed-P is the horizontal intersection of the authoritative triangulated 3D surface. Sampled
+ * Fixed-P is the horizontal intersection of the independent fixed 22 × 36 surface. Sampled
  * meridian crossings are labelled markers; diagonal/cross-beta crossings remain polygon vertices.
  */
 import { strict as assert } from 'node:assert'
 import test from 'node:test'
 import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
+import { createDefaultAnalysisOptions } from '@pm/project'
 import { buildPreviewSurface, contourStrainAngleSamples, sliceFixedPContour } from '../src/index'
 import { referenceProjectDocument } from './fixtures/reference-case'
 
@@ -12,7 +13,13 @@ const KN = 1e3
 const document = referenceProjectDocument()
 const section = sectionGeometryFromGeometryInput(document.inputs.geometry)
 const rebars = geometryInputRebars(document.inputs.geometry)
-const surface = buildPreviewSurface(section, rebars, document.inputs.materials)
+const fixedSampling = (() => {
+  const options = createDefaultAnalysisOptions()
+  options.stations.refinement = { type: 'fixed' }
+  options.directions.refinement = { type: 'fixed', probe: 'all' }
+  return options
+})()
+const surface = buildPreviewSurface(section, rebars, document.inputs.materials, undefined, fixedSampling)
 const SAMPLED_DIRECTIONS = surface.directions.length
 
 const levels = [24942.9 * KN, 10000 * KN, 0, -3000 * KN]
@@ -21,8 +28,8 @@ test('the surface no longer carries an unused precomputed contour', () => {
   assert.equal('contour' in surface, false)
 })
 
-test('the surface retains at least the 36 seed directions after adaptive refinement', () => {
-  assert.ok(SAMPLED_DIRECTIONS >= 36)
+test('the fixed-P surface retains exactly the 36 fixed directions', () => {
+  assert.equal(SAMPLED_DIRECTIONS, 36)
   assert.equal(new Set(surface.points.map((point) => point.beta)).size, SAMPLED_DIRECTIONS)
 })
 

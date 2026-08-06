@@ -1,15 +1,17 @@
 import {
   AnalysisInputError,
   analysisInputKey,
+  buildExactDirectionCurveFromPrepared,
   buildDesignPreviewSurfaceFromPrepared,
   buildSectionFieldMapFromPrepared,
   checkLoadcaseUtilizationFromSurface,
   checkLoadcasesUtilizationFromSurface,
   codeAdjustedDemandOfCheck,
   prepareAnalysis,
-  sliceFixedPContour,
+  sliceFixedDesignPContour,
   solveInversePreviewFromPrepared,
   type InversePreviewResult,
+  type ExactDirectionCurve,
   type LoadcaseQuickCheckResult,
   type PreparedAnalysis,
   type PreviewSurface,
@@ -17,6 +19,7 @@ import {
 } from '@pm/analysis'
 import {
   buildEquivalentBlockPreviewSurfaceFromPrepared,
+  buildEquivalentBlockExactDirectionCurveFromPrepared,
   buildEquivalentBlockFieldMapFromPrepared,
   prepareBlockAnalysis,
   solveEquivalentBlockDemandFromPrepared,
@@ -43,6 +46,7 @@ import type {
   AnalysisWorkerRequest,
   AnalysisWorkerResponse,
   BuildFieldMapPayload,
+  BuildExactDirectionPayload,
   BuildSectionMeshPayload,
   BuildSurfacePayload,
   CheckLoadcasePayload,
@@ -221,6 +225,31 @@ export const buildPreviewSurfaceAsync = (payload: BuildSurfacePayload, signal?: 
     signal
   )
 
+export const buildExactDirectionCurveAsync = (
+  payload: BuildExactDirectionPayload,
+  signal?: AbortSignal
+): Promise<ExactDirectionCurve> =>
+  runWorkerOrFallback<ExactDirectionCurve>(
+    { type: 'buildExactDirection', payload },
+    () => {
+      if (isEquivalentBlockAnalysisOptions(payload.analysisOptions)) {
+        return buildEquivalentBlockExactDirectionCurveFromPrepared(
+          fallbackBlockFor(payload),
+          payload.analysisOptions,
+          payload.beta
+        )
+      }
+      return buildExactDirectionCurveFromPrepared(
+        fallbackPreparedFor({ ...payload, analysisOptions: payload.analysisOptions }),
+        payload.materialStore,
+        payload.designBasis,
+        payload.analysisOptions,
+        payload.beta
+      )
+    },
+    signal
+  )
+
 export const checkLoadcasesAsync = (
   payload: CheckLoadcasesPayload,
   signal?: AbortSignal
@@ -245,7 +274,7 @@ export const checkLoadcaseAsync = (
           payload.loadcase
         )
       }
-      const contour = sliceFixedPContour(payload.surface.points, payload.loadcase.P, payload.surface.triangles)
+      const contour = sliceFixedDesignPContour(payload.surface, payload.loadcase.P)
       const designCheck = checkLoadcaseUtilizationFromSurface(payload.surface, payload.loadcase)
       const inverse = solveInversePreviewFromPrepared(
         fallbackPreparedFor({ ...payload, analysisOptions: payload.surface.analysisOptions }),

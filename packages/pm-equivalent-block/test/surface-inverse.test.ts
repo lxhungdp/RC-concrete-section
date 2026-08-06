@@ -234,6 +234,8 @@ test('ray intersection returns the analytical octahedron boundary', () => {
     normalization: { P: 1, Mx: 1, My: 1 },
     maxDirectionalInterpolationError: 0,
     maxStationInterpolationError: 0,
+    directionRefinementPasses: 0,
+    stationRefinementPasses: 0,
     directionRefinementConverged: true,
     stationRefinementConverged: true,
     topology: { closed: true, boundaryEdges: 0, nonManifoldEdges: 0, degenerateTriangles: 0 }
@@ -267,6 +269,8 @@ test('a clipped side triangle is not misclassified as an axial-cap face', () => 
     normalization: { P: 1, Mx: 1, My: 1 },
     maxDirectionalInterpolationError: 0,
     maxStationInterpolationError: 0,
+    directionRefinementPasses: 0,
+    stationRefinementPasses: 0,
     directionRefinementConverged: true,
     stationRefinementConverged: true,
     topology: { closed: false, boundaryEdges: 3, nonManifoldEdges: 0, degenerateTriangles: 0 },

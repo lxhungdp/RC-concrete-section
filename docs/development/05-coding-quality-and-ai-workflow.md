@@ -143,8 +143,8 @@ Reviewers ask:
 - Are units/origin/sign/action basis explicit at every boundary?
 - Are strain-direction samples, derived N.A. line angles, and demand moment-direction angles kept
   explicitly separate?
-- Do `P-Mtheta` and fixed-P loadcase checks use geometric ray/plane intersections instead of
-  nearest sampled angle rows?
+- Does the governing check use the adaptive 3D Design ray, fixed-P use only the fixed grid, and an
+  exact vertical meridian trigger a new calculation instead of nearest-angle interpolation?
 - Are preview/current/stale/accepted/released states impossible to confuse?
 - Do tests cover both sides of every changed branch and an independent oracle where required?
 - Does provenance/versioning make old and new results distinguishable?

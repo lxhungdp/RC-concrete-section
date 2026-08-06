@@ -2,6 +2,7 @@ import {
   contourStrainAngleSamples,
   sliceFixedPContour,
   stationDefinitionLabel,
+  type ExactDirectionCurve,
   type PreviewSurface,
   type PreviewSurfacePoint,
   type Resultant,
@@ -13,7 +14,7 @@ export type ChartTableSource = 'vertical' | 'fixedP'
 export type ChartTableForces = {
   /** Axial force, N. */
   P: number
-  /** In-plane moment on the vertical slice, N·mm. */
+  /** Moment projected on the direct vertical meridian, N·mm. */
   M: number
 }
 
@@ -59,7 +60,7 @@ const normalizeAngleDeg = (degrees: number) => ((degrees % 360) + 360) % 360
 const stationCriterion = (surface: PreviewSurface, station: number) => {
   if (!Number.isFinite(station) || station < 0) return '—'
   const index = Math.round(station)
-  const descriptor = surface.stations[index]
+  const descriptor = (surface.designFixed?.stations ?? surface.stations)[index]
   if (!descriptor) return `P${index}`
   return stationDefinitionLabel(descriptor.definition)
 }
@@ -144,7 +145,7 @@ const collectVertical = (
   const momentOf = (part: Resultant) => momentAlong(part, angleDeg)
   for (const [curveIndex, curve] of curves.entries()) {
     for (const point of curve.curve) {
-      const key = `vertical-${curveIndex}-${point.station}`
+      const key = `vertical-${curveIndex}-${point.stationId ?? point.station}`
       const forces = forcesFromLedger(point.ledger, momentOf)
       const existing = drafts.get(key)
       if (existing) {
@@ -164,11 +165,47 @@ const collectVertical = (
   }
 }
 
+const collectDirectVertical = (
+  surface: PreviewSurface,
+  points: PreviewSurfacePoint[],
+  angleDeg: number,
+  descriptors: ExactDirectionCurve['stations'],
+  stage: 'design' | 'nominal',
+  drafts: Map<string, VerticalDraft>
+) => {
+  const momentOf = (part: Resultant) => momentAlong(part, angleDeg)
+  for (const point of points) {
+    const key = `vertical-0-${point.stationId ?? point.station}`
+    const forces = forcesFromLedger(point.ledger, momentOf)
+    const existing = drafts.get(key)
+    if (existing) {
+      if (stage === 'design') existing.design = forces
+      else existing.nominal = forces
+      continue
+    }
+    drafts.set(key, {
+      kind: 'vertical',
+      key,
+      sort: point.station,
+      criterion: point.stationId == null
+        ? stationCriterion(surface, point.station)
+        : stationDefinitionLabel(
+            descriptors.find((descriptor) => descriptor.id === point.stationId)?.definition ??
+              (surface.designFixed?.stations ?? surface.stations)[Math.max(0, point.station)]?.definition ??
+              { kind: 'block-adaptive', label: 'Adaptive midpoint' }
+          ),
+      design: stage === 'design' ? forces : null,
+      nominal: stage === 'nominal' ? forces : null
+    })
+  }
+}
+
 const betaKey = (angleDeg: number) => `fixedP-b${angleDeg.toFixed(3)}`
 
 /**
- * Fixed-P table rows follow the labelled sampled/adaptive meridian intersections. The drawn
- * triangle-cut contour may also contain unlabelled intermediate diagonal/cross-beta edge vertices.
+ * Fixed-P table rows follow the labelled fixed-meridian intersections. The drawn triangle-cut
+ * contour may also contain unlabelled intermediate diagonal/cross-beta edge vertices, but no
+ * adaptive station or direction enters this dataset.
  */
 const collectFixedP = (
   points: PreviewSurfacePoint[],
@@ -201,6 +238,7 @@ const collectFixedP = (
 
 export const buildChartTableRows = (input: {
   surface: PreviewSurface | null
+  exactDirectionCurve?: ExactDirectionCurve | null
   source: ChartTableSource
   includeDesign: boolean
   includeNominal: boolean
@@ -214,10 +252,43 @@ export const buildChartTableRows = (input: {
 
   if (input.source === 'vertical') {
     const drafts = new Map<string, VerticalDraft>()
+    if (input.exactDirectionCurve) {
+      const angleDeg = input.exactDirectionCurve.beta * 180 / Math.PI
+      if (input.includeDesign) {
+        collectDirectVertical(
+          surface,
+          input.exactDirectionCurve.designAdaptive,
+          angleDeg,
+          input.exactDirectionCurve.stations,
+          'design',
+          drafts
+        )
+      }
+      if (input.includeNominal) {
+        collectDirectVertical(
+          surface,
+          input.exactDirectionCurve.nominalFixed,
+          angleDeg,
+          surface.nominalFixed?.stations ?? surface.stations,
+          'nominal',
+          drafts
+        )
+      }
+      return [...drafts.values()]
+        .sort((a, b) => a.sort - b.sort)
+        .map((row, index) => ({
+          kind: 'vertical' as const,
+          key: row.key,
+          index: index + 1,
+          criterion: row.criterion,
+          design: input.includeDesign ? row.design : null,
+          nominal: input.includeNominal ? row.nominal : null
+        }))
+    }
     if (input.includeDesign) {
       collectVertical(
         surface,
-        surface.points,
+        surface.designFixed?.points ?? surface.points,
         input.sliceAngleDeg,
         input.includeOpposite,
         'design',
@@ -227,7 +298,7 @@ export const buildChartTableRows = (input: {
     if (input.includeNominal) {
       collectVertical(
         surface,
-        surface.nominalPoints,
+        surface.nominalFixed?.points ?? surface.nominalPoints,
         input.sliceAngleDeg,
         input.includeOpposite,
         'nominal',
@@ -248,13 +319,19 @@ export const buildChartTableRows = (input: {
 
   const drafts = new Map<string, FixedPDraft>()
   if (input.includeDesign) {
-    collectFixedP(surface.points, input.fixedP, surface.triangles, 'design', drafts)
+    collectFixedP(
+      surface.designFixed?.points ?? surface.points,
+      input.fixedP,
+      surface.designFixed?.triangles ?? surface.triangles,
+      'design',
+      drafts
+    )
   }
   if (input.includeNominal) {
     collectFixedP(
-      surface.nominalPoints,
+      surface.nominalFixed?.points ?? surface.nominalPoints,
       input.fixedP,
-      surface.nominalTriangles,
+      surface.nominalFixed?.triangles ?? surface.nominalTriangles,
       'nominal',
       drafts
     )
@@ -287,7 +364,7 @@ export const downloadChartTableExcel = async (input: {
   const imported = await import('exceljs')
   const ExcelJS = ((imported as unknown as { default?: typeof imported }).default ?? imported) as typeof imported
   const workbook = new ExcelJS.Workbook()
-  const sheet = workbook.addWorksheet(input.source === 'vertical' ? 'Vertical slice' : 'Fixed-P')
+  const sheet = workbook.addWorksheet(input.source === 'vertical' ? 'Vertical meridian' : 'Fixed-P')
 
   if (input.source === 'fixedP') {
     const headers = ['#', 'β (°)' ]

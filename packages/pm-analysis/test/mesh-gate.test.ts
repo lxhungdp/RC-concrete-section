@@ -8,6 +8,7 @@
 import { strict as assert } from 'node:assert'
 import test from 'node:test'
 import { geometryInputRebars, sectionGeometryFromGeometryInput, type SectionGeometry } from '@pm/geometry'
+import { createDefaultAnalysisOptions } from '@pm/project'
 import { AnalysisInputError, buildPreviewSurface } from '../src/index'
 import { referenceProjectDocument } from './fixtures/reference-case'
 
@@ -15,6 +16,14 @@ const document = referenceProjectDocument()
 const section = sectionGeometryFromGeometryInput(document.inputs.geometry)
 const rebars = geometryInputRebars(document.inputs.geometry)
 const materials = document.inputs.materials
+const gateSampling = (() => {
+  const options = createDefaultAnalysisOptions()
+  options.stations.intermediate = []
+  options.stations.refinement = { type: 'fixed' }
+  options.directions.seed = { type: 'uniform', count: 4, startDeg: 0 }
+  options.directions.refinement = { type: 'fixed', probe: 'all' }
+  return options
+})()
 
 const captureThrow = (run: () => unknown): unknown => {
   try {
@@ -35,7 +44,15 @@ test('a mesh over its cell budget is a typed fatal error, not a steel-only surfa
 })
 
 test('raising the budget deliberately lets the same section through', () => {
-  const surface = buildPreviewSurface(section, rebars, materials, { cellSize: 2.344, maxCells: 1_000_000 })
+  // This test exercises only the mesh gate and compression pole. Keep surface sampling minimal so
+  // a 327k-cell mesh is not multiplied by the unrelated production adaptive schedule.
+  const surface = buildPreviewSurface(
+    section,
+    rebars,
+    materials,
+    { cellSize: 2.344, maxCells: 1_000_000 },
+    gateSampling
+  )
   // P0 is pure compression: alpha*fck*A_net plus the bars.
   assert.ok(surface.points[0].P > 3.3e7, `expected the full P0, got ${surface.points[0].P}`)
 })

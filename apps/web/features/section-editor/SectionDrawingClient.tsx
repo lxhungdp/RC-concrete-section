@@ -68,6 +68,7 @@ import {
   type LoadingsInput
 } from '@pm/project'
 import {
+  type ExactDirectionCurve,
   type InversePreviewResult,
   type LoadcaseQuickCheckResult,
   type PreviewSurface
@@ -572,6 +573,7 @@ export function SectionDrawingClient() {
   )
   const [fixedResultP, setFixedResultP] = useState(0)
   const [resultSurface, setResultSurface] = useState<PreviewSurface | null>(null)
+  const [exactDirectionCurve, setExactDirectionCurve] = useState<ExactDirectionCurve | null>(null)
   const [surfaceStatus, setSurfaceStatus] = useState<'idle' | 'working' | 'error'>('idle')
   const [surfaceMessage, setSurfaceMessage] = useState('')
   const [inverseResults, setInverseResults] = useState<Record<number, InversePreviewResult>>({})
@@ -729,14 +731,18 @@ export function SectionDrawingClient() {
       surfacePoints: resultSurface?.points.length ?? 0,
       directionCount: betaCount,
       stationCount,
+      fixedDirectionCount: resultSurface?.designFixed?.directions.length ?? 0,
+      fixedStationCount: resultSurface?.designFixed?.stations.length ?? 0,
       refinement: resultSurface
         ? {
             tolerance: resultSurface.directionError.tolerance,
             maxRelative: Math.max(
-              resultSurface.directionError.maxRelativeP,
-              resultSurface.directionError.maxRelativeMoment
+              resultSurface.directionError.maxRelativeComponent,
+              resultSurface.stationError.maxRelative
             ),
-            withinTolerance: resultSurface.directionError.withinTolerance
+            withinTolerance:
+              resultSurface.directionError.withinTolerance &&
+              resultSurface.stationError.withinTolerance
           }
         : null,
       warnings: resultSurface?.warnings ?? [],
@@ -2593,6 +2599,7 @@ export function SectionDrawingClient() {
             view={sectionResultsView}
             onViewChange={updateSectionResultsView}
             surface={resultSurface}
+            exactDirectionCurve={exactDirectionCurve}
             fixedP={fixedResultP}
             projectName={projectMeta.name || appliedGeometryInput.name || 'Column project'}
           />
@@ -2671,6 +2678,8 @@ export function SectionDrawingClient() {
             ready={hasAppliedSection}
             viewMode={activeModule === 'demand' ? 'loadcase' : 'overview'}
             surface={resultSurface}
+            exactDirectionCurve={exactDirectionCurve}
+            onExactDirectionCurveChange={setExactDirectionCurve}
             section={finalSection}
             rebars={rebars}
             materialStore={materialStore}

@@ -173,10 +173,11 @@ the measurement and returns `NaN`, never a misleading zero.
 The direction grid, not the integration mesh, can govern numerical error. For a locally convex
 fixed-P contour, chord interpolation cuts the corner and under-reports capacity, but the sign is not
 a universal theorem for arbitrary non-convex or multi-loop slices. Stress-strain starts from 36
-directions and probes all shared stations at 0.5% relative tolerance. Equivalent-block starts from
-24 directions with a 0.75% direction target. Neither model refines the fixed 22-station coordinate
-or inserts automatic transition stations. The effective direction count and convergence evidence
-are recorded with every surface.
+directions. Both mechanics use the same 0.75% relative target for direction and station chord error,
+with at most 360 directions and 48 total stations. The 22 fixed stations remain identifiable while
+Design-only adaptive stations are inserted between them. No automatic transition station is added.
+The effective counts and separate station/direction convergence evidence are recorded with every
+surface; nominal and fixed-P datasets remain fixed.
 
 The permanent direction benchmark is `npm run bench:strain-sampling`; it holds the shared station
 schedule constant while comparing the seed and refined direction surfaces. See `12` for the

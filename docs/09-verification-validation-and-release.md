@@ -157,8 +157,8 @@ Every design result package stores:
 
 - mesh levels, fiber counts, successive differences, and observed-order validity;
 - beta/state refinement history and worst interpolation cell;
-- evidence that demand-direction queries used ray/plane geometry rather than nearest sampled
-  strain-plane rows;
+- evidence that governing demand queries used the 3D proportional ray, fixed-P used only the fixed
+  grid, and exact vertical meridians were recalculated at their requested beta;
 - final topology/orientation/star-shaped reports;
 - targeted utilization refinement and uncertainty interval;
 - conditioning/floating-point diagnostics;
@@ -200,10 +200,10 @@ but it must not claim to predict physical failure beyond that model's scope.
 
 - adaptive convergence and closed-mesh topology pass across the structural matrix;
 - pure axial utilization, cap faces, asymmetry, and non-monotone `P` cases pass;
-- demand-direction slices and fixed-P moment rays pass cases where `thetaLoad` falls between
-  sampled strain-plane angles;
-- vertical moment-plane slices preserve triangle-segment adjacency and close by topology across
-  symmetric, asymmetric, concave, hollow, thin-wall, and user-curve fixtures;
+- governing 3D rays and fixed-P moment rays pass cases where `thetaLoad` falls between fixed
+  strain-plane directions;
+- fixed and arbitrary-angle direct vertical meridians pass symmetric, asymmetric, concave, hollow,
+  thin-wall, and user-curve fixtures without angular interpolation;
 - production results agree with independent reference solver within approved tolerance.
 
 ### Gate D — Design-code resistance profile and adapter

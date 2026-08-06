@@ -6,6 +6,7 @@ import {
   type SteelLawRegistry
 } from './types'
 import {
+  capacityStationDepth,
   intersectCapacitySurfaceWithRay,
   type CapacityEvaluator,
   type CapacityStation,
@@ -183,25 +184,9 @@ export const solveFixedAxialCapacity = (
         ultimateStrain: steelLaw.ultimateStrain
       }
     }) : []
-    const eventDepths = (options.eventStations ?? []).map((station) => {
-      if (station.type === 'depth-ratio') return station.ratio * depth
-      const controllingBar = barDepths.reduce<(typeof barDepths)[number] | undefined>(
-        (current, bar) => !current || bar.depth > current.depth ? bar : current,
-        undefined
-      )
-      const controllingDepth =
-        (station.type === 'bar-tension-strain' || station.type === 'bar-tension-yield-ratio') && controllingBar
-        ? controllingBar.depth
-        : depth
-      const strain = station.type === 'bar-tension-yield-ratio'
-        ? station.ratio * (controllingBar?.yieldStrain ?? 0.002)
-        : station.strain
-      const requestedDepth = controllingDepth / (1 + strain / extremeCompressionStrain)
-      const ruptureDepth = barDepths.reduce((minimum, bar) => bar.ultimateStrain === undefined
-        ? minimum
-        : Math.max(minimum, bar.depth / (1 + bar.ultimateStrain / extremeCompressionStrain)), 0)
-      return Math.max(requestedDepth, ruptureDepth)
-    })
+    const eventDepths = (options.eventStations ?? []).map((station) =>
+      capacityStationDepth(station, depth, extremeCompressionStrain, barDepths)
+    )
     const depths = [...ratios.map((ratio) => ratio * depth), ...eventDepths]
       .filter((value) => value > 0 && Number.isFinite(value))
       .sort((left, right) => left - right)

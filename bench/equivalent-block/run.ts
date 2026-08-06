@@ -132,18 +132,20 @@ const relativeError = (actual: number, expected: number) =>
 const results: Array<Record<string, string | number>> = []
 const verificationFailures: string[] = []
 const productionSurfaceOptions = {
-  seedDirections: 24,
+  seedDirections: 36,
   directionTolerance: 0.0075,
   maxRefinementPasses: 6,
   maxDirections: 360,
-  maxStationRefinementPasses: 0
+  stationTolerance: 0.0075,
+  maxStationRefinementPasses: 6,
+  maxStations: 48
 } as const
 
 for (const { standard, model } of models) {
   for (const item of cases) {
     const evaluator = model.bindDesignEvaluator(item.section)
     const states = Array.from({ length: 120 }, (_, index) => ({
-      neutralAxisAngle: 2 * Math.PI * (index % 24) / 24 + 0.003,
+      neutralAxisAngle: 2 * Math.PI * (index % 36) / 36 + 0.003,
       neutralAxisDepth: item.section.characteristicLength * (0.04 + 4 * ((index % 17) / 16) ** 2)
     }))
     for (let index = 0; index < 200; index += 1) evaluator(states[index % states.length])

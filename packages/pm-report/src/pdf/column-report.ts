@@ -501,7 +501,7 @@ export const renderColumnReport = (model: ColumnReportModel): Uint8Array => {
     const bounds = curveBounds([curve.design, curve.nominal])
     const column = index % perRow
     const frame = doc.figure({
-      title: `P–Mθ at θ = ${num(curve.thetaDeg, 2)}°`,
+      title: `Fixed-grid plane P–Mθ at θ = ${num(curve.thetaDeg, 2)}°`,
       height: curveHeight,
       bounds,
       widthFraction: perRow > 1 ? 0.48 : 1,
@@ -607,7 +607,11 @@ export const renderColumnReport = (model: ColumnReportModel): Uint8Array => {
     doc.endFigureRow(detailHeight)
     barLegend(doc, detail.bars)
 
-    doc.heading('Interaction diagram through the demand direction')
+    doc.heading(
+      detail.interaction.kind === 'direct-beta'
+        ? 'Exact direct meridian at the equilibrium strain direction'
+        : 'Fixed-grid geometric plane diagnostic'
+    )
     const detailBounds = curveBounds(
       [detail.interaction.design, detail.interaction.nominal],
       [
@@ -618,11 +622,15 @@ export const renderColumnReport = (model: ColumnReportModel): Uint8Array => {
       ]
     )
     const interactionFrame = doc.figure({
-      title: `P–Mθ at θL = ${num(detail.interaction.thetaDeg, 2)}°, with the load point`,
+      title: detail.interaction.kind === 'direct-beta'
+        ? `Direct P–Mβ at βeq = ${num(detail.interaction.thetaDeg, 3)}°, with the load point`
+        : `Fixed-grid P–Mθ at θL = ${num(detail.interaction.thetaDeg, 2)}°, with the load point`,
       height: 210,
       bounds: detailBounds,
       preserveAspect: false,
-      caption: 'solid = Design · dashed = Nominal · the dotted ray is the governing proportional check'
+      caption: detail.interaction.kind === 'direct-beta'
+        ? 'solid = adaptive Design · dashed = fixed Nominal · points are projected on βeq'
+        : 'solid = fixed Design · dashed = fixed Nominal · dotted ray = governing proportional check'
     })
     drawInteraction(interactionFrame, detailBounds, detail.interaction, {
       demand: detail.interaction.demand,

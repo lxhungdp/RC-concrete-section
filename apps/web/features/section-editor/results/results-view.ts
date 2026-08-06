@@ -13,7 +13,7 @@ export type SurfaceResistanceMode = 'nominal' | 'design'
 export type FieldMode = 'strain' | 'stress'
 
 export type SectionResultsView = {
-  /** Vertical-slice plane angle, degrees. */
+  /** Fixed direct-meridian strain-gradient direction, degrees. */
   sliceAngle: number
   includeOppositeMoment: boolean
   showDesignResistance: boolean
@@ -38,13 +38,13 @@ export const SECTION_CHART_IDS: readonly SectionChartId[] = ['vertical', 'surfac
 export const DEMAND_CHART_IDS: readonly DemandChartId[] = ['heatmap', 'fixedP', 'vertical']
 
 export const sectionChartLabel = (id: SectionChartId) =>
-  id === 'vertical' ? 'Vertical slice' : id === 'surface3d' ? '3D P-Mx-My' : 'Fixed-P Mx-My'
+  id === 'vertical' ? 'Vertical meridian' : id === 'surface3d' ? '3D P-Mx-My' : 'Fixed-P Mx-My'
 
 export const demandChartLabel = (id: DemandChartId) =>
-  id === 'heatmap' ? 'Section field' : id === 'fixedP' ? 'Fixed-P Mx-My' : 'Vertical slice'
+  id === 'heatmap' ? 'Section field' : id === 'fixedP' ? 'Fixed-P Mx-My' : 'Vertical meridian'
 
 /**
- * Slider ceiling and step for the vertical-slice angle.
+ * Slider ceiling and step for the fixed direct-meridian angle.
  *
  * The full-circle slider runs 0°…360° so the last stop matches a complete turn (same direction as
  * 0°). Drawing the opposite half-plane already covers 180°–360°, so that mode caps at 180°.

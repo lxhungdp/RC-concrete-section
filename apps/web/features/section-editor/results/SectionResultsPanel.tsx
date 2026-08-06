@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { Download, Eye, EyeOff, Loader2 } from 'lucide-react'
-import type { PreviewSurface } from '@pm/analysis'
+import type { ExactDirectionCurve, PreviewSurface } from '@pm/analysis'
 import {
   SECTION_CHART_IDS,
   sectionChartLabel,
@@ -32,6 +32,8 @@ export type SectionResultsSummary = {
   surfacePoints: number
   directionCount: number
   stationCount: number
+  fixedDirectionCount: number
+  fixedStationCount: number
   /** Adaptive-refinement evidence, or null when the surface has none yet. */
   refinement: {
     tolerance: number
@@ -56,6 +58,7 @@ type Props = {
   view: SectionResultsView
   onViewChange: (patch: Partial<SectionResultsView>) => void
   surface: PreviewSurface | null
+  exactDirectionCurve: ExactDirectionCurve | null
   fixedP: number
   projectName: string
 }
@@ -110,6 +113,7 @@ export function SectionResultsPanel({
   view,
   onViewChange,
   surface,
+  exactDirectionCurve,
   fixedP,
   projectName
 }: Props) {
@@ -122,6 +126,7 @@ export function SectionResultsPanel({
     () =>
       buildChartTableRows({
         surface,
+        exactDirectionCurve,
         source,
         includeDesign,
         includeNominal,
@@ -135,6 +140,7 @@ export function SectionResultsPanel({
       includeNominal,
       source,
       surface,
+      exactDirectionCurve,
       view.includeOppositeMoment,
       view.sliceAngle
     ]
@@ -208,8 +214,10 @@ export function SectionResultsPanel({
               ? `${integer(summary.concreteArea)} / ${integer(summary.steelArea)} mm²`
               : `— / ${integer(summary.steelArea)} mm²`}
           </strong>
-          <span>Directions / Stations</span>
+          <span>Adaptive dirs / stations</span>
           <strong>{`${integer(summary.directionCount)} / ${integer(summary.stationCount)}`}</strong>
+          <span>Fixed visual grid</span>
+          <strong>{`${integer(summary.fixedDirectionCount)} × ${integer(summary.fixedStationCount)}`}</strong>
           {summary.mechanics === 'stress-strain-integration' ? (
             <>
               <span>Mesh cells / points</span>
@@ -290,8 +298,10 @@ export function SectionResultsPanel({
 
         <p className="pm-field-note">
           {source === 'vertical'
-            ? `φ = ${fmt(view.sliceAngle, 0)}° · nearest sampled direction · kN / kN·m`
-            : `P = ${fmt(fixedP / 1000, 1)} kN · sampled β directions · kN·m`}
+            ? exactDirectionCurve
+              ? `Exact β = ${fmt(exactDirectionCurve.beta * 180 / Math.PI, 3)}° · direct calculation · kN / kN·m`
+              : `Fixed β = ${fmt(view.sliceAngle, 0)}° · direct meridian · kN / kN·m`
+            : `P = ${fmt(fixedP / 1000, 1)} kN · fixed β directions · kN·m`}
           {` · ${rows.length} row${rows.length === 1 ? '' : 's'}`}
         </p>
 

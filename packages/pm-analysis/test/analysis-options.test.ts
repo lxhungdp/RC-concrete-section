@@ -15,9 +15,13 @@ import {
 import {
   AnalysisInputError,
   analysisStations,
+  buildDesignPreviewSurfaceFromPrepared,
+  buildExactDirectionCurveFromPrepared,
   buildPreviewSurface,
   buildPreviewSurfaceFromPrepared,
-  prepareAnalysis
+  prepareAnalysis,
+  sliceFixedDesignPContour,
+  sliceFixedPContour
 } from '../src/index'
 import { referenceProjectDocument } from './fixtures/reference-case'
 
@@ -32,6 +36,7 @@ const explicitOptions = (): AnalysisOptions => ({
   methodId: 'strain-domain-surface-v1',
   stations: {
     basedOn: 'custom',
+    refinement: { type: 'fixed' },
     intermediate: [
       { id: 11, label: 'NA at 2c₁', criterion: { type: 'c-over-c1', ratio: 2 } },
       { id: 22, label: 'Half design yield stress', criterion: { type: 'steel-stress-ratio', ratio: 0.5 } },
@@ -57,19 +62,42 @@ const controllingBarStrain = (
   return point.state.e0 + point.state.kx * control.y + point.state.ky * control.x
 }
 
-test('the canonical default is the unified 22-station surface with 36 seed directions', () => {
+test('the canonical default preserves 22 fixed stations and refines the production surface adaptively', () => {
   const implicit = buildPreviewSurfaceFromPrepared(prepared)
   const defaults = createDefaultAnalysisOptions()
   const explicit = buildPreviewSurfaceFromPrepared(prepared, defaults)
 
-  assert.equal(explicit.stations.length, 22)
+  assert.equal(defaults.stations.intermediate.length + 2, 22)
+  assert.equal(explicit.stations.filter((station) => station.fixed).length, 22)
+  assert.ok(explicit.stations.length >= 22 && explicit.stations.length <= 48)
+  assert.ok(explicit.stationError.maxRelative <= 0.0075)
+  assert.ok(explicit.directionError.maxRelativeComponent <= 0.0075)
   assert.equal(defaults.directions.seed.type, 'uniform')
   assert.equal(defaults.directions.seed.type === 'uniform' ? defaults.directions.seed.count : 0, 36)
   assert.ok(explicit.directions.length >= 36)
+  assert.equal(explicit.points.length, explicit.stations.length * explicit.directions.length)
   assert.deepEqual(
     explicit.points.map(({ P, Mx, My, state }) => ({ P, Mx, My, state })),
     implicit.points.map(({ P, Mx, My, state }) => ({ P, Mx, My, state }))
   )
+})
+
+test('the production Fixed-P helper ignores adaptive Design vertices', () => {
+  const surface = buildDesignPreviewSurfaceFromPrepared(
+    prepared,
+    materials,
+    document.inputs.design,
+    createDefaultAnalysisOptions()
+  )
+  assert.ok(surface.designFixed)
+  const expected = sliceFixedPContour(
+    surface.designFixed!.points,
+    0,
+    surface.designFixed!.triangles
+  )
+  const actual = sliceFixedDesignPContour({ ...surface, points: [] }, 0)
+  assert.ok(actual.length > 0)
+  assert.deepEqual(actual, expected)
 })
 
 test('stress-strain and equivalent-stress serialize the exact same 20 intermediate criteria', () => {
@@ -78,11 +106,42 @@ test('stress-strain and equivalent-stress serialize the exact same 20 intermedia
 
   assert.equal(stressStrain.stations.basedOn, 'unified-22-v1')
   assert.equal(equivalentStress.neutralAxisStations.basedOn, 'unified-22-v1')
-  assert.equal(equivalentStress.neutralAxisStations.refinement.type, 'fixed')
+  assert.deepEqual(stressStrain.stations.refinement, {
+    type: 'adaptive', tolerance: 0.0075, maxPasses: 8, maxStations: 48
+  })
+  assert.deepEqual(equivalentStress.neutralAxisStations.refinement, stressStrain.stations.refinement)
+  assert.equal(equivalentStress.directions.seedCount, 36)
+  assert.equal(equivalentStress.directions.refinement.type, 'adaptive')
+  assert.equal(
+    equivalentStress.directions.refinement.type === 'adaptive'
+      ? equivalentStress.directions.refinement.tolerance
+      : 0,
+    0.0075
+  )
   assert.deepEqual(
     equivalentStress.neutralAxisStations.values,
     stressStrain.stations.intermediate.map((station) => station.criterion)
   )
+})
+
+test('an exact stress-strain direction uses no angular interpolation and keeps its fixed references separate', () => {
+  const beta = 17.35 * Math.PI / 180
+  const curve = buildExactDirectionCurveFromPrepared(
+    prepared,
+    materials,
+    document.inputs.design,
+    createDefaultAnalysisOptions(),
+    beta
+  )
+
+  assert.ok(Math.abs(curve.beta - beta) < 1e-14)
+  assert.equal(curve.designFixed.length, 22)
+  assert.equal(curve.nominalFixed.length, 22)
+  assert.ok(curve.designAdaptive.length >= 22 && curve.designAdaptive.length <= 48)
+  assert.equal(curve.stations.filter((station) => station.fixed).length, 22)
+  assert.ok(curve.designAdaptive.every((point) => Math.abs(point.beta - beta) < 1e-14))
+  assert.ok(curve.designFixed.every((point) => point.stationId?.startsWith('adaptive-') !== true))
+  assert.ok(curve.stationError.maxRelative <= 0.0075)
 })
 
 test('the controlling-bar branch resolves the canonical yield-strain multiples', () => {
@@ -96,6 +155,7 @@ test('the controlling-bar branch resolves the canonical yield-strain multiples',
   }
   const sd500Prepared = prepareAnalysis(section, rebars, sd500)
   const options = createDefaultAnalysisOptions()
+  options.stations.refinement = { type: 'fixed' }
   options.directions.refinement = { type: 'fixed', probe: 'all' }
   const strainStations = analysisStations(options)
     .map((station, index) => ({ station, index }))

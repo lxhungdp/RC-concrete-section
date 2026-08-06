@@ -535,8 +535,8 @@ const parseEquivalentBlockAnalysis = (
     )
     assert(Number.isInteger(stationRefinement.maxPasses) && (stationRefinement.maxPasses as number) >= 0 && (stationRefinement.maxPasses as number) <= 12,
       `${path}.neutralAxisStations.refinement.maxPasses must be an integer between 0 and 12`)
-    assert(Number.isInteger(stationRefinement.maxStations) && (stationRefinement.maxStations as number) >= values.length && (stationRefinement.maxStations as number) <= MAX_BLOCK_STATIONS,
-      `${path}.neutralAxisStations.refinement.maxStations must be between station count and ${MAX_BLOCK_STATIONS}`)
+    assert(Number.isInteger(stationRefinement.maxStations) && (stationRefinement.maxStations as number) >= values.length + 2 && (stationRefinement.maxStations as number) <= MAX_BLOCK_STATIONS,
+      `${path}.neutralAxisStations.refinement.maxStations must be between total station count and ${MAX_BLOCK_STATIONS}`)
     refinement = {
       type: 'adaptive',
       tolerance: stationRefinement.tolerance,
@@ -623,6 +623,40 @@ const parseAnalysis = (value: unknown): CalculationAnalysisOptions => {
         actual.every((item, index) => item === expected[index]),
       `${path}.stations must match the canonical ${UNIFIED_STATION_SCHEDULE} schedule`
     )
+  }
+
+  const defaultStationRefinement = createDefaultAnalysisOptions().stations.refinement
+  const stationRefinementValue = value.stations.refinement ?? defaultStationRefinement
+  assertRecord(stationRefinementValue, `${path}.stations.refinement must be an object`)
+  let stationRefinement: AnalysisOptions['stations']['refinement']
+  if (stationRefinementValue.type === 'fixed') {
+    stationRefinement = { type: 'fixed' }
+  } else {
+    assert(stationRefinementValue.type === 'adaptive', `${path}.stations.refinement.type is unsupported`)
+    assert(
+      isFiniteNumber(stationRefinementValue.tolerance) &&
+        stationRefinementValue.tolerance > 0 &&
+        stationRefinementValue.tolerance <= 0.25,
+      `${path}.stations.refinement.tolerance must be in (0, 0.25]`
+    )
+    assert(
+      Number.isInteger(stationRefinementValue.maxPasses) &&
+        (stationRefinementValue.maxPasses as number) >= 0 &&
+        (stationRefinementValue.maxPasses as number) <= 12,
+      `${path}.stations.refinement.maxPasses must be an integer between 0 and 12`
+    )
+    assert(
+      Number.isInteger(stationRefinementValue.maxStations) &&
+        (stationRefinementValue.maxStations as number) >= intermediate.length + 2 &&
+        (stationRefinementValue.maxStations as number) <= MAX_BLOCK_STATIONS,
+      `${path}.stations.refinement.maxStations must be between total station count and ${MAX_BLOCK_STATIONS}`
+    )
+    stationRefinement = {
+      type: 'adaptive',
+      tolerance: stationRefinementValue.tolerance,
+      maxPasses: stationRefinementValue.maxPasses as number,
+      maxStations: stationRefinementValue.maxStations as number
+    }
   }
 
   assertRecord(value.directions, `${path}.directions must be an object`)
@@ -752,7 +786,7 @@ const parseAnalysis = (value: unknown): CalculationAnalysisOptions => {
   return {
     optionsVersion: ANALYSIS_OPTIONS_VERSION,
     methodId: STRAIN_DOMAIN_SURFACE_METHOD,
-    stations: { basedOn: value.stations.basedOn, intermediate },
+    stations: { basedOn: value.stations.basedOn, intermediate, refinement: stationRefinement },
     directions: { seed, refinement },
     mesh
   }

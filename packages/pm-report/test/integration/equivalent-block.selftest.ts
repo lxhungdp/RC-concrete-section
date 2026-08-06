@@ -28,7 +28,7 @@ import {
   type EquivalentBlockProfileId
 } from '@pm/project'
 import {
-  buildEquivalentBlockDesignSurfaceFromPrepared,
+  buildEquivalentBlockExactDirectionCurveFromPrepared,
   prepareBlockAnalysis
 } from '@pm/analysis-equivalent-block'
 import type { NominalBlockEvaluation } from '@pm/equivalent-block'
@@ -92,11 +92,6 @@ const toHyperFormulaValue = (cell: ExcelJS.Cell): string | number | boolean | nu
 
 const TAU = 2 * Math.PI
 const wrap = (angle: number) => ((angle % TAU) + TAU) % TAU
-const angularDistance = (a: number, b: number) => {
-  const raw = wrap(a - b)
-  return Math.min(raw, TAU - raw)
-}
-
 const runCase = async (
   relativePath: string,
   thetaDeg: number,
@@ -226,20 +221,22 @@ const runCase = async (
 
   console.log('== 3. Rebuild the same states in the engine ==')
   const prepared = prepareBlockAnalysis(profileId, section, rebars, materials, designBasis)
-  const core = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
-  const sampled = [...new Set(core.directions.map(wrap))].sort((a, b) => a - b)
-  const requested = wrap((thetaDeg * Math.PI) / 180)
-  const theta = sampled.reduce((best, candidate) =>
-    angularDistance(candidate, requested) < angularDistance(best, requested) ? candidate : best
+  const theta = wrap((thetaDeg * Math.PI) / 180)
+  const exactCurve = buildEquivalentBlockExactDirectionCurveFromPrepared(
+    prepared,
+    options,
+    wrap(Math.PI / 2 - theta)
   )
   const depths = [...new Set(
-    core.points
-      .filter((point) => point.kind === 'state' && point.state && angularDistance(wrap(point.state.neutralAxisAngle), theta) <= 1e-9)
-      .map((point) => point.state!.neutralAxisDepth)
+    exactCurve.designAdaptive
+      .flatMap((point) => point.equivalentBlock ? [point.equivalentBlock.neutralAxisDepth] : [])
   )].sort((a, b) => b - a)
   const nominalEvaluator = prepared.model.bindNominalEvaluator(prepared.section)
   const designEvaluator = prepared.model.bindDesignEvaluator(prepared.section)
-  console.log(`      audited θ = ${((theta * 180) / Math.PI).toFixed(4)}°, ${depths.length} active mesh layers`)
+  console.log(
+    `      audited exact θ = ${((theta * 180) / Math.PI).toFixed(4)}°, ` +
+      `${depths.length} active layers (${exactCurve.stationError.fixedStations} fixed stations before refinement)`
+  )
 
   console.log('== 4. Clipped polygon: shoelace vs exact clipping ==')
   let worstAreaError = 0

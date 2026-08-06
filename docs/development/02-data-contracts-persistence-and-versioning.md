@@ -163,9 +163,10 @@ type EquivalentBlockAnalysisOptions = {
 ```
 
 This DTO intentionally contains no concrete integration-mesh settings. The equivalent-block kernel
-uses exact polygon clipping. Its production default is the same fixed 22-station schedule, 24 seed
-directions, and adaptive direction refinement at 0.75%. Automatic code-transition and rupture-event
-station insertion is disabled; explicit custom low-level events remain an opt-in kernel facility.
+uses exact polygon clipping. Its production default is the shared 22 fixed stations, 36 fixed seed
+directions, and 0.75% Design-only adaptive refinement in both coordinates (48 stations and 360
+directions maximum). Automatic code-transition and rupture-event station insertion is disabled;
+explicit custom low-level events remain an opt-in kernel facility.
 
 ## 6. Design basis v1
 

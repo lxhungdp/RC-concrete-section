@@ -20,6 +20,6 @@ Files in this directory are evidence fixtures, not declarations of current defau
 - Generated Excel workbooks are audit artifacts and may be overwritten only by the explicit fixture
   update workflow after test review. Their station sheets export and verify the canonical 22 points.
 
-All new stress-strain and equivalent-block projects use the shared fixed 22-station schedule. Their
-direction seeds and direction refinement remain method-specific. See
+All new stress-strain and equivalent-block projects use the shared 22 fixed stations, 36 fixed
+directions, and 0.75% Design-only station/direction refinement. See
 [`../../12-calculation-models-defaults-and-workflows.md`](../../12-calculation-models-defaults-and-workflows.md).

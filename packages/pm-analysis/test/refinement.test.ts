@@ -26,18 +26,22 @@ const optionsWithRefinement = (
   refinement: AnalysisOptions['directions']['refinement']
 ): AnalysisOptions => {
   const options = createDefaultAnalysisOptions()
+  // Direction tests isolate the angular algorithm; station refinement has its own production test.
+  options.stations.refinement = { type: 'fixed' }
   options.directions.refinement = refinement
   return options
 }
 
-test('the default starts from 36 directions and adaptively meets the angular error target', () => {
+test('the default adaptively meets the shared station and angular error target', () => {
   const surface = buildPreviewSurfaceFromPrepared(prepared)
+  assert.ok(surface.stations.length >= 22 && surface.stations.length <= 48)
   assert.ok(surface.directionError.directions >= 36)
   assert.ok(surface.directionError.refinementPasses > 0)
   assert.ok(surface.directionError.maxRelativeMoment > 0)
   assert.ok(Number.isFinite(surface.directionError.maxRelativeMoment))
-  assert.ok(surface.directionError.maxRelativeMoment <= 0.005)
-  assert.equal(surface.points.length, surface.directionError.directions * 22)
+  assert.ok(surface.directionError.maxRelativeComponent <= 0.0075)
+  assert.ok(surface.stationError.maxRelative <= 0.0075)
+  assert.equal(surface.points.length, surface.directionError.directions * surface.stations.length)
 })
 
 test('switching the probe off costs nothing and reports unknown, never zero', () => {

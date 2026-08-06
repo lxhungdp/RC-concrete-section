@@ -20,7 +20,7 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 | Custom block adapter | user-declared beta1/block stress/epsCu, either transition rule shape, elastic-perfectly-plastic, bilinear or tabulated steel; unit-tested to reproduce the ACI and KDS adapters exactly when given their parameters | none — it is `user-defined` by construction and is never promoted |
 | Resistance | Nominal/Design separation, global-factor and design-material formats, single ledger scaling, axial cap | accepted-result/profile certification workflow |
 | Demand | explicit `factoredULS`, governing 3D proportional ray, secondary fixed-P diagnostic | immutable accepted check artifact and batch governance |
-| Results | 3D surface, fixed-P and vertical slices, model-specific fields/evidence | final accepted-result-only presentation rules |
+| Results | fixed-grid 3D/fixed-P, direct fixed/exact vertical meridians, model-specific fields/evidence | final accepted-result-only presentation rules |
 | Report/export | stress-strain and equivalent-block formula-audited result workbooks; stress-strain mesh Excel/DXF; a format-neutral `ReportModel` and a deterministic, vector, watermarked preview PDF with per-combination detail selection | immutable accepted result, **released** PDF, and cryptographic result identity |
 | Performance | worker protocol, prepared-analysis and block Design-surface caches, mesh/sampling/pipeline benchmarks | memory budgets, larger batches, cooperative cancellation checkpoints |
 
@@ -30,11 +30,11 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
   fail closed, while the ACI calculation profile routes to the implemented equivalent-block adapter.
 - Missing steel references, empty concrete, mesh resource excess, and failed mesh self-checks are
   typed fatal errors.
-- Every mechanics/profile now reads the same `unified-22-v1` station schedule. Production
-  stress-strain starts at 36 directions and probes all 22 stations at a 0.5% angular chord target;
-  block starts at 24 directions with its own direction target.
-- Automatic design-factor transition/event stations are disabled in the baseline. Transition
-  policy will be designed separately without changing the fixed station contract implicitly.
+- Every mechanics/profile now reads the same `unified-22-v1` station schedule and starts at 36
+  directions. Both station and direction refinement use a 0.75% Design chord target; nominal,
+  fixed-P, and 3D presentation retain the independent fixed grid.
+- Automatic design-factor transition/event stations are disabled. Resistance-factor and material-
+  factor curvature is captured by Design-only adaptive error measurement instead.
 - Project versioning is the single pre-release v1 family: document, DesignBasis, analysis options,
   methods, and named schedules are all v1. No migration or backward-compatibility work is carried.
   Omitted-field defaults are explicit parser-v1 behavior.

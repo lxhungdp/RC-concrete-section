@@ -269,16 +269,19 @@
           }
         ],
         "refinement": {
-          "type": "fixed"
+          "type": "adaptive",
+          "tolerance": 0.0075,
+          "maxPasses": 8,
+          "maxStations": 48
         }
       },
       "directions": {
-        "seedCount": 24,
+        "seedCount": 36,
         "startDeg": 0,
         "refinement": {
           "type": "adaptive",
           "tolerance": 0.0075,
-          "maxPasses": 6,
+          "maxPasses": 8,
           "maxDirections": 360
         }
       }

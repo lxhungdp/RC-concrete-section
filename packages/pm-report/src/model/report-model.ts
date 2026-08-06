@@ -15,6 +15,7 @@
  */
 import {
   applyDesignCheckToInverse,
+  buildExactDirectionCurveFromPrepared,
   checkLoadcaseUtilizationFromSurface,
   codeAdjustedDemandOfCheck,
   evaluatePreparedState,
@@ -22,12 +23,15 @@ import {
   prepareAnalysis,
   sliceMomentPlane,
   solveInversePreviewFromPrepared,
-  sliceFixedPContour,
+  sliceFixedDesignPContour,
+  strainGradientDirection,
+  type ExactDirectionCurve,
   type InversePreviewResult,
   type PreviewSurface,
   type StrainState
 } from '@pm/analysis'
 import {
+  buildEquivalentBlockExactDirectionCurveFromPrepared,
   prepareBlockAnalysis,
   solveEquivalentBlockDemandsFromPrepared
 } from '@pm/analysis-equivalent-block'
@@ -77,7 +81,7 @@ export type ReportInput = {
   materialStore: MaterialStore
   designBasis: DesignBasis
   analysisOptions: CalculationAnalysisOptions
-  /** The surface the app already built; the report never rebuilds it with different settings. */
+  /** Governing surface already built by the app. Exact demand meridians reuse these settings. */
   surface: PreviewSurface
   loadcases: readonly LoadCombination[]
   /**
@@ -107,6 +111,7 @@ export type SectionDrawing = {
 }
 
 export type InteractionCurve = {
+  kind: 'moment-plane' | 'direct-beta'
   thetaDeg: number
   /** Signed moment about the θ direction, kN·m, against axial force in kN. */
   nominal: ReadonlyArray<{ m: number; p: number }>
@@ -176,7 +181,7 @@ export type CombinationDetail = {
   concrete: LabelledValue[]
   resultants: LabelledValue[]
   evidence: LabelledValue[]
-  /** Interaction slice through the demand direction, with the demand and capacity points on it. */
+  /** Exact direct-β meridian when equilibrium defines β; otherwise a labelled fixed-plane diagnostic. */
   interaction: InteractionCurve & {
     demand: { m: number; p: number }
     capacity: { m: number; p: number } | null
@@ -252,15 +257,41 @@ const planeCurve = (
   return best.path.points.map((point) => ({ m: point.M / KNM, p: point.P / KN }))
 }
 
+const fixedDesignDataset = (surface: PreviewSurface) => ({
+  points: surface.designFixed?.points ?? surface.points,
+  triangles: surface.designFixed?.triangles ?? surface.triangles
+})
+
+const fixedNominalDataset = (surface: PreviewSurface) => ({
+  points: surface.nominalFixed?.points ?? surface.nominalPoints ?? surface.points,
+  triangles: surface.nominalFixed?.triangles ?? surface.nominalTriangles ?? surface.triangles
+})
+
 const buildCurves = (surface: PreviewSurface, loadcases: readonly LoadCombination[]): InteractionCurve[] =>
   curveAngles(loadcases).map((thetaDeg) => {
     const thetaRad = (thetaDeg * Math.PI) / 180
+    const design = fixedDesignDataset(surface)
+    const nominal = fixedNominalDataset(surface)
     return {
+      kind: 'moment-plane',
       thetaDeg,
-      design: planeCurve(surface.points, surface.triangles, thetaRad),
-      nominal: planeCurve(surface.nominalPoints ?? surface.points, surface.nominalTriangles ?? surface.triangles, thetaRad)
+      design: planeCurve(design.points, design.triangles, thetaRad),
+      nominal: planeCurve(nominal.points, nominal.triangles, thetaRad)
     }
   })
+
+const directMeridianCurve = (curve: ExactDirectionCurve): InteractionCurve => {
+  const project = (point: ExactDirectionCurve['designAdaptive'][number]) => ({
+    m: (point.Mx * Math.cos(curve.beta) + point.My * Math.sin(curve.beta)) / KNM,
+    p: point.P / KN
+  })
+  return {
+    kind: 'direct-beta',
+    thetaDeg: deg(curve.beta),
+    design: curve.designAdaptive.map(project),
+    nominal: curve.nominalFixed.map(project)
+  }
+}
 
 const verdictOf = (utilization: number | null, converged: boolean, admissible: boolean): CombinationRow['verdict'] => {
   if (!converged || utilization === null) return 'not-checked'
@@ -367,27 +398,36 @@ const clipCompressionZone = (
 const interactionFor = (
   surface: PreviewSurface,
   loadcase: LoadCombination,
-  curves: readonly InteractionCurve[]
+  curves: readonly InteractionCurve[],
+  exactCurve: ExactDirectionCurve | null
 ) => {
-  const thetaRad =
+  const demandTheta =
     Math.abs(loadcase.Mx) < 1e-9 && Math.abs(loadcase.My) < 1e-9 ? 0 : Math.atan2(loadcase.My, loadcase.Mx)
-  const thetaDeg = deg(thetaRad)
-  const existing = curves.find((curve) => Math.abs(curve.thetaDeg - thetaDeg) < 1e-6)
-  const curve: InteractionCurve = existing ?? {
-    thetaDeg,
-    design: planeCurve(surface.points, surface.triangles, thetaRad),
-    nominal: planeCurve(surface.nominalPoints ?? surface.points, surface.nominalTriangles ?? surface.triangles, thetaRad)
-  }
+  const demandThetaDeg = deg(demandTheta)
+  const displayDesign = fixedDesignDataset(surface)
+  const displayNominal = fixedNominalDataset(surface)
+  const existing = curves.find((curve) =>
+    curve.kind === 'moment-plane' && Math.abs(curve.thetaDeg - demandThetaDeg) < 1e-6
+  )
+  const curve: InteractionCurve = exactCurve
+    ? directMeridianCurve(exactCurve)
+    : existing ?? {
+        kind: 'moment-plane',
+        thetaDeg: demandThetaDeg,
+        design: planeCurve(displayDesign.points, displayDesign.triangles, demandTheta),
+        nominal: planeCurve(displayNominal.points, displayNominal.triangles, demandTheta)
+      }
+  const projectionAngle = exactCurve?.beta ?? demandTheta
   const ray = intersectSurfaceWithDemandRay(surface, loadcase)
   return {
     ...curve,
     demand: {
-      m: (loadcase.Mx * Math.cos(thetaRad) + loadcase.My * Math.sin(thetaRad)) / KNM,
+      m: (loadcase.Mx * Math.cos(projectionAngle) + loadcase.My * Math.sin(projectionAngle)) / KNM,
       p: loadcase.P / KN
     },
     capacity: ray
       ? {
-          m: (ray.point.Mx * Math.cos(thetaRad) + ray.point.My * Math.sin(thetaRad)) / KNM,
+          m: (ray.point.Mx * Math.cos(projectionAngle) + ray.point.My * Math.sin(projectionAngle)) / KNM,
           p: ray.point.P / KN
         }
       : null
@@ -449,14 +489,22 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       const result = solved[index]
       results.set(loadcase.id, result)
       if (!wanted.has(loadcase.id)) continue
-      detail.push(blockDetail(prepared, drawingSection, origin, loadcase, result, input.surface, curves))
+      const beta = result.ok && result.admissibility.evaluated
+        ? strainGradientDirection(result.state)
+        : null
+      const exactCurve = beta === null
+        ? null
+        : buildEquivalentBlockExactDirectionCurveFromPrepared(prepared, options, beta)
+      detail.push(
+        blockDetail(prepared, drawingSection, origin, loadcase, result, input.surface, curves, exactCurve)
+      )
     }
   } else {
     const options = input.analysisOptions as AnalysisOptions
     const stateMaterials = buildResistanceMaterialSets(materialStore, basis).stateMaterials
     const prepared = prepareAnalysis(section, rebars, stateMaterials, analysisMeshKernelOptions(options))
     for (const loadcase of input.loadcases) {
-      const contour = sliceFixedPContour(input.surface.points, loadcase.P, input.surface.triangles)
+      const contour = sliceFixedDesignPContour(input.surface, loadcase.P)
       // The inverse gives the equilibrium state; adequacy is the design-surface ray. Both, composed
       // exactly as the application composes them.
       const designCheck = checkLoadcaseUtilizationFromSurface(input.surface, loadcase)
@@ -471,8 +519,30 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       )
       results.set(loadcase.id, result)
       if (!wanted.has(loadcase.id)) continue
+      const beta = result.ok && result.admissibility.evaluated
+        ? strainGradientDirection(result.state)
+        : null
+      const exactCurve = beta === null
+        ? null
+        : buildExactDirectionCurveFromPrepared(
+            prepared,
+            materialStore,
+            basis,
+            options,
+            beta
+          )
       detail.push(
-        fibreDetail(prepared, drawingSection, origin, materialStore, loadcase, result, input.surface, curves)
+        fibreDetail(
+          prepared,
+          drawingSection,
+          origin,
+          materialStore,
+          loadcase,
+          result,
+          input.surface,
+          curves,
+          exactCurve
+        )
       )
     }
   }
@@ -480,7 +550,7 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
   const combinations = input.loadcases.map((loadcase) =>
     combinationRow(loadcase, results.get(loadcase.id) ?? null)
   )
-  const axialCapPoint = input.surface.points
+  const axialCapPoint = fixedDesignDataset(input.surface).points
     .filter((point) => point.surfaceRole === 'axial-cap')
     .reduce<number | null>((current, point) => (current === null ? point.P : Math.max(current, point.P)), null)
 
@@ -533,7 +603,8 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
         : []),
       ...(designBasisRequiresOverrideReason(basis) && basis.overrideReason.trim().length > 0
         ? [`Modified resistance profile. Stated basis: ${basis.overrideReason}`]
-        : [])
+        : []),
+      'Overview interaction diagrams are geometric plane cuts of the fixed 22-station, 10° direction grid. Adaptive design points are reserved for governing resistance checks and exact demand meridians.'
     ],
     warnings: input.surface.warnings ?? [],
     drawing,
@@ -623,9 +694,12 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
               : 'not prescribed by this profile']
           ],
     sampling: [
-      ['Surface points', String(input.surface.points.length)],
-      ['Directions', String(input.surface.directions.length)],
-      ['Stations', String(input.surface.stations.length)],
+      ['Governing adaptive points', String(input.surface.points.length)],
+      ['Adaptive directions', String(input.surface.directions.length)],
+      ['Adaptive stations', String(input.surface.stations.length)],
+      ['Fixed display points', String(fixedDesignDataset(input.surface).points.length)],
+      ['Fixed display directions', String(input.surface.designFixed?.directions.length ?? input.surface.directions.length)],
+      ['Fixed stations', String(input.surface.designFixed?.stations.length ?? input.surface.stations.length)],
       ['Direction tolerance', fmt(input.surface.directionError.tolerance * 100, 3) + ' %'],
       ['Worst interpolation error', fmt(Math.max(input.surface.directionError.maxRelativeP, input.surface.directionError.maxRelativeMoment) * 100, 4) + ' %'],
       ['Tolerance reached', input.surface.directionError.withinTolerance ? 'yes' : 'NO'],
@@ -659,7 +733,8 @@ const blockDetail = (
   loadcase: LoadCombination,
   result: InversePreviewResult,
   surface: PreviewSurface,
-  curves: readonly InteractionCurve[]
+  curves: readonly InteractionCurve[],
+  exactCurve: ExactDirectionCurve | null
 ): CombinationDetail => {
   const row = combinationRow(loadcase, result)
   const trace = result.equivalentBlock
@@ -668,7 +743,7 @@ const blockDetail = (
     converged: result.converged,
     admissible: result.admissibility.evaluated === false || result.admissibility.ok,
     message: result.message,
-    interaction: interactionFor(surface, loadcase, curves)
+    interaction: interactionFor(surface, loadcase, curves, exactCurve)
   }
   if (!trace) {
     return {
@@ -774,7 +849,8 @@ const fibreDetail = (
   loadcase: LoadCombination,
   result: InversePreviewResult,
   surface: PreviewSurface,
-  curves: readonly InteractionCurve[]
+  curves: readonly InteractionCurve[],
+  exactCurve: ExactDirectionCurve | null
 ): CombinationDetail => {
   const row = combinationRow(loadcase, result)
   const base = {
@@ -782,7 +858,7 @@ const fibreDetail = (
     converged: result.converged,
     admissible: result.admissibility.evaluated === false || result.admissibility.ok,
     message: result.message,
-    interaction: interactionFor(surface, loadcase, curves)
+    interaction: interactionFor(surface, loadcase, curves, exactCurve)
   }
   const state: StrainState = result.state
   const curvature = Math.hypot(state.kx, state.ky)
@@ -932,4 +1008,3 @@ const sampleFibreStress = (
   }
   return samples
 }
-

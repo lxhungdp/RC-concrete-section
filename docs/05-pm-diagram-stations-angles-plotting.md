@@ -12,9 +12,10 @@ A P-M-M surface is built from two independent coordinates:
 - a direction coordinate, which rotates the strain gradient or compression-block normal through
   360 degrees.
 
-Both coordinates are persisted inputs. The returned result records the effective station list,
-effective direction list, interpolation estimate, refinement passes, and warnings. UI plotting must
-use the returned samples; it must not recreate an assumed fixed grid.
+Both coordinates are persisted inputs. Production starts from the fixed 22-by-36 grid and returns
+separate fixed and adaptive datasets. The result records the effective station/direction lists,
+interpolation estimates, passes, and warnings; consumers must select the dataset required by the
+workflow below instead of filtering one mesh into another.
 
 ## 2. Shared 22-station coordinate
 
@@ -49,8 +50,8 @@ criterion. `UNIFIED_STATIONS` is the derived runtime form used by preview helper
 The block solver converts every shared criterion to physical neutral-axis depth `c`, then applies
 the selected code adapter's `a = beta1 c`, block stress, and compression-strain limit. A layer that
 numerically collapses onto a pole is retained in the public 22-station metadata but omitted from the
-triangulation to prevent degenerate triangles. The default performs no station refinement and adds
-no automatic transition or rupture-event station.
+triangulation to prevent degenerate triangles. Both mechanics may add adaptive Design stations by
+measured chord error. No code transition or rupture-event station is inserted automatically.
 
 ## 3. Direction semantics and defaults
 
@@ -64,23 +65,17 @@ ky = kappa sin(beta)
 The neutral-axis line is perpendicular to that gradient. The demand angle is calculated from
 `(Mx,My)` in result space and is not interchangeable with either line angle.
 
-Stress-strain production default:
+Production default shared by both mechanics:
 
 ```text
 36 uniform seed directions (10-degree spacing)
-adaptive midpoint refinement over all stations
-relative tolerance 0.005; max passes 6; max directions 360
+22 fixed stations plus adaptive station midpoints
+relative station tolerance 0.0075; max passes 8; max stations 48
+relative direction tolerance 0.0075; max passes 8; max directions 360
 ```
 
-Equivalent-block production default:
-
-```text
-24 uniform seed directions
-adaptive midpoint refinement
-relative tolerance 0.0075; max passes 6; max directions 360
-```
-
-These are direction controls only; both models still return the same 22 station definitions.
+The 22 definitions remain the immutable reporting baseline. Adaptive IDs are deterministic and do
+not renumber fixed IDs.
 
 The final direction count is therefore geometry-dependent. In the 2026-08-04 stress-strain
 benchmark it ranged from 56 to 100 for the five measured fixtures.
@@ -104,7 +99,7 @@ Nominal/Design resistance evidence where applicable
 Equivalent-block points additionally carry `c`, `a`, `beta1`, block polygon, controlling tensile
 strain, and adapter provenance.
 
-## 5. Adaptive direction test
+## 5. Adaptive station and direction tests
 
 For an adjacent pair of sampled directions, the engine evaluates the true midpoint state and
 compares it with the chord used by the triangulation. A midpoint is inserted when the normalized
@@ -115,17 +110,50 @@ The stress-strain default probes every station. An empty explicit probe list mea
 taken” and reports `NaN`; it must never be displayed as zero error. A fixed grid can report a finite
 estimate but does not refine itself.
 
-## 6. Fixed-P contour
+Station refinement applies the same midpoint-chord test along each direct meridian. Outside the
+section the midpoint is formed in the `D/c` coordinate; inside the section it is formed from the
+controlling-bar strain coordinate. For material-factor resistance, concrete and steel component
+ledgers are checked separately so cancellation cannot hide curvature.
+
+Adaptive refinement is evaluated on Design resistance only. Nominal resistance remains the fixed
+22-station reference.
+
+## 6. Dataset ownership
+
+Every production result distinguishes these datasets:
+
+- `designAdaptive`: governing Design surface used by proportional 3D demand checks;
+- `designFixed`: independent Design surface on the fixed 22-by-36 grid;
+- `nominalFixed`: independent nominal/reference surface on the fixed 22-by-36 grid;
+- `exactDirection`: a newly evaluated direct meridian for a typed angle or a valid solved demand
+  state; Design uses fixed plus station-adaptive samples and nominal stays fixed.
+
+The 3D display and fixed-P interpolation use only fixed datasets. Adaptive vertices are not drawn
+on the 3D surface. A fixed-P diagnostic interpolates actual `P` on the fixed triangulation, never by
+station index and never using adaptive vertices.
+
+## 7. Fixed-P contour
 
 A fixed-P plot is the geometric intersection of the triangulated surface with the plane
 `P = Ptarget`. Each intersected triangle contributes a line segment; segments are welded into
 ordered closed paths. Plot markers are elements of those same paths, not results from a parallel
 interpolator.
 
-The contour is useful for visualization and for a secondary fixed-P diagnostic. It is not the
-governing utilization calculation.
+The contour is useful for visualization and for a secondary fixed-P diagnostic. It is built from
+`designFixed` or `nominalFixed`; it is not the governing utilization calculation.
 
-## 7. Governing factored-demand check
+## 8. Direct vertical meridian and exact angles
+
+The overview slider stops only at the 36 fixed directions (0, 10, 20 degrees, and so on) and shows
+the directly calculated meridian at that beta. It is not a vertical plane cut and does not select a
+nearby adaptive direction. Typing an arbitrary angle explicitly launches a new exact-direction
+calculation; there is no angular interpolation.
+
+For a valid demand inverse, beta is recovered from the exact strain gradient and the same exact
+direction calculation is run again for the demand chart. Uniform-strain, axial-cap, failed, or
+inadmissible states have no unique neutral-axis direction and must not invent one.
+
+## 9. Governing factored-demand check
 
 Demand combinations are explicitly `factoredULS`. The governing check intersects the Design
 surface with the proportional ray
@@ -138,7 +166,7 @@ and reports utilization from the boundary intersection. Nominal capacity, Design
 factored Demand remain distinct in the UI and report. No chart is allowed to relabel Nominal as
 Design or apply a resistance factor to factored Demand.
 
-## 8. Field display
+## 10. Field display
 
 Stress-strain model:
 
@@ -155,9 +183,11 @@ Equivalent-block model:
 Drawing concrete block stress over the full compression depth `c`, or smoothing it into a
 stress-strain curve, would misrepresent the method and is prohibited.
 
-## 9. Plot acceptance checks
+## 11. Plot acceptance checks
 
 - all final sampled directions are present exactly once in each eligible contour;
+- fixed-P contains only fixed-grid intersections and exact vertical curves contain only their
+  requested beta;
 - pure compression and pure tension are direction independent;
 - triangle topology is closed before and after an axial cap;
 - fixed-P contour points satisfy the requested P within numerical tolerance;
@@ -166,7 +196,7 @@ stress-strain curve, would misrepresent the method and is prohibited.
 - a result that misses its configured refinement tolerance carries a visible warning and cannot be
   promoted to an accepted result.
 
-## 10. Measured sampling evidence
+## 12. Measured sampling evidence
 
 The permanent harnesses hold all 22 stations fixed and compare direction policies against a
 144-direction reference. In the 2026-08-06 five-section run, the adaptive worst ray errors were

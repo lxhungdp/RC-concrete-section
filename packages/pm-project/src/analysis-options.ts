@@ -23,6 +23,15 @@ export const MAX_MESH_CELLS = 1_000_000
 export const MAX_MESH_SUBDIVISION = 8
 export const MAX_BLOCK_STATIONS = 198
 
+/** Production sampling policy shared by both mechanics. */
+export const FIXED_DIRECTION_COUNT = 36
+export const ADAPTIVE_INTERPOLATION_TOLERANCE = 0.0075
+// Eight is a ceiling, not a prescribed pass count. Production benchmarks include a dense tall
+// rectangle that converges on station pass seven while remaining below the 48-station cap.
+export const ADAPTIVE_MAX_PASSES = 8
+export const ADAPTIVE_MAX_STATIONS = 48
+export const ADAPTIVE_MAX_DIRECTIONS = 360
+
 export type AnalysisStationCriterion =
   | { type: 'c-over-c1'; ratio: number }
   | { type: 'depth-ratio'; ratio: number }
@@ -60,6 +69,11 @@ export type DirectionRefinement =
       probe: DirectionProbe
     }
 
+/** Refinement policy for the compression-to-tension station curve, including both exact poles. */
+export type StationRefinement =
+  | { type: 'fixed' }
+  | { type: 'adaptive'; tolerance: number; maxPasses: number; maxStations: number }
+
 export type AnalysisMeshOptions = {
   sizing:
     | { type: 'automatic'; seedDivisions: number }
@@ -75,6 +89,7 @@ export type AnalysisOptions = {
     /** Informational origin of the resolved list; the list below remains authoritative. */
     basedOn: typeof UNIFIED_STATION_SCHEDULE | 'custom'
     intermediate: AnalysisStation[]
+    refinement: StationRefinement
   }
   directions: {
     seed: DirectionSeed
@@ -101,9 +116,7 @@ export type EquivalentBlockAnalysisOptions = {
   neutralAxisStations: {
     basedOn: typeof UNIFIED_STATION_SCHEDULE | 'custom'
     values: EquivalentBlockStation[]
-    refinement:
-      | { type: 'fixed' }
-      | { type: 'adaptive'; tolerance: number; maxPasses: number; maxStations: number }
+    refinement: StationRefinement
   }
   directions: {
     seedCount: number
@@ -144,15 +157,21 @@ export const createDefaultAnalysisOptions = (): AnalysisOptions => ({
           { type: 'bar-tension-yield-ratio', ratio }
         )
       )
-    ]
-  },
-  directions: {
-    seed: { type: 'uniform', count: 36, startDeg: 0 },
+    ],
     refinement: {
       type: 'adaptive',
-      tolerance: 0.005,
-      maxPasses: 6,
-      maxDirections: 360,
+      tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
+      maxPasses: ADAPTIVE_MAX_PASSES,
+      maxStations: ADAPTIVE_MAX_STATIONS
+    }
+  },
+  directions: {
+    seed: { type: 'uniform', count: FIXED_DIRECTION_COUNT, startDeg: 0 },
+    refinement: {
+      type: 'adaptive',
+      tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
+      maxPasses: ADAPTIVE_MAX_PASSES,
+      maxDirections: ADAPTIVE_MAX_DIRECTIONS,
       probe: 'all'
     }
   },
@@ -176,12 +195,22 @@ export const createDefaultEquivalentBlockAnalysisOptions = (): EquivalentBlockAn
         ratio
       }))
     ],
-    refinement: { type: 'fixed' }
+    refinement: {
+      type: 'adaptive',
+      tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
+      maxPasses: ADAPTIVE_MAX_PASSES,
+      maxStations: ADAPTIVE_MAX_STATIONS
+    }
   },
   directions: {
-    seedCount: 24,
+    seedCount: FIXED_DIRECTION_COUNT,
     startDeg: 0,
-    refinement: { type: 'adaptive', tolerance: 0.0075, maxPasses: 6, maxDirections: 360 }
+    refinement: {
+      type: 'adaptive',
+      tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
+      maxPasses: ADAPTIVE_MAX_PASSES,
+      maxDirections: ADAPTIVE_MAX_DIRECTIONS
+    }
   }
 })
 

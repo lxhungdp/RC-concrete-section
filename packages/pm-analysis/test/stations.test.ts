@@ -22,10 +22,18 @@ const PURE_TENSION = DEFAULT_STATIONS.findIndex((station) => station.definition.
 const YIELD_STATION = DEFAULT_STATIONS.findIndex(
   (station) => station.definition.kind === 'bar-tension-yield-ratio' && station.definition.ratio === 1
 )
+const fixedSampling = (() => {
+  const options = createDefaultAnalysisOptions()
+  options.stations.refinement = { type: 'fixed' }
+  options.directions.seed = { type: 'uniform', count: 4, startDeg: 0 }
+  options.directions.refinement = { type: 'fixed', probe: 'all' }
+  return options
+})()
 
 const stationRow = (store: MaterialStore, stationIndex: number) => {
-  const surface = buildPreviewSurface(section, rebars, store)
-  return surface.points.filter((point) => point.station === stationIndex)
+  const surface = buildPreviewSurface(section, rebars, store, undefined, fixedSampling)
+  const stationId = DEFAULT_STATIONS[stationIndex]?.id
+  return surface.points.filter((point) => point.stationId === stationId)
 }
 
 /** Extreme tensile fibre strain of a plane, over the bars. */
@@ -59,7 +67,7 @@ test('no scheduled station may drive a bar past its declared rupture strain', ()
     ...materials,
     steel: materials.steel.map((steel) => ({ ...steel, limits: { ...steel.limits, epsU } }))
   }
-  const surface = buildPreviewSurface(section, rebars, brittle)
+  const surface = buildPreviewSurface(section, rebars, brittle, undefined, fixedSampling)
   for (const point of surface.points) {
     assert.ok(
       minBarStrain(point.state) >= -epsU * (1 + 1e-9),
@@ -67,7 +75,7 @@ test('no scheduled station may drive a bar past its declared rupture strain', ()
     )
   }
   // Without the limit the schedule does go past it, so the clamp above is doing real work.
-  const unlimited = buildPreviewSurface(section, rebars, materials)
+  const unlimited = buildPreviewSurface(section, rebars, materials, undefined, fixedSampling)
   assert.ok(Math.min(...unlimited.points.map((point) => minBarStrain(point.state))) < -epsU)
 })
 
@@ -92,7 +100,10 @@ test('the εs/εy = 1 station honours the steel partial factor', () => {
 })
 
 test('the surface declares the strain domain it was built on', () => {
-  assert.equal(buildPreviewSurface(section, rebars, materials).strainDomain, IMPLEMENTED_STRAIN_DOMAIN)
+  assert.equal(
+    buildPreviewSurface(section, rebars, materials, undefined, fixedSampling).strainDomain,
+    IMPLEMENTED_STRAIN_DOMAIN
+  )
 })
 
 test('an EC2 material law is flagged as paired with a non-EC2 strain domain', () => {
@@ -105,11 +116,15 @@ test('an EC2 material law is flagged as paired with a non-EC2 strain domain', ()
       factors: { alpha: 0.85, gammaC: 1.5 }
     }
   }
-  const warnings = buildPreviewSurface(section, rebars, ec2).warnings
+  const warnings = buildPreviewSurface(section, rebars, ec2, undefined, fixedSampling).warnings
   assert.ok(
     warnings.some((warning) => warning.startsWith('Strain domain:') && warning.includes('εud')),
     `expected an EC2 strain-domain warning, got ${JSON.stringify(warnings)}`
   )
   // KDS is the domain's own convention and must stay quiet.
-  assert.ok(!buildPreviewSurface(section, rebars, materials).warnings.some((w) => w.startsWith('Strain domain:')))
+  assert.ok(
+    !buildPreviewSurface(section, rebars, materials, undefined, fixedSampling).warnings.some((w) =>
+      w.startsWith('Strain domain:')
+    )
+  )
 })

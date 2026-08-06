@@ -162,12 +162,18 @@ export type DesignResistanceTrace = {
   stages: string[]
 }
 
-export type SurfaceStationId = 'pure-compression' | `station-${number}` | 'pure-tension'
+export type SurfaceStationId =
+  | 'pure-compression'
+  | `station-${number}`
+  | `adaptive-station-${string}`
+  | 'pure-tension'
 
 export type SurfaceStation = {
   id: SurfaceStationId
   label: string
   definition: StationDefinition
+  /** Canonical/project station versus a generated midpoint retained only in this result. */
+  fixed: boolean
 }
 
 /**
@@ -188,6 +194,8 @@ export type SurfaceDirectionError = {
   maxRelativeP: number
   /** Worst chord error in the moment vector, relative to the surface moment span. */
   maxRelativeMoment: number
+  /** Worst component-ledger error; equals the total error when component checking is not required. */
+  maxRelativeComponent: number
   /** Direction (rad) of the worst moment error. */
   worstBeta: number
   /** Bisection passes actually performed; 0 when refinement is off. */
@@ -197,16 +205,47 @@ export type SurfaceDirectionError = {
   tolerance: number
 }
 
+/** Measured chord error along the compression-to-tension station coordinate. */
+export type SurfaceStationError = {
+  stations: number
+  fixedStations: number
+  maxRelative: number
+  refinementPasses: number
+  withinTolerance: boolean
+  tolerance: number
+}
+
+export type PreviewSurfaceDataset = {
+  points: PreviewSurfacePoint[]
+  triangles?: SurfaceIndexTriangle[]
+  directions: number[]
+  stations: SurfaceStation[]
+}
+
+export type ExactDirectionCurve = {
+  /** Exact strain-gradient direction requested by the user or recovered from equilibrium. */
+  beta: number
+  designAdaptive: PreviewSurfacePoint[]
+  designFixed: PreviewSurfacePoint[]
+  nominalFixed: PreviewSurfacePoint[]
+  stations: SurfaceStation[]
+  stationError: SurfaceStationError
+}
+
 export type PreviewSurface = {
   calculationProfileId?: import('@pm/project').CalculationProfileId
   mechanics?: 'stress-strain-integration' | 'equivalent-rectangular-block'
-  /** Governing design-resistance vertices used by all ULS checks and default plots. */
+  /** Governing adaptive design-resistance vertices used by all ULS checks, not by fixed-grid plots. */
   points: PreviewSurfacePoint[]
   /** Reference/nominal vertices at the exact same stored strain states. */
   nominalPoints: PreviewSurfacePoint[]
   /** Explicit connectivity is authoritative for independently triangulated/capped surfaces. */
   triangles?: SurfaceIndexTriangle[]
   nominalTriangles?: SurfaceIndexTriangle[]
+  /** Fixed 22 × 36 visual/diagnostic grid; never derived by filtering the adaptive mesh. */
+  designFixed?: PreviewSurfaceDataset
+  /** Independent nominal 22 × 36 grid. */
+  nominalFixed?: PreviewSurfaceDataset
   /** Discrete code values for reporting only; never triangulated as equilibrium states. */
   codeReferencePoints?: Array<Resultant & {
     id: string
@@ -230,6 +269,7 @@ export type PreviewSurface = {
   directions: number[]
   analysisOptions: CalculationAnalysisOptions
   directionError: SurfaceDirectionError
+  stationError: SurfaceStationError
   /** Which ultimate strain domain produced these states — never inferred from the material label. */
   strainDomain: StrainDomainId
   warnings: string[]
@@ -408,6 +448,18 @@ export type StationDefinition =
   | { kind: 'extreme-tension-strain'; strain: number }
   | { kind: 'bar-tension-strain'; strain: number }
   | { kind: 'block-depth-ratio'; ratio: number }
+  | { kind: 'block-adaptive'; label: string }
+  /** Fraction of the concrete-edge-to-controlling-bar cover gap traversed by the neutral axis. */
+  | { kind: 'neutral-axis-control-gap-ratio'; ratio: number }
+  /** Physical three-stage continuation from the last finite-c state to the exact tension pole. */
+  | { kind: 'tension-pole-transition-ratio'; from: StationDefinition; ratio: number }
+  /** Internal deterministic fallback for a midpoint between two otherwise incompatible states. */
+  | {
+      kind: 'adaptive-state-interpolation'
+      left: StationDefinition
+      right: StationDefinition
+      ratio: number
+    }
   | { kind: 'pure-tension' }
 
 /** Shared 22-station schedule used by compatibility helpers and the production surface. */
@@ -425,10 +477,20 @@ export const stationDefinitionLabel = (station: StationDefinition): string => {
   if (station.kind === 'pure-compression') return 'Pure compression'
   if (station.kind === 'pure-tension') return 'Pure tension'
   if (station.kind === 'block-depth-ratio') return `c/D = ${station.ratio}`
+  if (station.kind === 'block-adaptive') return station.label
   if (station.kind === 'neutral-axis-depth-ratio') return `c/D = ${station.ratio}`
   if (station.kind === 'extreme-tension-strain') return `εt = ${station.strain}`
   if (station.kind === 'bar-tension-strain') return `εₛ = ${station.strain}`
   if (station.kind === 'bar-tension-yield-ratio') return `εₛ/εy = ${station.ratio}`
+  if (station.kind === 'neutral-axis-control-gap-ratio') {
+    return `cover-gap = ${Number(station.ratio.toPrecision(6))}`
+  }
+  if (station.kind === 'tension-pole-transition-ratio') {
+    return `tension-pole = ${Number(station.ratio.toPrecision(6))}`
+  }
+  if (station.kind === 'adaptive-state-interpolation') {
+    return `adaptive ${Number(station.ratio.toPrecision(6))}`
+  }
   if (station.kind === 'neutral-axis-ratio') {
     const ratio = Number(station.cOverC1.toPrecision(6))
     return `c/c₁ = ${ratio}`
@@ -467,25 +529,155 @@ const criterionDefinition = (criterion: AnalysisStationCriterion): StationDefini
 
 /** Resolved schedule including the two mandatory poles. */
 export const analysisStations = (options: AnalysisOptions): SurfaceStation[] => [
-  { id: 'pure-compression', label: 'Pure compression', definition: { kind: 'pure-compression' } },
+  { id: 'pure-compression', label: 'Pure compression', definition: { kind: 'pure-compression' }, fixed: true },
   ...options.stations.intermediate.map((item) => {
     const definition = criterionDefinition(item.criterion)
     return {
       id: `station-${item.id}` as const,
       label: stationDefinitionLabel(definition),
-      definition
+      definition,
+      fixed: true
     }
   }),
-  { id: 'pure-tension', label: 'Pure tension', definition: { kind: 'pure-tension' } }
+  { id: 'pure-tension', label: 'Pure tension', definition: { kind: 'pure-tension' }, fixed: true }
 ]
+
+const stationDefinitionHash = (definition: StationDefinition) => {
+  const source = JSON.stringify(definition)
+  let hash = 0x811c9dc5
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(36)
+}
+
+const depthRatioOf = (definition: StationDefinition) =>
+  definition.kind === 'neutral-axis-depth-ratio' || definition.kind === 'block-depth-ratio'
+    ? definition.ratio
+    : null
+
+const zeroTensionStation = (definition: StationDefinition) =>
+  (definition.kind === 'bar-tension-yield-ratio' && definition.ratio === 0) ||
+  (definition.kind === 'steel-strain' && definition.strain === 0) ||
+  (definition.kind === 'steel-stress-ratio' && definition.ratio === 0) ||
+  (definition.kind === 'bar-tension-strain' && definition.strain === 0) ||
+  (definition.kind === 'extreme-tension-strain' && definition.strain === 0)
+
+const coverGapCoordinate = (definition: StationDefinition): number | null => {
+  const depth = depthRatioOf(definition)
+  if (depth !== null && Math.abs(depth - 1) <= 1e-12) return 0
+  if (definition.kind === 'neutral-axis-control-gap-ratio') return definition.ratio
+  return zeroTensionStation(definition) ? 1 : null
+}
+
+/**
+ * Exact physical midpoint for each canonical domain. D/c is linear outside the section, the cover
+ * bridge is linear in neutral-axis position, and the steel branch is linear in εs/εy. Only custom
+ * incompatible criteria use a deterministic strain-state interpolation fallback.
+ */
+const midpointStationDefinition = (
+  left: StationDefinition,
+  right: StationDefinition
+): StationDefinition => {
+  const leftDepth = depthRatioOf(left)
+  const rightDepth = depthRatioOf(right)
+  if (left.kind === 'pure-compression' && rightDepth !== null) {
+    return { kind: 'neutral-axis-depth-ratio', ratio: rightDepth * 2 }
+  }
+  if (leftDepth !== null && rightDepth !== null) {
+    return {
+      kind: 'neutral-axis-depth-ratio',
+      ratio: 2 / (1 / leftDepth + 1 / rightDepth)
+    }
+  }
+
+  const leftGap = coverGapCoordinate(left)
+  const rightGap = coverGapCoordinate(right)
+  if (leftGap !== null && rightGap !== null && rightGap > leftGap) {
+    return { kind: 'neutral-axis-control-gap-ratio', ratio: (leftGap + rightGap) / 2 }
+  }
+
+  if (left.kind === 'bar-tension-yield-ratio' && right.kind === 'bar-tension-yield-ratio') {
+    return { kind: 'bar-tension-yield-ratio', ratio: (left.ratio + right.ratio) / 2 }
+  }
+  if (left.kind === 'steel-strain' && right.kind === 'steel-strain') {
+    return { kind: 'steel-strain', strain: (left.strain + right.strain) / 2 }
+  }
+  if (left.kind === 'steel-stress-ratio' && right.kind === 'steel-stress-ratio') {
+    return { kind: 'steel-stress-ratio', ratio: (left.ratio + right.ratio) / 2 }
+  }
+
+  if (right.kind === 'pure-tension') {
+    if (left.kind === 'tension-pole-transition-ratio') {
+      return { ...left, ratio: (left.ratio + 1) / 2 }
+    }
+    return { kind: 'tension-pole-transition-ratio', from: left, ratio: 0.5 }
+  }
+  if (
+    right.kind === 'tension-pole-transition-ratio' &&
+    JSON.stringify(right.from) === JSON.stringify(left)
+  ) {
+    return { ...right, ratio: right.ratio / 2 }
+  }
+  if (
+    left.kind === 'tension-pole-transition-ratio' &&
+    right.kind === 'tension-pole-transition-ratio' &&
+    JSON.stringify(left.from) === JSON.stringify(right.from)
+  ) {
+    return { ...left, ratio: (left.ratio + right.ratio) / 2 }
+  }
+
+  const compatibleInterpolation = (definition: StationDefinition) =>
+    definition.kind === 'adaptive-state-interpolation' ? definition : null
+  const leftInterpolation = compatibleInterpolation(left)
+  const rightInterpolation = compatibleInterpolation(right)
+  if (
+    leftInterpolation &&
+    JSON.stringify(leftInterpolation.right) === JSON.stringify(right)
+  ) {
+    return {
+      ...leftInterpolation,
+      ratio: (leftInterpolation.ratio + 1) / 2
+    }
+  }
+  if (
+    rightInterpolation &&
+    JSON.stringify(rightInterpolation.left) === JSON.stringify(left)
+  ) {
+    return {
+      ...rightInterpolation,
+      ratio: rightInterpolation.ratio / 2
+    }
+  }
+  if (
+    leftInterpolation &&
+    rightInterpolation &&
+    JSON.stringify(leftInterpolation.left) === JSON.stringify(rightInterpolation.left) &&
+    JSON.stringify(leftInterpolation.right) === JSON.stringify(rightInterpolation.right)
+  ) {
+    return {
+      ...leftInterpolation,
+      ratio: (leftInterpolation.ratio + rightInterpolation.ratio) / 2
+    }
+  }
+  return { kind: 'adaptive-state-interpolation', left, right, ratio: 0.5 }
+}
+
+const adaptiveStation = (definition: StationDefinition): SurfaceStation => ({
+  id: `adaptive-station-${stationDefinitionHash(definition)}`,
+  label: stationDefinitionLabel(definition),
+  definition,
+  fixed: false
+})
 
 /** Canonical radians in strictly ascending order. */
 export const analysisDirections = (options: AnalysisOptions): number[] => {
   const seed = options.directions.seed
   if (seed.type === 'uniform') {
     const start = (seed.startDeg * Math.PI) / 180
-    // This evaluation order intentionally preserves the legacy default exactly:
-    // index * π / 12 for 24 directions. Equivalent degree arithmetic changes a few last bits.
+    // Evaluate directly in radians so every uniform seed count, including the 36-direction
+    // production grid, closes without accumulated degree-rounding drift.
     return Array.from(
       { length: seed.count },
       (_, index) => (start + (index * Math.PI) / (seed.count / 2)) % (2 * Math.PI)
@@ -1045,6 +1237,71 @@ const previewStationStateFromExtents = (
 ): StrainState => {
   if (station.kind === 'pure-compression') return { e0: pureCompressionStrain, kx: 0, ky: 0 }
   if (station.kind === 'pure-tension') return { e0: globalPureTensionStrain, kx: 0, ky: 0 }
+  if (station.kind === 'adaptive-state-interpolation') {
+    const left = previewStationStateFromExtents(
+      beta,
+      station.left,
+      epsCu,
+      pureCompressionStrain,
+      control,
+      designBasis,
+      globalPureTensionStrain,
+      extents
+    )
+    const right = previewStationStateFromExtents(
+      beta,
+      station.right,
+      epsCu,
+      pureCompressionStrain,
+      control,
+      designBasis,
+      globalPureTensionStrain,
+      extents
+    )
+    return {
+      e0: left.e0 + (right.e0 - left.e0) * station.ratio,
+      kx: left.kx + (right.kx - left.kx) * station.ratio,
+      ky: left.ky + (right.ky - left.ky) * station.ratio
+    }
+  }
+  if (station.kind === 'tension-pole-transition-ratio') {
+    const source = previewStationStateFromExtents(
+      beta,
+      station.from,
+      epsCu,
+      pureCompressionStrain,
+      control,
+      designBasis,
+      globalPureTensionStrain,
+      extents
+    )
+    const c = Math.cos(beta)
+    const s = Math.sin(beta)
+    const controlDistance = Math.max(1e-12, extents.max - extents.tensionControl)
+    const target = globalPureTensionStrain
+    const targetCurvature = (epsCu - target) / controlDistance
+    const targetPivot = {
+      e0: epsCu - targetCurvature * extents.max,
+      kx: targetCurvature * c,
+      ky: targetCurvature * s
+    }
+    const zeroCompressionCurvature = -target / controlDistance
+    const zeroCompression = {
+      e0: -zeroCompressionCurvature * extents.max,
+      kx: zeroCompressionCurvature * c,
+      ky: zeroCompressionCurvature * s
+    }
+    const uniform = { e0: target, kx: 0, ky: 0 }
+    const blend = (left: StrainState, right: StrainState, ratio: number): StrainState => ({
+      e0: left.e0 + (right.e0 - left.e0) * ratio,
+      kx: left.kx + (right.kx - left.kx) * ratio,
+      ky: left.ky + (right.ky - left.ky) * ratio
+    })
+    const progress = Math.max(0, Math.min(1, station.ratio)) * 3
+    if (progress <= 1) return blend(source, targetPivot, progress)
+    if (progress <= 2) return blend(targetPivot, zeroCompression, progress - 1)
+    return blend(zeroCompression, uniform, progress - 2)
+  }
 
   const compressionProjection = extents.max
   const c1 = Math.max(1e-9, compressionProjection - extents.tensionControl)
@@ -1054,16 +1311,22 @@ const previewStationStateFromExtents = (
       ? compressionProjection - station.cOverC1 * c1
       : station.kind === 'neutral-axis-depth-ratio'
         ? compressionProjection - station.ratio * sectionDepth
+      : station.kind === 'neutral-axis-control-gap-ratio'
+        ? extents.min + station.ratio * (extents.tensionControl - extents.min)
       : extents.tensionControl
   // A schedule strain past the controlling bar's declared rupture strain is not a reachable state.
   const requestedStrain =
-    station.kind === 'neutral-axis-ratio' || station.kind === 'neutral-axis-depth-ratio'
+    station.kind === 'neutral-axis-ratio' ||
+      station.kind === 'neutral-axis-depth-ratio' ||
+      station.kind === 'neutral-axis-control-gap-ratio'
       ? 0
       : farTensionSteelStrain(station, control, designBasis)
   const controlStrain = control.epsU === null ? requestedStrain : Math.max(requestedStrain, -control.epsU)
   let compressionBoundaryStrain = epsCu
   if (
-    (station.kind === 'neutral-axis-ratio' || station.kind === 'neutral-axis-depth-ratio') &&
+    (station.kind === 'neutral-axis-ratio' ||
+      station.kind === 'neutral-axis-depth-ratio' ||
+      station.kind === 'neutral-axis-control-gap-ratio') &&
     designBasis.format === 'designMaterialReevaluation' &&
     designBasis.compressionEndpoint === 'peak-stress-strain'
   ) {
@@ -1385,16 +1648,25 @@ export const resolvePureCompressionStrain = (
  * four-probe schedule remains only in explicit legacy options. An empty ID list deliberately skips
  * the estimate and reports NaN rather than a false zero.
  */
+type PreviewSamplingHooks = {
+  mapPoint?: (point: PreviewSurfacePoint) => PreviewSurfacePoint
+  mapRow?: (points: PreviewSurfacePoint[]) => PreviewSurfacePoint[]
+  /** Prevent cancellation between concrete and reinforcement in material-factor calculations. */
+  componentAware?: boolean
+}
+
 export const buildPreviewSurfaceFromPrepared = (
   prepared: PreparedAnalysis,
   analysisOptions: AnalysisOptions = createDefaultAnalysisOptions(),
-  designBasis: DesignBasis = createDefaultDesignBasis(prepared.materialStore)
+  designBasis: DesignBasis = createDefaultDesignBasis(prepared.materialStore),
+  sampling: PreviewSamplingHooks = {}
 ): PreviewSurface => {
   const { section, rebars, materialStore, origin, fibers, materials } = prepared
   const meshReport = prepared.mesh.report
   const epsCu = materialStore.concrete.limits.epsCu
   const pureCompressionStrain = resolvePureCompressionStrain(materialStore, designBasis)
-  const stations = analysisStations(analysisOptions)
+  let stations = analysisStations(analysisOptions)
+  const fixedStationCount = stations.length
   const seedBetas = analysisDirections(analysisOptions)
   const warnings: string[] = []
 
@@ -1443,14 +1715,18 @@ export const buildPreviewSurfaceFromPrepared = (
           PURE_TENSION_YIELD_MULTIPLE * DEFAULT_STATION_STEEL_LIMITS.epsY
         )
   )
-  const ALL_STATIONS = stations.map((_, station) => station)
+  const allStationOrders = (schedule: SurfaceStation[]) => schedule.map((_, station) => station)
   let duplicateStationWarning = false
 
   /**
    * Stations of one direction. `stations` narrows the work for the midpoint probe, which only needs
    * a handful of stations and would otherwise double the cost of every surface build.
    */
-  const buildRow = (beta: number, stationOrders: number[] = ALL_STATIONS): PreviewSurfacePoint[] => {
+  const buildRow = (
+    beta: number,
+    schedule: SurfaceStation[] = stations,
+    stationOrders: number[] = allStationOrders(schedule)
+  ): PreviewSurfacePoint[] => {
     const extents = projectedExtents(section, beta, origin, rebars)
     // The controlling bar changes with direction, so its yield and rupture strains do too.
     const control = stationSteelControl(
@@ -1462,7 +1738,7 @@ export const buildPreviewSurfaceFromPrepared = (
     )
     const degrees = Number(((beta * 180) / Math.PI).toFixed(3))
     const resolved = stationOrders.map((station) => {
-      const descriptor = stations[station]
+      const descriptor = schedule[station]
       const state = previewStationStateFromExtents(
         beta,
         descriptor.definition,
@@ -1476,7 +1752,7 @@ export const buildPreviewSurfaceFromPrepared = (
       return { station, descriptor, state }
     })
 
-    if (stationOrders.length === ALL_STATIONS.length && rebars.length > 0) {
+    if (stationOrders.length === schedule.length && rebars.length > 0) {
       const bar = rebars[extents.controllingRebarIndex]
       let previous = Number.POSITIVE_INFINITY
       for (const point of resolved) {
@@ -1494,10 +1770,10 @@ export const buildPreviewSurfaceFromPrepared = (
         previous = strain
       }
     }
-    return resolved.map(({ station, descriptor, state }) => {
+    const row = resolved.map(({ station, descriptor, state }) => {
       const ledger = evaluate(fibers, materials, state)
-      return {
-        id: `${degrees}-${station}`,
+      const point: PreviewSurfacePoint = {
+        id: `${degrees}-${descriptor.id}`,
         beta,
         station,
         stationId: descriptor.id,
@@ -1510,7 +1786,9 @@ export const buildPreviewSurfaceFromPrepared = (
         ledger,
         ...ledger.total
       }
+      return sampling.mapPoint?.(point) ?? point
     })
+    return sampling.mapRow?.(row) ?? row
   }
 
   const rows = new Map<number, PreviewSurfacePoint[]>()
@@ -1519,21 +1797,56 @@ export const buildPreviewSurfaceFromPrepared = (
   const sortedBetas = () => [...rows.keys()].sort((a, b) => a - b)
   const allPoints = () => sortedBetas().flatMap((beta) => rows.get(beta)!)
 
-  const spans = () => {
-    let pSpan = 1
-    let mSpan = 1
+  const ledgerParts = ['total', 'concrete', 'steelGross', 'displacedConcrete', 'steel'] as const
+  type LedgerPart = (typeof ledgerParts)[number]
+  type SamplingScales = Record<LedgerPart, { P: number; M: number }>
+  const scales = (): SamplingScales => {
+    const result = Object.fromEntries(
+      ledgerParts.map((part) => [part, { P: 1, M: 1 }])
+    ) as SamplingScales
     for (const point of allPoints()) {
-      pSpan = Math.max(pSpan, Math.abs(point.P))
-      mSpan = Math.max(mSpan, Math.hypot(point.Mx, point.My))
+      for (const part of ledgerParts) {
+        const value = point.ledger[part]
+        result[part].P = Math.max(result[part].P, Math.abs(value.P))
+        result[part].M = Math.max(result[part].M, Math.hypot(value.Mx, value.My))
+      }
     }
-    return { pSpan, mSpan }
+    return result
   }
 
-  const refinement = analysisOptions.directions.refinement
-  const probeStations =
-    refinement.probe === 'all'
-      ? ALL_STATIONS.slice(1, -1)
-      : refinement.probe.stationIds.flatMap((id) => {
+  const chordError = (
+    middle: PreviewSurfacePoint,
+    left: PreviewSurfacePoint,
+    right: PreviewSurfacePoint,
+    scale: SamplingScales
+  ) => {
+    let relativeP = 0
+    let relativeMoment = 0
+    let relativeComponent = 0
+    for (const part of ledgerParts) {
+      if (!sampling.componentAware && part !== 'total') continue
+      const actual = middle.ledger[part]
+      const a = left.ledger[part]
+      const b = right.ledger[part]
+      const p = Math.abs(actual.P - (a.P + b.P) / 2) / scale[part].P
+      const moment = Math.hypot(
+        actual.Mx - (a.Mx + b.Mx) / 2,
+        actual.My - (a.My + b.My) / 2
+      ) / scale[part].M
+      if (part === 'total') {
+        relativeP = Math.max(relativeP, p)
+        relativeMoment = Math.max(relativeMoment, moment)
+      }
+      relativeComponent = Math.max(relativeComponent, p, moment)
+    }
+    return { relativeP, relativeMoment, relativeComponent }
+  }
+
+  const directionRefinement = analysisOptions.directions.refinement
+  const probeStationOrders = () =>
+    directionRefinement.probe === 'all'
+      ? allStationOrders(stations).slice(1, -1)
+      : directionRefinement.probe.stationIds.flatMap((id) => {
           const index = stations.findIndex((station) => station.id === `station-${id}`)
           return index >= 0 ? [index] : []
         })
@@ -1546,83 +1859,174 @@ export const buildPreviewSurfaceFromPrepared = (
     betaA: number,
     betaB: number,
     betaBKey: number,
-    pSpan: number,
-    mSpan: number
+    scale: SamplingScales
   ) => {
     const rowA = rows.get(betaA)!
     // The closing interval uses an unwrapped betaB for its midpoint but an exact existing map key.
     // `% 2π` is not bit-stable when the first configured angle is nonzero.
     const rowB = rows.get(betaBKey)!
     const midBeta = (betaA + betaB) / 2
-    const probe = buildRow(midBeta, probeStations)
+    const probe = buildRow(midBeta)
     let relativeP = 0
     let relativeMoment = 0
-    probe.forEach((midPoint, probeIndex) => {
-      const station = probeStations[probeIndex]
-      const chordP = (rowA[station].P + rowB[station].P) / 2
-      const chordMx = (rowA[station].Mx + rowB[station].Mx) / 2
-      const chordMy = (rowA[station].My + rowB[station].My) / 2
-      relativeP = Math.max(relativeP, Math.abs(midPoint.P - chordP) / pSpan)
-      relativeMoment = Math.max(
-        relativeMoment,
-        Math.hypot(midPoint.Mx - chordMx, midPoint.My - chordMy) / mSpan
-      )
-    })
-    return { midBeta, relativeP, relativeMoment }
+    let relativeComponent = 0
+    for (const station of probeStationOrders()) {
+      const error = chordError(probe[station], rowA[station], rowB[station], scale)
+      relativeP = Math.max(relativeP, error.relativeP)
+      relativeMoment = Math.max(relativeMoment, error.relativeMoment)
+      relativeComponent = Math.max(relativeComponent, error.relativeComponent)
+    }
+    return { midBeta, relativeP, relativeMoment, relativeComponent }
   }
 
-  const tolerance = refinement.type === 'adaptive' ? refinement.tolerance : Number.POSITIVE_INFINITY
-  const maxPasses = refinement.type === 'adaptive' ? refinement.maxPasses : 0
-  const maxDirections = refinement.type === 'adaptive' ? refinement.maxDirections : rows.size
+  const directionTolerance = directionRefinement.type === 'adaptive'
+    ? directionRefinement.tolerance
+    : Number.POSITIVE_INFINITY
+  const maxDirectionPasses = directionRefinement.type === 'adaptive' ? directionRefinement.maxPasses : 0
+  const maxDirections = directionRefinement.type === 'adaptive' ? directionRefinement.maxDirections : rows.size
+  const stationRefinement = analysisOptions.stations.refinement
+  const stationTolerance = stationRefinement.type === 'adaptive'
+    ? stationRefinement.tolerance
+    : Number.POSITIVE_INFINITY
+  const maxStationPasses = stationRefinement.type === 'adaptive' ? stationRefinement.maxPasses : 0
+  const maxStations = stationRefinement.type === 'adaptive' ? stationRefinement.maxStations : stations.length
 
   // NaN, not 0: an estimate that was never taken must not read as "no error found".
   let maxRelativeP = Number.NaN
   let maxRelativeMoment = Number.NaN
+  let maxRelativeComponent = Number.NaN
   let worstBeta = Number.NaN
-  let passes = 0
+  let directionPasses = 0
+  let stationPasses = 0
+  let maxStationError = Number.NaN
 
-  // Pass 0 measures the fixed grid. Further passes bisect only the intervals that failed, so the
-  // reported error always describes the grid that was actually returned (`docs/05` §5).
-  for (let pass = 0; probeStations.length > 0; pass++) {
+  const measureStationIntervals = (scale: SamplingScales) => {
+    const entries: Array<{ interval: number; station: SurfaceStation; error: number }> = []
+    maxStationError = 0
+    for (let interval = 0; interval < stations.length - 1; interval += 1) {
+      const descriptor = adaptiveStation(
+        midpointStationDefinition(stations[interval].definition, stations[interval + 1].definition)
+      )
+      const candidateSchedule = [
+        ...stations.slice(0, interval + 1),
+        descriptor,
+        ...stations.slice(interval + 1)
+      ]
+      let error = 0
+      for (const beta of sortedBetas()) {
+        // Only the true midpoint is new. Re-evaluating the entire candidate schedule here makes
+        // adaptive sampling O(stations² × fibres) without adding any evidence.
+        const candidate = buildRow(beta, candidateSchedule, [interval + 1])[0]
+        const row = rows.get(beta)!
+        error = Math.max(error, chordError(candidate, row[interval], row[interval + 1], scale).relativeComponent)
+      }
+      maxStationError = Math.max(maxStationError, error)
+      entries.push({ interval, station: descriptor, error })
+    }
+    return entries
+  }
+
+  const measureDirectionIntervals = (scale: SamplingScales) => {
     const betas = sortedBetas()
-    const { pSpan, mSpan } = spans()
-    const insertions: number[] = []
+    const entries: Array<{ beta: number; error: number }> = []
+    if (probeStationOrders().length === 0) {
+      maxRelativeP = Number.NaN
+      maxRelativeMoment = Number.NaN
+      maxRelativeComponent = Number.NaN
+      worstBeta = Number.NaN
+      return entries
+    }
     maxRelativeP = 0
     maxRelativeMoment = 0
+    maxRelativeComponent = 0
     worstBeta = betas[0] ?? 0
-
     for (let index = 0; index < betas.length; index++) {
       const betaA = betas[index]
       // The closing interval wraps to the first direction at 2π.
       const betaB = index === betas.length - 1 ? betas[0] + 2 * Math.PI : betas[index + 1]
       const betaBKey = index === betas.length - 1 ? betas[0] : betaB
-      const { midBeta, relativeP, relativeMoment } = intervalError(betaA, betaB, betaBKey, pSpan, mSpan)
+      const { midBeta, relativeP, relativeMoment, relativeComponent } = intervalError(
+        betaA,
+        betaB,
+        betaBKey,
+        scale
+      )
       if (relativeP > maxRelativeP) maxRelativeP = relativeP
       if (relativeMoment > maxRelativeMoment) {
         maxRelativeMoment = relativeMoment
         worstBeta = midBeta % (2 * Math.PI)
       }
-      if (pass < maxPasses && Math.max(relativeP, relativeMoment) > tolerance) insertions.push(midBeta)
+      maxRelativeComponent = Math.max(maxRelativeComponent, relativeComponent)
+      entries.push({ beta: midBeta, error: relativeComponent })
+    }
+    return entries
+  }
+
+  // Alternate both coordinates. A new direction can expose station curvature and vice versa.
+  while (true) {
+    let changed = false
+    let currentScales = scales()
+    const stationEntries = measureStationIntervals(currentScales)
+    if (stationPasses < maxStationPasses && stations.length < maxStations) {
+      const available = maxStations - stations.length
+      const selected = stationEntries
+        .filter((entry) => entry.error > stationTolerance)
+        .sort((left, right) => right.error - left.error)
+        .slice(0, available)
+        .sort((left, right) => left.interval - right.interval)
+      if (selected.length > 0) {
+        const byInterval = new Map(selected.map((entry) => [entry.interval, entry.station]))
+        stations = stations.flatMap((station, index) => {
+          const inserted = byInterval.get(index)
+          return inserted ? [station, inserted] : [station]
+        })
+        for (const beta of sortedBetas()) rows.set(beta, buildRow(beta))
+        stationPasses += 1
+        changed = true
+        currentScales = scales()
+      }
     }
 
-    if (insertions.length === 0 || pass >= maxPasses || rows.size + insertions.length > maxDirections) break
-    for (const midBeta of insertions) {
-      const beta = midBeta % (2 * Math.PI)
-      rows.set(beta, buildRow(beta))
+    const directionEntries = measureDirectionIntervals(currentScales)
+    if (directionPasses < maxDirectionPasses && rows.size < maxDirections) {
+      const selected = directionEntries
+        .filter((entry) => entry.error > directionTolerance)
+        .sort((left, right) => right.error - left.error)
+        .slice(0, maxDirections - rows.size)
+      if (selected.length > 0) {
+        for (const entry of selected) {
+          const beta = entry.beta % (2 * Math.PI)
+          rows.set(beta, buildRow(beta))
+        }
+        directionPasses += 1
+        changed = true
+      }
     }
-    passes = pass + 1
+    if (!changed) break
   }
+
+  // Measurements in a changing pass describe the pre-insertion grid; always audit the returned one.
+  const finalScales = scales()
+  measureStationIntervals(finalScales)
+  measureDirectionIntervals(finalScales)
 
   const points = allPoints()
   const P = points.map((point) => point.P)
   const Mx = points.map((point) => point.Mx)
   const My = points.map((point) => point.My)
-  const withinTolerance = Math.max(maxRelativeP, maxRelativeMoment) <= tolerance
+  const withinTolerance = maxRelativeComponent <= directionTolerance
+  const stationWithinTolerance = maxStationError <= stationTolerance
 
-  if (refinement.type === 'adaptive' && !withinTolerance) {
+  if (directionRefinement.type === 'adaptive' && !withinTolerance) {
     warnings.push(
-      `Direction sampling did not reach the requested tolerance ${tolerance.toExponential(2)}; ` +
-        `the estimate is ${Math.max(maxRelativeP, maxRelativeMoment).toExponential(2)} over ${rows.size} directions.`
+      `Direction sampling did not reach the requested tolerance ${directionTolerance.toExponential(2)}; ` +
+        `the estimate is ${maxRelativeComponent.toExponential(2)} over ${rows.size} directions.`
+    )
+  }
+  if (stationRefinement.type === 'adaptive' && !stationWithinTolerance) {
+    warnings.push(
+      `Station sampling did not reach the requested tolerance ${stationTolerance.toExponential(2)}; ` +
+        `the estimate is ${maxStationError.toExponential(2)} over ${stations.length} stations.`
     )
   }
   if (duplicateStationWarning && analysisOptions.stations.basedOn === 'custom') {
@@ -1648,14 +2052,23 @@ export const buildPreviewSurfaceFromPrepared = (
     strainDomain: IMPLEMENTED_STRAIN_DOMAIN,
     directionError: {
       directions: rows.size,
-      probedStations: probeStations,
-      probedStationIds: probeStations.map((station) => stations[station].id),
+      probedStations: probeStationOrders(),
+      probedStationIds: probeStationOrders().map((station) => stations[station].id),
       maxRelativeP,
       maxRelativeMoment,
+      maxRelativeComponent,
       worstBeta,
-      refinementPasses: passes,
+      refinementPasses: directionPasses,
       withinTolerance,
-      tolerance
+      tolerance: directionTolerance
+    },
+    stationError: {
+      stations: stations.length,
+      fixedStations: fixedStationCount,
+      maxRelative: maxStationError,
+      refinementPasses: stationPasses,
+      withinTolerance: stationWithinTolerance,
+      tolerance: stationTolerance
     },
     comparison: {
       workbook: 'docs/examples/reference-case/source/PM-advanced (7) 2D.xlsx',
@@ -1910,7 +2323,6 @@ export const buildDesignPreviewSurfaceFromPrepared = (
   analysisOptions: AnalysisOptions = createDefaultAnalysisOptions()
 ): PreviewSurface => {
   const materialSets = buildResistanceMaterialSets(sourceMaterials, designBasis)
-  const base = buildPreviewSurfaceFromPrepared(statePrepared, analysisOptions, designBasis)
   const referencePrepared =
     JSON.stringify(materialSets.referenceMaterials) === JSON.stringify(statePrepared.materialStore)
       ? statePrepared
@@ -1931,27 +2343,50 @@ export const buildDesignPreviewSurfaceFromPrepared = (
           statePrepared.mesh,
           statePrepared.origin
         )
-
-  /**
-   * A design-material profile has two real material-event schedules (for example fyk/Es and
-   * fyd/Es). Build the displayed Reference surface from its own schedule while retaining the
-   * point-wise reference evaluation at every Design state for the resistance audit trace.
-   */
-  const referenceBase = designBasis.format === 'designMaterialReevaluation'
-    ? buildPreviewSurfaceFromPrepared(referencePrepared, analysisOptions, designBasis)
-    : base
-
-  const evaluated = base.points.map((point) =>
-    designPointFromState(point, referencePrepared, designPrepared, designBasis)
+  // Refinement must see the resistance actually checked: φ-scaled resultants for the global route
+  // and independently re-evaluated concrete/steel ledgers for the material-factor route.
+  const base = buildPreviewSurfaceFromPrepared(
+    statePrepared,
+    analysisOptions,
+    designBasis,
+    {
+      mapPoint: (point) =>
+        designPointFromState(point, referencePrepared, designPrepared, designBasis).design,
+      componentAware: designBasis.format === 'designMaterialReevaluation'
+    }
   )
-  const nominalPoints = designBasis.format === 'designMaterialReevaluation'
-    ? referenceBase.points
-    : evaluated.map((item) => item.nominal)
-  const uncappedDesign = evaluated.map((item) => item.design)
+  const fixedOptions = cloneAnalysisOptions(analysisOptions)
+  fixedOptions.stations.refinement = { type: 'fixed' }
+  fixedOptions.directions.refinement = {
+    type: 'fixed',
+    probe: analysisOptions.directions.refinement.probe
+  }
+  const fixedDesignBase = buildPreviewSurfaceFromPrepared(
+    statePrepared,
+    fixedOptions,
+    designBasis,
+    {
+      mapPoint: (point) =>
+        designPointFromState(point, referencePrepared, designPrepared, designBasis).design,
+      componentAware: designBasis.format === 'designMaterialReevaluation'
+    }
+  )
+  const fixedReferenceBase = buildPreviewSurfaceFromPrepared(
+    referencePrepared,
+    fixedOptions,
+    designBasis
+  )
+  const nominalPoints = base.points.map((point) =>
+    designPointFromState(point, referencePrepared, designPrepared, designBasis).nominal
+  )
+  const uncappedDesign = base.points
   const points =
     designBasis.format === 'globalResultantFactor'
       ? applyAxialCap(uncappedDesign, designBasis)
       : uncappedDesign
+  const fixedDesignPoints = designBasis.format === 'globalResultantFactor'
+    ? applyAxialCap(fixedDesignBase.points, designBasis)
+    : fixedDesignBase.points
   const warnings = [...base.warnings]
   if (designBasis.verificationStatus !== 'verified') {
     warnings.push(`Design profile status is ${designBasis.verificationStatus}; results are for review, not release.`)
@@ -1969,9 +2404,19 @@ export const buildDesignPreviewSurfaceFromPrepared = (
     ...base,
     points,
     nominalPoints,
-    nominalTriangles: designBasis.format === 'designMaterialReevaluation'
-      ? referenceBase.triangles
-      : base.triangles,
+    nominalTriangles: base.triangles,
+    designFixed: {
+      points: fixedDesignPoints,
+      triangles: fixedDesignBase.triangles,
+      directions: fixedDesignBase.directions,
+      stations: fixedDesignBase.stations
+    },
+    nominalFixed: {
+      points: fixedReferenceBase.points,
+      triangles: fixedReferenceBase.triangles,
+      directions: fixedReferenceBase.directions,
+      stations: fixedReferenceBase.stations
+    },
     bounds: surfaceBounds(points),
     warnings,
     designBasis: cloneDesignBasis(designBasis)
@@ -1993,6 +2438,43 @@ export const buildDesignPreviewSurface = (
     designBasis,
     analysisOptions
   )
+}
+
+/** Exact one-direction calculation: no angular interpolation and no angular adaptive points. */
+export const buildExactDirectionCurveFromPrepared = (
+  statePrepared: PreparedAnalysis,
+  sourceMaterials: MaterialStore,
+  designBasis: DesignBasis,
+  analysisOptions: AnalysisOptions,
+  beta: number
+): ExactDirectionCurve => {
+  const exactOptions = cloneAnalysisOptions(analysisOptions)
+  const normalized = ((beta % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)
+  exactOptions.directions.seed = {
+    type: 'explicit',
+    anglesDeg: [normalized * 180 / Math.PI]
+  }
+  exactOptions.directions.refinement = { type: 'fixed', probe: 'all' }
+  const surface = buildDesignPreviewSurfaceFromPrepared(
+    statePrepared,
+    sourceMaterials,
+    designBasis,
+    exactOptions
+  )
+  return {
+    beta: normalized,
+    designAdaptive: surface.points,
+    designFixed: surface.designFixed?.points ?? surface.points.filter((point) => point.stationId?.startsWith('adaptive-') !== true),
+    nominalFixed: surface.nominalFixed?.points ?? surface.nominalPoints,
+    stations: surface.stations,
+    stationError: surface.stationError
+  }
+}
+
+/** β from the exact strain gradient; null for uniform-strain states such as pure axial/cap cases. */
+export const strainGradientDirection = (state: StrainState): number | null => {
+  if (Math.hypot(state.kx, state.ky) <= 1e-18) return null
+  return ((Math.atan2(state.ky, state.kx) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)
 }
 
 /**
@@ -2019,6 +2501,19 @@ export const sliceFixedPContour = (
   }
 
   return contour.sort((a, b) => Math.atan2(a.My, a.Mx) - Math.atan2(b.My, b.Mx))
+}
+
+/** Production Fixed-P query: adaptive Design vertices are deliberately excluded. */
+export const sliceFixedDesignPContour = (
+  surface: PreviewSurface,
+  fixedP: number
+): PreviewContourPoint[] => {
+  const fixed = surface.designFixed
+  return sliceFixedPContour(
+    fixed?.points ?? surface.points,
+    fixedP,
+    fixed?.triangles ?? surface.triangles
+  )
 }
 
 /**
@@ -2422,7 +2917,7 @@ const checkRawLoadcaseUtilizationFromSurface = (
   surface: PreviewSurface,
   loadcase: LoadCombination
 ): LoadcaseQuickCheckResult => {
-  const contour = sliceFixedPContour(surface.points, loadcase.P, surface.triangles)
+  const contour = sliceFixedDesignPContour(surface, loadcase.P)
   const fixedP = estimateUtilization(loadcase, contour)
   const proportional = intersectSurfaceWithDemandRay(surface, loadcase)
   const proportionalUtilization =

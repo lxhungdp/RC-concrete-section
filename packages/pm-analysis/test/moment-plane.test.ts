@@ -1,17 +1,26 @@
 import { strict as assert } from 'node:assert'
 import test from 'node:test'
 import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
+import { createDefaultAnalysisOptions } from '@pm/project'
 import { BENCH_CASES } from '../bench/sections'
 import { buildPreviewSurface, sliceMomentPlane, type PreviewSurface } from '../src/index'
 
 const ANGLES_DEG = [0, 7, 17, 31, 45, 61, 83, 107, 137, 173]
+const fixedDisplayOptions = (() => {
+  const options = createDefaultAnalysisOptions()
+  options.stations.refinement = { type: 'fixed' }
+  options.directions.refinement = { type: 'fixed', probe: 'all' }
+  return options
+})()
 
 const surfaces = BENCH_CASES.map((benchCase) => ({
   benchCase,
   surface: buildPreviewSurface(
     sectionGeometryFromGeometryInput(benchCase.geometry),
     geometryInputRebars(benchCase.geometry),
-    benchCase.materials
+    benchCase.materials,
+    undefined,
+    fixedDisplayOptions
   )
 }))
 

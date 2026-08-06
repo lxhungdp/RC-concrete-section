@@ -734,7 +734,7 @@ const result = {
     warnings: PREPARED.mesh.report.warnings
   },
   umdSectionLimits: DETAILS.sectionLimits,
-  surfaces: [surfaceSummary(surface24, '24 directions (default)'), surfaceSummary(surface96, '96 directions'), surfaceSummary(surface360, '360 directions')],
+  surfaces: [surfaceSummary(surface24, '24-direction comparison grid'), surfaceSummary(surface96, '96 directions'), surfaceSummary(surface360, '360 directions')],
   cases,
   concretePoints,
   rebarPoints

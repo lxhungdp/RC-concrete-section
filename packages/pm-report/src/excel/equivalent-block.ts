@@ -42,6 +42,7 @@ import {
 } from '@pm/project'
 import {
   buildEquivalentBlockDesignSurfaceFromPrepared,
+  buildEquivalentBlockExactDirectionCurveFromPrepared,
   buildEquivalentBlockPreviewSurfaceFromPrepared,
   prepareBlockAnalysis,
   solveEquivalentBlockDemandFromPrepared
@@ -76,11 +77,7 @@ export type EquivalentBlockExcelInput = {
   materialStore: MaterialStore
   designBasis: DesignBasis
   analysisOptions: EquivalentBlockAnalysisOptions
-  /**
-   * Block-normal direction of the audited station ledger, degrees. It is snapped to the nearest
-   * direction the solver actually sampled, so the exported rows are engine states rather than a
-   * second, unverified schedule.
-   */
+  /** Exact block-normal direction of the audited station ledger, degrees. */
   thetaDeg: number
   /** Axial level for the Mx-My contour sheet, N. */
   fixedP: number
@@ -152,24 +149,32 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
 
   const designSurfaceCore = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, input.analysisOptions)
   const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, input.analysisOptions, designSurfaceCore)
+  const fixedOptions = structuredClone(input.analysisOptions)
+  fixedOptions.neutralAxisStations.refinement = { type: 'fixed' }
+  fixedOptions.directions.refinement = { type: 'fixed' }
+  const designFixedSurfaceCore = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, fixedOptions)
   // Under a design-material basis these are the design-material resultants and an identity design
   // evaluator. The characteristic reference is the independently sampled `nominalPoints` surface.
   const nominalEvaluator = prepared.designModel.bindNominalEvaluator(prepared.section)
   const designEvaluator = prepared.designModel.bindDesignEvaluator(prepared.section)
 
-  // ---- audited direction: snap to a direction the solver actually sampled -----------------
+  // ---- audited direction: calculate the requested meridian exactly -------------------------
   const sampledDirections = [...new Set(designSurfaceCore.directions.map(wrap))].sort((a, b) => a - b)
-  if (sampledDirections.length === 0) throw new ExcelExportError('The block surface carries no sampled direction.')
-  const requestedTheta = wrap((input.thetaDeg * Math.PI) / 180)
-  const theta = sampledDirections.reduce((best, candidate) =>
-    angularDistance(candidate, requestedTheta) < angularDistance(best, requestedTheta) ? candidate : best
-  )
+  const fixedDirections = [...new Set(designFixedSurfaceCore.directions.map(wrap))].sort((a, b) => a - b)
+  if (sampledDirections.length === 0 || fixedDirections.length === 0) {
+    throw new ExcelExportError('The block surface carries no sampled direction.')
+  }
+  const theta = wrap((input.thetaDeg * Math.PI) / 180)
   const thetaDeg = deg(theta)
+  const exactCurve = buildEquivalentBlockExactDirectionCurveFromPrepared(
+    prepared,
+    input.analysisOptions,
+    wrap(Math.PI / 2 - theta)
+  )
 
   const auditedDepths = [...new Set(
-    designSurfaceCore.points
-      .filter((point) => point.kind === 'state' && point.state && angularDistance(wrap(point.state.neutralAxisAngle), theta) <= 1e-9)
-      .map((point) => point.state!.neutralAxisDepth)
+    exactCurve.designAdaptive
+      .flatMap((point) => point.equivalentBlock ? [point.equivalentBlock.neutralAxisDepth] : [])
   )].sort((a, b) => b - a)
   if (auditedDepths.length === 0) {
     throw new ExcelExportError('The audited direction carries no neutral-axis state to report.')
@@ -211,7 +216,11 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
 
   const demandP = input.loadcase ? input.loadcase.P : input.fixedP
   const thetaLoad = input.loadcase ? Math.atan2(input.loadcase.My, input.loadcase.Mx) : 0
-  const engineContour = sliceFixedPContour(surface.points, demandP, surface.triangles)
+  const engineContour = sliceFixedPContour(
+    surface.designFixed?.points ?? surface.points,
+    demandP,
+    surface.designFixed?.triangles ?? surface.triangles
+  )
   const engineBoundary = intersectFixedPContourWithMomentRay(engineContour, thetaLoad)
   const demand = input.loadcase
     ? solveEquivalentBlockDemandFromPrepared(prepared, input.analysisOptions, input.loadcase, designSurfaceCore)
@@ -359,7 +368,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   sectionHeading(inputSheet, row, 'Analysis', 4)
   row += 1
   const analysisInputs: NamedInput[] = [
-    { row: row++, label: 'θ (block-normal direction)', value: thetaDeg, unit: 'deg', name: 'theta', note: `audited direction; snapped from the requested ${input.thetaDeg.toFixed(4)}° to the nearest sampled direction` },
+    { row: row++, label: 'θ (block-normal direction)', value: thetaDeg, unit: 'deg', name: 'theta', note: 'exact requested direction; no angular interpolation or nearest-direction snapping' },
     { row: row++, label: 'u_max (compression edge)', value: compressionEdge, unit: 'mm', name: 'u_max', note: 'max of n·(x,y) over the outer boundary at θ; an engine value because it needs the polygon' },
     { row: row++, label: 'Dθ (projected depth)', value: projectedDepth, unit: 'mm', name: 'd_theta' },
     {
@@ -386,15 +395,16 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
       unit: '-',
       note: 'non-pole layers remaining after coincident layers and the design axial cap are removed from mesh topology'
     },
-    { row: row++, label: 'sampled directions', value: sampledDirections.length, unit: '-', note: `seed ${input.analysisOptions.directions.seedCount}` },
+    { row: row++, label: 'adaptive Design directions', value: sampledDirections.length, unit: '-', note: `seed ${input.analysisOptions.directions.seedCount}` },
+    { row: row++, label: 'fixed-P directions', value: fixedDirections.length, unit: '-', note: 'independent fixed grid used by MxMy_FixedP' },
     { row: row++, label: 'direction interpolation error', value: designSurfaceCore.maxDirectionalInterpolationError, unit: '-', note: designSurfaceCore.directionRefinementConverged ? 'within the requested tolerance' : 'TOLERANCE NOT REACHED' },
     {
       row: row++,
       label: 'station chord diagnostic',
-      value: designSurfaceCore.maxStationInterpolationError,
+      value: exactCurve.stationError.maxRelative,
       unit: '-',
       note: input.analysisOptions.neutralAxisStations.refinement.type === 'adaptive'
-        ? designSurfaceCore.stationRefinementConverged ? 'within the requested tolerance' : 'TOLERANCE NOT REACHED'
+        ? exactCurve.stationError.withinTolerance ? 'within the requested tolerance' : 'TOLERANCE NOT REACHED'
         : 'diagnostic only; the requested station schedule is fixed'
     },
     { row: row++, label: 'surface closed', value: designSurfaceCore.topology.closed ? 'yes' : 'no', unit: '', note: `${designSurfaceCore.topology.boundaryEdges} boundary edges` }
@@ -467,7 +477,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
         ? 'AS 3600 Table 2.2.2 axial/bending interaction is evaluated by the code adapter; multiplication into P-M-M remains visible'
         : 'the transition rule is algebra over εt, εy and the named φ factors'
     ],
-    [`${sampledDirections.length} x station surface grid (MxMy_FixedP)`, 'engine value', 'avoids re-solving every state in the sheet; two sentinels flag a stale import'],
+    [`${fixedDirections.length} x fixed-station surface grid (MxMy_FixedP)`, 'engine value', 'fixed-P deliberately excludes adaptive vertices; two sentinels flag a stale import'],
     ['Contour, ray query, plane cut', 'formula', 'this is the logic under audit, so it stays visible'],
     ['Converged capacity-ray state (Equilibrium)', 'engine value', 'bracketed scalar solve on the design-surface boundary; the workbook verifies the state instead of re-deriving it'],
     ['Capacity-state residual', 'formula', 'the workbook proves the stored state balances the scaled demand ray at capacity']
@@ -897,13 +907,13 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   mmSheet.columns = [{ width: 4 }, { width: 10 }, { width: 12 }, ...Array.from({ length: 12 }, () => ({ width: 14 }))]
   title(mmSheet, 1, 'DESIGN SURFACE AT P = Pu, AND THE DEMAND-RAY QUERY', 13)
   noteCell(mmSheet, 2, 2,
-    'The grid is the solver\'s design surface, sampled direction by direction. Everything after it — the P-interval bracket, the linear interpolation to Pu, and the ray query at θ_L — is a formula, because that logic is what a reviewer needs to see.')
+    'The grid is the independent fixed Design surface (22 stations and 36 directions). Everything after it — the P-interval bracket, the linear interpolation to Pu, and the ray query at θ_L — is a formula. Adaptive vertices are intentionally excluded.')
   mmSheet.mergeCells('B2:N4')
   mmSheet.getRow(2).height = 30
 
-  const gridDirections = sampledDirections
+  const gridDirections = fixedDirections
   const gridByDirection = gridDirections.map((direction) => {
-    const points = designSurfaceCore.points
+    const points = designFixedSurfaceCore.points
       .filter((point) => point.kind === 'state' && point.state && angularDistance(wrap(point.state.neutralAxisAngle), direction) <= 1e-9)
       .sort((a, b) => (b.state!.neutralAxisDepth - a.state!.neutralAxisDepth))
     return { direction, points }
@@ -969,15 +979,19 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     'The engine cuts a triangulated surface; this sheet can only interpolate the sampled grid it carries. Both readings are reported instead of pretending they are identical.')
 
   // ==========================================================================
-  // PM_Theta — vertical plane cut through the demand direction
+  // PM_Theta — independent geometric demand-plane diagnostic
   // ==========================================================================
   const ptSheet = workbook.addWorksheet('PM_Theta', { views: [{ state: 'frozen', ySplit: 6 }] })
   ptSheet.columns = [{ width: 4 }, { width: 10 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 46 }]
-  title(ptSheet, 1, 'VERTICAL P–Mθ SECTION THROUGH THE DEMAND DIRECTION', 5)
+  title(ptSheet, 1, 'GEOMETRIC P–Mθ DEMAND-PLANE DIAGNOSTIC', 5)
   noteCell(ptSheet, 2, 2,
-    'A true plane cut of the design surface at θ_L, produced by the same slicer the Results plot uses. Mθ is the signed projection of (Mx, My) onto the demand direction, so a pole sits at Mθ = 0.')
+    'Independent geometric demand-plane diagnostic on the fixed 22-station / fixed-direction Design surface. The application Vertical chart is instead a direct exact-β meridian recovered from the valid equilibrium state.')
   ptSheet.mergeCells('B2:G3')
-  const planePaths = sliceMomentPlane(surface.points, thetaLoad, surface.triangles)
+  const planePaths = sliceMomentPlane(
+    surface.designFixed?.points ?? surface.points,
+    thetaLoad,
+    surface.designFixed?.triangles ?? surface.triangles
+  )
   headerRow(ptSheet, 6, ['#', 'path', 'P (kN)', 'Mθ (kN·m)', 'Mx (kN·m)', 'My (kN·m)'])
   let ptRow = 7
   planePaths.forEach((path, pathIndex) => {

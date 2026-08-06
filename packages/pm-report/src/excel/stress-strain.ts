@@ -203,7 +203,10 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   // alongside its own and shows the spread instead of pretending they are identical.
   const demandP = input.loadcase ? input.loadcase.P : input.fixedP
   const thetaLoad = input.loadcase ? Math.atan2(input.loadcase.My, input.loadcase.Mx) : 0
-  const engineSurface = buildPreviewSurfaceFromPrepared(prepared, input.analysisOptions, designBasis)
+  const fixedSurfaceOptions = cloneAnalysisOptions(input.analysisOptions)
+  fixedSurfaceOptions.stations.refinement = { type: 'fixed' }
+  fixedSurfaceOptions.directions.refinement = { type: 'fixed', probe: 'all' }
+  const engineSurface = buildPreviewSurfaceFromPrepared(prepared, fixedSurfaceOptions, designBasis)
   const designSurface = buildDesignPreviewSurfaceFromPrepared(
     prepared,
     input.materialStore,
@@ -220,6 +223,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     .map((offset) => (betaDegNormalized + offset) % 360)
     .sort((a, b) => a - b)
   auditOptions.directions.seed = { type: 'explicit', anglesDeg: auditAngles }
+  auditOptions.stations.refinement = { type: 'fixed' }
   auditOptions.directions.refinement = { type: 'fixed', probe: { stationIds: [] } }
   const auditSurface = buildPreviewSurfaceFromPrepared(prepared, auditOptions, designBasis)
   const auditBeta = (betaDegNormalized * Math.PI) / 180
@@ -1556,12 +1560,12 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   }
 
   // ==========================================================================
-  // PM_Theta — vertical section of the surface through the demand direction
+  // PM_Theta — independent geometric demand-plane diagnostic
   // ==========================================================================
   const ptSheet = workbook.addWorksheet('PM_Theta', { views: [{ state: 'frozen', ySplit: 10, xSplit: 2 }] })
-  title(ptSheet, 1, 'VERTICAL P–Mθ SECTION THROUGH THE DEMAND DIRECTION', 12)
+  title(ptSheet, 1, 'GEOMETRIC P–Mθ DEMAND-PLANE DIAGNOSTIC', 12)
   ptSheet.getCell('B2').value =
-    'Intersection of the P-Mx-My surface with the plane Mx·sin(θ_L) − My·cos(θ_L) = 0. Each station ring is cut twice, giving the +M and −M branches of the P-M diagram in the demand direction.'
+    'Independent plane-cut diagnostic on the fixed surface. The application Vertical chart is a direct fixed or exact-β meridian, not this demand-moment plane.'
   ptSheet.getCell('B2').alignment = { wrapText: true, vertical: 'top' }
   ptSheet.mergeCells('B2:M3')
   ptSheet.getRow(2).height = 28

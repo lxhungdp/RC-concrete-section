@@ -518,7 +518,13 @@
               "ratio": 20
             }
           }
-        ]
+        ],
+        "refinement": {
+          "type": "adaptive",
+          "tolerance": 0.0075,
+          "maxPasses": 8,
+          "maxStations": 48
+        }
       },
       "directions": {
         "seed": {
@@ -528,8 +534,8 @@
         },
         "refinement": {
           "type": "adaptive",
-          "tolerance": 0.005,
-          "maxPasses": 6,
+          "tolerance": 0.0075,
+          "maxPasses": 8,
           "maxDirections": 360,
           "probe": "all"
         }
@@ -544,7 +550,7 @@
       }
     },
     "design": {
-      "basisVersion": 1,
+      "basisVersion": 2,
       "profileId": "kds-2024-current-set",
       "identity": {
         "organization": "MOLIT/KDS",

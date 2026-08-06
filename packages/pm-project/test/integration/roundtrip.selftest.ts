@@ -95,6 +95,12 @@ const run = () => {
   assert.equal(parsedAnalysis.methodId, 'strain-domain-surface-v1')
   if (parsedAnalysis.methodId !== 'strain-domain-surface-v1') throw new Error('Expected curve analysis options')
   assert.equal(parsedAnalysis.stations.intermediate.length, UNIFIED_INTERMEDIATE_STATION_COUNT)
+  assert.deepEqual(parsedAnalysis.stations.refinement, {
+    type: 'adaptive',
+    tolerance: 0.0075,
+    maxPasses: 8,
+    maxStations: 48
+  })
   assert.deepEqual(parsedAnalysis.directions.seed, {
     type: 'uniform',
     count: 36,
@@ -102,8 +108,8 @@ const run = () => {
   })
   assert.deepEqual(parsedAnalysis.directions.refinement, {
     type: 'adaptive',
-    tolerance: 0.005,
-    maxPasses: 6,
+    tolerance: 0.0075,
+    maxPasses: 8,
     maxDirections: 360,
     probe: 'all'
   })

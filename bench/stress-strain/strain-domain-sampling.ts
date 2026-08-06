@@ -21,6 +21,7 @@ const timed = <T>(run: () => T) => {
 
 const fixed = (options: AnalysisOptions, directions: number): AnalysisOptions => {
   const result = structuredClone(options)
+  result.stations.refinement = { type: 'fixed' }
   result.directions.seed = { type: 'uniform', count: directions, startDeg: 0 }
   result.directions.refinement = { type: 'fixed', probe: 'all' }
   return result
@@ -84,12 +85,16 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
       maxRayError,
       rayHitRate: hits / Math.max(1, samples.length),
       directionWithinTolerance: built.value.directionError.withinTolerance,
+      stationWithinTolerance: built.value.stationError.withinTolerance,
       referenceMs: reference.ms
     }
     reports.push(report)
     if (hits !== samples.length) failures.push(`${fixture.key}/${candidate.name}: missing ray intersections`)
     if (candidate.name === 'unified-22x36-adaptive') {
       if (maxRayError > 0.0075) failures.push(`${fixture.key}/${candidate.name}: ray error exceeds 0.75%`)
+      if (!built.value.directionError.withinTolerance || !built.value.stationError.withinTolerance) {
+        failures.push(`${fixture.key}/${candidate.name}: station/direction chord tolerance was not reached`)
+      }
     }
   }
 }
@@ -102,7 +107,8 @@ console.table(reports.map((item) => ({
   dirs: item.directions,
   stations: item.stations,
   'max ray error': `${(100 * Number(item.maxRayError)).toFixed(3)}%`,
-  converged: item.directionWithinTolerance
+  'direction ok': item.directionWithinTolerance,
+  'station ok': item.stationWithinTolerance
 })))
 console.log(JSON.stringify({ generatedAt: new Date().toISOString(), reports, failures }, null, 2))
 if (failures.length > 0) throw new Error(`Strain-domain sampling verification failed:\n${failures.join('\n')}`)

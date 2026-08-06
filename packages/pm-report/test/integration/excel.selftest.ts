@@ -89,16 +89,19 @@ const run = async () => {
   // The workbook and engine must use the same canonical station schedule.
   const analysisOptions = createDefaultAnalysisOptions()
   if (analysisOptions.methodId !== 'strain-domain-surface-v1') throw new Error('Excel selftest requires curve analysis options')
+  const fixedAnalysisOptions = cloneAnalysisOptions(analysisOptions)
+  fixedAnalysisOptions.stations.refinement = { type: 'fixed' }
+  fixedAnalysisOptions.directions.refinement = { type: 'fixed', probe: 'all' }
   const loadcase = parsed.document.inputs.loadings.combinations[0]
 
   console.log('== 1. Build the workbook ==')
-  const seedSurface = buildPreviewSurface(section, rebars, materialStore, undefined, analysisOptions)
+  const seedSurface = buildPreviewSurface(section, rebars, materialStore, undefined, fixedAnalysisOptions)
   const inverse = solveInversePreview(
     section,
     rebars,
     materialStore,
     loadcase,
-    sliceFixedPContour(seedSurface.points, loadcase.P)
+    sliceFixedPContour(seedSurface.points, loadcase.P, seedSurface.triangles)
   )
   assert.ok(inverse.ok, 'the reference demand must reach equilibrium')
   const t0 = Date.now()
@@ -407,23 +410,30 @@ const run = async () => {
   console.log('== 8. MxMy_FixedP: effective directions vs the engine contour ==')
   const inputSheet = readBack.getWorksheet('Input')!
   const cellSize = Number(inputSheet.getCell(`C${findLabelRow(inputSheet, 'mesh cell size')}`).value)
-  const surface = buildPreviewSurface(section, rebars, materialStore, { cellSize }, analysisOptions)
-  const engineContour = contourStrainAngleSamples(sliceFixedPContour(surface.points, loadcase.P))
+  const surface = buildPreviewSurface(section, rebars, materialStore, { cellSize }, fixedAnalysisOptions)
+  const engineContour = contourStrainAngleSamples(
+    sliceFixedPContour(surface.points, loadcase.P, surface.triangles)
+  )
   const stationCount = UNIFIED_STATIONS.length
   const MM_FIRST = 8
   const MM_P_COL = 2 + 4 + stationCount * 3
   const MM_RESULT_COL = MM_P_COL + stationCount * 3
 
-  // The theta row here duplicates PM_Angle through an independent formula path.
-  const betaRadians = BETA_DEG * Math.PI / 180
-  const betaDirectionIndex = surface.directions.findIndex((direction) => Math.abs(direction - betaRadians) < 1e-9)
-  assert.ok(betaDirectionIndex >= 0, `the effective direction list must include β = ${BETA_DEG}°`)
-  const thetaRow = MM_FIRST + betaDirectionIndex
+  // The fixed-P sheet intentionally carries only the fixed 10° directions. The arbitrary
+  // 15° PM_Angle curve is an independent exact calculation and must not be inserted here.
+  const fixedDirectionIndex = 2
+  const fixedDirection = surface.directions[fixedDirectionIndex]
+  assert.ok(Math.abs(fixedDirection - 20 * Math.PI / 180) < 1e-12)
+  const fixedDirectionRow = MM_FIRST + fixedDirectionIndex
   for (const station of [0, 5, 9, 18]) {
+    const enginePoint = surface.points.find(
+      (point) => Math.abs(point.beta - fixedDirection) < 1e-12 && point.station === station
+    )
+    assert.ok(enginePoint, `fixed surface must contain direction 20°, station P${station}`)
     check(
-      `MxMy theta row P${station} (kN)`,
-      cellValue('MxMy_FixedP', `${colName(MM_P_COL + station)}${thetaRow}`),
-      cellValue('PM_Angle', `${colName(cTotP)}${stationRowOf(station)}`),
+      `MxMy fixed 20° row P${station} (kN)`,
+      cellValue('MxMy_FixedP', `${colName(MM_P_COL + station)}${fixedDirectionRow}`),
+      enginePoint!.P / 1e3,
       1e-9,
       1
     )
@@ -472,8 +482,12 @@ const run = async () => {
   )
 
   console.log('== 10. Demand-ray capacity: workbook vs engine ==')
-  const surfaceForDemand = buildPreviewSurface(section, rebars, materialStore, { cellSize }, analysisOptions)
-  const demandContour = sliceFixedPContour(surfaceForDemand.points, loadcase.P)
+  const surfaceForDemand = surface
+  const demandContour = sliceFixedPContour(
+    surfaceForDemand.points,
+    loadcase.P,
+    surfaceForDemand.triangles
+  )
   const thetaLoad = Math.atan2(loadcase.My, loadcase.Mx)
   const engineHit = intersectFixedPContourWithMomentRay(demandContour, thetaLoad)
   assert.ok(engineHit, 'engine ray query must find a boundary point')
@@ -488,18 +502,22 @@ const run = async () => {
     `      engine ${engineMb.toFixed(3)}   ray on the workbook contour ${workbookMbRay.toFixed(3)}   ` +
       `plane cut of the station rings ${workbookMbPlane.toFixed(3)} kN·m`
   )
-  // The workbook and engine slice the same shared 22-station schedule and sampled directions.
-  // to the direction-sampling spread, not to machine precision.
+  // The workbook and engine slice the same shared fixed 22 × 36 grid. The ray and plane
+  // routes are different geometric queries, so their agreement is checked at sampling tolerance.
   check('workbook ray Mb vs engine', workbookMbRay, engineMb, 5e-3)
   check('workbook plane Mb vs engine', workbookMbPlane, engineMb, 5e-3)
   const spreadRow = findLabelRow(ptSheet, 'spread over the three routes', 2)
   const spread = cellValue('PM_Theta', `C${spreadRow}`)
   console.log(`      workbook-reported spread: ${spread.toFixed(4)} %`)
-  check('reported spread stays inside the stated 0.5 %', spread, 0, 1, 0.5)
+  check('reported route spread stays inside 0.5 %', spread, 0, 1, 0.5)
   console.log()
 
   console.log('== 11. PM_Theta section is a true plane cut ==')
-  const enginePlane = sliceMomentPlane(surfaceForDemand.points, thetaLoad).flatMap((path) => path.points)
+  const enginePlane = sliceMomentPlane(
+    surfaceForDemand.points,
+    thetaLoad,
+    surfaceForDemand.triangles
+  ).flatMap((path) => path.points)
   const enginePlus = enginePlane.filter((point) => point.M > 0)
   const PT_FIRST = 10
   let worstM = 0
@@ -637,7 +655,20 @@ const run = async () => {
     rebars,
     tabulatedStore,
     loadcase,
-    sliceFixedPContour(buildPreviewSurface(section, rebars, tabulatedStore, undefined, analysisOptions).points, loadcase.P)
+    (() => {
+      const fixedTabulatedSurface = buildPreviewSurface(
+        section,
+        rebars,
+        tabulatedStore,
+        undefined,
+        fixedAnalysisOptions
+      )
+      return sliceFixedPContour(
+        fixedTabulatedSurface.points,
+        loadcase.P,
+        fixedTabulatedSurface.triangles
+      )
+    })()
   )
   const tabWorkbook = await buildSectionWorkbook({
     projectName: `${parsed.document.meta.name} (tabulated law)`,
@@ -725,6 +756,7 @@ const run = async () => {
   const customOptions = cloneAnalysisOptions(analysisOptions)
   customOptions.stations = {
     basedOn: 'custom',
+    refinement: { type: 'fixed' },
     intermediate: [
       { id: 101, label: 'c = 2c1', criterion: { type: 'c-over-c1', ratio: 2 } },
       { id: 205, label: 'half fyd', criterion: { type: 'steel-stress-ratio', ratio: 0.5 } },

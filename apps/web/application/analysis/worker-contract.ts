@@ -1,5 +1,6 @@
 import type {
   AnalysisErrorCode,
+  ExactDirectionCurve,
   InversePreviewResult,
   LoadcaseQuickCheckResult,
   PreviewSurface,
@@ -37,6 +38,11 @@ export type CheckLoadcasePayload = {
   designBasis: DesignBasis
 }
 
+export type BuildExactDirectionPayload = BuildSurfacePayload & {
+  /** Exact strain-gradient direction β in radians. */
+  beta: number
+}
+
 export type BuildFieldMapPayload = {
   calculationProfileId: CalculationProfileId
   section: SectionGeometry
@@ -69,6 +75,7 @@ export type AnalysisWorkerJob =
   | { type: 'buildSurface'; jobId: string; payload: BuildSurfacePayload }
   | { type: 'checkLoadcases'; jobId: string; payload: CheckLoadcasesPayload }
   | { type: 'checkLoadcase'; jobId: string; payload: CheckLoadcasePayload }
+  | { type: 'buildExactDirection'; jobId: string; payload: BuildExactDirectionPayload }
   | { type: 'buildSectionMesh'; jobId: string; payload: BuildSectionMeshPayload }
   | { type: 'exportMeshExcel'; jobId: string; payload: MeshAuditExportPayload }
   | { type: 'exportMeshDxf'; jobId: string; payload: MeshAuditExportPayload }
@@ -86,6 +93,7 @@ export type AnalysisWorkerResultMap = {
   buildSurface: PreviewSurface
   checkLoadcases: LoadcaseQuickCheckResult[]
   checkLoadcase: InversePreviewResult
+  buildExactDirection: ExactDirectionCurve
   buildSectionMesh: SectionMeshView
   exportMeshExcel: ArrayBuffer
   exportMeshDxf: ArrayBuffer

@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus, RotateCcw, X } from 'lucide-react'
 import {
+  ADAPTIVE_INTERPOLATION_TOLERANCE,
+  ADAPTIVE_MAX_DIRECTIONS,
+  ADAPTIVE_MAX_PASSES,
+  ADAPTIVE_MAX_STATIONS,
+  FIXED_DIRECTION_COUNT,
+  MAX_BLOCK_STATIONS,
   MAX_MESH_CELLS,
   MAX_MESH_SEED_DIVISIONS,
   MAX_MESH_SUBDIVISION,
@@ -143,6 +149,10 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
     options.directions.refinement.type === 'adaptive'
       ? options.directions.refinement.maxDirections
       : seedCount
+  const maxStations =
+    options.stations.refinement.type === 'adaptive'
+      ? options.stations.refinement.maxStations
+      : stationCount
 
   const maxGap = useMemo(() => {
     const seed = options.directions.seed
@@ -164,7 +174,15 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
   const commit = (mutate: (draft: AnalysisOptions) => void, changesStations = false) => {
     const draft = clone(options)
     mutate(draft)
-    if (changesStations) draft.stations.basedOn = 'custom'
+    if (changesStations) {
+      draft.stations.basedOn = 'custom'
+      if (draft.stations.refinement.type === 'adaptive') {
+        draft.stations.refinement.maxStations = Math.max(
+          draft.stations.intermediate.length + 2,
+          draft.stations.refinement.maxStations
+        )
+      }
+    }
     onChange(draft)
   }
 
@@ -223,10 +241,12 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
       <div className="pm-result-status-list">
         <span>Reporting points</span>
         <strong>{stationCount}</strong>
+        <span>Maximum stations</span>
+        <strong>{maxStations}</strong>
         <span>Seed directions</span>
         <strong>{seedCount}</strong>
         <span>Maximum states</span>
-        <strong>{stationCount * maxDirections}</strong>
+        <strong>{maxStations * maxDirections}</strong>
         <span>Largest angular gap</span>
         <strong>{maxGap.toFixed(2)}°</strong>
       </div>
@@ -347,6 +367,79 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
         εₛ/εy = tensile strain magnitude of that bar normalized by its own yield strain
       </p>
 
+      <label className="pm-field">
+        <span>Station refinement</span>
+        <select
+          value={options.stations.refinement.type}
+          onChange={(event) =>
+            commit((draft) => {
+              draft.stations.refinement =
+                event.target.value === 'adaptive'
+                  ? {
+                      type: 'adaptive',
+                      tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
+                      maxPasses: ADAPTIVE_MAX_PASSES,
+                      maxStations: Math.max(ADAPTIVE_MAX_STATIONS, stationCount)
+                    }
+                  : { type: 'fixed' }
+            })
+          }
+        >
+          <option value="fixed">Fixed 22-point schedule only</option>
+          <option value="adaptive">Adaptive design interpolation</option>
+        </select>
+      </label>
+
+      {options.stations.refinement.type === 'adaptive' && (
+        <>
+          <label className="pm-field">
+            <span>Station tolerance</span>
+            <NumericInput
+              min={1e-6}
+              max={0.25}
+              step={0.001}
+              value={options.stations.refinement.tolerance}
+              onCommit={(value) => commit((draft) => {
+                if (draft.stations.refinement.type === 'adaptive') {
+                  draft.stations.refinement.tolerance = value
+                }
+              })}
+            />
+          </label>
+          <label className="pm-field">
+            <span>Maximum station passes</span>
+            <NumericInput
+              min={0}
+              max={12}
+              integer
+              value={options.stations.refinement.maxPasses}
+              onCommit={(value) => commit((draft) => {
+                if (draft.stations.refinement.type === 'adaptive') {
+                  draft.stations.refinement.maxPasses = value
+                }
+              })}
+            />
+          </label>
+          <label className="pm-field">
+            <span>Maximum stations (poles included)</span>
+            <NumericInput
+              min={stationCount}
+              max={MAX_BLOCK_STATIONS}
+              integer
+              value={options.stations.refinement.maxStations}
+              onCommit={(value) => commit((draft) => {
+                if (draft.stations.refinement.type === 'adaptive') {
+                  draft.stations.refinement.maxStations = value
+                }
+              })}
+            />
+          </label>
+          <p className="pm-field-note">
+            Adaptive stations refine the design-resistance curve only; nominal and visual grids remain fixed.
+          </p>
+        </>
+      )}
+
       <div className="pm-section-title">
         <div>
           <h3>Directions</h3>
@@ -361,8 +454,14 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
             commit((draft) => {
               draft.directions.seed =
                 event.target.value === 'uniform'
-                  ? { type: 'uniform', count: 36, startDeg: 0 }
-                  : { type: 'explicit', anglesDeg: Array.from({ length: 36 }, (_, index) => index * 10) }
+                  ? { type: 'uniform', count: FIXED_DIRECTION_COUNT, startDeg: 0 }
+                  : {
+                      type: 'explicit',
+                      anglesDeg: Array.from(
+                        { length: FIXED_DIRECTION_COUNT },
+                        (_, index) => (360 * index) / FIXED_DIRECTION_COUNT
+                      )
+                    }
             })
           }
         >
@@ -477,9 +576,9 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
                 event.target.value === 'adaptive'
                   ? {
                       type: 'adaptive',
-                      tolerance: 0.005,
-                      maxPasses: 6,
-                      maxDirections: Math.min(MAX_REFINED_DIRECTIONS, Math.max(seedCount, 192)),
+                      tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
+                      maxPasses: ADAPTIVE_MAX_PASSES,
+                      maxDirections: Math.min(MAX_REFINED_DIRECTIONS, Math.max(seedCount, ADAPTIVE_MAX_DIRECTIONS)),
                       probe: 'all'
                     }
                   : { type: 'fixed', probe: 'all' }
@@ -662,10 +761,9 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
   }
   const intermediateStationCount = options.neutralAxisStations.values.length
   const stationCount = intermediateStationCount + 2
-  const intermediateStationMaximum = options.neutralAxisStations.refinement.type === 'adaptive'
+  const stationMaximum = options.neutralAxisStations.refinement.type === 'adaptive'
     ? options.neutralAxisStations.refinement.maxStations
-    : intermediateStationCount
-  const stationMaximum = intermediateStationMaximum + 2
+    : stationCount
   const directionMaximum = options.directions.refinement.type === 'adaptive'
     ? options.directions.refinement.maxDirections
     : options.directions.seedCount
@@ -680,7 +778,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
         <button
           type="button"
           className="pm-table-icon-btn"
-          title="Reset the unified 22-station / 24-direction profile"
+          title="Reset the unified 22-station / 36-seed-direction profile"
           onClick={() => onChange(createDefaultEquivalentBlockAnalysisOptions())}
         >
           <RotateCcw size={14} />
@@ -701,7 +799,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
             <span>Maximum stations</span><strong>{stationMaximum}</strong>
             <span>Seed directions</span><strong>{options.directions.seedCount}</strong>
             <span>Maximum directions</span><strong>{directionMaximum}</strong>
-            <span>Maximum sampled states</span><strong>{intermediateStationMaximum * directionMaximum + 2}</strong>
+            <span>Maximum sampled states</span><strong>{stationMaximum * directionMaximum}</strong>
           </div>
 
           <div className="pm-section-title"><div><h3>Unified station schedule</h3><p>c/D outside the section and εₛ/εy at the controlling bar inside it.</p></div></div>
@@ -717,7 +815,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
                 draft.neutralAxisStations.basedOn = 'custom'
                 if (draft.neutralAxisStations.refinement.type === 'adaptive') {
                   draft.neutralAxisStations.refinement.maxStations = Math.max(
-                    value,
+                    value + 2,
                     draft.neutralAxisStations.refinement.maxStations
                   )
                 }
@@ -730,7 +828,12 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
               value={options.neutralAxisStations.refinement.type}
               onChange={(event) => commit((draft) => {
                 draft.neutralAxisStations.refinement = event.target.value === 'adaptive'
-                  ? { type: 'adaptive', tolerance: 0.0075, maxPasses: 6, maxStations: Math.max(128, intermediateStationCount) }
+                  ? {
+                      type: 'adaptive',
+                      tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
+                      maxPasses: ADAPTIVE_MAX_PASSES,
+                      maxStations: Math.max(ADAPTIVE_MAX_STATIONS, stationCount)
+                    }
                   : { type: 'fixed' }
               })}
             >
@@ -746,7 +849,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
               <label className="pm-field"><span>Maximum station passes</span><NumericInput min={0} max={12} integer value={options.neutralAxisStations.refinement.maxPasses} onCommit={(value) => commit((draft) => {
                 if (draft.neutralAxisStations.refinement.type === 'adaptive') draft.neutralAxisStations.refinement.maxPasses = value
               })} /></label>
-              <label className="pm-field"><span>Maximum intermediate stations</span><NumericInput min={intermediateStationCount} max={MAX_INTERMEDIATE_STATIONS} integer value={options.neutralAxisStations.refinement.maxStations} onCommit={(value) => commit((draft) => {
+              <label className="pm-field"><span>Maximum stations (poles included)</span><NumericInput min={stationCount} max={MAX_BLOCK_STATIONS} integer value={options.neutralAxisStations.refinement.maxStations} onCommit={(value) => commit((draft) => {
                 if (draft.neutralAxisStations.refinement.type === 'adaptive') draft.neutralAxisStations.refinement.maxStations = value
               })} /></label>
             </>
@@ -762,7 +865,12 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
             <span>Direction refinement</span>
             <select value={options.directions.refinement.type} onChange={(event) => commit((draft) => {
               draft.directions.refinement = event.target.value === 'adaptive'
-                ? { type: 'adaptive', tolerance: 0.0075, maxPasses: 6, maxDirections: Math.max(360, options.directions.seedCount) }
+                ? {
+                    type: 'adaptive',
+                    tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
+                    maxPasses: ADAPTIVE_MAX_PASSES,
+                    maxDirections: Math.max(ADAPTIVE_MAX_DIRECTIONS, options.directions.seedCount)
+                  }
                 : { type: 'fixed' }
             })}>
               <option value="fixed">Fixed directions</option>

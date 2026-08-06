@@ -29,6 +29,9 @@ export type CapacityStation =
   | { type: 'bar-tension-strain'; strain: number }
   | { type: 'bar-tension-yield-ratio'; ratio: number }
   | { type: 'depth-ratio'; ratio: number }
+  | { type: 'cover-gap-ratio'; ratio: number }
+  | { type: 'tension-depth-ratio'; from: CapacityStation; ratio: number }
+  | { type: 'adaptive-depth-interpolation'; left: CapacityStation; right: CapacityStation; ratio: number }
 
 export type CapacitySurfacePoint = {
   id: number
@@ -61,13 +64,15 @@ export type CapacitySurface = {
   normalization: CapacityResultants
   maxDirectionalInterpolationError: number
   maxStationInterpolationError: number
+  directionRefinementPasses: number
+  stationRefinementPasses: number
   directionRefinementConverged: boolean
   stationRefinementConverged: boolean
   topology: CapacitySurfaceTopology
   axialCap?: number
 }
 
-export type BuildCapacitySurfaceOptions = {
+export type BuildCapacitySurfaceOptions<TSource = unknown> = {
   extremeCompressionStrain: number
   tensionPole: CapacityEndpoint
   compressionPole: CapacityEndpoint
@@ -85,6 +90,10 @@ export type BuildCapacitySurfaceOptions = {
   steelLaws?: SteelLawRegistry
   /** Mandatory material-event layers evaluated against the actual extreme bar. */
   barStrainEvents?: readonly number[]
+  /** Optional component ledger used to prevent concrete/steel cancellation in adaptive checks. */
+  componentResultants?: (evaluation: CapacityEvaluation<TSource>) => CapacityResultants[]
+  /** Optional exact directions used to audit station interpolation instead of the full surface. */
+  stationProbeAngles?: readonly number[]
 }
 
 const TAU = Math.PI * 2
@@ -105,18 +114,35 @@ export const createDefaultCapacityStations = (): CapacityStation[] => [
   ...[...UNIFIED_DEPTH_RATIOS].reverse().map((ratio) => ({ type: 'depth-ratio' as const, ratio }))
 ]
 
-const stationDepth = (
+export const capacityStationDepth = (
   station: CapacityStation,
   projectedDepth: number,
   extremeCompressionStrain: number,
   barDepths?: Array<{ depth: number; yieldStrain?: number; ultimateStrain?: number }>
-) => station.type === 'depth-ratio'
-  ? projectedDepth * station.ratio
-  : (() => {
-      const controllingBar = barDepths?.reduce<(typeof barDepths)[number] | undefined>(
-        (current, bar) => !current || bar.depth > current.depth ? bar : current,
-        undefined
-      )
+): number => {
+  if (station.type === 'depth-ratio') return projectedDepth * station.ratio
+  const controllingBar = barDepths?.reduce<(typeof barDepths)[number] | undefined>(
+    (current, bar) => !current || bar.depth > current.depth ? bar : current,
+    undefined
+  )
+  if (station.type === 'cover-gap-ratio') {
+    const barDepth = controllingBar?.depth ?? projectedDepth
+    return projectedDepth + station.ratio * (barDepth - projectedDepth)
+  }
+  if (station.type === 'tension-depth-ratio') {
+    return capacityStationDepth(
+      station.from,
+      projectedDepth,
+      extremeCompressionStrain,
+      barDepths
+    ) * station.ratio
+  }
+  if (station.type === 'adaptive-depth-interpolation') {
+    const left = capacityStationDepth(station.left, projectedDepth, extremeCompressionStrain, barDepths)
+    const right = capacityStationDepth(station.right, projectedDepth, extremeCompressionStrain, barDepths)
+    return left + (right - left) * station.ratio
+  }
+  return (() => {
       const controllingBarDepth =
         (station.type === 'bar-tension-strain' || station.type === 'bar-tension-yield-ratio') && controllingBar
         ? controllingBar.depth
@@ -130,13 +156,67 @@ const stationDepth = (
         : Math.max(minimum, bar.depth / (1 + bar.ultimateStrain / extremeCompressionStrain)), 0)
       return Math.max(requestedDepth, ruptureDepth)
     })()
+}
 
-const stationDepthRatio = (station: CapacityStation, extremeCompressionStrain: number) =>
+const stationDepthRatio = (station: CapacityStation, extremeCompressionStrain: number): number =>
   station.type === 'depth-ratio'
     ? station.ratio
     : station.type === 'bar-tension-yield-ratio'
       ? (1 / (1 + station.ratio * 0.002 / extremeCompressionStrain)) * (station.ratio === 0 ? 1 - 1e-9 : 1)
-      : 1 / (1 + station.strain / extremeCompressionStrain)
+      : station.type === 'cover-gap-ratio'
+        ? 1 + (station.ratio - 1) * 1e-3
+        : station.type === 'tension-depth-ratio'
+          ? stationDepthRatio(station.from, extremeCompressionStrain) * station.ratio
+          : station.type === 'adaptive-depth-interpolation'
+            ? stationDepthRatio(station.left, extremeCompressionStrain) +
+              (stationDepthRatio(station.right, extremeCompressionStrain) -
+                stationDepthRatio(station.left, extremeCompressionStrain)) * station.ratio
+            : 1 / (1 + station.strain / extremeCompressionStrain)
+
+const stationMidpoint = (
+  left: CapacityStation | undefined,
+  right: CapacityStation | undefined
+): CapacityStation => {
+  if (!left && right) {
+    if (right.type === 'tension-depth-ratio') return { ...right, ratio: right.ratio / 2 }
+    return { type: 'tension-depth-ratio', from: right, ratio: 0.5 }
+  }
+  if (left && !right) {
+    if (left.type === 'depth-ratio') return { type: 'depth-ratio', ratio: left.ratio * 2 }
+    return { type: 'adaptive-depth-interpolation', left, right: left, ratio: 0.5 }
+  }
+  if (!left || !right) throw new EquivalentBlockInputError('SOLVER_INPUT', 'Invalid station interval.')
+  if (left.type === 'tension-depth-ratio' && JSON.stringify(left.from) === JSON.stringify(right)) {
+    return { ...left, ratio: (left.ratio + 1) / 2 }
+  }
+  if (
+    left.type === 'tension-depth-ratio' &&
+    right.type === 'tension-depth-ratio' &&
+    JSON.stringify(left.from) === JSON.stringify(right.from)
+  ) {
+    return { ...left, ratio: (left.ratio + right.ratio) / 2 }
+  }
+  if (left.type === 'bar-tension-yield-ratio' && right.type === 'bar-tension-yield-ratio') {
+    return { type: 'bar-tension-yield-ratio', ratio: (left.ratio + right.ratio) / 2 }
+  }
+  const coverCoordinate = (station: CapacityStation): number | null =>
+    station.type === 'bar-tension-yield-ratio' && station.ratio === 0
+      ? 1
+      : station.type === 'cover-gap-ratio'
+        ? station.ratio
+        : station.type === 'depth-ratio' && Math.abs(station.ratio - 1) <= 1e-12
+          ? 0
+          : null
+  const leftCover = coverCoordinate(left)
+  const rightCover = coverCoordinate(right)
+  if (leftCover !== null && rightCover !== null) {
+    return { type: 'cover-gap-ratio', ratio: (leftCover + rightCover) / 2 }
+  }
+  if (left.type === 'depth-ratio' && right.type === 'depth-ratio') {
+    return { type: 'depth-ratio', ratio: 2 / (1 / left.ratio + 1 / right.ratio) }
+  }
+  return { type: 'adaptive-depth-interpolation', left, right, ratio: 0.5 }
+}
 
 const capacityScales = (
   evaluations: CapacityEvaluation[][],
@@ -269,7 +349,7 @@ export const evaluateSurfaceTopology = (
 export const buildCapacitySurface = <TSource>(
   section: PreparedEquivalentBlockSection,
   evaluator: CapacityEvaluator<TSource>,
-  options: BuildCapacitySurfaceOptions
+  options: BuildCapacitySurfaceOptions<TSource>
 ): CapacitySurface => {
   if (!(options.extremeCompressionStrain > 0) || !finiteResultants(options.tensionPole.resultants) || !finiteResultants(options.compressionPole.resultants)) {
     throw new EquivalentBlockInputError('SOLVER_INPUT', 'Surface endpoints and extreme compression strain must be valid.')
@@ -277,9 +357,7 @@ export const buildCapacitySurface = <TSource>(
   let stations = [...(options.stations ?? createDefaultCapacityStations())]
   if (stations.length < 2) throw new EquivalentBlockInputError('SOLVER_INPUT', 'At least two interior capacity stations are required.')
   for (const station of stations) {
-    const value = station.type === 'depth-ratio' || station.type === 'bar-tension-yield-ratio'
-      ? station.ratio
-      : station.strain
+    const value = 'ratio' in station ? station.ratio : station.strain
     if (!Number.isFinite(value) || value < 0 || (station.type === 'depth-ratio' && value <= 0)) {
       throw new EquivalentBlockInputError('SOLVER_INPUT', 'Capacity stations must be finite and nonnegative.')
     }
@@ -341,7 +419,7 @@ export const buildCapacitySurface = <TSource>(
     const geometry = directionGeometry(wrapped)
     const evaluation = evaluator({
       neutralAxisAngle: wrapped,
-      neutralAxisDepth: stationDepth(
+      neutralAxisDepth: capacityStationDepth(
         station,
         geometry.projectedDepth,
         options.extremeCompressionStrain,
@@ -380,24 +458,46 @@ export const buildCapacitySurface = <TSource>(
   let scales = capacityScales(scaleEvaluations(), [options.tensionPole, options.compressionPole], options.normalization)
   const stationTolerance = Math.max(0, options.stationTolerance ?? 0.01)
   const maxStationPasses = Math.max(0, Math.round(options.maxStationRefinementPasses ?? 5))
-  const maxStations = Math.max(stations.length, Math.round(options.maxStations ?? 128))
+  // Low-level stations exclude the two exact poles; 46 therefore matches the production cap of
+  // 48 total stations when a caller does not provide an explicit resource limit.
+  const maxStations = Math.max(stations.length, Math.round(options.maxStations ?? 46))
   const stationIntervals = () => Array.from({ length: stations.length + 1 }, (_, intervalIndex) => {
     const leftStation = intervalIndex === 0 ? undefined : stations[intervalIndex - 1]
     const rightStation = intervalIndex === stations.length ? undefined : stations[intervalIndex]
-    const leftRatio = leftStation ? stationDepthRatio(leftStation, options.extremeCompressionStrain) : 0
-    const rightRatio = rightStation ? stationDepthRatio(rightStation, options.extremeCompressionStrain) : Number.POSITIVE_INFINITY
-    const ratio = !leftStation
-      ? rightRatio / 2
-      : !rightStation
-        ? leftRatio * 2
-        : Math.sqrt(leftRatio * rightRatio)
     return {
       intervalIndex,
-      station: { type: 'depth-ratio' as const, ratio },
+      station: stationMidpoint(leftStation, rightStation),
       leftStation,
       rightStation
     }
   })
+  const interpolationError = (
+    middle: CapacityEvaluation<TSource>,
+    left: CapacityEvaluation<TSource> | undefined,
+    right: CapacityEvaluation<TSource> | undefined,
+    leftResultants: CapacityResultants,
+    rightResultants: CapacityResultants
+  ) => {
+    let error = normalizedDistance(
+      middle.resultants,
+      midpointResultants(leftResultants, rightResultants),
+      scales
+    )
+    if (options.componentResultants && left && right) {
+      const middleComponents = options.componentResultants(middle)
+      const leftComponents = options.componentResultants(left)
+      const rightComponents = options.componentResultants(right)
+      const count = Math.min(middleComponents.length, leftComponents.length, rightComponents.length)
+      for (let index = 0; index < count; index += 1) {
+        error = Math.max(error, normalizedDistance(
+          middleComponents[index],
+          midpointResultants(leftComponents[index], rightComponents[index]),
+          scales
+        ))
+      }
+    }
+    return error
+  }
   const stationIntervalError = (
     interval: ReturnType<typeof stationIntervals>[number],
     angles: number[]
@@ -405,17 +505,26 @@ export const buildCapacitySurface = <TSource>(
     let error = 0
     for (const angle of angles) {
       const evaluations = evaluateDirection(angle)
-      const left = interval.leftStation
-        ? evaluations[interval.intervalIndex - 1].resultants
-        : options.tensionPole.resultants
-      const right = interval.rightStation
-        ? evaluations[interval.intervalIndex].resultants
-        : options.compressionPole.resultants
-      const middle = evaluateStation(angle, interval.station).resultants
-      error = Math.max(error, normalizedPointToSegmentDistance(middle, left, right, scales))
+      const leftEvaluation = interval.leftStation
+        ? evaluations[interval.intervalIndex - 1]
+        : undefined
+      const rightEvaluation = interval.rightStation
+        ? evaluations[interval.intervalIndex]
+        : undefined
+      const middle = evaluateStation(angle, interval.station)
+      error = Math.max(error, interpolationError(
+        middle,
+        leftEvaluation,
+        rightEvaluation,
+        leftEvaluation?.resultants ?? options.tensionPole.resultants,
+        rightEvaluation?.resultants ?? options.compressionPole.resultants
+      ))
     }
     return error
   }
+  const stationProbeAngles = options.stationProbeAngles?.length
+    ? [...new Set(options.stationProbeAngles.map(wrapAngle))]
+    : directions
   const tolerance = Math.max(0, options.directionTolerance ?? 0.01)
   const maxPasses = Math.max(0, Math.round(options.maxRefinementPasses ?? 8))
   const maxDirections = Math.max(seedDirections, Math.round(options.maxDirections ?? 360))
@@ -425,25 +534,25 @@ export const buildCapacitySurface = <TSource>(
   const refineStationsOnce = () => {
     if (stationPasses >= maxStationPasses || stations.length >= maxStations) return false
     const inserts = stationIntervals().map((interval) => ({
+      interval: interval.intervalIndex,
       station: interval.station,
-      error: stationIntervalError(interval, directions)
+      error: stationIntervalError(interval, stationProbeAngles)
     })).filter((entry) => entry.error > stationTolerance)
     if (inserts.length === 0) return false
     inserts.sort((left, right) => right.error - left.error)
-    const selected = inserts.slice(0, maxStations - stations.length).map((entry) => entry.station)
+    const selected = inserts
+      .slice(0, maxStations - stations.length)
+      .sort((left, right) => left.interval - right.interval)
     if (selected.length === 0) return false
     stationPasses += 1
-    stations = [...stations, ...selected]
-      .sort((left, right) =>
-        stationDepthRatio(left, options.extremeCompressionStrain) -
-        stationDepthRatio(right, options.extremeCompressionStrain)
-      )
-      .filter((station, index, values) => index === 0 || Math.abs(
-        Math.log(
-          stationDepthRatio(station, options.extremeCompressionStrain) /
-          stationDepthRatio(values[index - 1], options.extremeCompressionStrain)
-        )
-      ) > 1e-12)
+    const byInterval = new Map(selected.map((entry) => [entry.interval, entry.station]))
+    const previousStations = stations
+    stations = previousStations.flatMap((station, index) => {
+      const inserted = byInterval.get(index)
+      return inserted ? [inserted, station] : [station]
+    })
+    const afterLast = byInterval.get(previousStations.length)
+    if (afterLast) stations.push(afterLast)
     cache.clear()
     directions.forEach(evaluateDirection)
     scales = capacityScales(scaleEvaluations(), [options.tensionPole, options.compressionPole], options.normalization)
@@ -465,10 +574,12 @@ export const buildCapacitySurface = <TSource>(
       const middleEvents = evaluateEventDirection(midAngle)
       let error = 0
       for (let stationIndex = 0; stationIndex < stations.length; stationIndex += 1) {
-        error = Math.max(error, normalizedDistance(
-          middle[stationIndex].resultants,
-          midpointResultants(left[stationIndex].resultants, right[stationIndex].resultants),
-          scales
+        error = Math.max(error, interpolationError(
+          middle[stationIndex],
+          left[stationIndex],
+          right[stationIndex],
+          left[stationIndex].resultants,
+          right[stationIndex].resultants
         ))
       }
       for (let eventIndex = 0; eventIndex < barEventStations.length; eventIndex += 1) {
@@ -512,10 +623,12 @@ export const buildCapacitySurface = <TSource>(
     const rightEvents = evaluateEventDirection(rightAngle)
     const middleEvents = evaluateEventDirection(wrapAngle((leftAngle + rightAngle) / 2))
     for (let stationIndex = 0; stationIndex < stations.length; stationIndex += 1) {
-      maxDirectionalInterpolationError = Math.max(maxDirectionalInterpolationError, normalizedDistance(
-        middle[stationIndex].resultants,
-        midpointResultants(left[stationIndex].resultants, right[stationIndex].resultants),
-        scales
+      maxDirectionalInterpolationError = Math.max(maxDirectionalInterpolationError, interpolationError(
+        middle[stationIndex],
+        left[stationIndex],
+        right[stationIndex],
+        left[stationIndex].resultants,
+        right[stationIndex].resultants
       ))
     }
     for (let eventIndex = 0; eventIndex < barEventStations.length; eventIndex += 1) {
@@ -531,7 +644,7 @@ export const buildCapacitySurface = <TSource>(
   for (const interval of stationIntervals()) {
     maxStationInterpolationError = Math.max(
       maxStationInterpolationError,
-      stationIntervalError(interval, directions)
+      stationIntervalError(interval, stationProbeAngles)
     )
   }
 
@@ -565,6 +678,7 @@ export const buildCapacitySurface = <TSource>(
     metadata: options.tensionPole.metadata
   }]
   const grid: Array<{ ids: number[]; ratios: number[] }> = []
+  const activeStationIndexSet = new Set(activeStationIndices)
   for (const angle of directions) {
     const evaluations = evaluateDirection(angle)
     const entries = [
@@ -609,6 +723,21 @@ export const buildCapacitySurface = <TSource>(
       ids,
       ratios: unique.map(({ evaluation }) => evaluation.state.neutralAxisDepth / projectedDepth)
     })
+    // Keep every requested reporting state even when it collapses numerically onto a pole or a
+    // neighbouring layer. These vertices are intentionally not referenced by the topology; they
+    // preserve the fixed station schedule without creating degenerate triangles.
+    for (let stationIndex = 0; stationIndex < stations.length; stationIndex += 1) {
+      if (activeStationIndexSet.has(stationIndex)) continue
+      const evaluation = evaluations[stationIndex]
+      points.push({
+        id: points.length,
+        resultants: { ...evaluation.resultants },
+        state: { ...evaluation.state },
+        station: { ...stations[stationIndex] },
+        kind: 'state',
+        metadata: evaluation.metadata
+      })
+    }
   }
   const compressionPoleIndex = points.length
   points.push({
@@ -672,6 +801,8 @@ export const buildCapacitySurface = <TSource>(
     normalization: scales,
     maxDirectionalInterpolationError,
     maxStationInterpolationError,
+    directionRefinementPasses: directionPasses,
+    stationRefinementPasses: stationPasses,
     directionRefinementConverged: maxDirectionalInterpolationError <= tolerance,
     stationRefinementConverged: maxStationInterpolationError <= stationTolerance,
     topology
@@ -889,7 +1020,15 @@ export const clipCapacitySurfaceByAxialCap = (
       ...old,
       id,
       resultants: { ...old.resultants, ...(onCap ? { P: axialCap } : {}) },
-      ...(onCap ? { state: undefined, station: undefined, kind: 'axial-cap' as const } : {})
+      ...(onCap ? {
+        state: undefined,
+        station: undefined,
+        kind: 'axial-cap' as const,
+        metadata: {
+          ...old.metadata,
+          ...(old.state ? { meridianAngle: wrapAngle(old.state.neutralAxisAngle) } : {})
+        }
+      } : {})
     })
     oldPointMap.set(oldIndex, id)
     return id
@@ -898,8 +1037,10 @@ export const clipCapacitySurfaceByAxialCap = (
     const key = leftIndex < rightIndex ? `${leftIndex}:${rightIndex}` : `${rightIndex}:${leftIndex}`
     const existing = edgeIntersectionMap.get(key)
     if (existing !== undefined) return existing
-    const left = surface.points[leftIndex].resultants
-    const right = surface.points[rightIndex].resultants
+    const leftPoint = surface.points[leftIndex]
+    const rightPoint = surface.points[rightIndex]
+    const left = leftPoint.resultants
+    const right = rightPoint.resultants
     const denominator = right.P - left.P
     const ratio = Math.abs(denominator) <= absoluteTolerance ? 0.5 : (axialCap - left.P) / denominator
     const id = points.length
@@ -910,7 +1051,14 @@ export const clipCapacitySurfaceByAxialCap = (
         Mx: left.Mx + (right.Mx - left.Mx) * ratio,
         My: left.My + (right.My - left.My) * ratio
       },
-      kind: 'axial-cap'
+      kind: 'axial-cap',
+      ...(
+        leftPoint.state && rightPoint.state &&
+        Math.abs(Math.sin(leftPoint.state.neutralAxisAngle - rightPoint.state.neutralAxisAngle)) <= 1e-12 &&
+        Math.cos(leftPoint.state.neutralAxisAngle - rightPoint.state.neutralAxisAngle) > 0
+          ? { metadata: { meridianAngle: wrapAngle(leftPoint.state.neutralAxisAngle) } }
+          : {}
+      )
     })
     edgeIntersectionMap.set(key, id)
     return id

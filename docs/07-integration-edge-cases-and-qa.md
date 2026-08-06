@@ -4,8 +4,9 @@ This file defines the target authoritative ULS check. It replaces the historical
 screen plus fixed-P radial moment ratio; both the current project format and options remain schema
 version 1.
 
-Current preview status: proportional 3D ray utilization and triangle-based Fixed-P/vertical slices
-are implemented. The complete point-in-domain brand, star-shaped certification, combined numerical
+Current preview status: proportional 3D ray utilization, fixed-grid triangle-based Fixed-P, and
+direct fixed/exact-β vertical meridians are implemented. The complete point-in-domain brand,
+star-shaped certification, combined numerical
 uncertainty interval, immutable `EngineeringResult`, and accepted-result gate described below are
 not yet implemented.
 
@@ -221,7 +222,7 @@ but adapter-permitted cases. A warning never overrides a fatal gate.
 | Axial cap plane | cap face closed and ray intersection correct |
 | Asymmetric bars and nonzero uniform-strain moments | handled in full 3D; no assumption that poles lie on moment origin |
 | Multiple fixed-P loops | preserve loops and hole parity |
-| Demand angle between sampled strain angles | geometric ray/plane intersection, not nearest sampled beta row |
+| Demand angle between fixed strain directions | governing 3D ray uses the adaptive Design mesh; exact demand beta comes from the valid inverse state and is recalculated |
 | Near-tangent demand ray | targeted refinement or `indeterminate` |
 | Non-star-shaped design domain | point location available; proportional UR blocked/indeterminate |
 | Mesh/surface limit reached | typed failure, never accepted with console warning |

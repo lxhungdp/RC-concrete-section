@@ -3,12 +3,13 @@ import {
   analysisInputKey,
   applyDesignCheckToInverse,
   buildDesignPreviewSurfaceFromPrepared,
+  buildExactDirectionCurveFromPrepared,
   buildSectionFieldMapFromPrepared,
   checkLoadcaseUtilizationFromSurface,
   checkLoadcasesUtilizationFromSurface,
   codeAdjustedDemandOfCheck,
   prepareAnalysis,
-  sliceFixedPContour,
+  sliceFixedDesignPContour,
   solveInversePreviewFromPrepared,
   surfaceInputKey,
   type PreparedAnalysis,
@@ -16,6 +17,7 @@ import {
 } from '@pm/analysis'
 import {
   buildEquivalentBlockDesignSurfaceFromPrepared,
+  buildEquivalentBlockExactDirectionCurveFromPrepared,
   buildEquivalentBlockPreviewSurfaceFromPrepared,
   buildEquivalentBlockFieldMapFromPrepared,
   prepareBlockAnalysis,
@@ -171,6 +173,25 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
       return
     }
 
+    if (request.type === 'buildExactDirection') {
+      const { analysisOptions, beta } = request.payload
+      const result = isEquivalentBlockAnalysisOptions(analysisOptions)
+        ? buildEquivalentBlockExactDirectionCurveFromPrepared(
+            preparedBlockFor(request.payload),
+            analysisOptions,
+            beta
+          )
+        : buildExactDirectionCurveFromPrepared(
+            preparedFor({ ...request.payload, analysisOptions }),
+            request.payload.materialStore,
+            request.payload.designBasis,
+            analysisOptions,
+            beta
+          )
+      workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
+      return
+    }
+
     if (request.type === 'checkLoadcase') {
       const { section, rebars, materialStore, loadcase, surface } = request.payload
       if (isEquivalentBlockAnalysisOptions(surface.analysisOptions)) {
@@ -205,13 +226,10 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
         return
       }
       const key = `${surfaceInputKey(section, rebars, materialStore, surface.analysisOptions)}:${JSON.stringify(request.payload.designBasis)}`
-      const contour = sliceFixedPContour(
-        (surfaceCache?.key === key ? surfaceCache.value : surface).points,
-        loadcase.P,
-        (surfaceCache?.key === key ? surfaceCache.value : surface).triangles
-      )
+      const activeSurface = surfaceCache?.key === key ? surfaceCache.value : surface
+      const contour = sliceFixedDesignPContour(activeSurface, loadcase.P)
       const designCheck = checkLoadcaseUtilizationFromSurface(
-        surfaceCache?.key === key ? surfaceCache.value : surface,
+        activeSurface,
         loadcase
       )
       const inverse = solveInversePreviewFromPrepared(

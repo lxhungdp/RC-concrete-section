@@ -132,7 +132,8 @@ EquivalentBlockAnalysisOptions editor
   -> @pm/analysis-equivalent-block profile bridge
   -> @pm/equivalent-block + selected KDS/ACI adapter
   -> shared fixed 22-state schedule
-  -> adaptive direction refinement only
+  -> Design-only adaptive station and direction refinement at the shared 0.75% target
+  -> separate fixed 22-station / 36-direction datasets for display and Fixed-P
   -> common PreviewSurface and model-specific block fields
 ```
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Download, EyeOff, Loader2, Maximize2, RotateCw } from 'lucide-react'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
@@ -13,17 +13,17 @@ import {
 import {
   contourStrainAngleSamples,
   sliceFixedPContour,
-  sliceMomentPlane,
+  strainGradientDirection,
+  type ExactDirectionCurve,
   type InversePreviewResult,
   type PreviewSurface,
   type PreviewSurfacePoint,
-  type PreviewMomentPlanePoint,
-  type PreviewMomentPlanePath,
   type SectionFieldMap
 } from '@pm/analysis'
 import { ExcelExportError, equivalentBlockWorkbookFileName, sectionWorkbookFileName } from '@pm/report'
 import {
   buildSectionFieldMapAsync,
+  buildExactDirectionCurveAsync,
   exportEquivalentBlockWorkbookAsync,
   exportSectionWorkbookAsync,
   isAnalysisAbort
@@ -53,7 +53,6 @@ import {
 } from './section-field-angles'
 import {
   buildClosedSurfaceTriangles,
-  isIntermediateStationValue,
   isMeridianOrParallelEdge,
   triangulatePlanarPolygon
 } from './surface-plot-geometry'
@@ -77,6 +76,8 @@ type Props = {
   projectName: string
   selectedLoadcaseId: number | null
   inverseResult: InversePreviewResult | null
+  exactDirectionCurve: ExactDirectionCurve | null
+  onExactDirectionCurveChange: (curve: ExactDirectionCurve | null) => void
   fixedP: number
   onFixedPChange: (value: number) => void
   view: SectionResultsView
@@ -272,70 +273,6 @@ const normalizeAngleDeg = (degrees: number) => {
 }
 
 /**
- * Clip connected moment-plane paths without turning the retained points back into a point cloud.
- * Crossing points at M=0 are interpolated explicitly, so hiding the opposite branch cannot leave a
- * gap or draw a chord between disconnected pieces.
- */
-const clipMomentPlanePaths = (
-  paths: PreviewMomentPlanePath[],
-  side: 'positive' | 'negative'
-): PreviewMomentPlanePoint[][] => {
-  const scale = Math.max(...paths.flatMap((path) => path.points.map((point) => Math.abs(point.M))), 1)
-  const tol = scale * 1e-12
-  const inside = (point: PreviewMomentPlanePoint) =>
-    side === 'positive' ? point.M >= -tol : point.M <= tol
-  const crossing = (a: PreviewMomentPlanePoint, b: PreviewMomentPlanePoint): PreviewMomentPlanePoint => {
-    const t = a.M / (a.M - b.M)
-    return {
-      beta: a.beta + (b.beta - a.beta) * t,
-      P: a.P + (b.P - a.P) * t,
-      Mx: a.Mx + (b.Mx - a.Mx) * t,
-      My: a.My + (b.My - a.My) * t,
-      station:
-        a.station === undefined || b.station === undefined
-          ? undefined
-          : a.station + (b.station - a.station) * t,
-      M: 0
-    }
-  }
-
-  return paths.flatMap((path) => {
-    if (path.points.length < 2) return []
-    const unique = path.closed ? path.points.slice(0, -1) : [...path.points]
-    if (unique.every(inside)) return [[...unique, ...(path.closed ? [unique[0]] : [])]]
-    if (unique.every((point) => !inside(point))) return []
-
-    // Start a mixed closed loop outside the retained half-plane. This prevents one clipped branch
-    // from being split across the array wrap.
-    if (path.closed) {
-      const outsideIndex = unique.findIndex((point) => !inside(point))
-      unique.push(...unique.splice(0, outsideIndex), unique[0])
-    }
-
-    const pieces: PreviewMomentPlanePoint[][] = []
-    let piece: PreviewMomentPlanePoint[] = []
-    for (let index = 0; index < unique.length - 1; index++) {
-      const a = unique[index]
-      const b = unique[index + 1]
-      const aInside = inside(a)
-      const bInside = inside(b)
-      if (aInside && piece.length === 0) piece.push(a)
-      if (aInside && bInside) {
-        piece.push(b)
-      } else if (aInside && !bInside) {
-        piece.push(crossing(a, b))
-        if (piece.length >= 2) pieces.push(piece)
-        piece = []
-      } else if (!aInside && bInside) {
-        piece = [crossing(a, b), b]
-      }
-    }
-    if (piece.length >= 2) pieces.push(piece)
-    return pieces
-  })
-}
-
-/**
  * Three outcomes, not two. A residual that converged onto a strain plane outside the material
  * domain is not an equilibrium state, and must not read the same as a valid solve.
  */
@@ -390,6 +327,8 @@ export function ResultsWorkspace({
   projectName,
   selectedLoadcaseId,
   inverseResult,
+  exactDirectionCurve,
+  onExactDirectionCurveChange,
   fixedP,
   onFixedPChange,
   view,
@@ -402,6 +341,13 @@ export function ResultsWorkspace({
   const [exportMessage, setExportMessage] = useState('')
   const [fieldMap, setFieldMap] = useState<SectionFieldMap | null>(null)
   const [fieldMapWorking, setFieldMapWorking] = useState(false)
+  const [exactAngleDraft, setExactAngleDraft] = useState('')
+  const [exactCurveWorking, setExactCurveWorking] = useState(false)
+  const [exactCurveMessage, setExactCurveMessage] = useState('')
+  const [demandExactCurve, setDemandExactCurve] = useState<ExactDirectionCurve | null>(null)
+  const exactRequestId = useRef(0)
+  const exactController = useRef<AbortController | null>(null)
+  const exactCurve = exactDirectionCurve
   const plotPalette = plotPalettes[theme]
   const plotTheme = useMemo(
     () => ({
@@ -420,11 +366,15 @@ export function ResultsWorkspace({
 
   const selectedLoadcase = loadcases.find((item) => item.id === selectedLoadcaseId) ?? null
   const isLoadcaseMode = viewMode === 'loadcase' && selectedLoadcase != null
+  const equilibriumBeta = useMemo(() => {
+    if (!isLoadcaseMode || !inverseResult?.ok || !inverseResult.admissibility.evaluated) return null
+    return strainGradientDirection(inverseResult.state)
+  }, [inverseResult, isLoadcaseMode])
 
   useEffect(() => {
     setFieldMap(null)
 
-    if (!isLoadcaseMode || !inverseResult || !surface) {
+    if (!isLoadcaseMode || !inverseResult?.ok || !surface) {
       setFieldMapWorking(false)
       return
     }
@@ -460,8 +410,40 @@ export function ResultsWorkspace({
     return () => controller.abort()
   }, [designBasis, inverseResult, isLoadcaseMode, materialStore, rebars, section, surface])
 
+  useEffect(() => {
+    setDemandExactCurve(null)
+    if (!surface || equilibriumBeta == null) return
+    const controller = new AbortController()
+    buildExactDirectionCurveAsync({
+      calculationProfileId: surface.calculationProfileId ?? 'kds-2024-stress-strain',
+      section,
+      rebars,
+      materialStore,
+      designBasis,
+      analysisOptions: surface.analysisOptions,
+      beta: equilibriumBeta
+    }, controller.signal)
+      .then(setDemandExactCurve)
+      .catch((error) => {
+        if (!isAnalysisAbort(error)) setDemandExactCurve(null)
+      })
+    return () => controller.abort()
+  }, [designBasis, equilibriumBeta, materialStore, rebars, section, surface])
+
+  useEffect(() => {
+    exactController.current?.abort()
+    exactController.current = null
+    exactRequestId.current += 1
+    setExactCurveWorking(false)
+    onExactDirectionCurveChange(null)
+    setExactCurveMessage('')
+    return () => exactController.current?.abort()
+  }, [onExactDirectionCurveChange, surface])
+
   const activeFixedP = isLoadcaseMode ? selectedLoadcase.P : fixedP
-  const activeAngle = isLoadcaseMode ? loadcaseAngleDeg(selectedLoadcase) : view.sliceAngle
+  const activeAngle = isLoadcaseMode
+    ? equilibriumBeta == null ? loadcaseAngleDeg(selectedLoadcase) : equilibriumBeta * 180 / Math.PI
+    : exactCurve ? exactCurve.beta * 180 / Math.PI : view.sliceAngle
   const demandProjection = useMemo(() => {
     if (!isLoadcaseMode || !selectedLoadcase) return null
     const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
@@ -473,20 +455,84 @@ export function ResultsWorkspace({
       name: selectedLoadcase.name
     }
   }, [activeAngle, isLoadcaseMode, selectedLoadcase])
+  const capacityProjection = useMemo(() => {
+    const point = inverseResult?.designCapacityPoint
+    if (!isLoadcaseMode || !point) return null
+    const theta = normalizeAngleDeg(activeAngle) * Math.PI / 180
+    return {
+      mx: knm(point.Mx),
+      my: knm(point.My),
+      p: kn(point.P),
+      m: knm(point.Mx * Math.cos(theta) + point.My * Math.sin(theta))
+    }
+  }, [activeAngle, inverseResult, isLoadcaseMode])
 
   const activeFixedPKn = kn(activeFixedP)
   const minPKn = surface ? kn(surface.bounds.P[0]) : 0
   const maxPKn = surface ? kn(surface.bounds.P[1]) : 0
   const surfaceDirectionAnglesDeg = useMemo(
-    () => (surface ? uniqueSurfaceDirectionAnglesDeg(surface.points.map((point) => point.beta)) : []),
+    () => (surface
+      ? uniqueSurfaceDirectionAnglesDeg(
+          surface.designFixed?.directions ?? surface.points.map((point) => point.beta)
+        )
+      : []),
     [surface]
   )
   const angleSliderStep = directionAngleStepDeg(surfaceDirectionAnglesDeg)
   const angleSliderMax = sliceAngleMax(view, surfaceDirectionAnglesDeg, angleSliderStep)
   const setSliceAngle = (value: number) => {
+    onExactDirectionCurveChange(null)
+    setExactCurveMessage('')
     onViewChange({
       sliceAngle: snapSliceAngleDeg(value, surfaceDirectionAnglesDeg, angleSliderMax, angleSliderStep)
     })
+  }
+
+
+  const applyExactAngle = () => {
+    if (!surface || exactCurveWorking) return
+    const value = Number(exactAngleDraft)
+    if (!Number.isFinite(value)) {
+      setExactCurveMessage('Enter a finite β angle.')
+      return
+    }
+    const beta = normalizeAngleDeg(value) * Math.PI / 180
+    const requestId = exactRequestId.current + 1
+    exactRequestId.current = requestId
+    const controller = new AbortController()
+    exactController.current = controller
+    setExactCurveWorking(true)
+    setExactCurveMessage('')
+    buildExactDirectionCurveAsync({
+      calculationProfileId: surface.calculationProfileId ?? 'kds-2024-stress-strain',
+      section,
+      rebars,
+      materialStore,
+      designBasis,
+      analysisOptions: surface.analysisOptions,
+      beta
+    }, controller.signal)
+      .then((curve) => {
+        if (exactRequestId.current !== requestId) return
+        onExactDirectionCurveChange(curve)
+        setExactAngleDraft(String(Number((curve.beta * 180 / Math.PI).toFixed(6))))
+        setExactCurveMessage(
+          `Exact β · ${curve.stationError.fixedStations} fixed + ${
+            curve.stationError.stations - curve.stationError.fixedStations
+          } adaptive stations`
+        )
+      })
+      .catch((error) => {
+        if (exactRequestId.current === requestId && !isAnalysisAbort(error)) {
+          setExactCurveMessage(error instanceof Error ? error.message : String(error))
+        }
+      })
+      .finally(() => {
+        if (exactRequestId.current === requestId) {
+          exactController.current = null
+          setExactCurveWorking(false)
+        }
+      })
   }
 
   const setResistanceVisibility = (
@@ -506,11 +552,19 @@ export function ResultsWorkspace({
   }
 
   const contour = useMemo(
-    () => (surface ? sliceFixedPContour(surface.points, activeFixedP, surface.triangles) : []),
+    () => (surface ? sliceFixedPContour(
+      surface.designFixed?.points ?? surface.points,
+      activeFixedP,
+      surface.designFixed?.triangles ?? surface.triangles
+    ) : []),
     [activeFixedP, surface]
   )
   const nominalContour = useMemo(
-    () => (surface ? sliceFixedPContour(surface.nominalPoints, activeFixedP, surface.nominalTriangles) : []),
+    () => (surface ? sliceFixedPContour(
+      surface.nominalFixed?.points ?? surface.nominalPoints,
+      activeFixedP,
+      surface.nominalFixed?.triangles ?? surface.nominalTriangles
+    ) : []),
     [activeFixedP, surface]
   )
   const axialCapPKn = useMemo(() => {
@@ -518,8 +572,7 @@ export function ResultsWorkspace({
     return capped.length > 0 ? kn(Math.max(...capped.map((point) => point.P))) : null
   }, [surface])
 
-  // The analysis contour retains every triangle intersection; the display intentionally uses only
-  // the dense adaptive meridian crossings for a cleaner, stable presentation curve.
+  // Fixed-P presentation and interpolation intentionally use only the independent fixed datasets.
   const strainAngleSamples = useMemo(() => contourStrainAngleSamples(contour), [contour])
   const nominalStrainAngleSamples = useMemo(
     () => contourStrainAngleSamples(nominalContour),
@@ -529,14 +582,16 @@ export function ResultsWorkspace({
     () =>
       surface
         ? view.surfaceResistanceMode === 'design'
-          ? surface.points
-          : surface.nominalPoints
+          ? surface.designFixed?.points ?? surface.points
+          : surface.nominalFixed?.points ?? surface.nominalPoints
         : [],
     [surface, view.surfaceResistanceMode]
   )
   const surfaceGrid = useMemo(() => groupByBeta(surfacePoints3d), [surfacePoints3d])
   const surfaceTriangles3d = useMemo(() => {
-    const explicit = view.surfaceResistanceMode === 'design' ? surface?.triangles : surface?.nominalTriangles
+    const explicit = view.surfaceResistanceMode === 'design'
+      ? surface?.designFixed?.triangles ?? surface?.triangles
+      : surface?.nominalFixed?.triangles ?? surface?.nominalTriangles
     return explicit && explicit.length > 0 ? explicit : buildClosedSurfaceTriangles(surfacePoints3d)
   }, [surface, surfacePoints3d, view.surfaceResistanceMode])
   const surfaceContour3d = view.surfaceResistanceMode === 'design'
@@ -589,7 +644,6 @@ export function ResultsWorkspace({
     const y = surfaceGrid.map((row) => row.curve.map((point) => knm(point.My)))
     const z = surfaceGrid.map((row) => row.curve.map((point) => kn(point.P)))
     const customdata = surfaceGrid.map((row) => row.curve.map((point) => point.id))
-    const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
     const pPlane = activeFixedPKn
 
     const ring = surfaceContour3d.length
@@ -644,54 +698,26 @@ export function ResultsWorkspace({
           }
         })()
       : null
-    const momentPlanePaths = sliceMomentPlane(surfacePoints3d, theta, activeTriangles)
-    const visibleMomentPaths = view.includeOppositeMoment
-      ? momentPlanePaths.map((path) => path.points)
-      : clipMomentPlanePaths(momentPlanePaths, 'positive')
-
-    const withoutRepeatedClosingPoint = (path: PreviewMomentPlanePoint[]) => {
-      if (path.length < 2) return [...path]
-      const first = path[0]
-      const last = path[path.length - 1]
-      const scale = Math.max(
-        Math.abs(first.P), Math.abs(first.Mx), Math.abs(first.My),
-        Math.abs(last.P), Math.abs(last.Mx), Math.abs(last.My),
-        1
-      )
-      const repeated =
-        Math.abs(first.P - last.P) <= scale * 1e-12 &&
-        Math.abs(first.Mx - last.Mx) <= scale * 1e-12 &&
-        Math.abs(first.My - last.My) <= scale * 1e-12
-      return repeated ? path.slice(0, -1) : [...path]
-    }
-    const verticalSectionBoundaries = visibleMomentPaths.map(withoutRepeatedClosingPoint)
-    const verticalSectionFills = verticalSectionBoundaries.flatMap((path, index) => {
-      const topology = triangulatePlanarPolygon(path.map((point) => ({ u: point.M, v: point.P })))
-      if (topology.length === 0) return []
-      return [{
-        type: 'mesh3d',
-        name: index === 0 ? 'Vertical section fill' : `Vertical section fill ${index + 1}`,
+    const activeExactFor3d = isLoadcaseMode ? demandExactCurve : exactCurve
+    const exactMeridianFor3d = activeExactFor3d
+      ? view.surfaceResistanceMode === 'design'
+        ? activeExactFor3d.designFixed
+        : activeExactFor3d.nominalFixed
+      : null
+    const directMeridians = [
+      exactMeridianFor3d ?? pickBetaCurve(surfaceGrid, activeAngle),
+      ...(!activeExactFor3d && view.includeOppositeMoment
+        ? [pickBetaCurve(surfaceGrid, activeAngle + 180)]
+        : [])
+    ].filter((path) => path.length > 0)
+    const sliceTraces = directMeridians.map((path, index) => {
+      return {
+        type: 'scatter3d',
+        name: index === 0 ? 'Direct β meridian' : 'Opposite β meridian',
+        mode: 'lines',
         x: path.map((point) => knm(point.Mx)),
         y: path.map((point) => knm(point.My)),
         z: path.map((point) => kn(point.P)),
-        i: topology.map((triangle) => triangle.a),
-        j: topology.map((triangle) => triangle.b),
-        k: topology.map((triangle) => triangle.c),
-        color: '#7c3aed',
-        opacity: 0.16,
-        flatshading: true,
-        hoverinfo: 'skip'
-      }]
-    })
-    const sliceTraces = verticalSectionBoundaries.map((path, index) => {
-      const closed = path.length > 1 ? [...path, path[0]] : path
-      return {
-        type: 'scatter3d',
-        name: index === 0 ? 'Vertical slice' : `Vertical slice ${index + 1}`,
-        mode: 'lines',
-        x: closed.map((point) => knm(point.Mx)),
-        y: closed.map((point) => knm(point.My)),
-        z: closed.map((point) => kn(point.P)),
         line: { color: '#7c3aed', width: 7 },
         hoverinfo: 'skip'
       }
@@ -758,7 +784,6 @@ export function ResultsWorkspace({
     return [
       capacityTrace,
       ...(fixedPSectionFill ? [fixedPSectionFill] : []),
-      ...verticalSectionFills,
       ...(surfaceGridWireframe ? [surfaceGridWireframe] : []),
       ...sliceTraces,
       ...(ring ? [ring] : []),
@@ -781,6 +806,9 @@ export function ResultsWorkspace({
   }, [
     activeAngle,
     activeFixedPKn,
+    demandExactCurve,
+    exactCurve,
+    isLoadcaseMode,
     view.includeOppositeMoment,
     loadcases,
     selectedLoadcaseId,
@@ -980,10 +1008,29 @@ export function ResultsWorkspace({
                 '%{customdata[0]}<br>Mux=%{x:.1f} kN.m<br>Muy=%{y:.1f} kN.m<br>Pu=%{customdata[1]:.1f} kN<extra>Demand</extra>'
             }
           ]
+        : []),
+      ...(capacityProjection
+        ? [{
+            type: 'scatter',
+            name: 'Capacity point',
+            mode: 'markers',
+            x: [capacityProjection.mx],
+            y: [capacityProjection.my],
+            marker: {
+              size: 10,
+              color: '#16a34a',
+              symbol: 'diamond',
+              line: { color: plotPalette.markerOutline, width: 1 }
+            },
+            customdata: [[capacityProjection.p]],
+            hovertemplate:
+              'Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<br>P=%{customdata[0]:.1f} kN<extra>Capacity</extra>'
+          }]
         : [])
     ]
   }, [
     activeFixedPKn,
+    capacityProjection,
     demandProjection,
     nominalStrainAngleSamples,
     plotPalette,
@@ -1098,141 +1145,89 @@ export function ResultsWorkspace({
       stations: [] as Array<{ m: number; p: number; station: number }>,
       keys: [] as Array<{ m: number; p: number; station: number; label: string; side: 'primary' | 'opposite' }>
     }
-    if (!surface || surfaceGrid.length === 0) return empty
-
-    const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
-    const momentPlane = sliceMomentPlane(surface.points, theta, surface.triangles)
-    const project = (point: PreviewMomentPlanePoint) => ({
-      m: knm(point.M),
+    if (!surface) return empty
+    if (isLoadcaseMode && (equilibriumBeta == null || !demandExactCurve)) return empty
+    const theta = normalizeAngleDeg(activeAngle) * Math.PI / 180
+    const project = (point: PreviewSurfacePoint) => ({
+      m: knm(point.Mx * Math.cos(theta) + point.My * Math.sin(theta)),
       p: kn(point.P),
-      station: point.station ?? -1
+      station: point.station
     })
-
-    const primaryPaths = clipMomentPlanePaths(momentPlane, 'positive')
-    const oppositePaths = view.includeOppositeMoment ? clipMomentPlanePaths(momentPlane, 'negative') : []
-    const primaryPath = primaryPaths.flat().map(project)
-    const oppositePath = oppositePaths.flat().map(project)
-    const visiblePaths = (
-      view.includeOppositeMoment ? momentPlane.map((path) => path.points) : primaryPaths
-    )
-    const displayPaths = visiblePaths.map((path) => path.map(project))
-    const intermediatePoints = visiblePaths.flatMap((path) => {
-      const points =
-        path.length > 2 && path[0] === path[path.length - 1]
-          ? path.slice(0, -1)
-          : path
-      return points.filter((point) => isIntermediateStationValue(point.station)).map(project)
-    })
-
+    const activeExact = isLoadcaseMode ? demandExactCurve : exactCurve
+    const fixedPoints = surface.designFixed?.points ?? surface.points
+    const primaryPoints = activeExact?.designAdaptive ?? pickBetaCurve(groupByBeta(fixedPoints), activeAngle)
+    const markerPoints = activeExact?.designFixed ?? primaryPoints
+    const oppositePoints = !activeExact && view.includeOppositeMoment
+      ? pickBetaCurve(groupByBeta(fixedPoints), activeAngle + 180)
+      : []
+    const primaryPath = primaryPoints.map(project)
+    const oppositePath = oppositePoints.map(project)
+    const markerPath = markerPoints.map(project)
+    const keyDescriptors = surface.designFixed?.stations ?? surface.stations
     const pickKeys = (
       curve: Array<{ m: number; p: number; station: number }>,
       side: 'primary' | 'opposite'
-    ) =>
-      (surface?.stations ?? []).flatMap((descriptor, station) => {
-        const definition = descriptor.definition
-        if (
-          definition.kind !== 'steel-stress-ratio' ||
-          (Math.abs(definition.ratio) > 1e-12 && Math.abs(definition.ratio - 1) > 1e-12)
-        ) {
-          return []
-        }
-        const label = descriptor.label
-        const point = curve.reduce<Array<{ point: { m: number; p: number; station: number }; delta: number }>>(
-          (matches, item) => {
-            const delta = Math.abs(item.station - station)
-            return delta <= 0.25 ? [...matches, { point: item, delta }] : matches
-          },
-          []
-        ).sort((a, b) => a.delta - b.delta)[0]?.point
-        return point ? [{ ...point, label, side }] : []
-      })
-
-    const pickStations = (curve: Array<{ m: number; p: number; station: number }>) =>
-      (surface?.stations ?? []).flatMap((_, station) => {
-        const point = curve
-          .map((item) => ({ point: item, delta: Math.abs(item.station - station) }))
-          .filter((item) => item.delta <= 0.35)
-          .sort((a, b) => a.delta - b.delta)[0]?.point
-        return point ? [{ ...point, station }] : []
-      })
-
-    const keys = [
-      ...pickKeys(primaryPath, 'primary'),
-      ...(view.includeOppositeMoment
-        ? pickKeys(oppositePath, 'opposite').filter((item) => Math.abs(item.m) > 1e-6)
-        : [])
-    ]
-    const stations =
-      view.includeOppositeMoment && oppositePath.length > 0
-        ? [...pickStations(primaryPath), ...pickStations(oppositePath).filter((item) => Math.abs(item.m) > 1e-6)]
-        : pickStations(primaryPath)
-
+    ) => keyDescriptors.flatMap((descriptor, station) => {
+      const definition = descriptor.definition
+      if (
+        definition.kind !== 'bar-tension-yield-ratio' ||
+        (Math.abs(definition.ratio) > 1e-12 && Math.abs(definition.ratio - 1) > 1e-12)
+      ) return []
+      const point = curve.find((item) => Math.abs(item.station - station) <= 1e-9)
+      return point ? [{ ...point, label: descriptor.label, side }] : []
+    })
     return {
       primaryPath,
       oppositePath,
-      displayPaths,
-      intermediatePoints,
-      closed: momentPlane.every((path) => path.closed),
-      stations,
-      keys
+      displayPaths: [primaryPath, ...(oppositePath.length > 0 ? [oppositePath] : [])],
+      intermediatePoints: [],
+      closed: true,
+      stations: [
+        ...markerPath,
+        ...(oppositePath.length > 0 ? oppositePath.filter((point) => Math.abs(point.m) > 1e-6) : [])
+      ],
+      keys: [
+        ...pickKeys(markerPath, 'primary'),
+        ...(oppositePath.length > 0 ? pickKeys(oppositePath, 'opposite') : [])
+      ]
     }
-  }, [activeAngle, view.includeOppositeMoment, surface, surfaceGrid])
+  }, [activeAngle, demandExactCurve, equilibriumBeta, exactCurve, isLoadcaseMode, surface, view.includeOppositeMoment])
 
   const nominalVerticalPaths = useMemo(() => {
     if (!surface) return [] as Array<Array<{ m: number; p: number; station: number }>>
-    const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
-    const momentPlane = sliceMomentPlane(surface.nominalPoints, theta, surface.nominalTriangles)
-    const visible = view.includeOppositeMoment
-      ? momentPlane.map((path) => path.points)
-      : clipMomentPlanePaths(momentPlane, 'positive')
-    return visible.map((path) =>
-      path.map((point) => ({
-        m: knm(point.M),
-        p: kn(point.P),
-        station: point.station ?? -1
-      }))
-    )
-  }, [activeAngle, view.includeOppositeMoment, surface])
+    if (isLoadcaseMode && (equilibriumBeta == null || !demandExactCurve)) return []
+    const theta = normalizeAngleDeg(activeAngle) * Math.PI / 180
+    const project = (point: PreviewSurfacePoint) => ({
+      m: knm(point.Mx * Math.cos(theta) + point.My * Math.sin(theta)),
+      p: kn(point.P),
+      station: point.station
+    })
+    const activeExact = isLoadcaseMode ? demandExactCurve : exactCurve
+    const fixedPoints = surface.nominalFixed?.points ?? surface.nominalPoints
+    const primary = activeExact?.nominalFixed ?? pickBetaCurve(groupByBeta(fixedPoints), activeAngle)
+    const opposite = !activeExact && view.includeOppositeMoment
+      ? pickBetaCurve(groupByBeta(fixedPoints), activeAngle + 180)
+      : []
+    return [primary.map(project), ...(opposite.length > 0 ? [opposite.map(project)] : [])]
+  }, [activeAngle, demandExactCurve, equilibriumBeta, exactCurve, isLoadcaseMode, surface, view.includeOppositeMoment])
 
   const nominalVerticalAnnotations = useMemo(() => {
-    const curve = nominalVerticalPaths.flat()
-    const stations = (surface?.stations ?? []).flatMap((_, station) => {
-      const point = curve
-        .map((item) => ({ point: item, delta: Math.abs(item.station - station) }))
-        .filter((item) => item.delta <= 0.35)
-        .sort((a, b) => a.delta - b.delta)[0]?.point
-      return point ? [{ ...point, station }] : []
-    })
-    const keys = (surface?.stations ?? []).flatMap((descriptor, station) => {
+    const stations = nominalVerticalPaths.flat()
+    const descriptors = surface?.nominalFixed?.stations ?? surface?.stations ?? []
+    const keys = descriptors.flatMap((descriptor, station) => {
       const definition = descriptor.definition
       if (
-        definition.kind !== 'steel-stress-ratio' ||
+        definition.kind !== 'bar-tension-yield-ratio' ||
         (Math.abs(definition.ratio) > 1e-12 && Math.abs(definition.ratio - 1) > 1e-12)
-      ) {
-        return []
-      }
-      const point = curve
-        .map((item) => ({ point: item, delta: Math.abs(item.station - station) }))
-        .filter((item) => item.delta <= 0.25)
-        .sort((a, b) => a.delta - b.delta)[0]?.point
-      return point
-        ? [{
-            ...point,
-            label: descriptor.label,
-            side: point.m < 0 ? 'opposite' as const : 'primary' as const
-          }]
-        : []
+      ) return []
+      const point = stations.find((item) => Math.abs(item.station - station) <= 1e-9)
+      return point ? [{
+        ...point,
+        label: descriptor.label,
+        side: point.m < 0 ? 'opposite' as const : 'primary' as const
+      }] : []
     })
-    const intermediatePoints = nominalVerticalPaths.flatMap((path) => {
-      const points =
-        path.length > 2 &&
-        Math.abs(path[0].m - path[path.length - 1].m) <= 1e-9 &&
-        Math.abs(path[0].p - path[path.length - 1].p) <= 1e-9
-          ? path.slice(0, -1)
-          : path
-      return points.filter((point) => isIntermediateStationValue(point.station))
-    })
-    return { stations, keys, intermediatePoints }
+    return { stations, keys, intermediatePoints: [] }
   }, [nominalVerticalPaths, surface])
 
   const verticalData = useMemo(() => {
@@ -1296,10 +1291,8 @@ export function ResultsWorkspace({
         type: 'scatter',
         name:
           index === 0
-            ? view.includeOppositeMoment
-              ? `Plane ${fmt(activeAngle, 0)} / ${fmt(normalizeAngleDeg(activeAngle + 180), 0)} deg`
-              : `Angle ${fmt(activeAngle, 0)} deg`
-            : `Section loop ${index + 1}`,
+            ? `Direct β = ${fmt(activeAngle, exactCurve || demandExactCurve ? 3 : 0)}°`
+            : `Direct β = ${fmt(normalizeAngleDeg(activeAngle + 180), 0)}°`,
         mode: 'lines',
         x: path.map((point) => point.m),
         y: path.map((point) => point.p),
@@ -1401,14 +1394,35 @@ export function ResultsWorkspace({
               },
               customdata: [[demandProjection.name, demandProjection.mx, demandProjection.my]],
               hovertemplate:
-                '%{customdata[0]}<br>Mθ=%{x:.1f} kN.m<br>Pu=%{y:.1f} kN<br>Mux=%{customdata[1]:.1f} kN.m<br>Muy=%{customdata[2]:.1f} kN.m<extra>Demand</extra>'
+                '%{customdata[0]}<br>Mβ=%{x:.1f} kN.m<br>Pu=%{y:.1f} kN<br>Mux=%{customdata[1]:.1f} kN.m<br>Muy=%{customdata[2]:.1f} kN.m<extra>Demand</extra>'
             }
           ]
+        : []),
+      ...(capacityProjection
+        ? [{
+            type: 'scatter',
+            name: 'Capacity point',
+            mode: 'markers',
+            x: [capacityProjection.m],
+            y: [capacityProjection.p],
+            marker: {
+              size: 10,
+              color: '#16a34a',
+              symbol: 'diamond',
+              line: { color: plotPalette.markerOutline, width: 1 }
+            },
+            customdata: [[capacityProjection.mx, capacityProjection.my]],
+            hovertemplate:
+              'Mβ=%{x:.1f} kN.m<br>P=%{y:.1f} kN<br>Mx=%{customdata[0]:.1f} kN.m<br>My=%{customdata[1]:.1f} kN.m<extra>Capacity</extra>'
+          }]
         : [])
     ]
   }, [
     activeAngle,
+    capacityProjection,
+    demandExactCurve,
     demandProjection,
+    exactCurve,
     nominalVerticalAnnotations,
     nominalVerticalPaths,
     plotPalette,
@@ -1460,7 +1474,7 @@ export function ResultsWorkspace({
           x: 1.01,
           yref: 'paper',
           y: 0,
-          text: 'M (kN.m)',
+          text: 'Mβ (kN.m)',
           showarrow: false,
           xanchor: 'left',
           yanchor: 'top',
@@ -1870,7 +1884,7 @@ export function ResultsWorkspace({
                   <article className="pm-field-metric-card">
                     <header>Equivalent block</header>
                     <div className="pm-field-metric-rows">
-                      <div><span>θ / c</span><strong>{fmt(inverseResult.equivalentBlock.neutralAxisAngle * 180 / Math.PI, 2)}° · {fmt(inverseResult.equivalentBlock.neutralAxisDepth, 2)} mm</strong></div>
+                      <div><span>NA normal θn / c</span><strong>{fmt(inverseResult.equivalentBlock.neutralAxisAngle * 180 / Math.PI, 2)}° · {fmt(inverseResult.equivalentBlock.neutralAxisDepth, 2)} mm</strong></div>
                       <div><span>a = β1·c</span><strong>{fmt(inverseResult.equivalentBlock.blockDepth, 2)} mm</strong></div>
                       <div><span>β1 / Dθ</span><strong>{fmt(inverseResult.equivalentBlock.beta1, 3)} · {fmt(inverseResult.equivalentBlock.projectedSectionDepth, 2)} mm</strong></div>
                       <div><span>Concrete block stress</span><strong>{fmt(inverseResult.equivalentBlock.compressionStress, 3)} MPa</strong></div>
@@ -1938,6 +1952,12 @@ export function ResultsWorkspace({
                 <article className="pm-field-metric-card pm-field-metric-card--angles">
                   <header>Section-axis comparison</header>
                   <div className="pm-field-metric-rows">
+                    <div title="Exact strain-gradient direction recovered from the equilibrium state.">
+                      <span>Strain direction βeq</span>
+                      <strong>
+                        {equilibriumBeta == null ? 'n/a' : `${fmt(equilibriumBeta * 180 / Math.PI, 3)}°`}
+                      </strong>
+                    </div>
                     <div title="Actual epsilon=0 neutral-axis line, measured CCW from section +x modulo 180 degrees.">
                       <span>N.A. axis αNA</span>
                       <strong>
@@ -2030,8 +2050,10 @@ export function ResultsWorkspace({
 
           {renderChartShell({
             id: 'vertical',
-            title: 'Vertical slice',
-            meta: axialCapPKn == null ? undefined : `P = ${fmt(axialCapPKn, 0)} kN`,
+            title: 'Direct β meridian',
+            meta: equilibriumBeta == null
+              ? 'N.A. direction is not unique for this state'
+              : `βeq = ${fmt(equilibriumBeta * 180 / Math.PI, 3)}°`,
             primary: demandView.primaryChart === 'vertical',
             visible: demandView.visibleCharts.vertical,
             onMakePrimary: () => onDemandViewChange({ primaryChart: 'vertical' }),
@@ -2039,12 +2061,12 @@ export function ResultsWorkspace({
             controls: (
               <>
                 <SyncedControl
-                  label="φ"
-                  title="Angle"
-                  value={Number(activeAngle.toFixed(0))}
+                  label="βeq"
+                  title="Exact equilibrium strain-gradient direction"
+                  value={Number(activeAngle.toFixed(3))}
                   min={0}
                   max={360}
-                  step={1}
+                  step={0.001}
                   unit="deg"
                   disabled
                   onChange={() => undefined}
@@ -2087,8 +2109,8 @@ export function ResultsWorkspace({
       >
         {renderChartShell({
           id: 'vertical',
-          title: 'Vertical slice',
-          meta: axialCapPKn == null ? undefined : `P = ${fmt(axialCapPKn, 0)} kN`,
+          title: 'Direct β meridian',
+          meta: exactCurveMessage || `Fixed β = ${fmt(view.sliceAngle, 0)}°`,
           primary: view.primaryChart === 'vertical',
           visible: view.visibleCharts.vertical,
           onMakePrimary: () => onViewChange({ primaryChart: 'vertical' }),
@@ -2096,8 +2118,8 @@ export function ResultsWorkspace({
           controls: (
             <>
               <SyncedControl
-                label="φ"
-                title="Angle"
+                label="β"
+                title="Fixed strain-gradient direction"
                 value={view.sliceAngle}
                 min={0}
                 max={angleSliderMax}
@@ -2105,6 +2127,33 @@ export function ResultsWorkspace({
                 unit="deg"
                 onChange={setSliceAngle}
               />
+              <label className="pm-synced-control" title="Calculate one exact β without angular interpolation">
+                <span className="pm-synced-control-label">β exact</span>
+                <span className="pm-synced-control-value">
+                  <input
+                    type="number"
+                    min={0}
+                    max={360}
+                    step="any"
+                    value={exactAngleDraft}
+                    placeholder="17.35"
+                    disabled={exactCurveWorking}
+                    onChange={(event) => setExactAngleDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') applyExactAngle()
+                    }}
+                    aria-label="Exact beta angle"
+                  />
+                  <button
+                    type="button"
+                    className="pm-secondary-btn"
+                    disabled={exactCurveWorking || exactAngleDraft.trim() === ''}
+                    onClick={applyExactAngle}
+                  >
+                    {exactCurveWorking ? <Loader2 size={12} className="pm-spin" /> : 'Apply'}
+                  </button>
+                </span>
+              </label>
               <label
                 className={`pm-field-check${view.includeOppositeMoment ? ' is-on' : ''}`}
                 title="Opposite half"

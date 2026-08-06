@@ -23,7 +23,7 @@ import {
   type AnalysisOptions,
   type EquivalentBlockAnalysisOptions
 } from '@pm/project'
-import { buildPreviewSurfaceFromPrepared, prepareAnalysis } from '@pm/analysis'
+import { buildDesignPreviewSurfaceFromPrepared, prepareAnalysis } from '@pm/analysis'
 import { buildEquivalentBlockPreviewSurface } from '@pm/analysis-equivalent-block'
 import { buildColumnReportModel } from '../../src/model/report-model'
 import { columnReportFileName, renderColumnReport } from '../../src/pdf/column-report'
@@ -118,7 +118,12 @@ const runCase = async (
         const options = analysisOptions as AnalysisOptions
         const stateMaterials = buildResistanceMaterialSets(materialStore, designBasis).stateMaterials
         const prepared = prepareAnalysis(section, rebars, stateMaterials, analysisMeshKernelOptions(options))
-        return buildPreviewSurfaceFromPrepared(prepared, options, document.inputs.design)
+        return buildDesignPreviewSurfaceFromPrepared(
+          prepared,
+          materialStore,
+          designBasis,
+          options
+        )
       })()
 
   const input = {
