@@ -134,18 +134,15 @@ button {
   box-shadow: var(--shadow-card);
 }
 
+/* Side-panel chrome and internals live in `side-panel.css` (imported after this
+   file). Keep only the grid-slot layout here so the panel still participates in
+   `.pm-shell` before that file loads; do not add padding, colour or type here. */
 .pm-side-panel {
   display: flex;
   min-width: 0;
   min-height: 0;
   max-height: 100%;
   flex-direction: column;
-  gap: 0;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-  box-shadow: var(--shadow-card);
   overflow: hidden;
 }
 
@@ -154,9 +151,7 @@ button {
   min-height: 0;
   flex: 1 1 0;
   flex-direction: column;
-  gap: 14px;
-  overflow: auto;
-  padding-bottom: 2px;
+  overflow: hidden;
 }
 
 .pm-brand {
@@ -235,37 +230,6 @@ button {
 .pm-module-tabs button.is-active {
   background: var(--btn-primary-bg);
   color: var(--btn-primary-foreground);
-}
-
-.pm-steel-stress-strain-icon {
-  position: relative;
-  display: inline-block;
-  flex: 0 0 auto;
-  border-bottom: 1.6px solid currentColor;
-  border-left: 1.6px solid currentColor;
-  border-radius: 0 0 0 1px;
-}
-
-.pm-steel-stress-strain-icon::before,
-.pm-steel-stress-strain-icon::after {
-  position: absolute;
-  height: 0;
-  border-top: 1.7px solid currentColor;
-  content: '';
-}
-
-.pm-steel-stress-strain-icon::before {
-  bottom: 2px;
-  left: 2px;
-  width: 8px;
-  transform: rotate(-48deg);
-  transform-origin: left center;
-}
-
-.pm-steel-stress-strain-icon::after {
-  top: 7px;
-  right: 1px;
-  width: 7px;
 }
 
 .pm-toolbar {
@@ -614,13 +578,6 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
   font-weight: 500;
 }
 
-.pm-side-panel .pm-section-title h2 {
-  font-family: var(--font-sans);
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0;
-}
-
 .pm-boundary-list-section {
   display: flex;
   flex-direction: column;
@@ -643,11 +600,6 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
 .pm-boundary-create-section {
   flex: 0 0 auto;
   gap: 0;
-}
-
-.pm-boundary-create-section.pm-panel-section {
-  padding-top: 8px;
-  padding-bottom: 0;
 }
 
 .pm-boundary-detail-toolbar {
@@ -895,16 +847,7 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
   overflow: auto;
 }
 
-/* Keep id / X / Y / actions as before. Only shrink Dia to 2/3 of equal share; give leftover to Mat. */
-.pm-rebar-table-wrap .pm-point-table th:nth-child(2),
-.pm-rebar-table-wrap .pm-point-table td:nth-child(2) {
-  width: calc((100% - 66px) / 6);
-}
-
-.pm-rebar-table-wrap .pm-point-table th:nth-child(3),
-.pm-rebar-table-wrap .pm-point-table td:nth-child(3) {
-  width: calc((100% - 66px) / 3);
-}
+/* Rebar widths: see `.pm-rebar-col--*` in side-panel.css (plain % only). */
 
 .pm-rebar-list-footer {
   display: flex;
@@ -1131,7 +1074,7 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
   gap: 2px;
 }
 
-.pm-boundary-create-actions button {
+.pm-boundary-create-actions button:not(.pm-file-btn) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1145,7 +1088,7 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
   cursor: pointer;
 }
 
-.pm-boundary-create-actions button:hover {
+.pm-boundary-create-actions button:not(.pm-file-btn):hover {
   border-color: var(--border);
   background: var(--btn-secondary-hover-bg);
   color: var(--foreground);
@@ -1215,9 +1158,10 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
 }
 
 .pm-rebar-excel-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 5px;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
 }
 
 .pm-boundary-row-main {

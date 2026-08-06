@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { FileInput, FileOutput, Plus, X } from 'lucide-react'
+import { Download, Plus, Upload, X } from 'lucide-react'
 import {
   generateRebarsForSection,
   makeRebarId,
@@ -214,32 +214,60 @@ export function RebarPanel({
 
       <section className="pm-panel-section pm-rebar-list-section">
         <div className="pm-section-title pm-section-title--with-action">
-          <h2>Rebar List</h2>
-          <span className="pm-rebar-count">{rebars.length} bars</span>
-        </div>
-        <div className="pm-rebar-excel-actions" role="group" aria-label="Rebar Excel tools">
-          <button type="button" onClick={() => importInputRef.current?.click()}>
-            <FileInput size={14} />
-            Import XLSX
-          </button>
-          <button type="button" onClick={onExportExcel}>
-            <FileOutput size={14} />
-            Export XLSX
-          </button>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              event.target.value = ''
-              if (file) void onImportExcel(file)
-            }}
-          />
+          <div>
+            <h2>
+              Rebar List
+              <span className="pm-rebar-count">({rebars.length} bars)</span>
+            </h2>
+          </div>
+          <div className="pm-rebar-excel-actions" role="group" aria-label="Rebar Excel tools">
+            <button
+              type="button"
+              className="pm-file-btn"
+              title="Import rebar from Excel"
+              onClick={() => importInputRef.current?.click()}
+            >
+              <Upload size={13} />
+              Excel
+            </button>
+            <button
+              type="button"
+              className="pm-file-btn"
+              title="Export rebar to Excel"
+              onClick={onExportExcel}
+            >
+              <Download size={13} />
+              Excel
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                event.target.value = ''
+                if (file) void onImportExcel(file)
+              }}
+            />
+          </div>
         </div>
         <div className="pm-point-table-wrap pm-rebar-table-wrap">
-          <table className="pm-point-table">
+          <table className="pm-point-table pm-rebar-table">
+            {/*
+              Root cause of earlier no-ops: browsers discard calc((100% - Npx) * k)
+              on <col>, so Dia/Mat/X/Y silently fell back to equal leftover shares.
+              Use plain percentages only (no calc). id/action stay px-fixed (30 / 26).
+              Flex band: Dia 17.5% · Mat 32.5% · X 20% · Y 20%.
+            */}
+            <colgroup>
+              <col className="pm-rebar-col pm-rebar-col--id" />
+              <col className="pm-rebar-col pm-rebar-col--dia" />
+              <col className="pm-rebar-col pm-rebar-col--mat" />
+              <col className="pm-rebar-col pm-rebar-col--x" />
+              <col className="pm-rebar-col pm-rebar-col--y" />
+              <col className="pm-rebar-col pm-rebar-col--action" />
+            </colgroup>
             <thead>
               <tr>
                 <th>id</th>

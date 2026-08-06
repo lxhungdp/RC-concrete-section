@@ -759,7 +759,7 @@ const JRC_EC2_URL = 'https://eurocodes.jrc.ec.europa.eu/EN-Eurocodes/eurocode-2-
 export const designProfileGuidance = (profileId: DesignProfileId): DesignProfileGuidance => {
   if (profileId === 'kds-142020-2022-appendix-material-factors') {
     return {
-      title: 'KDS Appendix material-factor method',
+      title: 'Material Factor — KDS 14 20 20 Appendix',
       summary:
         'An alternative section-strength method. Concrete and reinforcement laws are reevaluated with phi_c = 0.65 and phi_s = 0.90 at each compatible strain state.',
       referenceCurve:
@@ -797,7 +797,7 @@ export const designProfileGuidance = (profileId: DesignProfileId): DesignProfile
   }
   if (profileId === 'kds-2024-current-set' || profileId === 'kds-basic-2021-2022') {
     return {
-      title: 'KDS Main global-strength-reduction method',
+      title: 'Strength Reduction Factor — KDS 14 20 10 / 20',
       summary:
         'The section is first evaluated with nominal material laws. A strain-state-dependent global phi is then applied to the complete P-M resultant.',
       referenceCurve: 'Nominal is the unfactored section-strength curve from the selected KDS material model.',

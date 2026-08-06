@@ -226,10 +226,10 @@ export function SectionResultsPanel({
           <h2 className="pm-chart-visibility-title">Chart data</h2>
           <button
             type="button"
-            className="pm-chart-data-export"
+            className="pm-file-btn"
             disabled={rows.length === 0 || exporting}
             onClick={() => void exportExcel()}
-            title="Download the visible table as Excel"
+            title="Export the visible table to Excel"
           >
             {exporting ? <Loader2 size={13} className="pm-spin" /> : <Download size={13} />}
             Excel
@@ -258,8 +258,8 @@ export function SectionResultsPanel({
             </label>
           </fieldset>
 
-          <div className="pm-result-check-row">
-            <label className={`pm-field-check${includeDesign ? ' is-on' : ''}`}>
+          <div className="pm-result-check-row" role="group" aria-label="Resistance curves">
+            <label className={includeDesign ? 'is-on' : ''}>
               <input
                 type="checkbox"
                 checked={includeDesign}
@@ -267,7 +267,7 @@ export function SectionResultsPanel({
               />
               Design
             </label>
-            <label className={`pm-field-check${includeNominal ? ' is-on' : ''}`}>
+            <label className={includeNominal ? 'is-on' : ''}>
               <input
                 type="checkbox"
                 checked={includeNominal}

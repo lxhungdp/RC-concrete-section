@@ -5,10 +5,9 @@ import dynamic from 'next/dynamic'
 import {
   ChartLine,
   Circle,
+  Download,
   Eye,
   EyeOff,
-  FileInput,
-  FileOutput,
   Gauge,
   Lock,
   Minus,
@@ -19,6 +18,7 @@ import {
   Settings,
   Sun,
   Unlock,
+  Upload,
   X
 } from 'lucide-react'
 import {
@@ -151,12 +151,24 @@ const RcSectionIcon = ({ size = 16 }: { size?: number }) => (
   </svg>
 )
 
-const SteelStressStrainIcon = ({ size = 16 }: { size?: number }) => (
-  <span
-    className="pm-steel-stress-strain-icon"
-    style={{ width: size, height: size }}
+/** Constitutive σ–ε curve — the Materials module edits concrete/steel stress–strain models. */
+const MaterialsIcon = ({ size = 16 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
     aria-hidden="true"
-  />
+  >
+    {/* Plot axes (ε horizontal, σ vertical) */}
+    <path d="M5 4v15h15" />
+    {/* Bilinear constitutive curve: elastic rise then yield plateau */}
+    <path d="M5 19 L11 9h9" />
+  </svg>
 )
 
 type Camera2d = {
@@ -1883,7 +1895,7 @@ export function SectionDrawingClient() {
             <span>Geometry</span>
           </button>
           <button className={activeModule === 'materials' ? 'is-active' : ''} onClick={() => switchModule('materials')}>
-            <SteelStressStrainIcon size={16} />
+            <MaterialsIcon size={16} />
             <span>Materials</span>
           </button>
           <button
@@ -1917,10 +1929,10 @@ export function SectionDrawingClient() {
 
         <div className="pm-toolbar" aria-label="Project tools">
           <button onClick={() => importInputRef.current?.click()} title="Import project JSON">
-            <FileInput size={18} />
+            <Upload size={18} />
           </button>
           <button onClick={exportProjectJson} title="Export project JSON">
-            <FileOutput size={18} />
+            <Download size={18} />
           </button>
           <span className="pm-toolbar-sep" aria-hidden="true" />
           <button onClick={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))} title="Theme">
@@ -2053,8 +2065,14 @@ export function SectionDrawingClient() {
                   <button type="button" title="Create circle" aria-label="Create circle" onClick={() => createDefaultBoundary('circle')}>
                     <Circle size={14} />
                   </button>
-                  <button type="button" title="Import XLSX" aria-label="Import XLSX" onClick={() => boundaryExcelInputRef.current?.click()}>
-                    <FileInput size={14} />
+                  <button
+                    type="button"
+                    className="pm-file-btn"
+                    title="Import boundary from Excel"
+                    onClick={() => boundaryExcelInputRef.current?.click()}
+                  >
+                    <Upload size={13} />
+                    Excel
                   </button>
                 </div>
               </div>
@@ -2074,12 +2092,12 @@ export function SectionDrawingClient() {
                 {activeBoundary && (
                   <button
                     type="button"
-                    className="pm-boundary-export-btn"
+                    className="pm-file-btn"
                     onClick={() => exportBoundaryExcel(activeBoundary)}
-                    title="Export boundary Excel"
+                    title="Export boundary to Excel"
                   >
-                    <FileOutput size={13} />
-                    Export
+                    <Download size={13} />
+                    Excel
                   </button>
                 )}
               </div>

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import './side-panel.css'
 
 export const metadata: Metadata = {
   title: 'P-M Column Designer',

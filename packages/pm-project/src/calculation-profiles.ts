@@ -152,7 +152,7 @@ export const CALCULATION_PROFILES: readonly CalculationProfile[] = [
     organization: 'KDS',
     standard: 'KDS 2024 current set',
     mechanics: 'stress-strain-integration',
-    methodLabel: 'Stress–strain integration',
+    methodLabel: 'Stress-Strain Method',
     defaultConcreteModelId: 'kds-parabolic',
     concreteModels: [
       { id: 'kds-parabolic', label: 'KDS parabolic concrete law', materialModelType: 'kds-parabolic', source: 'code-default' },
@@ -176,7 +176,7 @@ export const CALCULATION_PROFILES: readonly CalculationProfile[] = [
     organization: 'KDS',
     standard: 'KDS 14 20 20:2022',
     mechanics: 'equivalent-rectangular-block',
-    methodLabel: 'Equivalent rectangular stress block',
+    methodLabel: 'Equivalent Stress Block',
     defaultConcreteModelId: 'kds-equivalent-rectangular-block',
     concreteModels: [{
       id: 'kds-equivalent-rectangular-block',
@@ -203,7 +203,7 @@ export const CALCULATION_PROFILES: readonly CalculationProfile[] = [
     organization: 'ACI',
     standard: 'ACI 318-19(22)',
     mechanics: 'equivalent-rectangular-block',
-    methodLabel: 'Equivalent rectangular stress block',
+    methodLabel: 'Equivalent Stress Block',
     defaultConcreteModelId: 'aci-whitney-equivalent-block',
     concreteModels: [{
       id: 'aci-whitney-equivalent-block',
@@ -225,7 +225,7 @@ export const CALCULATION_PROFILES: readonly CalculationProfile[] = [
     organization: 'CEN',
     standard: 'EN 1992-1-1:2004 recommended values; no National Annex',
     mechanics: 'stress-strain-integration',
-    methodLabel: 'Stress–strain integration',
+    methodLabel: 'Stress-Strain Method',
     defaultConcreteModelId: 'en1992-parabolic-rectangular',
     concreteModels: [{
       id: 'en1992-parabolic-rectangular',
@@ -247,7 +247,7 @@ export const CALCULATION_PROFILES: readonly CalculationProfile[] = [
     organization: 'Standards Australia',
     standard: 'AS 3600:2018 incorporating Amendments 1 and 2',
     mechanics: 'equivalent-rectangular-block',
-    methodLabel: 'Equivalent rectangular stress block',
+    methodLabel: 'Equivalent Stress Block',
     defaultConcreteModelId: 'as3600-equivalent-rectangular-block',
     concreteModels: [{
       id: 'as3600-equivalent-rectangular-block',
@@ -269,7 +269,7 @@ export const CALCULATION_PROFILES: readonly CalculationProfile[] = [
     organization: 'User-defined',
     standard: 'User-defined',
     mechanics: 'stress-strain-integration',
-    methodLabel: 'Stress–strain integration',
+    methodLabel: 'Stress-Strain Method',
     defaultConcreteModelId: 'user-stress-strain-curve',
     concreteModels: [USER_CURVE],
     materialStandard: 'CUSTOM',
@@ -286,7 +286,7 @@ export const CALCULATION_PROFILES: readonly CalculationProfile[] = [
     organization: 'User-defined',
     standard: 'User-defined',
     mechanics: 'equivalent-rectangular-block',
-    methodLabel: 'Equivalent rectangular stress block',
+    methodLabel: 'Equivalent Stress Block',
     defaultConcreteModelId: 'user-equivalent-rectangular-block',
     concreteModels: [USER_BLOCK],
     materialStandard: 'CUSTOM',

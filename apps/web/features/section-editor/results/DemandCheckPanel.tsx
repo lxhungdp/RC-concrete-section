@@ -1,6 +1,6 @@
 'use client'
 
-import { Eye, EyeOff, FileText, Loader2 } from 'lucide-react'
+import { Download, Eye, EyeOff, Loader2 } from 'lucide-react'
 import type { InversePreviewResult } from '@pm/analysis'
 import type { LoadCombination } from '@pm/project'
 import {
@@ -151,22 +151,22 @@ export function DemandCheckPanel({
           Detailed calculation pages — section views, ledger and solver evidence — are produced only
           for the combinations ticked below.
         </p>
-        <div className="pm-result-check-row">
+        <div className="pm-panel-actions">
           <button
             type="button"
-            className="pm-chart-restore"
+            className="pm-secondary-btn"
             onClick={() => onReportDetailIdsChange(loadcases.map((item) => item.id))}
             disabled={loadcases.length === 0}
           >
-            Select all
+            All
           </button>
           <button
             type="button"
-            className="pm-chart-restore"
+            className="pm-secondary-btn"
             onClick={() => onReportDetailIdsChange([])}
             disabled={reportDetailIds.length === 0}
           >
-            Select none
+            None
           </button>
         </div>
         <div className="pm-chart-toggle-list">
@@ -185,16 +185,16 @@ export function DemandCheckPanel({
           ))}
           {loadcases.length === 0 ? <p className="pm-field-note">No combinations yet.</p> : null}
         </div>
-        <div className="pm-result-check-row">
+        <div className="pm-panel-actions">
           <button
             type="button"
-            className="pm-export-button"
+            className="pm-file-btn"
             onClick={onExportReport}
             disabled={reportState === 'working' || !surfaceReady}
-            title="Export the column design report as PDF"
+            title={`Export the column design report as PDF · ${reportDetailIds.length} combination(s) detailed`}
           >
-            {reportState === 'working' ? <Loader2 size={14} className="pm-spin" /> : <FileText size={14} />}
-            {reportState === 'working' ? 'Building…' : `PDF report (${reportDetailIds.length} detailed)`}
+            {reportState === 'working' ? <Loader2 size={13} className="pm-spin" /> : <Download size={13} />}
+            PDF
           </button>
         </div>
         {reportMessage ? (

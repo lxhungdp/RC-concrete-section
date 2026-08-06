@@ -221,24 +221,24 @@ export function LoadingsPanel({
         <div className="pm-loadcase-header-actions">
           <button
             type="button"
-            className="pm-loadcase-csv-btn"
+            className="pm-file-btn"
             onClick={exportCsv}
             title="Export loadcases to CSV"
-            aria-label="Export loadcases to CSV"
           >
-            <Download size={14} />
+            <Download size={13} />
+            CSV
           </button>
           <button
             type="button"
-            className="pm-loadcase-csv-btn"
+            className="pm-file-btn"
             onClick={() => csvInputRef.current?.click()}
             title="Import loadcases from CSV"
-            aria-label="Import loadcases from CSV"
           >
-            <Upload size={14} />
+            <Upload size={13} />
+            CSV
           </button>
           <button type="button" className="pm-table-add-btn" onClick={addCombination}>
-            <Plus size={14} />
+            <Plus size={13} />
             Add
           </button>
           <input

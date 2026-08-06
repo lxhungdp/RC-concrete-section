@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { EyeOff, FileSpreadsheet, Loader2, Maximize2, RotateCw } from 'lucide-react'
+import { Download, EyeOff, Loader2, Maximize2, RotateCw } from 'lucide-react'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
 import type { DesignBasis } from '@pm/design'
@@ -1652,7 +1652,7 @@ export function ResultsWorkspace({
               disabled={exportState === 'working' || !surface}
               title="Export the full section calculation to Excel, with live formulas"
             >
-              {exportState === 'working' ? <Loader2 size={14} className="pm-spin" /> : <FileSpreadsheet size={14} />}
+              {exportState === 'working' ? <Loader2 size={14} className="pm-spin" /> : <Download size={14} />}
               {exportState === 'working' ? 'Building…' : 'Excel'}
             </button>
             {exportMessage ? (

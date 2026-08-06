@@ -199,7 +199,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
 
   return (
     <section className="pm-panel-section">
-      <div className="pm-section-title">
+      <div className="pm-section-title pm-section-title--with-action">
         <div>
           <h2>Analysis options</h2>
           <p>Persisted strain-domain sampling configuration</p>
@@ -660,7 +660,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
 
   return (
     <section className="pm-panel-section">
-      <div className="pm-section-title">
+      <div className="pm-section-title pm-section-title--with-action">
         <div>
           <h2>Equivalent-block analysis options</h2>
           <p>Neutral-axis and angular sampling; independent of the concrete integration mesh.</p>

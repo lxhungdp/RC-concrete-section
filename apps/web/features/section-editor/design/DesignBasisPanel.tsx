@@ -131,7 +131,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
 
   return (
     <section className="pm-panel-section pm-design-panel">
-      <div className="pm-section-title">
+      <div className="pm-section-title pm-section-title--with-action">
         <div>
           <h2>Design resistance</h2>
           <p>Design resistance derived from nominal capacity for factored ULS demand checks</p>
@@ -156,7 +156,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
 
       {isKdsProfile && (
         <DesignSelect
-          label="KDS resistance method"
+          label="Design Method"
           value={draft.profileId === 'kds-142020-2022-appendix-material-factors' ? draft.profileId : 'kds-2024-current-set'}
           onChange={(profileId) => publishIfValid(
             profileId === 'kds-142020-2022-appendix-material-factors'
@@ -164,45 +164,47 @@ export function DesignBasisPanel({ value, onChange }: Props) {
               : createKdsBasicDesignBasis()
           )}
         >
-          <option value="kds-2024-current-set">Main method — global φ and axial cap</option>
-          <option value="kds-142020-2022-appendix-material-factors">Appendix — material coefficients φc / φs</option>
+          <option value="kds-2024-current-set">Strength Reduction Factor — KDS 14 20 10 / 20</option>
+          <option value="kds-142020-2022-appendix-material-factors">Material Factor — KDS 14 20 20 Appendix</option>
         </DesignSelect>
       )}
 
-      <button
-        type="button"
-        className="pm-design-info-toggle"
-        aria-expanded={showMethodInfo}
-        onClick={() => setShowMethodInfo((current) => !current)}
-      >
-        <Info size={14} aria-hidden="true" />
-        {showMethodInfo ? 'Hide standard information' : 'Show method and standard references'}
-        <ChevronDown size={14} aria-hidden="true" className={showMethodInfo ? 'is-open' : ''} />
-      </button>
-
-      {showMethodInfo && (
-        <div className="pm-design-method-info">
-          <strong>{guidance.title}</strong>
-          <p>{guidance.summary}</p>
-          <dl>
-            <div><dt>Reference curve</dt><dd>{guidance.referenceCurve}</dd></div>
-            <div><dt>Design curve</dt><dd>{guidance.designCurve}</dd></div>
-            <div><dt>Do not combine</dt><dd>{guidance.doNotCombine}</dd></div>
-          </dl>
-          <ul>
-            {guidance.references.map((reference) => (
-              <li key={`${reference.document}-${reference.clause}`}>
-                {reference.url ? (
-                  <a href={reference.url} target="_blank" rel="noreferrer">
-                    {reference.document}, §{reference.clause} <ExternalLink size={12} aria-hidden="true" />
-                  </a>
-                ) : <span>{reference.document}, §{reference.clause}</span>}
-                <small>{reference.subject}</small>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <div className={`pm-disclosure${showMethodInfo ? ' is-open' : ''}`}>
+        <button
+          type="button"
+          className="pm-disclosure-toggle"
+          aria-expanded={showMethodInfo}
+          onClick={() => setShowMethodInfo((current) => !current)}
+          title="Method and standard references"
+        >
+          <Info size={13} aria-hidden="true" />
+          Details
+          <ChevronDown size={13} aria-hidden="true" className={showMethodInfo ? 'is-open' : ''} />
+        </button>
+        {showMethodInfo && (
+          <div className="pm-design-method-info">
+            <strong>{guidance.title}</strong>
+            <p>{guidance.summary}</p>
+            <dl>
+              <div><dt>Reference curve</dt><dd>{guidance.referenceCurve}</dd></div>
+              <div><dt>Design curve</dt><dd>{guidance.designCurve}</dd></div>
+              <div><dt>Do not combine</dt><dd>{guidance.doNotCombine}</dd></div>
+            </dl>
+            <ul>
+              {guidance.references.map((reference) => (
+                <li key={`${reference.document}-${reference.clause}`}>
+                  {reference.url ? (
+                    <a href={reference.url} target="_blank" rel="noreferrer">
+                      {reference.document}, §{reference.clause} <ExternalLink size={12} aria-hidden="true" />
+                    </a>
+                  ) : <span>{reference.document}, §{reference.clause}</span>}
+                  <small>{reference.subject}</small>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
 
       {draft.format === 'globalResultantFactor' ? (
         <>
