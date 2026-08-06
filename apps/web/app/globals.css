@@ -3087,7 +3087,10 @@ body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {
 
 .pm-chart-data-controls {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: 6px;
 }
 

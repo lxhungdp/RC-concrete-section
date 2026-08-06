@@ -23,8 +23,11 @@ export type AnalysisStationCriterion =
   | { type: 'steel-strain'; strain: number }
   /** Fraction from eps_y to the code-defined tension-controlled strain limit. */
   | { type: 'strength-reduction-transition-ratio'; ratio: number }
-  /** Absolute tensile-strain increment beyond the code-defined transition limit. */
-  | { type: 'strength-reduction-post-transition'; extraStrain: number }
+  /**
+   * @deprecated Prefer `steel-strain` with the absolute controlling-bar strain.
+   * Kept for reading older projects; the parser rewrites it to `steel-strain`.
+   */
+  | { type: 'strength-reduction-post-transition'; strain: number }
 
 export type AnalysisStation = {
   /** Stable within the station schedule; display order is the array order. */
@@ -118,15 +121,15 @@ export const createLegacyAnalysisOptions = (): AnalysisOptions => ({
   stations: {
     basedOn: 'legacy-p0-p18-v1',
     intermediate: [
-      station(1, 'c = 3·c₁', { type: 'c-over-c1', ratio: 3 }),
-      station(2, 'c = 2·c₁', { type: 'c-over-c1', ratio: 2 }),
-      station(3, 'c = 1.5·c₁', { type: 'c-over-c1', ratio: 1.5 }),
-      station(4, 'c = 1.2·c₁', { type: 'c-over-c1', ratio: 1.2 }),
-      station(5, 'fₛ = 0', { type: 'steel-stress-ratio', ratio: 0 }),
-      station(6, 'fₛ = 0.25·fyd', { type: 'steel-stress-ratio', ratio: 0.25 }),
-      station(7, 'fₛ = 0.5·fyd', { type: 'steel-stress-ratio', ratio: 0.5 }),
-      station(8, 'fₛ = 0.75·fyd', { type: 'steel-stress-ratio', ratio: 0.75 }),
-      station(9, 'fₛ = fyd', { type: 'steel-stress-ratio', ratio: 1 }),
+      station(1, 'c/c₁ = 3', { type: 'c-over-c1', ratio: 3 }),
+      station(2, 'c/c₁ = 2', { type: 'c-over-c1', ratio: 2 }),
+      station(3, 'c/c₁ = 1.5', { type: 'c-over-c1', ratio: 1.5 }),
+      station(4, 'c/c₁ = 1.2', { type: 'c-over-c1', ratio: 1.2 }),
+      station(5, 'fs/fyd = 0', { type: 'steel-stress-ratio', ratio: 0 }),
+      station(6, 'fs/fyd = 0.25', { type: 'steel-stress-ratio', ratio: 0.25 }),
+      station(7, 'fs/fyd = 0.5', { type: 'steel-stress-ratio', ratio: 0.5 }),
+      station(8, 'fs/fyd = 0.75', { type: 'steel-stress-ratio', ratio: 0.75 }),
+      station(9, 'fs/fyd = 1', { type: 'steel-stress-ratio', ratio: 1 }),
       station(10, 'εₛ = -0.003', { type: 'steel-strain', strain: -0.003 }),
       station(11, 'εₛ = -0.005', { type: 'steel-strain', strain: -0.005 }),
       station(12, 'εₛ = -0.0075', { type: 'steel-strain', strain: -0.0075 }),
@@ -161,46 +164,28 @@ export const createDefaultAnalysisOptions = (): AnalysisOptions => ({
   stations: {
     basedOn: 'transition-aware-p0-p24-v1',
     intermediate: [
-      station(1, 'c = 3 c1', { type: 'c-over-c1', ratio: 3 }),
-      station(2, 'c = 2 c1', { type: 'c-over-c1', ratio: 2 }),
-      station(3, 'c = 1.5 c1', { type: 'c-over-c1', ratio: 1.5 }),
-      station(4, 'c = 1.2 c1', { type: 'c-over-c1', ratio: 1.2 }),
-      station(5, 'fs = 0', { type: 'steel-stress-ratio', ratio: 0 }),
-      station(6, 'fs = 0.25 fyd', { type: 'steel-stress-ratio', ratio: 0.25 }),
-      station(7, 'fs = 0.5 fyd', { type: 'steel-stress-ratio', ratio: 0.5 }),
-      station(8, 'fs = 0.75 fyd', { type: 'steel-stress-ratio', ratio: 0.75 }),
-      station(9, 'eps_t = eps_y (transition 0/8)', { type: 'steel-stress-ratio', ratio: 1 }),
+      station(1, 'c/c₁ = 3', { type: 'c-over-c1', ratio: 3 }),
+      station(2, 'c/c₁ = 2', { type: 'c-over-c1', ratio: 2 }),
+      station(3, 'c/c₁ = 1.5', { type: 'c-over-c1', ratio: 1.5 }),
+      station(4, 'c/c₁ = 1.2', { type: 'c-over-c1', ratio: 1.2 }),
+      station(5, 'fs/fyd = 0', { type: 'steel-stress-ratio', ratio: 0 }),
+      station(6, 'fs/fyd = 0.25', { type: 'steel-stress-ratio', ratio: 0.25 }),
+      station(7, 'fs/fyd = 0.5', { type: 'steel-stress-ratio', ratio: 0.5 }),
+      station(8, 'fs/fyd = 0.75', { type: 'steel-stress-ratio', ratio: 0.75 }),
+      station(9, 'fs/fyd = 1', { type: 'steel-stress-ratio', ratio: 1 }),
       ...Array.from({ length: 8 }, (_, index) => {
         const numerator = index + 1
-        return station(9 + numerator, `phi transition ${numerator}/8`, {
+        return station(9 + numerator, `φᵣ = ${numerator / 8}`, {
           type: 'strength-reduction-transition-ratio',
           ratio: numerator / 8
         })
       }),
-      station(18, 'post-transition +0.0025', {
-        type: 'strength-reduction-post-transition',
-        extraStrain: 0.0025
-      }),
-      station(19, 'post-transition +0.005', {
-        type: 'strength-reduction-post-transition',
-        extraStrain: 0.005
-      }),
-      station(20, 'post-transition +0.01', {
-        type: 'strength-reduction-post-transition',
-        extraStrain: 0.01
-      }),
-      station(21, 'post-transition +0.02', {
-        type: 'strength-reduction-post-transition',
-        extraStrain: 0.02
-      }),
-      station(22, 'post-transition +0.025', {
-        type: 'strength-reduction-post-transition',
-        extraStrain: 0.025
-      }),
-      station(23, 'post-transition +0.045', {
-        type: 'strength-reduction-post-transition',
-        extraStrain: 0.045
-      })
+      station(18, 'εₛ = -0.0075', { type: 'steel-strain', strain: -0.0075 }),
+      station(19, 'εₛ = -0.01', { type: 'steel-strain', strain: -0.01 }),
+      station(20, 'εₛ = -0.015', { type: 'steel-strain', strain: -0.015 }),
+      station(21, 'εₛ = -0.025', { type: 'steel-strain', strain: -0.025 }),
+      station(22, 'εₛ = -0.03', { type: 'steel-strain', strain: -0.03 }),
+      station(23, 'εₛ = -0.05', { type: 'steel-strain', strain: -0.05 })
     ]
   },
   directions: {

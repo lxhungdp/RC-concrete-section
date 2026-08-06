@@ -241,10 +241,9 @@ export type PreviewContourPoint = {
   My: number
   station?: number
   /**
-   * True when the point lies on one of the sampled strain-plane directions — either a surface
-   * vertex, or a crossing of the station edge inside a single `beta` row. These are the diagnostic
-   * "one point per sampled beta" markers; they are a labelled subset of this contour, never a
-   * separately computed curve.
+   * True when the point lies on one sampled strain-plane meridian: either a surface vertex or the
+   * intersection of `P = fixedP` with an edge whose two endpoints share the same beta. False or
+   * absent identifies an intermediate intersection on a cross-beta/diagonal triangle edge.
    */
   onSampledDirection?: boolean
 }
@@ -400,7 +399,8 @@ export type StationDefinition =
   | { kind: 'steel-strain'; strain: number }
   | { kind: 'steel-stress-ratio'; ratio: number }
   | { kind: 'strength-reduction-transition-ratio'; ratio: number }
-  | { kind: 'strength-reduction-post-transition'; extraStrain: number }
+  /** @deprecated Prefer `steel-strain`; retained for in-flight definitions only. */
+  | { kind: 'strength-reduction-post-transition'; strain: number }
   | { kind: 'extreme-tension-strain'; strain: number }
   | { kind: 'bar-tension-strain'; strain: number }
   | { kind: 'block-depth-ratio'; ratio: number }
@@ -438,22 +438,25 @@ export const stationDefinitionLabel = (station: StationDefinition): string => {
   if (station.kind === 'pure-tension') return 'Pure tension'
   if (station.kind === 'block-depth-ratio') return `c/D = ${station.ratio}`
   if (station.kind === 'extreme-tension-strain') return `εt = ${station.strain}`
-  if (station.kind === 'bar-tension-strain') return `controlling bar εt = ${station.strain}`
-  if (station.kind === 'neutral-axis-ratio') return `c = ${station.cOverC1.toFixed(1)}·c₁`
+  if (station.kind === 'bar-tension-strain') return `εₛ = ${station.strain}`
+  if (station.kind === 'neutral-axis-ratio') {
+    const ratio = Number(station.cOverC1.toPrecision(6))
+    return `c/c₁ = ${ratio}`
+  }
   if (station.kind === 'steel-stress-ratio') {
-    if (station.ratio === 0) return 'fs = 0'
-    if (Math.abs(station.ratio - 1) < 1e-9) return 'fs = fyd'
-    return `fs = ${station.ratio}·fyd`
+    if (station.ratio === 0) return 'fs/fyd = 0'
+    if (Math.abs(station.ratio - 1) < 1e-9) return 'fs/fyd = 1'
+    return `fs/fyd = ${Number(station.ratio.toPrecision(6))}`
   }
   if (station.kind === 'steel-strain') {
-    if (Math.abs(station.strain) < 1e-12) return 'fs = 0'
-    return `εs = ${station.strain}`
+    if (Math.abs(station.strain) < 1e-12) return 'εₛ = 0'
+    return `εₛ = ${Number(station.strain.toPrecision(6))}`
   }
   if (station.kind === 'strength-reduction-transition-ratio') {
-    return `phi transition ${(station.ratio * 100).toFixed(1)}%`
+    return `φᵣ = ${Number(station.ratio.toPrecision(6))}`
   }
   if (station.kind === 'strength-reduction-post-transition') {
-    return `post-transition +${station.extraStrain}`
+    return `εₛ = ${Number(station.strain.toPrecision(6))}`
   }
   return 'Station'
 }
@@ -465,17 +468,20 @@ const criterionDefinition = (criterion: AnalysisStationCriterion): StationDefini
   if (criterion.type === 'strength-reduction-transition-ratio') {
     return { kind: 'strength-reduction-transition-ratio', ratio: criterion.ratio }
   }
-  return { kind: 'strength-reduction-post-transition', extraStrain: criterion.extraStrain }
+  return { kind: 'steel-strain', strain: criterion.strain }
 }
 
 /** Resolved schedule including the two mandatory poles. */
 export const analysisStations = (options: AnalysisOptions): SurfaceStation[] => [
   { id: 'pure-compression', label: 'Pure compression', definition: { kind: 'pure-compression' } },
-  ...options.stations.intermediate.map((item) => ({
-    id: `station-${item.id}` as const,
-    label: item.label,
-    definition: criterionDefinition(item.criterion)
-  })),
+  ...options.stations.intermediate.map((item) => {
+    const definition = criterionDefinition(item.criterion)
+    return {
+      id: `station-${item.id}` as const,
+      label: stationDefinitionLabel(definition),
+      definition
+    }
+  }),
   { id: 'pure-tension', label: 'Pure tension', definition: { kind: 'pure-tension' } }
 ]
 
@@ -1024,7 +1030,7 @@ const farTensionSteelStrain = (
     return -(control.epsY + station.ratio * (upper - control.epsY))
   }
   if (station.kind === 'strength-reduction-post-transition') {
-    return -(transitionLimitForStation(basis, control) + station.extraStrain)
+    return station.strain
   }
   return 0
 }
@@ -1990,6 +1996,11 @@ export const buildDesignPreviewSurface = (
   )
 }
 
+/**
+ * Intersect the authoritative triangulated 3D surface with `P = fixedP`. Every triangle contributes
+ * its edge intersections; shared points are deduplicated, classified as sampled-meridian or
+ * intermediate triangle-edge vertices, then ordered in the Mx-My plane for polygon/ray queries.
+ */
 export const sliceFixedPContour = (
   points: PreviewSurfacePoint[],
   fixedP: number,

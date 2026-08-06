@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from 'react'
 import dynamic from 'next/dynamic'
 import {
-  ChartLine,
+  BarChart3,
   Circle,
   Download,
   Eye,
@@ -709,38 +709,49 @@ export function SectionDrawingClient() {
     () => calculationProfile(calculationProfileId),
     [calculationProfileId]
   )
-  const sectionResultsSummary = useMemo<SectionResultsSummary>(() => ({
-    hasAppliedSection,
-    status: surfaceStatus,
-    message: surfaceMessage,
-    concreteArea: appliedSummary.area,
-    steelArea,
-    rebarCount: rebars.length,
-    meshCells: resultSurface?.mesh.cells ?? 0,
-    meshPoints: resultSurface?.mesh.points ?? 0,
-    surfacePoints: resultSurface?.points.length ?? 0,
-    directionCount: betaCount,
-    stationCount,
-    refinement: resultSurface
-      ? {
-          tolerance: resultSurface.directionError.tolerance,
-          maxRelative: Math.max(
-            resultSurface.directionError.maxRelativeP,
-            resultSurface.directionError.maxRelativeMoment
-          ),
-          withinTolerance: resultSurface.directionError.withinTolerance
-        }
-      : null,
-    warnings: resultSurface?.warnings ?? [],
-    mechanics: resultSurface?.mechanics ?? null,
-    codeLabel: activeCalculationProfile.code
-      ? designCode(activeCalculationProfile.code).label
-      : 'User-defined',
-    methodLabel: activeCalculationProfile.methodLabel
-  }), [
+  const sectionResultsSummary = useMemo<SectionResultsSummary>(() => {
+    const hasDesignMethodChoice =
+      (activeCalculationProfile.allowedDesignProfileIds?.length ?? 1) > 1
+    const designMethodLabel = !hasDesignMethodChoice
+      ? ''
+      : designBasis.profileId === 'kds-142020-2022-appendix-material-factors'
+        ? 'Material Factor — KDS 14 20 20 Appendix'
+        : 'Strength Reduction Factor — KDS 14 20 10 / 20'
+    return {
+      hasAppliedSection,
+      status: surfaceStatus,
+      message: surfaceMessage,
+      concreteArea: appliedSummary.area,
+      steelArea,
+      rebarCount: rebars.length,
+      meshCells: resultSurface?.mesh.cells ?? 0,
+      meshPoints: resultSurface?.mesh.points ?? 0,
+      surfacePoints: resultSurface?.points.length ?? 0,
+      directionCount: betaCount,
+      stationCount,
+      refinement: resultSurface
+        ? {
+            tolerance: resultSurface.directionError.tolerance,
+            maxRelative: Math.max(
+              resultSurface.directionError.maxRelativeP,
+              resultSurface.directionError.maxRelativeMoment
+            ),
+            withinTolerance: resultSurface.directionError.withinTolerance
+          }
+        : null,
+      warnings: resultSurface?.warnings ?? [],
+      mechanics: resultSurface?.mechanics ?? null,
+      codeLabel: activeCalculationProfile.code
+        ? designCode(activeCalculationProfile.code).label
+        : 'User-defined',
+      methodLabel: activeCalculationProfile.methodLabel,
+      designMethodLabel
+    }
+  }, [
     activeCalculationProfile,
     appliedSummary.area,
     betaCount,
+    designBasis.profileId,
     hasAppliedSection,
     rebars.length,
     resultSurface,
@@ -1904,7 +1915,7 @@ export function SectionDrawingClient() {
             onFocus={() => preloadModule('section')}
             onClick={() => switchModule('section')}
           >
-            <ChartLine size={16} />
+            <BarChart3 size={16} />
             <span>Section Results</span>
           </button>
           <button

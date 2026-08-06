@@ -1,9 +1,6 @@
 /**
- * One fixed-P contour, one source of truth.
- *
- * `sliceFixedP` used to produce a second, separately interpolated 24-gon that the UI drew as markers
- * on top of the triangle-cut contour, and that `PreviewSurface.contour` carried through every worker
- * message without any consumer. The two disagreed by up to ~1% of capacity.
+ * Fixed-P is the horizontal intersection of the authoritative triangulated 3D surface. Sampled
+ * meridian crossings are labelled markers; diagonal/cross-beta crossings remain polygon vertices.
  */
 import { strict as assert } from 'node:assert'
 import test from 'node:test'
@@ -29,6 +26,12 @@ test('the surface retains at least the 36 seed directions after adaptive refinem
   assert.equal(new Set(surface.points.map((point) => point.beta)).size, SAMPLED_DIRECTIONS)
 })
 
+test('the fixed-P polygon retains intermediate triangle-edge vertices', () => {
+  const contour = sliceFixedPContour(surface.points, 0, surface.triangles)
+  assert.ok(contour.length > SAMPLED_DIRECTIONS)
+  assert.ok(contour.some((point) => !point.onSampledDirection))
+})
+
 for (const fixedP of levels) {
   const label = `P = ${(fixedP / KN).toFixed(0)} kN`
 
@@ -42,7 +45,7 @@ for (const fixedP of levels) {
     assert.deepEqual([...betas].sort((a, b) => a - b), betas, 'samples must come back in ascending beta')
   })
 
-  test(`${label}: the markers are members of the drawn contour, not a parallel computation`, () => {
+  test(`${label}: the meridian markers are members of the drawn triangle-cut contour`, () => {
     const contour = sliceFixedPContour(surface.points, fixedP)
     for (const sample of contourStrainAngleSamples(contour)) {
       assert.ok(contour.includes(sample), 'a marker was not an element of the contour it is drawn on')

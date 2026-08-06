@@ -32,7 +32,7 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 const criterionValue = (criterion: AnalysisStationCriterion) => {
   if (criterion.type === 'steel-strain') return criterion.strain
-  if (criterion.type === 'strength-reduction-post-transition') return criterion.extraStrain
+  if (criterion.type === 'strength-reduction-post-transition') return criterion.strain
   return criterion.ratio
 }
 
@@ -43,7 +43,7 @@ const criterionWithValue = (criterion: AnalysisStationCriterion, value: number):
     return { type: criterion.type, ratio: clamp(value, 1e-6, 1) }
   }
   if (criterion.type === 'strength-reduction-post-transition') {
-    return { type: criterion.type, extraStrain: Math.max(1e-6, value) }
+    return { type: 'steel-strain', strain: Math.min(-1e-6, value) }
   }
   return { type: criterion.type, strain: Math.min(0, value) }
 }
@@ -52,7 +52,7 @@ const defaultCriterion = (type: AnalysisStationCriterion['type']): AnalysisStati
   if (type === 'c-over-c1') return { type, ratio: 1 }
   if (type === 'steel-stress-ratio') return { type, ratio: 0 }
   if (type === 'strength-reduction-transition-ratio') return { type, ratio: 0.5 }
-  if (type === 'strength-reduction-post-transition') return { type, extraStrain: 0.0025 }
+  if (type === 'strength-reduction-post-transition') return { type: 'steel-strain', strain: -0.0075 }
   return { type, strain: -0.003 }
 }
 
@@ -284,10 +284,9 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
                       })
                     }
                   >
-                    <option value="c-over-c1">c/c1</option>
+                    <option value="c-over-c1">c/c₁</option>
                     <option value="steel-stress-ratio">fs/fyd</option>
-                    <option value="strength-reduction-transition-ratio">phi transition ratio</option>
-                    <option value="strength-reduction-post-transition">post-transition strain</option>
+                    <option value="strength-reduction-transition-ratio">φᵣ</option>
                     <option value="steel-strain">εₛ</option>
                   </select>
                 </td>
@@ -336,6 +335,13 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
           </tbody>
         </table>
       </div>
+      <p className="pm-field-note">
+        c₁ = depth from extreme compression fibre to controlling tension bar
+        <br />
+        φᵣ = fraction in the φ transition from compression-controlled to tension-controlled (e.g. 0.65 → 0.85)
+        <br />
+        εₛ = controlling tension-bar strain (final value)
+      </p>
 
       <div className="pm-section-title">
         <div>

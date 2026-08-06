@@ -1,0 +1,1602 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Nội suy fixed-P đúng theo code — P-Mx-My</title>
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: #0d1b2d;
+      --panel-2: #10243a;
+      --ink: #edf5ff;
+      --muted: #9eb1c7;
+      --line: #29435f;
+      --cyan: #55e6e1;
+      --blue: #79a9ff;
+      --amber: #ffc35b;
+      --violet: #c693ff;
+      --green: #80e09d;
+      --red: #ff7e79;
+      --shadow: 0 24px 80px rgba(0, 0, 0, .34);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink); }
+    body {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 18% 10%, rgba(52, 118, 178, .16), transparent 35rem),
+        radial-gradient(circle at 86% 85%, rgba(85, 230, 225, .08), transparent 32rem),
+        var(--bg);
+    }
+    button { font: inherit; }
+
+    .app {
+      width: min(1520px, 100%);
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 18px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .eyebrow {
+      color: var(--cyan);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      margin-bottom: 7px;
+    }
+    h1 { margin: 0; font-size: clamp(24px, 3vw, 42px); line-height: 1.07; letter-spacing: -.035em; }
+    .subtitle { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+    .step-count { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .step-count strong { color: var(--ink); font-size: 28px; font-weight: 650; }
+
+    .workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) minmax(330px, .8fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .stage-shell, .explain {
+      border: 1px solid rgba(142, 181, 220, .18);
+      background: linear-gradient(180deg, rgba(17, 39, 62, .82), rgba(9, 23, 39, .94));
+      box-shadow: var(--shadow);
+      border-radius: 22px;
+      overflow: hidden;
+    }
+
+    .stage-shell { min-height: 560px; display: grid; grid-template-rows: 1fr auto; }
+    .stage {
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+      background:
+        linear-gradient(rgba(93, 150, 198, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(93, 150, 198, .035) 1px, transparent 1px),
+        radial-gradient(circle at center, rgba(26, 68, 104, .28), rgba(6, 16, 29, .2) 62%, rgba(4, 12, 22, .88));
+      background-size: 32px 32px, 32px 32px, auto;
+    }
+    #scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .concept {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      transform: scale(1.03);
+      transition: opacity .45s ease, transform 1.2s ease;
+      pointer-events: none;
+    }
+    .stage.is-cover .concept { opacity: .9; transform: scale(1); }
+    .cover-shade {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(5, 13, 24, .88), rgba(5, 13, 24, .15) 58%, rgba(5, 13, 24, .5));
+      opacity: 0;
+      transition: opacity .35s ease;
+      pointer-events: none;
+    }
+    .stage.is-cover .cover-shade { opacity: 1; }
+    .cover-copy {
+      position: absolute;
+      z-index: 2;
+      left: clamp(22px, 4vw, 54px);
+      top: 50%;
+      width: min(470px, calc(100% - 44px));
+      transform: translateY(-50%);
+      opacity: 0;
+      transition: opacity .35s ease;
+      pointer-events: none;
+    }
+    .stage.is-cover .cover-copy { opacity: 1; }
+    .cover-copy h2 { margin: 8px 0 14px; font-size: clamp(28px, 4vw, 54px); line-height: 1.02; letter-spacing: -.04em; }
+    .cover-copy p { max-width: 42ch; color: #d3e2f2; line-height: 1.55; }
+    .cover-note {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 18px;
+      color: #c4d6e8;
+      font-size: 12px;
+    }
+    .cover-note::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--amber); }
+
+    .viewport-note {
+      position: absolute;
+      right: 16px;
+      top: 14px;
+      z-index: 3;
+      padding: 7px 10px;
+      border: 1px solid rgba(159, 196, 228, .17);
+      border-radius: 999px;
+      background: rgba(4, 13, 24, .62);
+      color: var(--muted);
+      font-size: 12px;
+      backdrop-filter: blur(10px);
+      opacity: 0;
+      transition: opacity .25s ease;
+    }
+    .stage:not(.is-cover) .viewport-note { opacity: 1; }
+
+    .stage-footer {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 16px;
+      border-top: 1px solid rgba(142, 181, 220, .14);
+      background: rgba(7, 18, 31, .88);
+    }
+    .progress-track { position: relative; height: 5px; flex: 1; border-radius: 99px; background: rgba(155, 184, 213, .16); overflow: hidden; }
+    .progress-bar { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, var(--blue), var(--cyan)); transition: width .35s ease; }
+    .step-name { min-width: 160px; color: var(--muted); font-size: 12px; text-align: right; }
+
+    .explain {
+      padding: clamp(22px, 3vw, 36px);
+      display: flex;
+      flex-direction: column;
+      min-height: 560px;
+    }
+    .source-ref {
+      color: var(--cyan);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .explain h2 { margin: 12px 0 12px; font-size: clamp(25px, 2.4vw, 36px); line-height: 1.08; letter-spacing: -.025em; }
+    .lead { margin: 0; color: #c8d6e5; line-height: 1.62; }
+    .formula {
+      margin-top: 22px;
+      padding: 18px;
+      border-left: 3px solid var(--amber);
+      background: rgba(255, 195, 91, .07);
+      color: #f4f7fb;
+      font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.75;
+      white-space: pre-line;
+      font-variant-numeric: tabular-nums;
+    }
+    .facts { margin: 20px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+    .facts li { position: relative; padding-left: 19px; color: #bdcddd; line-height: 1.46; font-size: 14px; }
+    .facts li::before { content: ""; position: absolute; left: 0; top: .6em; width: 7px; height: 7px; border-radius: 50%; background: var(--blue); }
+    .takeaway {
+      margin-top: auto;
+      padding-top: 24px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .takeaway strong { color: var(--cyan); }
+
+    .controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      padding: 2px 2px 0;
+    }
+    .control-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .btn {
+      appearance: none;
+      border: 1px solid rgba(154, 187, 218, .24);
+      border-radius: 12px;
+      background: rgba(15, 34, 55, .88);
+      color: var(--ink);
+      padding: 11px 15px;
+      cursor: pointer;
+      transition: transform .16s ease, border-color .16s ease, background .16s ease;
+    }
+    .btn:hover { transform: translateY(-1px); border-color: rgba(126, 211, 235, .58); background: rgba(20, 48, 75, .96); }
+    .btn:focus-visible { outline: 3px solid rgba(85, 230, 225, .35); outline-offset: 2px; }
+    .btn:disabled { opacity: .38; cursor: default; transform: none; }
+    .btn.primary { background: linear-gradient(135deg, #2276a9, #1e8e93); border-color: rgba(115, 232, 231, .6); min-width: 146px; }
+    .kbd-hint { color: var(--muted); font-size: 12px; }
+
+    @media (max-width: 980px) {
+      .app { padding: 16px; }
+      .workspace { grid-template-columns: 1fr; }
+      .stage-shell { min-height: 520px; }
+      .explain { min-height: auto; }
+      .takeaway { margin-top: 18px; }
+    }
+    @media (max-width: 620px) {
+      .topbar { align-items: flex-start; }
+      .subtitle, .kbd-hint, .step-name { display: none; }
+      .stage-shell { min-height: 430px; }
+      .controls { align-items: stretch; flex-direction: column; }
+      .control-group { width: 100%; }
+      .control-group .btn { flex: 1; }
+      .btn.primary { min-width: 0; }
+      .explain { padding: 22px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app" id="fixedPApp">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">Mô phỏng đúng thuật toán trong code</div>
+        <h1>Cắt mặt tương tác tại P bất kỳ, rồi nội suy theo góc</h1>
+        <p class="subtitle">Mesh tính toán giữ topology tam giác → display fixed-P chỉ nối các kinh tuyến adaptive</p>
+      </div>
+      <div class="step-count"><strong id="stepNumber">1</strong> / <span id="stepTotal">9</span></div>
+    </header>
+
+    <main class="workspace">
+      <section class="stage-shell" aria-label="Mô phỏng hình học nội suy fixed-P">
+        <div class="stage is-cover" id="stage">
+          <img class="concept" src="assets/fixed-p-interpolation-3d-v2.png" alt="Minh họa khái niệm mặt tương tác P-Mx-My, mesh tam giác và mặt phẳng cắt fixed-P">
+          <div class="cover-shade"></div>
+          <div class="cover-copy">
+            <div class="eyebrow">Fixed-P interpolation</div>
+            <h2>Mặt phẳng cắt đúng mesh tam giác 3D</h2>
+            <p>Điểm trên kinh tuyến sampled được tô <strong>đỏ</strong>; giao điểm trên cạnh chéo hoặc cạnh cross-beta được tô <strong>xanh</strong>. Cả hai đều là đỉnh thật của contour fixed-P.</p>
+            <div class="cover-note">Wireframe chỉ hiện kinh tuyến và vĩ tuyến màu xám; các đường chéo tam giác được ẩn.</div>
+          </div>
+          <svg id="scene" viewBox="0 0 1000 650" role="img" aria-labelledby="sceneTitle sceneDesc">
+            <title id="sceneTitle">Nội suy mặt tương tác P-Mx-My tại lực dọc cố định</title>
+            <desc id="sceneDesc">Mô phỏng cắt từng kinh tuyến tại P bằng 300, nối các giao điểm fixed-P và cắt polygon bằng tia góc 35 độ.</desc>
+          </svg>
+          <div class="viewport-note" id="viewportNote">Góc nhìn 3D</div>
+        </div>
+        <div class="stage-footer">
+          <div class="progress-track" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
+          <div class="step-name" id="stepName">Mở đầu</div>
+        </div>
+      </section>
+
+      <aside class="explain" aria-live="polite">
+        <div class="source-ref" id="sourceRef">Bức tranh tổng thể</div>
+        <h2 id="explainTitle">Ý đồ thật của code</h2>
+        <p class="lead" id="explainLead"></p>
+        <div class="formula" id="formula"></div>
+        <ul class="facts" id="facts"></ul>
+        <div class="takeaway" id="takeaway"></div>
+      </aside>
+    </main>
+
+    <footer class="controls">
+      <div class="control-group">
+        <button type="button" class="btn" id="prevBtn">← Bước trước</button>
+        <button type="button" class="btn primary" id="playBtn">▶ Chạy tự động</button>
+        <button type="button" class="btn" id="nextBtn">Bước sau →</button>
+      </div>
+      <div class="control-group">
+        <span class="kbd-hint">Phím ← → để chuyển bước · Space để chạy/dừng</span>
+        <button type="button" class="btn" id="restartBtn">Về đầu</button>
+        <button type="button" class="btn" id="fullscreenBtn">Toàn màn hình</button>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+  (function () {
+    "use strict";
+
+    var svg = document.getElementById("scene");
+    var stage = document.getElementById("stage");
+    var stepNumber = document.getElementById("stepNumber");
+    var stepTotal = document.getElementById("stepTotal");
+    var stepName = document.getElementById("stepName");
+    var progressBar = document.getElementById("progressBar");
+    var sourceRef = document.getElementById("sourceRef");
+    var explainTitle = document.getElementById("explainTitle");
+    var explainLead = document.getElementById("explainLead");
+    var formula = document.getElementById("formula");
+    var facts = document.getElementById("facts");
+    var takeaway = document.getElementById("takeaway");
+    var viewportNote = document.getElementById("viewportNote");
+    var prevBtn = document.getElementById("prevBtn");
+    var nextBtn = document.getElementById("nextBtn");
+    var playBtn = document.getElementById("playBtn");
+    var restartBtn = document.getElementById("restartBtn");
+    var fullscreenBtn = document.getElementById("fullscreenBtn");
+
+    var RAD = Math.PI / 180;
+    var fixedP = 300;
+    var theta = 35 * RAD;
+    var sampledBetas = [0, 20, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
+    var stations = [
+      { p: 1000, base: 0, a: 0, b: 0 },
+      { p: 800, base: 220, a: 30, b: -5 },
+      { p: 600, base: 360, a: 61.2835554495, b: -10.8059442995 },
+      { p: 0, base: 530, a: -45.9626665871, b: 8.1044582246 },
+      { p: -400, base: 410, a: -35, b: 8 },
+      { p: -750, base: 0, a: 0, b: 0 }
+    ];
+
+    function radiusAt(station, betaDeg) {
+      var a = 2 * betaDeg * RAD;
+      return Math.max(0, station.base + station.a * Math.cos(a) + station.b * Math.sin(a));
+    }
+    function pointAt(betaIndex, stationIndex) {
+      var betaDeg = sampledBetas[betaIndex];
+      var st = stations[stationIndex];
+      var r = radiusAt(st, betaDeg);
+      return {
+        x: r * Math.cos(betaDeg * RAD),
+        y: st.p,
+        z: r * Math.sin(betaDeg * RAD),
+        P: st.p,
+        Mx: r * Math.cos(betaDeg * RAD),
+        My: r * Math.sin(betaDeg * RAD),
+        beta: betaDeg,
+        station: stationIndex
+      };
+    }
+
+    var rows = sampledBetas.map(function (_, bi) {
+      return stations.map(function (_, si) { return pointAt(bi, si); });
+    });
+
+    var triangles = [];
+    sampledBetas.forEach(function (_, bi) {
+      var ni = (bi + 1) % sampledBetas.length;
+      for (var si = 0; si < stations.length - 1; si += 1) {
+        var a = rows[bi][si];
+        var b = rows[ni][si];
+        var c = rows[ni][si + 1];
+        var d = rows[bi][si + 1];
+        triangles.push({ vertices: [a, b, c], sameDirectionEdge: [false, true, false], cell: [bi, si], half: "ABC" });
+        triangles.push({ vertices: [a, c, d], sameDirectionEdge: [false, false, true], cell: [bi, si], half: "ACD" });
+      }
+    });
+
+    var local = {
+      A: rows[1][2],
+      B: rows[2][2],
+      C: rows[2][3],
+      D: rows[1][3]
+    };
+
+    function lerpPoint(a, b, t) {
+      return {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t,
+        P: a.P + (b.P - a.P) * t,
+        Mx: a.Mx + (b.Mx - a.Mx) * t,
+        My: a.My + (b.My - a.My) * t,
+        beta: a.beta + (b.beta - a.beta) * t,
+        station: a.station + (b.station - a.station) * t
+      };
+    }
+
+    function edgePlanePoint(a, b, pCut) {
+      var da = a.P - pCut;
+      var db = b.P - pCut;
+      if (Math.abs(da - db) < 1e-12) return null;
+      var t = da / (da - db);
+      if (t < -1e-9 || t > 1 + 1e-9) return null;
+      return lerpPoint(a, b, t);
+    }
+
+    function trianglePlaneIntersections(triangle, pCut) {
+      var out = [];
+      var v = triangle.vertices;
+      [[v[0], v[1], triangle.sameDirectionEdge[0]], [v[1], v[2], triangle.sameDirectionEdge[1]], [v[2], v[0], triangle.sameDirectionEdge[2]]].forEach(function (edge) {
+        var a = edge[0], b = edge[1], sameDirection = edge[2];
+        var da = a.P - pCut, db = b.P - pCut;
+        if (Math.abs(da) < 1e-8) out.push(Object.assign({}, a, { onSampledDirection: true }));
+        if (Math.abs(db) < 1e-8) out.push(Object.assign({}, b, { onSampledDirection: true }));
+        if (Math.abs(da) < 1e-8 || Math.abs(db) < 1e-8 || da * db > 0) return;
+        var q = edgePlanePoint(a, b, pCut);
+        if (q) out.push(Object.assign({}, q, { onSampledDirection: sameDirection }));
+      });
+      return uniquePoints(out);
+    }
+
+    function uniquePoints(points) {
+      var out = [];
+      points.forEach(function (p) {
+        var exists = out.some(function (q) {
+          return Math.hypot(p.Mx - q.Mx, p.My - q.My) < 1e-6 && Math.abs(p.P - q.P) < 1e-6;
+        });
+        if (!exists) out.push(p);
+        else if (p.onSampledDirection) {
+          out.forEach(function (q) {
+            if (Math.hypot(p.Mx - q.Mx, p.My - q.My) < 1e-6 && Math.abs(p.P - q.P) < 1e-6) q.onSampledDirection = true;
+          });
+        }
+      });
+      return out;
+    }
+
+    function sliceContour(pCut) {
+      var points = [];
+      triangles.forEach(function (tri) {
+        trianglePlaneIntersections(tri, pCut).forEach(function (p) {
+          p = Object.assign({}, p, { y: pCut, P: pCut });
+          points.push(p);
+        });
+      });
+      return uniquePoints(points).sort(function (a, b) {
+        return Math.atan2(a.My, a.Mx) - Math.atan2(b.My, b.Mx);
+      });
+    }
+
+    function sliceMeridianContour(pCut) {
+      return rows.map(function (curve) {
+        var candidates = [];
+        for (var station = 0; station < curve.length - 1; station += 1) {
+          var a = curve[station], b = curve[station + 1];
+          var da = a.P - pCut, db = b.P - pCut;
+          if (Math.abs(da) < 1e-8) candidates.push(Object.assign({}, a));
+          if (Math.abs(db) < 1e-8) candidates.push(Object.assign({}, b));
+          if (Math.abs(da) < 1e-8 || Math.abs(db) < 1e-8 || da * db > 0) continue;
+          var q = edgePlanePoint(a, b, pCut);
+          if (q) candidates.push(q);
+        }
+        candidates = uniquePoints(candidates);
+        if (!candidates.length) return null;
+        return candidates.reduce(function (outer, candidate) {
+          return Math.hypot(candidate.Mx, candidate.My) > Math.hypot(outer.Mx, outer.My) ? candidate : outer;
+        });
+      }).filter(Boolean).map(function (point) {
+        return Object.assign({}, point, { y: pCut, P: pCut, onSampledDirection: true });
+      });
+    }
+
+    function cross2(a, b) { return a.Mx * b.My - a.My * b.Mx; }
+    function intersectContourWithRay(contour, angle) {
+      var direction = { Mx: Math.cos(angle), My: Math.sin(angle) };
+      var best = null;
+      for (var i = 0; i < contour.length; i += 1) {
+        var a = contour[i];
+        var b = contour[(i + 1) % contour.length];
+        var edge = { Mx: b.Mx - a.Mx, My: b.My - a.My };
+        var denom = cross2(edge, direction);
+        if (Math.abs(denom) < 1e-10) continue;
+        var q = -cross2(a, direction) / denom;
+        if (q < -1e-9 || q > 1 + 1e-9) continue;
+        var point = {
+          x: a.Mx + edge.Mx * q,
+          y: fixedP,
+          z: a.My + edge.My * q,
+          Mx: a.Mx + edge.Mx * q,
+          My: a.My + edge.My * q,
+          P: fixedP,
+          q: q
+        };
+        point.M = point.Mx * direction.Mx + point.My * direction.My;
+        if (point.M < -1e-8) continue;
+        if (!best || point.M < best.M) best = point;
+      }
+      return best;
+    }
+
+    var Q1 = edgePlanePoint(local.A, local.D, fixedP);
+    var Qdiag = edgePlanePoint(local.A, local.C, fixedP);
+    var Q2 = edgePlanePoint(local.B, local.C, fixedP);
+    var triangleContour = sliceContour(fixedP);
+    var meridianContour = sliceMeridianContour(fixedP);
+    var contour = meridianContour;
+    var exactHit = intersectContourWithRay(contour, theta);
+    var wrongHit = (function () {
+      var dir = { Mx: Math.cos(theta), My: Math.sin(theta) };
+      var edge = { Mx: Q2.Mx - Q1.Mx, My: Q2.My - Q1.My };
+      var q = -cross2(Q1, dir) / cross2(edge, dir);
+      var p = {
+        x: Q1.Mx + edge.Mx * q,
+        y: fixedP,
+        z: Q1.My + edge.My * q,
+        Mx: Q1.Mx + edge.Mx * q,
+        My: Q1.My + edge.My * q,
+        q: q
+      };
+      p.M = p.Mx * dir.Mx + p.My * dir.My;
+      return p;
+    }());
+
+    function f(n, digits) { return Number(n).toFixed(digits == null ? 2 : digits); }
+
+    var legacySteps = [
+      {
+        name: "Mở đầu",
+        ref: "Bức tranh tổng thể",
+        title: "Ý đồ thật của code",
+        lead: "Đúng ở mức tổng quát: mặt phẳng P = P* cắt mesh 3D, nhìn từ trên xuống ta được một contour đa giác, rồi tia ở góc bất kỳ cắt contour đó. Nhưng chi tiết quyết định là code cắt từng tam giác, không cắt trực tiếp một ô tứ giác.",
+        formula: "surface mesh → cắt từng tam giác\n→ gom điểm + sắp theo atan2(My, Mx)\n→ contour đa giác → giao tia θ",
+        facts: [
+          "Ảnh 3D là lớp minh họa trực giác.",
+          "Mô hình số ở các bước tiếp theo chạy đúng thứ tự hàm trong index.ts.",
+          "Ví dụ dùng P* = 300 kN và θ = 35° để mọi phép tính đều kiểm tra được."
+        ],
+        takeaway: "<strong>Kết luận trước:</strong> Q1–Qchéo–Q2 chỉ là trường hợp nhỏ nhất. Chuỗi nhiều tam giác sẽ tạo Q1, Q2, Q3…",
+        cam: { yaw: -35, pitch: -18, scale: .31, fx: 0, fy: 120, fz: 0 },
+        view: "Ảnh khái niệm"
+      },
+      {
+        name: "1 · Mesh dữ liệu",
+        ref: "previewSurfaceTriangles() · index.ts 1146–1213",
+        title: "Bề mặt là các station trên nhiều kinh tuyến",
+        lead: "Mỗi hướng β là một đường station theo P. Code ghép hai hướng β kề nhau và hai station kề nhau thành một ô ABCD. Trong ví dụ, ta theo dõi β₁ = 20°, β₂ = 60°, P trên = 600 kN và P dưới = 0 kN.",
+        formula: "A = (β₁, station j)      B = (β₂, station j)\nD = (β₁, station j+1)    C = (β₂, station j+1)",
+        facts: [
+          "Đường cyan: kinh tuyến β₁ = 20°.",
+          "Đường tím: kinh tuyến β₂ = 60°.",
+          "Các chấm là dữ liệu station; P* = 300 không trùng station 600 hoặc 0."
+        ],
+        takeaway: "Mặt 'cầu' chỉ là cách nhìn trực giác; dữ liệu thật là một <strong>mesh rời rạc</strong> có thể không tròn và không đối xứng.",
+        cam: { yaw: -28, pitch: -22, scale: .31, fx: 0, fy: 120, fz: 0 },
+        view: "Góc nhìn 3D · toàn mesh"
+      },
+      {
+        name: "2 · Chia tam giác",
+        ref: "previewSurfaceTriangles() · index.ts 1205–1213",
+        title: "Ô ABCD được chia bởi đường chéo AC",
+        lead: "Code tạo đúng hai tam giác [A,B,C] và [A,C,D]. Vì thế mặt phẳng P = P* sẽ cắt tam giác ABC thành một đoạn và cắt tam giác ACD thành một đoạn khác.",
+        formula: "T₁ = △ABC\nT₂ = △ACD\nCạnh chung = AC",
+        facts: [
+          "T₁ = ABC được tô xanh.",
+          "T₂ = ACD được tô tím.",
+          "Cạnh AC màu vàng là cạnh nội bộ của mesh, không được bỏ qua khi nội suy."
+        ],
+        takeaway: "Nếu nối thẳng Q1–Q2 ngay từ đầu, ta đã thay đổi hình học mà code đang dùng.",
+        cam: { yaw: -12, pitch: -12, scale: .72, fx: 325, fy: 300, fz: 285 },
+        view: "Camera xoay và phóng vào ô ABCD"
+      },
+      {
+        name: "3 · Nội suy theo P",
+        ref: "trianglePlaneIntersections() · index.ts 1310–1335",
+        title: "P* = 300 cắt ba cạnh tại t = 0.5",
+        lead: "Trên mỗi cạnh có hai đầu P = 600 và P = 0, code tính khoảng cách có dấu đến mặt phẳng rồi nội suy tuyến tính từng thành phần P, Mx, My. Cạnh chéo AC cũng được xử lý hoàn toàn giống các cạnh station.",
+        formula: "dₐ = Pₐ − P* = +300;  dᵦ = Pᵦ − P* = −300\nt = dₐ / (dₐ − dᵦ) = 300 / 600 = 0.5\nQ = a + t(b − a)",
+        facts: [
+          "Q1 = lerp(A,D,0.5) = (422.86, 153.91) kN·m.",
+          "Qchéo = lerp(A,C,0.5) = (327.94, 310.89) kN·m.",
+          "Q2 = lerp(B,C,0.5) = (220.00, 381.05) kN·m."
+        ],
+        takeaway: "△ACD cho đoạn <strong>Q1–Qchéo</strong>; △ABC cho đoạn <strong>Qchéo–Q2</strong>.",
+        cam: { yaw: 22, pitch: -6, scale: .71, fx: 325, fy: 300, fz: 285 },
+        view: "Camera ngang với mặt phẳng P = 300"
+      },
+      {
+        name: "8 · Ghép contour",
+        ref: "sliceFixedPContour() · index.ts 2000–2018",
+        title: "Lặp qua mọi tam giác để tạo contour đa giác",
+        lead: "Code gom các giao điểm, loại trùng rồi sắp theo góc atan2(My,Mx). Nhìn từ trên xuống, các điểm được nối theo thứ tự góc thành contour fixed-P khép kín. Ba điểm trong ô đang xét chỉ là một đoạn nhỏ của polygon này.",
+        formula: "for mỗi triangle:\n  intersections(triangle, P − P*)\n  appendUniquePoint(...)\ncontour.sort(atan2(My, Mx))",
+        facts: [
+          "Chấm tròn: giao cạnh station tại hướng β đã lấy mẫu.",
+          "Chấm tròn nhỏ cùng màu đường: mọi đỉnh trung gian sinh trên cạnh mesh.",
+          "Polyline cyan đậm là đúng contour mà bước giao tia sẽ sử dụng."
+        ],
+        takeaway: "Đúng: nhìn từ trên xuống là một đa giác. Chính xác hơn: đa giác đó có cả các đỉnh sinh ra bởi <strong>đường chéo tam giác</strong>.",
+        cam: { yaw: 0, pitch: -90, scale: .57, fx: 0, fy: 300, fz: 0 },
+        view: "Camera xoay về hình chiếu Mx–My"
+      },
+      {
+        name: "9 · Nội suy theo góc",
+        ref: "intersectFixedPContourWithMomentRay() · index.ts 2239–2279",
+        title: "Tia θ = 35° cắt đúng đoạn Q1–Qchéo",
+        lead: "Tia không nội suy trực tiếp theo β. Code thử giao tia với từng cạnh của contour. Chỉ cạnh nào cho q nằm trong [0,1] và moment dương mới hợp lệ; nếu có nhiều giao điểm, code giữ M dương nhỏ nhất.",
+        formula: "d = (cosθ, sinθ);  e = b − a\ndenom = cross(e,d)\nq = −cross(a,d) / denom\nC = a + q·e;  M = dot(C,d)",
+        facts: [
+          "Với a = Q1, b = Qchéo: q = 0.63631.",
+          "C = (Mx,My) = (362.46, 253.80) kN·m.",
+          "M = 442.48 kN·m tại P = 300 kN, θ = 35°."
+        ],
+        takeaway: "Đây là lần nội suy thứ hai: <strong>giao tia với một cạnh polygon</strong>, không phải nội suy bán kính giữa hai góc mẫu.",
+        cam: { yaw: 0, pitch: -90, scale: .57, fx: 0, fy: 300, fz: 0 },
+        view: "Hình chiếu Mx–My · tia 35°"
+      },
+      {
+        name: "10 · Kiểm chứng",
+        ref: "So sánh hình học đúng và đường tắt",
+        title: "Vì sao Qchéo làm thay đổi kết quả",
+        lead: "Đường nét đứt đỏ là cách rút gọn sai: nối thẳng Q1–Q2 rồi cắt tia. Đường cyan là contour đúng theo hai tam giác. Với bề mặt không đối xứng như dữ liệu thực, hai kết quả khác nhau rõ ràng.",
+        formula: "Đúng theo code:   M = " + f(exactHit.M) + " kN·m\nNối tắt Q1–Q2: M = " + f(wrongHit.M) + " kN·m\nSai khác:          ΔM = " + f(exactHit.M - wrongHit.M) + " kN·m",
+        facts: [
+          "Điểm cyan: giao với Q1–Qchéo, đúng q ∈ [0,1].",
+          "Điểm đỏ: giao với dây Q1–Q2 không tồn tại trong mesh tam giác.",
+          "Nếu bề mặt lý tưởng đặc biệt làm ba điểm thẳng hàng, hai cách có thể trùng; đó là trường hợp suy biến, không phải quy tắc của code."
+        ],
+        takeaway: "Chuỗi đúng là: <strong>nội suy trên cạnh theo P → dựng contour tam giác hóa → giao tia theo θ</strong>.",
+        cam: { yaw: 0, pitch: -90, scale: .64, fx: 325, fy: 300, fz: 285 },
+        view: "Phóng to ô β = 20°…60°"
+      }
+    ];
+
+    legacySteps.splice(4, 0,
+      {
+        name: "4 · Hai điểm giữa",
+        ref: "trianglePlaneIntersections() · chuỗi 3 tam giác",
+        title: "Ba tam giác bị cắt → hai đỉnh trung gian",
+        lead: "Sau điểm sampled bên trái, lát cắt đi qua T1, vượt cạnh chung thứ nhất tại Q1, đi qua T2, vượt cạnh chung thứ hai tại Q2 rồi mới đi qua T3 để tới điểm sampled bên phải. Q1 và Q2 đều do cùng công thức nội suy cạnh sinh ra.",
+        formula: "Trên mỗi cạnh e = (a,b):\ndₐ = Pₐ − P*;  dᵦ = Pᵦ − P*\nt = dₐ / (dₐ − dᵦ)\nQ = a + t(b − a)\n\n3 tam giác → 2 cạnh chung bị vượt → 2 điểm Q",
+        facts: [
+          "Bấm Chạy tự động hoặc chuyển lại bước này để xem T1 → Q1 → T2 → Q2 → T3.",
+          "Mỗi Q nằm đúng trên một cạnh mesh dùng chung bởi hai tam giác kề nhau.",
+          "Các Q là chấm tròn đặc, cùng màu với đường contour — đúng cách biểu đồ hiện đang vẽ."
+        ],
+        takeaway: "Số điểm trung gian đếm số <strong>cạnh tam giác dùng chung mà lát cắt đã vượt qua</strong>, không đếm số ô tứ giác.",
+        cam: { yaw: 0, pitch: -90, scale: .57, fx: 0, fy: 300, fz: 0 },
+        view: "Trải phẳng chuỗi tam giác · 2 điểm trung gian"
+      },
+      {
+        name: "5 · Ba điểm giữa",
+        ref: "trianglePlaneIntersections() · chuỗi 4 tam giác",
+        title: "Bốn tam giác bị cắt → ba đỉnh trung gian",
+        lead: "Trải phẳng dải giữa hai kinh tuyến beta-a và beta-b: nếu hai giao điểm biên nằm ở các dải station cách nhau, lát cắt có thể đi qua bốn facet. Nó lần lượt vượt cạnh station, cạnh chéo, rồi một cạnh station khác để tạo Q1, Q2 và Q3.",
+        formula: "T1 ─Q1(station)─ T2 ─Q2(chéo)─ T3 ─Q3(station)─ T4\n\nMỗi Qi = lerp(ai, bi, ti) trên cạnh chung Ei\nti = (Pai − P*) / (Pai − Pbi)",
+        facts: [
+          "Đoạn trong mỗi tam giác luôn là đoạn thẳng.",
+          "Đường tổng thể gấp khúc vì hệ số t và hai đầu cạnh thay đổi từ facet này sang facet khác.",
+          "Nếu hai giao điểm trùng nhau trong tolerance, appendUniquePoint() chỉ giữ một điểm."
+        ],
+        takeaway: "Ba điểm không phải ba góc adaptive mới; chúng là <strong>ba giao điểm cạnh</strong> được tìm sau khi mesh adaptive đã có sẵn.",
+        cam: { yaw: 0, pitch: -90, scale: .57, fx: 0, fy: 300, fz: 0 },
+        view: "Trải phẳng chuỗi tam giác · 3 điểm trung gian"
+      },
+      {
+        name: "6 · Quy tắc tổng quát",
+        ref: "sameDirectionEdge · onSampledDirection · appendUniquePoint",
+        title: "Điểm sampled và điểm trung gian khác nhau ở cạnh nguồn",
+        lead: "Nếu cạnh có hai đầu cùng beta, code gắn onSampledDirection = true: đó là marker sampled. Giao điểm trên cạnh nối hai beta khác nhau — cạnh ngang station hoặc cạnh chéo tam giác — là đỉnh trung gian. Tất cả đều được tính bằng cùng một phép lerp theo P.",
+        formula: "sameDirectionEdge = true  → sampled marker\nsameDirectionEdge = false → internal vertex\n\nKhông suy biến: N facet liên tiếp → N − 1 cạnh chung → N − 1 điểm giữa",
+        facts: [
+          "Adaptive refinement chạy trước để quyết định những beta nào tồn tại trong mesh.",
+          "sliceFixedPContour() không sinh thêm beta; nó chỉ cắt các cạnh của mesh đã có.",
+          "Sau cùng contour.sort(atan2(My,Mx)) sắp theo góc moment alpha, không sắp theo beta."
+        ],
+        takeaway: "Vì thứ tự hiển thị là <strong>góc moment α</strong>, số Q nhìn thấy giữa hai marker sampled liên tiếp không bị giới hạn là một.",
+        cam: { yaw: 0, pitch: -90, scale: .57, fx: 0, fy: 300, fz: 0 },
+        view: "Ba trường hợp cạnh nhau · quy tắc N − 1"
+      },
+      {
+        name: "7 · Bài của bạn",
+        ref: "Column-project (5).json · surface thực tế",
+        title: "Dữ liệu thật có cả khoảng 1, 2 và 3 điểm",
+        lead: "Mình đã dựng lại surface từ đúng file Column-project (5).json, rồi chạy sliceFixedPContour() trên topology thật. Kết quả xác nhận nhận xét của bạn: có nhiều khoảng chứa hai hoặc ba đỉnh trung gian, đặc biệt khi nhìn theo thứ tự góc moment trên contour.",
+        formula: "P mặc định 5908.452 kN:\n90×1 + 22×3 = 156 điểm giữa\n\nP = 0 kN:\n2×0 + 94×1 + 8×2 + 8×3 = 134 điểm giữa",
+        facts: [
+          "Surface có 112 hướng sampled, 25 station/hướng và 2800 điểm mesh.",
+          "Tại P = 0 có 8 khoảng với đúng 2 điểm và 8 khoảng với đúng 3 điểm.",
+          "Ví dụ các góc moment nội bộ: 15.254° và 17.735°; một cụm ba điểm: 24.617°, 26.403°, 27.527°."
+        ],
+        takeaway: "Bạn đúng: phát biểu cũ 'mỗi khoảng chỉ một Qchéo' là thiếu. File này nay mô phỏng đúng <strong>toàn bộ chuỗi giao cạnh</strong>.",
+        cam: { yaw: 0, pitch: -90, scale: .57, fx: 0, fy: 300, fz: 0 },
+        view: "Kết quả kiểm tra trực tiếp Column-project (5).json"
+      }
+    );
+
+    var steps = [
+      {
+        name: "Mở đầu",
+        ref: "Analysis topology và display contour được tách riêng",
+        title: "Fixed-P hiển thị bằng các kinh tuyến adaptive",
+        lead: "Mesh tam giác vẫn tồn tại ngầm cho tính toán. Riêng biểu đồ fixed-P chỉ lấy một giao điểm trên mỗi kinh tuyến adaptive rồi nối theo thứ tự beta; các giao điểm cạnh chéo không còn được vẽ.",
+        formula: "mỗi beta adaptive:\n  tìm hai station bao P*\n  nội suy một điểm Sβ\n\nsort beta → polygon sampled-only",
+        facts: [
+          "Chấm đỏ là giao điểm của P* với kinh tuyến sampled/adaptive.",
+          "Adaptive đủ dày để đường nối sampled mô tả tốt hình dạng.",
+          "Các cạnh tam giác vẫn phục vụ kernel nhưng không làm rối phần trình bày."
+        ],
+        takeaway: "Mục tiêu mới: <strong>display đơn giản, analysis topology vẫn được giữ nguyên</strong>.",
+        cam: { yaw: -35, pitch: -18, scale: .31, fx: 0, fy: 120, fz: 0 },
+        view: "Ảnh khái niệm · triangle mesh authoritative"
+      },
+      {
+        name: "1 · Kinh tuyến",
+        ref: "Surface display grid · meridians + station parallels",
+        title: "Chỉ hiện kinh tuyến và vĩ tuyến màu xám",
+        lead: "Bề mặt màu vẫn được render bằng tam giác, nhưng wireframe chỉ giữ các cạnh cùng beta và các cạnh cùng station. Đường chéo của tam giác bị ẩn để hình 3D dễ đọc hơn.",
+        formula: "visible edge = same beta OR same station\ndiagonal edge = different beta AND different station → hide",
+        facts: [
+          "Adaptive refinement quyết định danh sách beta trước khi cắt P.",
+          "Mỗi beta tạo một kinh tuyến; mỗi station tạo một vĩ tuyến khép kín.",
+          "Vĩ tuyến cuối nối trở lại beta đầu nên bề mặt không còn khe hở."
+        ],
+        takeaway: "Wireframe chỉ trình bày <strong>lưới kinh tuyến–vĩ tuyến</strong>; đường chéo được giấu.",
+        cam: { yaw: -28, pitch: -22, scale: .31, fx: 0, fy: 120, fz: 0 },
+        view: "Góc nhìn 3D · các kinh tuyến sampled"
+      },
+      {
+        name: "2 · Cắt beta-a",
+        ref: "trianglePlaneIntersections() · cạnh same-beta trên beta-a",
+        title: "Tìm P1–P2 bao P* trên kinh tuyến thứ nhất",
+        lead: "Trong lúc cắt từng triangle, code gặp các cạnh same-beta của beta-a. Nó kiểm tra từng cặp station kề nhau bằng dấu của P − P*. Không cần P tăng hay giảm theo station; chỉ cần hai đầu cạnh nằm hai phía của mặt phẳng.",
+        formula: "(P1 − P*)(P2 − P*) ≤ 0\nt1 = (P* − P1) / (P2 − P1)\nS1 = A1 + t1(A2 − A1)",
+        facts: [
+          "P1 và P2 phải kề nhau trên beta-a.",
+          "S1 có đúng P = P*; Mx và My được lerp bằng cùng t1.",
+          "Thứ tự P1 ≤ P2 hay P2 ≤ P1 đều cho cùng kết quả."
+        ],
+        takeaway: "Cạnh same-beta của beta-a sinh <strong>điểm đỏ S1</strong> trên contour.",
+        cam: { yaw: 0, pitch: -90, scale: .57, fx: 0, fy: 300, fz: 0 },
+        view: "Đồ thị P dọc kinh tuyến beta-a"
+      },
+      {
+        name: "3 · Cắt beta-b",
+        ref: "trianglePlaneIntersections() · cạnh same-beta trên beta-b",
+        title: "P3–P4 có thể thuộc station hoàn toàn khác",
+        lead: "Khi vòng lặp triangle gặp cạnh same-beta của beta-b, code lặp lại cùng phép cắt. Cặp station bao P* trên beta-b không cần trùng với cặp đã cắt trên beta-a. Trong hình, S1 nằm giữa station 0–1 còn S2 nằm giữa station 2–3.",
+        formula: "(P3 − P*)(P4 − P*) ≤ 0\nt2 = (P* − P3) / (P4 − P3)\nS2 = B1 + t2(B2 − B1)",
+        facts: [
+          "Không dựng tứ giác từ bốn station P1,P2,P3,P4.",
+          "Không cần P1 và P3 có cùng station index.",
+          "S1 và S2 là hai điểm đỏ liên tiếp của đường display khi beta-a và beta-b kề nhau."
+        ],
+        takeaway: "Hai kinh tuyến được cắt <strong>độc lập theo giá trị P</strong>.",
+        cam: { yaw: 0, pitch: -90, scale: .57, fx: 0, fy: 300, fz: 0 },
+        view: "Hai kinh tuyến · hai cặp station độc lập"
+      },
+      {
+        name: "4 · Hướng adaptive",
+        ref: "surface.directions · beta sampled thật",
+        title: "0.4° và 0.89° là kinh tuyến thật nếu adaptive đã tạo chúng",
+        lead: "Mỗi hướng adaptive được tích phân thành một kinh tuyến đầy đủ, sau đó cũng được cắt độc lập tại P*. Vì vậy giữa 0° và 1° có thể có các điểm 0.4° và 0.89° — nhưng chúng là sampled meridian intersections, không phải Q sinh từ cạnh tam giác.",
+        formula: "beta = [0°, 0.4°, 0.89°, 1°, …]\n→ [S0°, S0.4°, S0.89°, S1°, …]",
+        facts: [
+          "Số điểm đỏ bằng số hướng beta có giao điểm hợp lệ.",
+          "Adaptive chạy trước; fixed-P không tự chèn thêm beta.",
+          "Các điểm adaptive được tô đỏ; không hiển thị điểm cạnh tam giác bổ sung."
+        ],
+        takeaway: "Các điểm dày gần 0° hoặc 90° phản ánh <strong>mật độ adaptive thật</strong>.",
+        cam: { yaw: 0, pitch: -90, scale: .57, fx: 0, fy: 300, fz: 0 },
+        view: "Phóng đại cụm hướng 0°…1°"
+      },
+      {
+        name: "5 · Dựng polygon",
+        ref: "contourStrainAngleSamples() · sampled display",
+        title: "Nối trực tiếp các giao điểm trên kinh tuyến",
+        lead: "Đường fixed-P hiển thị chỉ gồm các điểm sampled đã sắp theo beta. Trên hình 3D, polygon này được tô mờ bên trong và chỉ highlight đường biên; marker chỉ xuất hiện ở hình chiếu giải thích.",
+        formula: "triangle contour → filter onSampledDirection\n→ sort beta → close sampled polygon",
+        facts: [
+          "Mỗi hướng adaptive đóng góp tối đa một điểm đỏ.",
+          "Không còn điểm xanh intermediate trên display fixed-P.",
+          "Mặt tô được triangulate bên trong chính đường sampled này."
+        ],
+        takeaway: "Đường hiển thị đi qua đúng <strong>các chấm đỏ sampled</strong> đang vẽ.",
+        cam: { yaw: 0, pitch: -90, scale: .57, fx: 0, fy: 300, fz: 0 },
+        view: "Hình chiếu Mx–My · polygon sampled-only"
+      },
+      {
+        name: "6 · So sánh",
+        ref: "Analysis contour và display contour",
+        title: "Chủ động chọn sampled-only cho phần trình bày",
+        lead: "Bên trái là giao tuyến chi tiết của topology tam giác. Bên phải là đường display mới chỉ qua kinh tuyến adaptive. Kernel vẫn giữ dữ liệu bên trái; các biểu đồ và mặt cắt 3D dùng hình bên phải để trực quan hơn.",
+        formula: "Analysis: triangles → all edge intersections\nDisplay: filter sampled meridians → beta polygon",
+        facts: [
+          "Không xóa topology tam giác khỏi surface tính toán.",
+          "Chỉ loại intermediate khỏi traces hiển thị.",
+          "Mật độ beta adaptive quyết định độ mịn của đường sampled."
+        ],
+        takeaway: "Đây là lựa chọn có chủ ý: <strong>display sampled-only, analysis vẫn topology-aware</strong>.",
+        cam: { yaw: 0, pitch: -90, scale: .57, fx: 0, fy: 300, fz: 0 },
+        view: "So sánh trước và sau"
+      },
+      {
+        name: "7 · Nội suy góc",
+        ref: "intersectFixedPContourWithMomentRay()",
+        title: "Tia theta cắt cạnh của polygon sampled",
+        lead: "Tia moment ở góc bất kỳ thử giao với từng cạnh nối hai kinh tuyến adaptive kề nhau. Hai đầu cạnh đều là điểm đỏ sampled; code giữ giao điểm dương nhỏ nhất.",
+        formula: "d = (cos(theta), sin(theta)); e = b − a\nq = −cross(a,d) / cross(e,d)\nC = a + q·e; M = dot(C,d)",
+        facts: [
+          "a và b là hai điểm sampled liên tiếp theo beta.",
+          "Không nội suy station thêm lần nữa ở bước này.",
+          "Kết quả C thỏa đồng thời P = P* và hướng moment theta."
+        ],
+        takeaway: "Chuỗi display: <strong>cắt từng kinh tuyến theo P, rồi cắt polygon sampled theo theta</strong>.",
+        cam: { yaw: 0, pitch: -90, scale: .57, fx: 0, fy: 300, fz: 0 },
+        view: "Polygon fixed-P · tia theta = 35°"
+      },
+      {
+        name: "8 · Kiểm chứng",
+        ref: "Column-project (5).json · regression tests",
+        title: "Display chỉ còn 112 điểm kinh tuyến",
+        lead: "Với bài của bạn, surface có 112 hướng adaptive và 25 station mỗi hướng. Ở cả hai mức P kiểm tra, đường display chỉ lấy 112 giao điểm sampled; intermediate của mesh không được đưa vào trace.",
+        formula: "P = 5908.452 kN: display = 112 sampled vertices\nP = 0 kN:        display = 112 sampled vertices",
+        facts: [
+          "112 hướng adaptive tạo 112 kinh tuyến thật.",
+          "Mỗi kinh tuyến được bracket độc lập theo giá trị P.",
+          "Đường display khép kín từ beta cuối trở lại beta đầu."
+        ],
+        takeaway: "Kết quả trình bày mới: <strong>chỉ đỏ = giao điểm kinh tuyến adaptive</strong>.",
+        cam: { yaw: 0, pitch: -90, scale: .57, fx: 0, fy: 300, fz: 0 },
+        view: "Kết quả kiểm chứng sau khi sửa thuật toán"
+      }
+    ];
+
+    stepTotal.textContent = String(steps.length);
+
+    var cam = Object.assign({}, steps[0].cam);
+    var camFrom = Object.assign({}, cam);
+    var camTo = Object.assign({}, cam);
+    var currentStep = 0;
+    var transitionStart = 0;
+    var stepStart = 0;
+    var transitionDuration = 1050;
+    var playing = false;
+    var autoTimer = null;
+    var rafId = null;
+    var reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    var raf = window.requestAnimationFrame || function (cb) { return window.setTimeout(function () { cb(Date.now()); }, 16); };
+    var caf = window.cancelAnimationFrame || window.clearTimeout;
+
+    function ease(t) {
+      t = Math.max(0, Math.min(1, t));
+      return 1 - Math.pow(1 - t, 3);
+    }
+    function mix(a, b, t) { return a + (b - a) * t; }
+    function updateCamera(now) {
+      var duration = reduceMotion ? 1 : transitionDuration;
+      var t = ease((now - transitionStart) / duration);
+      ["yaw", "pitch", "scale", "fx", "fy", "fz"].forEach(function (key) {
+        cam[key] = mix(camFrom[key], camTo[key], t);
+      });
+      return t < 1;
+    }
+
+    function project(p) {
+      var dx = p.x - cam.fx;
+      var dy = p.y - cam.fy;
+      var dz = p.z - cam.fz;
+      var yaw = cam.yaw * RAD;
+      var pitch = cam.pitch * RAD;
+      var cy = Math.cos(yaw), sy = Math.sin(yaw);
+      var cp = Math.cos(pitch), sp = Math.sin(pitch);
+      var x1 = cy * dx - sy * dz;
+      var z1 = sy * dx + cy * dz;
+      var y1 = cp * dy - sp * z1;
+      var depth = sp * dy + cp * z1;
+      return { x: 500 + x1 * cam.scale, y: 325 - y1 * cam.scale, depth: depth };
+    }
+
+    function esc(s) {
+      return String(s).replace(/[&<>\"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]; });
+    }
+    function pointsAttr(points) {
+      return points.map(function (p) { var q = project(p); return f(q.x, 1) + "," + f(q.y, 1); }).join(" ");
+    }
+    function line(a, b, cls, width, dash, opacity) {
+      var p = project(a), q = project(b);
+      return '<line x1="' + f(p.x,1) + '" y1="' + f(p.y,1) + '" x2="' + f(q.x,1) + '" y2="' + f(q.y,1) + '" stroke="' + cls + '" stroke-width="' + width + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + ' opacity="' + (opacity == null ? 1 : opacity) + '" stroke-linecap="round" />';
+    }
+    function circle(p, r, fill, stroke, width, opacity) {
+      var q = project(p);
+      return '<circle cx="' + f(q.x,1) + '" cy="' + f(q.y,1) + '" r="' + r + '" fill="' + fill + '" stroke="' + (stroke || "none") + '" stroke-width="' + (width || 0) + '" opacity="' + (opacity == null ? 1 : opacity) + '" />';
+    }
+    function square(p, size, fill, stroke) {
+      var q = project(p), s = size / 2;
+      return '<rect x="' + f(q.x-s,1) + '" y="' + f(q.y-s,1) + '" width="' + size + '" height="' + size + '" rx="2" fill="' + fill + '" stroke="' + (stroke || "none") + '" stroke-width="1.5" />';
+    }
+    function label(p, text, color, dx, dy, anchor) {
+      var q = project(p);
+      return '<text x="' + f(q.x + (dx || 0),1) + '" y="' + f(q.y + (dy || 0),1) + '" fill="' + color + '" font-size="15" font-weight="700" text-anchor="' + (anchor || "start") + '" paint-order="stroke" stroke="#07111f" stroke-width="4" stroke-linejoin="round">' + esc(text) + '</text>';
+    }
+
+    function drawAxes() {
+      var o = { x: 0, y: fixedP, z: 0 };
+      var xp = { x: 650, y: fixedP, z: 0 };
+      var zp = { x: 0, y: fixedP, z: 650 };
+      var yp = { x: 0, y: 1000, z: 0 };
+      var s = '<g opacity=".78">';
+      s += line(o, xp, "#91a7bd", 1.4, "5 7", .72);
+      s += line(o, zp, "#91a7bd", 1.4, "5 7", .72);
+      if (currentStep < 4) s += line({x:0,y:-750,z:0}, yp, "#91a7bd", 1.4, "5 7", .72);
+      s += label(xp, "Mx", "#c8d6e5", -3, -9, "end");
+      s += label(zp, "My", "#c8d6e5", -4, -9, "end");
+      if (currentStep < 4) s += label(yp, "P", "#c8d6e5", 10, 4, "start");
+      s += '</g>';
+      return s;
+    }
+
+    function drawFullMesh() {
+      var out = [];
+      triangles.forEach(function (tri) {
+        var projected = tri.vertices.map(project);
+        out.push({ tri: tri, depth: projected.reduce(function (s,p) { return s + p.depth; }, 0) / 3 });
+      });
+      out.sort(function (a,b) { return a.depth - b.depth; });
+      var s = '<g>';
+      out.forEach(function (item) {
+        s += '<polygon points="' + pointsAttr(item.tri.vertices) + '" fill="rgba(88,150,205,.026)" stroke="none" />';
+      });
+      // Display grid only: meridians plus station parallels. Triangle diagonals stay hidden.
+      rows.forEach(function (row) {
+        for (var i = 0; i < row.length - 1; i += 1) {
+          s += line(row[i], row[i + 1], "rgba(174,188,202,.54)", 1.05, "", 1);
+        }
+      });
+      for (var station = 0; station < stations.length; station += 1) {
+        for (var betaIndex = 0; betaIndex < rows.length; betaIndex += 1) {
+          var nextBeta = (betaIndex + 1) % rows.length;
+          s += line(rows[betaIndex][station], rows[nextBeta][station], "rgba(174,188,202,.54)", 1.05, "", 1);
+        }
+      }
+      s += '</g>';
+      return s;
+    }
+
+    function drawMeridian(betaIndex, color, strong) {
+      var pts = rows[betaIndex];
+      var s = '<g>';
+      for (var i = 0; i < pts.length - 1; i += 1) s += line(pts[i], pts[i+1], color, strong ? 3.6 : 1.4, "", strong ? 1 : .55);
+      pts.forEach(function (p) { s += circle(p, strong ? 5.3 : 3.3, color, "#07111f", 1.5, 1); });
+      s += '</g>';
+      return s;
+    }
+
+    function drawLocalCell(withLabels) {
+      var s = '<g>';
+      s += '<polygon points="' + pointsAttr([local.A, local.B, local.C]) + '" fill="rgba(85,230,225,.20)" stroke="#55e6e1" stroke-width="2.4" />';
+      s += '<polygon points="' + pointsAttr([local.A, local.C, local.D]) + '" fill="rgba(198,147,255,.18)" stroke="#c693ff" stroke-width="2.4" />';
+      s += line(local.A, local.C, "#ffc35b", 4.2, "", 1);
+      [[local.A,"A"],[local.B,"B"],[local.C,"C"],[local.D,"D"]].forEach(function (item) {
+        s += circle(item[0], 6.5, "#edf5ff", "#07111f", 2, 1);
+        if (withLabels) s += label(item[0], item[1], "#edf5ff", 10, -10, "start");
+      });
+      s += '</g>';
+      return s;
+    }
+
+    function drawCutPoints(pCut, showLabels) {
+      var q1 = edgePlanePoint(local.A, local.D, pCut);
+      var qd = edgePlanePoint(local.A, local.C, pCut);
+      var q2 = edgePlanePoint(local.B, local.C, pCut);
+      if (!q1 || !qd || !q2) return "";
+      var s = '<g>';
+      s += line(q1, qd, "#55e6e1", 5, "", 1);
+      s += line(qd, q2, "#55e6e1", 5, "", 1);
+      s += circle(q1, 7, "#55e6e1", "#55e6e1", 1, 1);
+      s += circle(qd, 7, "#55e6e1", "#55e6e1", 1, 1);
+      s += circle(q2, 7, "#55e6e1", "#55e6e1", 1, 1);
+      if (showLabels) {
+        s += label(q1, "Q1", "#55e6e1", 10, -10, "start");
+        s += label(qd, "Qchéo", "#55e6e1", 10, -10, "start");
+        s += label(q2, "Q2", "#55e6e1", 10, -10, "start");
+      }
+      s += '</g>';
+      return s;
+    }
+
+    function contourPath(points, close) {
+      if (!points.length) return "";
+      var p0 = project(points[0]);
+      var d = "M " + f(p0.x,1) + " " + f(p0.y,1);
+      for (var i = 1; i < points.length; i += 1) {
+        var p = project(points[i]);
+        d += " L " + f(p.x,1) + " " + f(p.y,1);
+      }
+      if (close) d += " Z";
+      return d;
+    }
+
+    function drawContour(showAllLabels, showMarkers) {
+      var s = '<g>';
+      s += '<path d="' + contourPath(contour, true) + '" fill="rgba(85,230,225,.08)" stroke="#55e6e1" stroke-width="4" stroke-linejoin="round" />';
+      if (showMarkers !== false) {
+        contour.forEach(function (p) {
+          s += circle(p, 5.6, "#ef4444", "#07111f", 1.4, 1);
+        });
+      }
+      if (showAllLabels) {
+        contour.forEach(function (p, index) {
+          if (index % 2 === 0) s += label(p, f(p.beta, 0) + "°", "#ef4444", 8, -9, "start");
+        });
+      }
+      s += '</g>';
+      return s;
+    }
+
+    function drawRay(progress, compare) {
+      var len = exactHit.M * Math.max(.02, progress);
+      var end = { x: len * Math.cos(theta), y: fixedP, z: len * Math.sin(theta) };
+      var origin = { x: 0, y: fixedP, z: 0 };
+      var s = '<g>';
+      s += line(origin, end, "#ffc35b", 4, "", 1);
+      if (progress > .92) {
+        s += circle(exactHit, 9, "#55e6e1", "#07111f", 2.4, 1);
+        s += label(exactHit, "C đúng", "#55e6e1", 12, -12, "start");
+      }
+      var arc = [];
+      for (var a = 0; a <= 35; a += 3.5) arc.push({x:82*Math.cos(a*RAD),y:fixedP,z:82*Math.sin(a*RAD)});
+      s += '<path d="' + contourPath(arc, false) + '" fill="none" stroke="#ffc35b" stroke-width="2" />';
+      s += label({x:95*Math.cos(18*RAD),y:fixedP,z:95*Math.sin(18*RAD)}, "θ = 35°", "#ffc35b", 0, -5, "start");
+      if (compare) {
+        s += line(Q1, Q2, "#ff7e79", 3.5, "9 7", .95);
+        s += circle(wrongHit, 7, "#ff7e79", "#07111f", 2, 1);
+        s += label(wrongHit, "C nối tắt", "#ff7e79", 12, 18, "start");
+      }
+      s += '</g>';
+      return s;
+    }
+
+    function screenText(x, y, textValue, size, color, anchor, weight) {
+      return '<text x="' + f(x,1) + '" y="' + f(y,1) + '" fill="' + (color || "#edf5ff") + '" font-size="' + (size || 14) + '" font-weight="' + (weight || 600) + '" text-anchor="' + (anchor || "start") + '" paint-order="stroke" stroke="#07111f" stroke-width="3" stroke-linejoin="round">' + esc(textValue) + '</text>';
+    }
+
+    function screenLine(a, b, color, width, dash, opacity) {
+      return '<line x1="' + f(a.x,1) + '" y1="' + f(a.y,1) + '" x2="' + f(b.x,1) + '" y2="' + f(b.y,1) + '" stroke="' + color + '" stroke-width="' + width + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + ' opacity="' + (opacity == null ? 1 : opacity) + '" stroke-linecap="round" />';
+    }
+
+    function screenCircle(p, r, fill, stroke, width, opacity) {
+      return '<circle cx="' + f(p.x,1) + '" cy="' + f(p.y,1) + '" r="' + r + '" fill="' + fill + '" stroke="' + (stroke || fill) + '" stroke-width="' + (width || 0) + '" opacity="' + (opacity == null ? 1 : opacity) + '" />';
+    }
+
+    function screenLerp(a, b, t) {
+      return { x: mix(a.x, b.x, t), y: mix(a.y, b.y, t) };
+    }
+
+    function progressivePath(points, progress) {
+      if (!points.length) return "";
+      var lengths = [];
+      var total = 0;
+      for (var i = 0; i < points.length - 1; i += 1) {
+        var len = Math.hypot(points[i+1].x - points[i].x, points[i+1].y - points[i].y);
+        lengths.push(len);
+        total += len;
+      }
+      var remaining = Math.max(0, Math.min(1, progress)) * total;
+      var d = "M " + f(points[0].x,1) + " " + f(points[0].y,1);
+      for (var j = 0; j < lengths.length && remaining > 0; j += 1) {
+        var ratio = Math.min(1, remaining / lengths[j]);
+        var end = screenLerp(points[j], points[j+1], ratio);
+        d += " L " + f(end.x,1) + " " + f(end.y,1);
+        remaining -= lengths[j] * ratio;
+        if (ratio < 1) break;
+      }
+      return d;
+    }
+
+    function triangleWalkGeometry(internalCount) {
+      var triangleCount = internalCount + 1;
+      var center = { x: 500, y: 88 };
+      var outer = [];
+      for (var i = 0; i <= triangleCount; i += 1) {
+        var u = i / triangleCount;
+        outer.push({ x: 105 + 790 * u, y: 500 + 105 * Math.sin(Math.PI * u) });
+      }
+      var path = [screenLerp(outer[0], outer[1], .46)];
+      for (var q = 1; q < triangleCount; q += 1) {
+        path.push(screenLerp(center, outer[q], .72 + .06 * Math.sin(Math.PI * q / triangleCount)));
+      }
+      path.push(screenLerp(outer[triangleCount - 1], outer[triangleCount], .54));
+      return { center: center, outer: outer, path: path, triangleCount: triangleCount };
+    }
+
+    function drawMeridianStationStrip(progress) {
+      var xL = 180, xR = 820;
+      var ys = [112, 255, 398, 541];
+      var leftSigns = [1, -1, -1, -1];
+      var rightSigns = [1, 1, 1, -1];
+      var L = ys.map(function (y) { return {x:xL,y:y}; });
+      var R = ys.map(function (y) { return {x:xR,y:y}; });
+      var activeTriangles = [
+        [L[0], R[1], L[1]],
+        [L[1], R[1], R[2]],
+        [L[1], R[2], L[2]],
+        [L[2], R[2], R[3]]
+      ];
+      var contourPoints = [
+        screenLerp(L[0], L[1], .5),
+        screenLerp(L[1], R[1], .5),
+        screenLerp(L[1], R[2], .5),
+        screenLerp(L[2], R[2], .5),
+        screenLerp(R[2], R[3], .5)
+      ];
+      var s = '<g>';
+      s += screenText(500, 37, "Hai kinh tuyến sampled và bốn hàng station — nhìn sau khi trải phẳng", 18, "#edf5ff", "middle", 800);
+      s += screenText(xL, 75, "βa", 18, "#79a9ff", "middle", 800);
+      s += screenText(xR, 75, "βb", 18, "#79a9ff", "middle", 800);
+
+      for (var cell = 0; cell < ys.length - 1; cell += 1) {
+        s += '<polygon points="' + L[cell].x + ',' + L[cell].y + ' ' + R[cell].x + ',' + R[cell].y + ' ' + R[cell+1].x + ',' + R[cell+1].y + '" fill="rgba(88,150,205,.025)" stroke="rgba(145,178,210,.22)" />';
+        s += '<polygon points="' + L[cell].x + ',' + L[cell].y + ' ' + R[cell+1].x + ',' + R[cell+1].y + ' ' + L[cell+1].x + ',' + L[cell+1].y + '" fill="rgba(88,150,205,.025)" stroke="rgba(145,178,210,.22)" />';
+      }
+      activeTriangles.forEach(function (tri, index) {
+        var active = progress * 4 >= index * .82;
+        var pts = tri.map(function (p) { return p.x + ',' + p.y; }).join(' ');
+        s += '<polygon points="' + pts + '" fill="' + (active ? (index % 2 ? "rgba(198,147,255,.18)" : "rgba(85,230,225,.16)") : "rgba(88,150,205,.02)") + '" stroke="' + (active ? "rgba(237,245,255,.35)" : "rgba(145,178,210,.18)") + '" stroke-width="1.4" />';
+        var cx = (tri[0].x + tri[1].x + tri[2].x) / 3;
+        var cy = (tri[0].y + tri[1].y + tri[2].y) / 3;
+        s += screenText(cx, cy, "T" + (index+1), 15, active ? "#edf5ff" : "#7890aa", "middle", 800);
+      });
+
+      s += screenLine(L[0], L[3], "#79a9ff", 4, "", 1);
+      s += screenLine(R[0], R[3], "#79a9ff", 4, "", 1);
+      ys.forEach(function (y, row) {
+        s += screenLine(L[row], R[row], "#91a7bd", 2, "6 6", .62);
+        s += screenText(105, y+4, "station " + row, 12, "#9eb1c7", "start", 650);
+      });
+      for (var diagonal = 0; diagonal < ys.length - 1; diagonal += 1) {
+        s += screenLine(L[diagonal], R[diagonal+1], "#ffc35b", 2.5, "7 6", .78);
+      }
+
+      L.forEach(function (p, index) {
+        var positive = leftSigns[index] > 0;
+        s += screenCircle(p, 7, positive ? "#ffc35b" : "#79a9ff", "#07111f", 1.5, 1);
+        s += screenText(p.x-14, p.y-11, positive ? "+" : "−", 14, positive ? "#ffc35b" : "#79a9ff", "end", 850);
+      });
+      R.forEach(function (p, index) {
+        var positive = rightSigns[index] > 0;
+        s += screenCircle(p, 7, positive ? "#ffc35b" : "#79a9ff", "#07111f", 1.5, 1);
+        s += screenText(p.x+14, p.y-11, positive ? "+" : "−", 14, positive ? "#ffc35b" : "#79a9ff", "start", 850);
+      });
+
+      s += '<path d="' + progressivePath(contourPoints, ease(progress)) + '" fill="none" stroke="#55e6e1" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)" />';
+      s += screenCircle(contourPoints[0], 9, "#55e6e1", "#79a9ff", 3, 1);
+      if (progress > .9) s += screenCircle(contourPoints[4], 9, "#55e6e1", "#79a9ff", 3, 1);
+      var revealed = Math.floor(ease(progress) * 4 + .001);
+      for (var q = 1; q <= 3; q += 1) {
+        if (revealed >= q) {
+          s += screenCircle(contourPoints[q], 8, "#55e6e1", "#55e6e1", 1, 1);
+          s += screenText(contourPoints[q].x + 12, contourPoints[q].y - 9, "Q" + q, 14, "#55e6e1", "start", 850);
+        }
+      }
+      s += screenText(contourPoints[0].x - 10, contourPoints[0].y + 29, "sampled", 12, "#79a9ff", "middle", 700);
+      s += screenText(contourPoints[4].x + 10, contourPoints[4].y + 29, "sampled", 12, "#79a9ff", "middle", 700);
+      s += screenText(500, 581, "Q1: cạnh station   →   Q2: cạnh chéo   →   Q3: cạnh station", 14, "#55e6e1", "middle", 800);
+      s += screenText(500, 610, "Dấu +/− là dấu của P − P*. Mọi cạnh đổi dấu đều dùng cùng công thức lerp.", 13, "#9eb1c7", "middle", 600);
+      return s + '</g>';
+    }
+
+    function drawTriangleWalk(internalCount, progress) {
+      if (internalCount === 3) return drawMeridianStationStrip(progress);
+      var g = triangleWalkGeometry(internalCount);
+      var s = '<g>';
+      s += screenText(500, 42, "Mặt P = P* đi qua một chuỗi facet — hình local mesh đã trải phẳng", 18, "#edf5ff", "middle", 750);
+      s += screenText(500, 66, "Vàng: P > P* · xanh: P < P* · cyan: giao tuyến P = P*", 12, "#9eb1c7", "middle", 550);
+
+      for (var i = 0; i < g.triangleCount; i += 1) {
+        var active = progress * g.triangleCount >= i * .86;
+        var pts = g.center.x + ',' + g.center.y + ' ' + g.outer[i].x + ',' + g.outer[i].y + ' ' + g.outer[i+1].x + ',' + g.outer[i+1].y;
+        s += '<polygon points="' + pts + '" fill="' + (active ? (i % 2 ? "rgba(198,147,255,.17)" : "rgba(85,230,225,.15)") : "rgba(88,150,205,.035)") + '" stroke="rgba(145,178,210,.38)" stroke-width="1.4" />';
+        var cx = (g.center.x + g.outer[i].x + g.outer[i+1].x) / 3;
+        var cy = (g.center.y + g.outer[i].y + g.outer[i+1].y) / 3;
+        s += screenText(cx, cy, "T" + (i + 1), 16, active ? "#edf5ff" : "#7890aa", "middle", 750);
+      }
+
+      for (var e = 1; e < g.triangleCount; e += 1) {
+        s += screenLine(g.center, g.outer[e], "#ffc35b", 3.3, "7 6", .9);
+      }
+      s += screenLine(g.outer[0], g.outer[1], "#79a9ff", 4, "", .95);
+      s += screenLine(g.outer[g.triangleCount-1], g.outer[g.triangleCount], "#79a9ff", 4, "", .95);
+
+      s += '<path d="' + progressivePath(g.path, ease(progress)) + '" fill="none" stroke="#55e6e1" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)" />';
+      s += screenCircle(g.center, 7, "#ffc35b", "#07111f", 2, 1);
+      s += screenText(g.center.x + 13, g.center.y + 5, "P > P*", 13, "#ffc35b", "start", 700);
+      g.outer.forEach(function (p, index) {
+        var positive = index === 0 || index === g.outer.length - 1;
+        s += screenCircle(p, 5.5, positive ? "#ffc35b" : "#79a9ff", "#07111f", 1.5, 1);
+      });
+
+      var revealed = Math.floor(ease(progress) * g.triangleCount + .001);
+      for (var qIndex = 1; qIndex < g.path.length - 1; qIndex += 1) {
+        if (revealed >= qIndex) {
+          s += screenCircle(g.path[qIndex], 8, "#55e6e1", "#55e6e1", 1, 1);
+          s += screenText(g.path[qIndex].x + 10, g.path[qIndex].y - 11, "Q" + qIndex, 15, "#55e6e1", "start", 800);
+        }
+      }
+      s += screenCircle(g.path[0], 9, "#55e6e1", "#79a9ff", 3, 1);
+      if (progress > .9) s += screenCircle(g.path[g.path.length-1], 9, "#55e6e1", "#79a9ff", 3, 1);
+      s += screenText(g.path[0].x - 8, g.path[0].y + 28, "sampled βa", 13, "#79a9ff", "middle", 700);
+      s += screenText(g.path[g.path.length-1].x + 8, g.path[g.path.length-1].y + 28, "sampled βb", 13, "#79a9ff", "middle", 700);
+
+      s += '<rect x="250" y="611" width="500" height="29" rx="14.5" fill="rgba(7,17,31,.82)" stroke="rgba(85,230,225,.28)" />';
+      s += screenText(500, 631, g.triangleCount + " tam giác bị cắt  →  " + internalCount + " cạnh chung bị vượt  →  " + internalCount + " điểm trung gian", 14, "#55e6e1", "middle", 800);
+      s += '</g>';
+      return s;
+    }
+
+    function drawRuleSummary(progress) {
+      var s = '<g>';
+      s += screenText(500, 48, "Cùng một quy tắc — số facet quyết định số đỉnh trung gian", 19, "#edf5ff", "middle", 800);
+      for (var k = 1; k <= 3; k += 1) {
+        var x = 55 + (k - 1) * 310;
+        var y = 98;
+        var w = 270;
+        s += '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="360" rx="20" fill="rgba(10,27,45,.88)" stroke="rgba(137,178,215,.22)" />';
+        s += screenText(x + w/2, y + 38, k + " điểm trung gian", 17, k === 2 ? "#ffc35b" : "#55e6e1", "middle", 800);
+        var pts = [];
+        for (var i = 0; i <= k + 1; i += 1) {
+          var u = i / (k + 1);
+          pts.push({x:x + 28 + u * (w - 56), y:y + 215 - Math.sin(u * Math.PI) * (34 + 7*k) + (i % 2 ? -8 : 8)});
+        }
+        for (var t = 0; t < k + 1; t += 1) {
+          var baseY = y + 285;
+          var fill = t % 2 ? "rgba(198,147,255,.14)" : "rgba(85,230,225,.12)";
+          s += '<polygon points="' + pts[t].x + ',' + pts[t].y + ' ' + pts[t+1].x + ',' + pts[t+1].y + ' ' + ((pts[t].x+pts[t+1].x)/2) + ',' + baseY + '" fill="' + fill + '" stroke="rgba(145,178,210,.30)" />';
+          s += screenText((pts[t].x+pts[t+1].x)/2, baseY-13, "T" + (t+1), 12, "#9eb1c7", "middle", 700);
+        }
+        s += '<path d="' + progressivePath(pts, Math.min(1, progress * 1.25)) + '" fill="none" stroke="#55e6e1" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" />';
+        pts.forEach(function (p, idx) {
+          if (idx > 0 && idx < pts.length - 1 && progress > idx / (pts.length + 1)) {
+            s += screenCircle(p, 6.5, "#55e6e1", "#55e6e1", 1, 1);
+            s += screenText(p.x, p.y - 13, "Q" + idx, 12, "#55e6e1", "middle", 800);
+          }
+        });
+        s += screenText(x + w/2, y + 330, (k + 1) + " facet  →  " + k + " cạnh chung", 13, "#c8d6e5", "middle", 700);
+      }
+      s += '<rect x="75" y="493" width="850" height="112" rx="18" fill="rgba(255,195,91,.055)" stroke="rgba(255,195,91,.22)" />';
+      s += screenText(500, 525, "Adaptive refinement", 14, "#ffc35b", "middle", 800);
+      s += screenText(500, 550, "tạo danh sách β trước  →  dựng mesh tam giác  →  fixed-P chỉ cắt các cạnh đã tồn tại", 15, "#edf5ff", "middle", 700);
+      s += screenText(500, 578, "Hiển thị cuối cùng sắp theo α = atan2(My, Mx), nên α và β không phải cùng một thứ tự.", 13, "#9eb1c7", "middle", 600);
+      s += '</g>';
+      return s;
+    }
+
+    function evidenceBar(x, y, labelValue, count, maxCount, color, progress) {
+      var width = 560 * count / maxCount * ease(progress);
+      var s = screenText(x, y + 15, labelValue, 13, "#c8d6e5", "start", 700);
+      s += '<rect x="' + (x + 92) + '" y="' + y + '" width="560" height="21" rx="10.5" fill="rgba(145,178,210,.10)" />';
+      s += '<rect x="' + (x + 92) + '" y="' + y + '" width="' + f(width,1) + '" height="21" rx="10.5" fill="' + color + '" opacity=".82" />';
+      s += screenText(x + 665, y + 15, String(count) + " khoảng", 13, color, "start", 800);
+      return s;
+    }
+
+    function drawProjectEvidence(progress) {
+      var s = '<g>';
+      s += screenText(500, 42, "Kiểm tra trực tiếp Column-project (5).json", 19, "#edf5ff", "middle", 800);
+      s += screenText(500, 67, "112 hướng sampled · 25 station/hướng · 2,800 điểm surface", 13, "#9eb1c7", "middle", 600);
+
+      s += '<rect x="60" y="92" width="880" height="196" rx="20" fill="rgba(10,27,45,.88)" stroke="rgba(137,178,215,.22)" />';
+      s += screenText(88, 123, "P mặc định = 5908.452 kN", 15, "#ffc35b", "start", 800);
+      s += evidenceBar(92, 146, "1 điểm", 90, 94, "#55e6e1", progress);
+      s += evidenceBar(92, 181, "3 điểm", 22, 94, "#c693ff", progress);
+      s += screenText(500, 252, "90×1 + 22×3 = 156 đỉnh trung gian", 15, "#edf5ff", "middle", 750);
+
+      s += '<rect x="60" y="308" width="880" height="244" rx="20" fill="rgba(10,27,45,.88)" stroke="rgba(137,178,215,.22)" />';
+      s += screenText(88, 339, "P = 0 kN — có đủ trường hợp 0, 1, 2 và 3 điểm", 15, "#ffc35b", "start", 800);
+      s += evidenceBar(92, 361, "0 điểm", 2, 94, "#7890aa", progress);
+      s += evidenceBar(92, 392, "1 điểm", 94, 94, "#55e6e1", progress);
+      s += evidenceBar(92, 423, "2 điểm", 8, 94, "#ffc35b", progress);
+      s += evidenceBar(92, 454, "3 điểm", 8, 94, "#c693ff", progress);
+      s += screenText(500, 520, "2×0 + 94×1 + 8×2 + 8×3 = 134 đỉnh trung gian", 15, "#edf5ff", "middle", 750);
+
+      s += screenText(500, 590, "Ví dụ α nội bộ: 15.254°, 17.735°  |  24.617°, 26.403°, 27.527°", 14, "#55e6e1", "middle", 750);
+      s += screenText(500, 618, "Đây là góc moment α sau sort atan2 — không phải các β adaptive mới.", 13, "#9eb1c7", "middle", 600);
+      s += '</g>';
+      return s;
+    }
+
+    function drawMeridianBrackets(showBoth, progress) {
+      var pMax = 1000, pMin = -400;
+      var yForP = function (p) { return 105 + (pMax - p) / (pMax - pMin) * 430; };
+      var leftX = showBoth ? 265 : 500;
+      var rightX = 735;
+      var leftP = [600, 0, -200, -400];
+      var rightP = [1000, 800, 600, 0];
+      var makeCurve = function (baseX, values, phase) {
+        return values.map(function (p, i) {
+          return { x: baseX + Math.sin(i * 1.4 + phase) * 34, y: yForP(p), P: p, station: i };
+        });
+      };
+      var left = makeCurve(leftX, leftP, .2);
+      var right = makeCurve(rightX, rightP, 1.1);
+      var planeY = yForP(fixedP);
+      var cutLeft = screenLerp(left[0], left[1], .5);
+      var cutRight = screenLerp(right[2], right[3], .5);
+      var s = '<g>';
+      s += screenText(500, 45, showBoth ? "Hai phép bracket độc lập — station index không cần trùng nhau" : "Một kinh tuyến: tìm đoạn kề nhau có hai đầu bao P*", 19, "#edf5ff", "middle", 800);
+      s += screenLine({x:80,y:planeY},{x:920,y:planeY},"#ffc35b",3.5,"9 7",.92);
+      s += screenText(92, planeY-10, "P* = 300", 14, "#ffc35b", "start", 800);
+      s += screenText(75, 96, "P", 15, "#c8d6e5", "middle", 800);
+      s += screenLine({x:75,y:105},{x:75,y:535},"#91a7bd",2,"",.7);
+
+      var drawOne = function (curve, name, bracketStart, cut, delay) {
+        s += '<path d="' + progressivePath(curve, Math.min(1, Math.max(0, (progress-delay)*1.6))) + '" fill="none" stroke="#79a9ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />';
+        s += screenText(curve[0].x, 83, name, 17, "#79a9ff", "middle", 800);
+        curve.forEach(function (p) {
+          s += screenCircle(p, 7, "#79a9ff", "#07111f", 1.5, 1);
+          s += screenText(p.x + 14, p.y + 4, "s" + p.station + " · P=" + p.P, 12, "#c8d6e5", "start", 650);
+        });
+        s += screenLine(curve[bracketStart], curve[bracketStart+1], "#55e6e1", 7, "", .78);
+        if (progress > delay + .28) {
+          s += screenCircle(cut, 10, "#55e6e1", "#55e6e1", 1, 1);
+          s += screenText(cut.x - 13, cut.y - 14, name === "βa" ? "S1" : "S2", 16, "#55e6e1", "end", 850);
+        }
+      };
+      drawOne(left, "βa", 0, cutLeft, 0);
+      if (showBoth) drawOne(right, "βb", 2, cutRight, .18);
+
+      var note = showBoth
+        ? "βa dùng s0–s1; βb dùng s2–s3. Không có yêu cầu s0 của βa phải ghép với s0 của βb."
+        : "t = (300 − 600) / (0 − 600) = 0.5  →  S1 nằm đúng giữa hai đầu đoạn.";
+      s += '<rect x="120" y="578" width="760" height="43" rx="15" fill="rgba(7,17,31,.82)" stroke="rgba(85,230,225,.25)" />';
+      s += screenText(500, 605, note, 13, "#55e6e1", "middle", 750);
+      return s + '</g>';
+    }
+
+    function drawAdaptiveCuts(progress) {
+      var betas = [0, .4, .89, 1];
+      var s = '<g>';
+      s += screenText(500, 48, "Các hướng adaptive là các kinh tuyến thật, không phải điểm chéo", 19, "#edf5ff", "middle", 800);
+      s += screenLine({x:95,y:330},{x:905,y:330},"#ffc35b",3.5,"9 7",.9);
+      s += screenText(105, 315, "P = P*", 14, "#ffc35b", "start", 800);
+      betas.forEach(function (beta, index) {
+        var x = 130 + beta * 740;
+        var top = {x:x-10+index*4,y:115+index*9};
+        var upper = {x:x+15-index*3,y:235+index*5};
+        var lower = {x:x-13+index*4,y:430-index*6};
+        var bottom = {x:x+8-index*2,y:545-index*4};
+        var curve = [top,upper,lower,bottom];
+        var local = Math.max(0, Math.min(1, progress*1.45-index*.12));
+        s += '<path d="' + progressivePath(curve, local) + '" fill="none" stroke="#79a9ff" stroke-width="3.5" stroke-linecap="round" />';
+        curve.forEach(function (p) { s += screenCircle(p, 5.5, "#79a9ff", "#07111f", 1.2, 1); });
+        var t = (330-upper.y)/(lower.y-upper.y);
+        var cut = screenLerp(upper,lower,t);
+        if (local > .68) s += screenCircle(cut, 9, "#55e6e1", "#55e6e1", 1, 1);
+        s += screenText(x, 90, beta + "°", 15, "#edf5ff", "middle", 800);
+        if (local > .68) s += screenText(cut.x, cut.y-14, "S" + beta + "°", 12, "#55e6e1", "middle", 750);
+      });
+      s += screenText(500, 592, "4 beta sampled  →  4 kinh tuyến  →  4 giao điểm fixed-P", 15, "#55e6e1", "middle", 800);
+      s += screenText(500, 618, "0.4° và 0.89° được adaptive tạo trước khi phép cắt P bắt đầu.", 13, "#9eb1c7", "middle", 600);
+      return s + '</g>';
+    }
+
+    function drawCorrectedContour(progress, withRay) {
+      var projected = contour.map(project);
+      var closed = projected.concat(projected.length ? [projected[0]] : []);
+      var s = '<g>';
+      s += '<path d="' + progressivePath(closed, ease(progress)) + '" fill="rgba(85,230,225,.07)" stroke="#55e6e1" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />';
+      var visible = Math.ceil(ease(progress) * contour.length);
+      contour.forEach(function (p, index) {
+        if (index >= visible) return;
+        s += circle(p, 5.5, "#55e6e1", "#55e6e1", 1, 1);
+        if (index % 2 === 0) s += label(p, f(p.beta,0) + "°", "#c8d6e5", 8, -9, "start");
+      });
+      if (withRay) s += drawRay(ease(progress), false);
+      return s + '</g>';
+    }
+
+    function mapMomentToPanel(point, panel) {
+      var maxRadius = Math.max.apply(null, triangleContour.concat(meridianContour).map(function (p) { return Math.hypot(p.Mx,p.My); }));
+      var scale = Math.min(panel.w,panel.h) * .42 / Math.max(maxRadius,1);
+      return {x:panel.x+panel.w/2+point.Mx*scale,y:panel.y+panel.h/2-point.My*scale};
+    }
+
+    function drawAlgorithmComparison(progress) {
+      var left = {x:45,y:100,w:430,h:445};
+      var right = {x:525,y:100,w:430,h:445};
+      var s = '<g>';
+      s += screenText(500, 48, "Topology analysis và sampled display", 19, "#edf5ff", "middle", 800);
+      [left,right].forEach(function (panel) {
+        s += '<rect x="' + panel.x + '" y="' + panel.y + '" width="' + panel.w + '" height="' + panel.h + '" rx="20" fill="rgba(10,27,45,.86)" stroke="rgba(137,178,215,.22)" />';
+      });
+      var triangleScreen = triangleContour.map(function (p) { return mapMomentToPanel(p,left); });
+      var sampledScreen = meridianContour.map(function (p) { return mapMomentToPanel(p,right); });
+      s += '<path d="' + progressivePath(triangleScreen.concat([triangleScreen[0]]), progress) + '" fill="rgba(85,230,225,.05)" stroke="#55e6e1" stroke-width="4" stroke-linejoin="round" />';
+      triangleContour.forEach(function (p) {
+        var q = mapMomentToPanel(p,left);
+        s += screenCircle(q,p.onSampledDirection?5.5:3.8,p.onSampledDirection?"#ef4444":"#55e6e1",p.onSampledDirection?"#07111f":"#55e6e1",p.onSampledDirection?1.2:0,1);
+      });
+      s += '<path d="' + progressivePath(sampledScreen.concat([sampledScreen[0]]), progress) + '" fill="rgba(85,230,225,.05)" stroke="#55e6e1" stroke-width="4" stroke-linejoin="round" />';
+      sampledScreen.forEach(function (q) { s += screenCircle(q,5.5,"#ef4444","#07111f",1.2,1); });
+      s += screenText(left.x+left.w/2, 132, "ANALYSIS · triangle topology", 15, "#55e6e1", "middle", 850);
+      s += screenText(right.x+right.w/2, 132, "DISPLAY · adaptive meridians", 15, "#55e6e1", "middle", 850);
+      s += screenText(left.x+left.w/2, 520, triangleContour.length + " vertices · giữ trong kernel", 13, "#8ff2ee", "middle", 700);
+      s += screenText(right.x+right.w/2, 520, meridianContour.length + " sampled vertices · đường đang vẽ", 13, "#8ff2ee", "middle", 700);
+      s += screenText(500, 594, "Biểu đồ dùng hình bên phải; topology tính toán bên trái không bị xóa.", 14, "#edf5ff", "middle", 750);
+      return s + '</g>';
+    }
+
+    function drawCorrectedEvidence(progress) {
+      var s = '<g>';
+      s += screenText(500, 46, "Column-project (5).json · sampled-only display", 20, "#edf5ff", "middle", 850);
+      s += screenText(500, 72, "112 hướng adaptive · 25 station/hướng · một vertex cho mỗi beta", 13, "#9eb1c7", "middle", 650);
+      var cards = [
+        {x:65,title:"P mặc định = 5908.452 kN",value:"112 / 112",note:"sampled display · intermediate hidden"},
+        {x:520,title:"P = 0 kN",value:"112 / 112",note:"sampled display · intermediate hidden"}
+      ];
+      cards.forEach(function (card,index) {
+        s += '<rect x="' + card.x + '" y="110" width="415" height="215" rx="22" fill="rgba(10,27,45,.9)" stroke="rgba(85,230,225,.24)" />';
+        s += screenText(card.x+207.5, 151, card.title, 15, "#ffc35b", "middle", 800);
+        s += screenText(card.x+207.5, 231, progress>.35+index*.12?card.value:"0 / 112", 44, "#55e6e1", "middle", 850);
+        s += screenText(card.x+207.5, 278, card.note, 13, "#c8d6e5", "middle", 650);
+      });
+      var checks = [
+        "✓ một điểm trên mỗi beta",
+        "✓ bracket độc lập theo P",
+        "✓ sort đúng thứ tự beta",
+        "✓ khép kín beta cuối–đầu"
+      ];
+      checks.forEach(function (item,index) {
+        var x=75+(index%2)*455, y=375+Math.floor(index/2)*78;
+        s += '<rect x="' + x + '" y="' + y + '" width="395" height="54" rx="15" fill="rgba(85,230,225,.07)" stroke="rgba(85,230,225,.18)" />';
+        s += screenText(x+20,y+34,item,14,"#edf5ff","start",700);
+      });
+      s += screenText(500, 574, "134 hoặc 156 intermediate vertices vẫn có trong analysis contour nhưng không đưa vào trace.", 15, "#55e6e1", "middle", 800);
+      s += screenText(500, 607, "Display contour = sampled/adaptive beta meridians có giao điểm hợp lệ.", 13, "#9eb1c7", "middle", 650);
+      return s + '</g>';
+    }
+
+    function renderScene(now) {
+      var elapsed = now - stepStart;
+      var localProgress = reduceMotion ? 1 : Math.min(1, elapsed / 1500);
+      var s = '<defs>' +
+        '<filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>' +
+        '<linearGradient id="meshGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#79a9ff" stop-opacity=".22"/><stop offset="1" stop-color="#55e6e1" stop-opacity=".05"/></linearGradient>' +
+        '</defs>';
+
+      if (currentStep === 0) {
+        svg.innerHTML = s;
+        return;
+      }
+
+      if (currentStep === 2) {
+        svg.innerHTML = s + drawMeridianBrackets(false, localProgress);
+        return;
+      }
+      if (currentStep === 3) {
+        svg.innerHTML = s + drawMeridianBrackets(true, localProgress);
+        return;
+      }
+      if (currentStep === 4) {
+        svg.innerHTML = s + drawAdaptiveCuts(localProgress);
+        return;
+      }
+      if (currentStep === 6) {
+        svg.innerHTML = s + drawAlgorithmComparison(localProgress);
+        return;
+      }
+      if (currentStep === 8) {
+        svg.innerHTML = s + drawCorrectedEvidence(localProgress);
+        return;
+      }
+
+      s += drawAxes();
+      if (currentStep === 1) {
+        s += drawFullMesh();
+      } else if (currentStep === 5) {
+        s += drawFullMesh();
+        s += drawContour(false, false);
+      } else if (currentStep === 7) {
+        s += drawContour(true, true);
+        s += drawRay(ease(localProgress), false);
+      }
+      svg.innerHTML = s;
+    }
+
+    function applyText() {
+      var st = steps[currentStep];
+      stepNumber.textContent = String(currentStep + 1);
+      stepName.textContent = st.name;
+      progressBar.style.width = ((currentStep + 1) / steps.length * 100) + "%";
+      sourceRef.textContent = st.ref;
+      explainTitle.textContent = st.title;
+      explainLead.textContent = st.lead;
+      formula.textContent = st.formula;
+      facts.innerHTML = st.facts.map(function (x) { return "<li>" + x + "</li>"; }).join("");
+      takeaway.innerHTML = st.takeaway;
+      viewportNote.textContent = st.view;
+      stage.classList.toggle("is-cover", currentStep === 0);
+      prevBtn.disabled = currentStep === 0;
+      nextBtn.disabled = currentStep === steps.length - 1;
+    }
+
+    function frame(now) {
+      rafId = null;
+      var cameraMoving = updateCamera(now);
+      renderScene(now);
+      var stepAnimating = !reduceMotion && (now - stepStart < 1600) && [2, 3, 4, 5, 6, 7, 8].indexOf(currentStep) >= 0;
+      if (cameraMoving || stepAnimating) rafId = raf(frame);
+    }
+    function requestFrame() {
+      if (rafId == null) rafId = raf(frame);
+    }
+
+    function goToStep(index) {
+      index = Math.max(0, Math.min(steps.length - 1, index));
+      var now = (window.performance && performance.now) ? performance.now() : Date.now();
+      camFrom = Object.assign({}, cam);
+      camTo = Object.assign({}, steps[index].cam);
+      currentStep = index;
+      transitionStart = now;
+      stepStart = now;
+      applyText();
+      requestFrame();
+      if (playing) scheduleAuto();
+    }
+
+    function stopAuto() {
+      playing = false;
+      if (autoTimer) window.clearTimeout(autoTimer);
+      autoTimer = null;
+      playBtn.textContent = "▶ Chạy tự động";
+    }
+    function scheduleAuto() {
+      if (autoTimer) window.clearTimeout(autoTimer);
+      if (!playing) return;
+      autoTimer = window.setTimeout(function () {
+        if (currentStep >= steps.length - 1) {
+          stopAuto();
+        } else {
+          goToStep(currentStep + 1);
+        }
+      }, currentStep === 0 ? 4800 : 5600);
+    }
+    function toggleAuto() {
+      playing = !playing;
+      playBtn.textContent = playing ? "❚❚ Tạm dừng" : "▶ Chạy tự động";
+      if (playing) {
+        if (currentStep >= steps.length - 1) goToStep(0);
+        scheduleAuto();
+      } else if (autoTimer) {
+        window.clearTimeout(autoTimer);
+        autoTimer = null;
+      }
+    }
+
+    prevBtn.addEventListener("click", function () { stopAuto(); goToStep(currentStep - 1); });
+    nextBtn.addEventListener("click", function () { stopAuto(); goToStep(currentStep + 1); });
+    playBtn.addEventListener("click", toggleAuto);
+    restartBtn.addEventListener("click", function () { stopAuto(); goToStep(0); });
+    fullscreenBtn.addEventListener("click", function () {
+      var el = document.documentElement;
+      if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen();
+      else if (document.exitFullscreen) document.exitFullscreen();
+    });
+    document.addEventListener("fullscreenchange", function () {
+      fullscreenBtn.textContent = document.fullscreenElement ? "Thoát toàn màn hình" : "Toàn màn hình";
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "ArrowRight") { event.preventDefault(); stopAuto(); goToStep(currentStep + 1); }
+      if (event.key === "ArrowLeft") { event.preventDefault(); stopAuto(); goToStep(currentStep - 1); }
+      if (event.code === "Space" && event.target === document.body) { event.preventDefault(); toggleAuto(); }
+    });
+    window.addEventListener("resize", requestFrame);
+
+    applyText();
+    goToStep(0);
+
+    window.__fixedPInterpolation = {
+      version: "5.2-sampled-grid",
+      getStep: function () { return currentStep; },
+      next: function () { goToStep(currentStep + 1); },
+      previous: function () { goToStep(currentStep - 1); },
+      play: toggleAuto,
+      values: {
+        P: fixedP,
+        thetaDeg: 35,
+        Q1: Q1,
+        Qdiag: Qdiag,
+        Q2: Q2,
+        exactHit: exactHit,
+        wrongHit: wrongHit
+      }
+    };
+  }());
+  </script>
+</body>
+</html>

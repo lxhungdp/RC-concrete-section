@@ -51,6 +51,12 @@ import {
   sectionFieldAngleComparison,
   strainDirectionToNeutralAxisAngleDeg
 } from './section-field-angles'
+import {
+  buildClosedSurfaceTriangles,
+  isIntermediateStationValue,
+  isMeridianOrParallelEdge,
+  triangulatePlanarPolygon
+} from './surface-plot-geometry'
 
 type ResultsViewMode = 'overview' | 'loadcase'
 type ResultsTheme = 'light' | 'dark'
@@ -217,6 +223,7 @@ const plotPalettes = {
     tick: 'rgba(15, 23, 42, 0.28)',
     primary: '#2563eb',
     guide: 'rgba(100, 116, 139, 0.55)',
+    surfaceWireframe: 'rgba(71, 85, 105, 0.62)',
     calloutText: '#b91c1c',
     markerOutline: '#ffffff'
   },
@@ -228,6 +235,7 @@ const plotPalettes = {
     tick: 'rgba(255, 255, 255, 0.24)',
     primary: '#60a5fa',
     guide: 'rgba(148, 163, 184, 0.34)',
+    surfaceWireframe: 'rgba(203, 213, 225, 0.46)',
     calloutText: '#facc15',
     markerOutline: '#0e0f11'
   }
@@ -257,21 +265,6 @@ const groupByBeta = (points: PreviewSurfacePoint[]) => {
       curve: curve.sort((a, b) => a.station - b.station)
     }))
 }
-
-const pointBounds = (points: PreviewSurfacePoint[]) => ({
-  P: [
-    Math.min(...points.map((point) => point.P)),
-    Math.max(...points.map((point) => point.P))
-  ] as [number, number],
-  Mx: [
-    Math.min(...points.map((point) => point.Mx)),
-    Math.max(...points.map((point) => point.Mx))
-  ] as [number, number],
-  My: [
-    Math.min(...points.map((point) => point.My)),
-    Math.max(...points.map((point) => point.My))
-  ] as [number, number]
-})
 
 const normalizeAngleDeg = (degrees: number) => {
   const wrapped = ((degrees % 360) + 360) % 360
@@ -525,7 +518,8 @@ export function ResultsWorkspace({
     return capped.length > 0 ? kn(Math.max(...capped.map((point) => point.P))) : null
   }, [surface])
 
-  // Diagnostic markers, taken from the contour that is actually drawn — not from a second slice.
+  // The analysis contour retains every triangle intersection; the display intentionally uses only
+  // the dense adaptive meridian crossings for a cleaner, stable presentation curve.
   const strainAngleSamples = useMemo(() => contourStrainAngleSamples(contour), [contour])
   const nominalStrainAngleSamples = useMemo(
     () => contourStrainAngleSamples(nominalContour),
@@ -541,18 +535,13 @@ export function ResultsWorkspace({
     [surface, view.surfaceResistanceMode]
   )
   const surfaceGrid = useMemo(() => groupByBeta(surfacePoints3d), [surfacePoints3d])
-  const surfaceBounds3d = useMemo(
-    () => (surfacePoints3d.length > 0 ? pointBounds(surfacePoints3d) : null),
-    [surfacePoints3d]
-  )
-  const surfaceContour3d = useMemo(
-    () => sliceFixedPContour(
-      surfacePoints3d,
-      activeFixedP,
-      view.surfaceResistanceMode === 'design' ? surface?.triangles : surface?.nominalTriangles
-    ),
-    [activeFixedP, surface, surfacePoints3d, view.surfaceResistanceMode]
-  )
+  const surfaceTriangles3d = useMemo(() => {
+    const explicit = view.surfaceResistanceMode === 'design' ? surface?.triangles : surface?.nominalTriangles
+    return explicit && explicit.length > 0 ? explicit : buildClosedSurfaceTriangles(surfacePoints3d)
+  }, [surface, surfacePoints3d, view.surfaceResistanceMode])
+  const surfaceContour3d = view.surfaceResistanceMode === 'design'
+    ? strainAngleSamples
+    : nominalStrainAngleSamples
 
   /** Drawing the opposite half already covers angles past 180°, so the slider range halves with it. */
   useEffect(() => {
@@ -594,79 +583,14 @@ export function ResultsWorkspace({
     view.sliceAngle
   ])
 
-
   const surfaceData = useMemo(() => {
-    if (!surface || !surfaceBounds3d) return []
+    if (!surface || surfacePoints3d.length === 0) return []
     const x = surfaceGrid.map((row) => row.curve.map((point) => knm(point.Mx)))
     const y = surfaceGrid.map((row) => row.curve.map((point) => knm(point.My)))
     const z = surfaceGrid.map((row) => row.curve.map((point) => kn(point.P)))
     const customdata = surfaceGrid.map((row) => row.curve.map((point) => point.id))
-
-    const mxSpan = Math.max(Math.abs(surfaceBounds3d.Mx[0]), Math.abs(surfaceBounds3d.Mx[1]), 1)
-    const mySpan = Math.max(Math.abs(surfaceBounds3d.My[0]), Math.abs(surfaceBounds3d.My[1]), 1)
-    const radius = knm(Math.hypot(mxSpan, mySpan)) * 1.05
-    const p0 = kn(surfaceBounds3d.P[0])
-    const p1 = kn(surfaceBounds3d.P[1])
     const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
-    const c = Math.cos(theta)
-    const s = Math.sin(theta)
-    const m0 = view.includeOppositeMoment ? -radius : 0
-    const m1 = radius
     const pPlane = activeFixedPKn
-
-    const verticalPlane = {
-      type: 'surface',
-      name: 'Vertical plane',
-      x: [
-        [m0 * c, m1 * c],
-        [m0 * c, m1 * c]
-      ],
-      y: [
-        [m0 * s, m1 * s],
-        [m0 * s, m1 * s]
-      ],
-      z: [
-        [p0, p0],
-        [p1, p1]
-      ],
-      opacity: 0.22,
-      showscale: false,
-      colorscale: [
-        [0, '#7c3aed'],
-        [1, '#7c3aed']
-      ],
-      hoverinfo: 'skip',
-      contours: { x: { highlight: false }, y: { highlight: false }, z: { highlight: false } }
-    }
-
-    const mxMin = -knm(mxSpan) * 1.05
-    const mxMax = knm(mxSpan) * 1.05
-    const myMin = -knm(mySpan) * 1.05
-    const myMax = knm(mySpan) * 1.05
-    const fixedPPlane = {
-      type: 'surface',
-      name: 'Fixed-P plane',
-      x: [
-        [mxMin, mxMax],
-        [mxMin, mxMax]
-      ],
-      y: [
-        [myMin, myMin],
-        [myMax, myMax]
-      ],
-      z: [
-        [pPlane, pPlane],
-        [pPlane, pPlane]
-      ],
-      opacity: 0.18,
-      showscale: false,
-      colorscale: [
-        [0, '#2563eb'],
-        [1, '#2563eb']
-      ],
-      hoverinfo: 'skip',
-      contours: { x: { highlight: false }, y: { highlight: false }, z: { highlight: false } }
-    }
 
     const ring = surfaceContour3d.length
       ? {
@@ -676,28 +600,124 @@ export function ResultsWorkspace({
           x: [...surfaceContour3d.map((point) => knm(point.Mx)), knm(surfaceContour3d[0].Mx)],
           y: [...surfaceContour3d.map((point) => knm(point.My)), knm(surfaceContour3d[0].My)],
           z: [...surfaceContour3d.map(() => pPlane), pPlane],
-          line: { color: '#2563eb', width: 5 },
+          line: { color: plotPalette.primary, width: 7 },
           hoverinfo: 'skip'
         }
       : null
 
-    const activeTriangles = view.surfaceResistanceMode === 'design' ? surface.triangles : surface.nominalTriangles
+    const activeTriangles = surfaceTriangles3d
+    const surfaceGridWireframe = activeTriangles.length > 0
+      ? (() => {
+          const seen = new Set<string>()
+          const wireX: Array<number | null> = []
+          const wireY: Array<number | null> = []
+          const wireZ: Array<number | null> = []
+          const appendEdge = (leftIndex: number, rightIndex: number) => {
+            if (!isMeridianOrParallelEdge(surfacePoints3d, leftIndex, rightIndex)) return
+            const a = Math.min(leftIndex, rightIndex)
+            const b = Math.max(leftIndex, rightIndex)
+            const key = `${a}:${b}`
+            if (seen.has(key)) return
+            seen.add(key)
+            const left = surfacePoints3d[a]
+            const right = surfacePoints3d[b]
+            if (!left || !right) return
+            wireX.push(knm(left.Mx), knm(right.Mx), null)
+            wireY.push(knm(left.My), knm(right.My), null)
+            wireZ.push(kn(left.P), kn(right.P), null)
+          }
+          for (const triangle of activeTriangles) {
+            appendEdge(triangle.a, triangle.b)
+            appendEdge(triangle.b, triangle.c)
+            appendEdge(triangle.c, triangle.a)
+          }
+          return {
+            type: 'scatter3d',
+            name: 'Meridian and parallel grid',
+            mode: 'lines',
+            x: wireX,
+            y: wireY,
+            z: wireZ,
+            line: { color: plotPalette.surfaceWireframe, width: 1.05 },
+            opacity: 1,
+            hoverinfo: 'skip'
+          }
+        })()
+      : null
     const momentPlanePaths = sliceMomentPlane(surfacePoints3d, theta, activeTriangles)
     const visibleMomentPaths = view.includeOppositeMoment
       ? momentPlanePaths.map((path) => path.points)
       : clipMomentPlanePaths(momentPlanePaths, 'positive')
-    const sliceTraces = visibleMomentPaths.map((path, index) => ({
-      type: 'scatter3d',
-      name: index === 0 ? 'Vertical slice' : `Vertical slice ${index + 1}`,
-      mode: 'lines',
-      x: path.map((point) => knm(point.Mx)),
-      y: path.map((point) => knm(point.My)),
-      z: path.map((point) => kn(point.P)),
-      line: { color: '#7c3aed', width: 6 },
-      hoverinfo: 'skip'
-    }))
 
-    const capacityTrace = activeTriangles
+    const withoutRepeatedClosingPoint = (path: PreviewMomentPlanePoint[]) => {
+      if (path.length < 2) return [...path]
+      const first = path[0]
+      const last = path[path.length - 1]
+      const scale = Math.max(
+        Math.abs(first.P), Math.abs(first.Mx), Math.abs(first.My),
+        Math.abs(last.P), Math.abs(last.Mx), Math.abs(last.My),
+        1
+      )
+      const repeated =
+        Math.abs(first.P - last.P) <= scale * 1e-12 &&
+        Math.abs(first.Mx - last.Mx) <= scale * 1e-12 &&
+        Math.abs(first.My - last.My) <= scale * 1e-12
+      return repeated ? path.slice(0, -1) : [...path]
+    }
+    const verticalSectionBoundaries = visibleMomentPaths.map(withoutRepeatedClosingPoint)
+    const verticalSectionFills = verticalSectionBoundaries.flatMap((path, index) => {
+      const topology = triangulatePlanarPolygon(path.map((point) => ({ u: point.M, v: point.P })))
+      if (topology.length === 0) return []
+      return [{
+        type: 'mesh3d',
+        name: index === 0 ? 'Vertical section fill' : `Vertical section fill ${index + 1}`,
+        x: path.map((point) => knm(point.Mx)),
+        y: path.map((point) => knm(point.My)),
+        z: path.map((point) => kn(point.P)),
+        i: topology.map((triangle) => triangle.a),
+        j: topology.map((triangle) => triangle.b),
+        k: topology.map((triangle) => triangle.c),
+        color: '#7c3aed',
+        opacity: 0.16,
+        flatshading: true,
+        hoverinfo: 'skip'
+      }]
+    })
+    const sliceTraces = verticalSectionBoundaries.map((path, index) => {
+      const closed = path.length > 1 ? [...path, path[0]] : path
+      return {
+        type: 'scatter3d',
+        name: index === 0 ? 'Vertical slice' : `Vertical slice ${index + 1}`,
+        mode: 'lines',
+        x: closed.map((point) => knm(point.Mx)),
+        y: closed.map((point) => knm(point.My)),
+        z: closed.map((point) => kn(point.P)),
+        line: { color: '#7c3aed', width: 7 },
+        hoverinfo: 'skip'
+      }
+    })
+
+    const fixedPTopology = triangulatePlanarPolygon(
+      surfaceContour3d.map((point) => ({ u: point.Mx, v: point.My }))
+    )
+    const fixedPSectionFill = fixedPTopology.length > 0
+      ? {
+          type: 'mesh3d',
+          name: 'Fixed-P section fill',
+          x: surfaceContour3d.map((point) => knm(point.Mx)),
+          y: surfaceContour3d.map((point) => knm(point.My)),
+          z: surfaceContour3d.map(() => pPlane),
+          i: fixedPTopology.map((triangle) => triangle.a),
+          j: fixedPTopology.map((triangle) => triangle.b),
+          k: fixedPTopology.map((triangle) => triangle.c),
+          color: plotPalette.primary,
+          opacity: 0.14,
+          flatshading: true,
+          hoverinfo: 'skip'
+        }
+      : null
+
+    const capacityTrace = activeTriangles.length > 0
       ? {
         type: 'mesh3d',
         name: view.surfaceResistanceMode === 'design' ? 'Design surface' : 'Nominal surface',
@@ -709,7 +729,7 @@ export function ResultsWorkspace({
         k: activeTriangles.map((triangle) => triangle.c),
         intensity: surfacePoints3d.map((point) => kn(point.P)),
         colorscale: fieldColorscale,
-        opacity: 0.72,
+        opacity: 0.52,
         colorbar: {
           title: 'P (kN)',
           thickness: 15,
@@ -730,15 +750,16 @@ export function ResultsWorkspace({
         z,
         customdata,
         colorscale: fieldColorscale,
-        opacity: 0.72,
+        opacity: 0.52,
         colorbar: { title: 'P (kN)', thickness: 15, len: 0.72, x: 1.02, xpad: 4, tickfont: { size: 10 } },
         hovertemplate: `P=%{z:.1f} kN<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>${view.surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'} surface</extra>`
       }
 
     return [
       capacityTrace,
-      verticalPlane,
-      fixedPPlane,
+      ...(fixedPSectionFill ? [fixedPSectionFill] : []),
+      ...verticalSectionFills,
+      ...(surfaceGridWireframe ? [surfaceGridWireframe] : []),
       ...sliceTraces,
       ...(ring ? [ring] : []),
       {
@@ -763,11 +784,12 @@ export function ResultsWorkspace({
     view.includeOppositeMoment,
     loadcases,
     selectedLoadcaseId,
+    plotPalette,
     surface,
-    surfaceBounds3d,
     surfaceContour3d,
     surfaceGrid,
     surfacePoints3d,
+    surfaceTriangles3d,
     view.surfaceResistanceMode
   ])
 
@@ -813,19 +835,19 @@ export function ResultsWorkspace({
   const contourData = useMemo(() => {
     const nominalOnly = view.showNominalReference && !view.showDesignResistance
     const activeSamples = nominalOnly ? nominalStrainAngleSamples : strainAngleSamples
-    const closedX = [...contour.map((point) => knm(point.Mx))]
-    const closedY = [...contour.map((point) => knm(point.My))]
-    if (contour[0]) {
-      closedX.push(knm(contour[0].Mx))
-      closedY.push(knm(contour[0].My))
+    const closedX = [...strainAngleSamples.map((point) => knm(point.Mx))]
+    const closedY = [...strainAngleSamples.map((point) => knm(point.My))]
+    if (strainAngleSamples[0]) {
+      closedX.push(knm(strainAngleSamples[0].Mx))
+      closedY.push(knm(strainAngleSamples[0].My))
     }
-    const nominalClosedX = [...nominalContour.map((point) => knm(point.Mx))]
-    const nominalClosedY = [...nominalContour.map((point) => knm(point.My))]
-    if (nominalContour[0]) {
-      nominalClosedX.push(knm(nominalContour[0].Mx))
-      nominalClosedY.push(knm(nominalContour[0].My))
+    const nominalClosedX = [...nominalStrainAngleSamples.map((point) => knm(point.Mx))]
+    const nominalClosedY = [...nominalStrainAngleSamples.map((point) => knm(point.My))]
+    if (nominalStrainAngleSamples[0]) {
+      nominalClosedX.push(knm(nominalStrainAngleSamples[0].Mx))
+      nominalClosedY.push(knm(nominalStrainAngleSamples[0].My))
     }
-    const rayRadius = Math.max(...contour.map((point) => knm(Math.hypot(point.Mx, point.My))), 1) * 1.18
+    const rayRadius = Math.max(...activeSamples.map((point) => knm(Math.hypot(point.Mx, point.My))), 1) * 1.18
     const radialX = activeSamples.flatMap((point) => [0, rayRadius * Math.cos(point.beta), null])
     const radialY = activeSamples.flatMap((point) => [0, rayRadius * Math.sin(point.beta), null])
     const demandGuideX = demandProjection
@@ -892,11 +914,11 @@ export function ResultsWorkspace({
         : []),
       ...(view.showDesignResistance || view.showNominalReference ? [{
         type: 'scatter',
-        name: 'Strain-angle samples',
+        name: 'Sampled meridian intersections',
         mode: 'markers+text',
         x: activeSamples.map((point) => knm(point.Mx)),
         y: activeSamples.map((point) => knm(point.My)),
-        text: activeSamples.map((point) => `${fmt((point.beta * 180) / Math.PI, 0)}°`),
+        text: activeSamples.map((point) => `${fmt((point.beta * 180) / Math.PI, 3)}°`),
         textposition: 'top center',
         textfont: {
           size: 10,
@@ -912,7 +934,7 @@ export function ResultsWorkspace({
         customdata: activeSamples.map((point) => [
           (() => {
             const betaDeg = (point.beta * 180) / Math.PI
-            return fmt(betaDeg, 0)
+            return fmt(betaDeg, 3)
           })(),
           (() => {
             const betaDeg = (point.beta * 180) / Math.PI
@@ -962,9 +984,7 @@ export function ResultsWorkspace({
     ]
   }, [
     activeFixedPKn,
-    contour,
     demandProjection,
-    nominalContour,
     nominalStrainAngleSamples,
     plotPalette,
     view.showDesignResistance,
@@ -979,9 +999,9 @@ export function ResultsWorkspace({
 
   const contourAxisRange = useMemo(() => {
     const points = [
-      ...(view.showDesignResistance ? contour : []),
+      ...(view.showDesignResistance ? strainAngleSamples : []),
       ...displayedStrainAngleSamples,
-      ...(view.showNominalReference ? nominalContour : [])
+      ...(view.showNominalReference ? nominalStrainAngleSamples : [])
     ]
     if (points.length === 0 && !demandProjection) return null
     const xs = points.map((point) => knm(point.Mx))
@@ -1003,10 +1023,10 @@ export function ResultsWorkspace({
       y: [centerY - half, centerY + half] as [number, number]
     }
   }, [
-    contour,
     demandProjection,
     displayedStrainAngleSamples,
-    nominalContour,
+    nominalStrainAngleSamples,
+    strainAngleSamples,
     view.showDesignResistance,
     view.showNominalReference
   ])
@@ -1073,6 +1093,7 @@ export function ResultsWorkspace({
       primaryPath: [] as Array<{ m: number; p: number; station: number }>,
       oppositePath: [] as Array<{ m: number; p: number; station: number }>,
       displayPaths: [] as Array<Array<{ m: number; p: number; station: number }>>,
+      intermediatePoints: [] as Array<{ m: number; p: number; station: number }>,
       closed: true,
       stations: [] as Array<{ m: number; p: number; station: number }>,
       keys: [] as Array<{ m: number; p: number; station: number; label: string; side: 'primary' | 'opposite' }>
@@ -1091,9 +1112,17 @@ export function ResultsWorkspace({
     const oppositePaths = view.includeOppositeMoment ? clipMomentPlanePaths(momentPlane, 'negative') : []
     const primaryPath = primaryPaths.flat().map(project)
     const oppositePath = oppositePaths.flat().map(project)
-    const displayPaths = (
+    const visiblePaths = (
       view.includeOppositeMoment ? momentPlane.map((path) => path.points) : primaryPaths
-    ).map((path) => path.map(project))
+    )
+    const displayPaths = visiblePaths.map((path) => path.map(project))
+    const intermediatePoints = visiblePaths.flatMap((path) => {
+      const points =
+        path.length > 2 && path[0] === path[path.length - 1]
+          ? path.slice(0, -1)
+          : path
+      return points.filter((point) => isIntermediateStationValue(point.station)).map(project)
+    })
 
     const pickKeys = (
       curve: Array<{ m: number; p: number; station: number }>,
@@ -1138,7 +1167,15 @@ export function ResultsWorkspace({
         ? [...pickStations(primaryPath), ...pickStations(oppositePath).filter((item) => Math.abs(item.m) > 1e-6)]
         : pickStations(primaryPath)
 
-    return { primaryPath, oppositePath, displayPaths, closed: momentPlane.every((path) => path.closed), stations, keys }
+    return {
+      primaryPath,
+      oppositePath,
+      displayPaths,
+      intermediatePoints,
+      closed: momentPlane.every((path) => path.closed),
+      stations,
+      keys
+    }
   }, [activeAngle, view.includeOppositeMoment, surface, surfaceGrid])
 
   const nominalVerticalPaths = useMemo(() => {
@@ -1186,12 +1223,24 @@ export function ResultsWorkspace({
           }]
         : []
     })
-    return { stations, keys }
+    const intermediatePoints = nominalVerticalPaths.flatMap((path) => {
+      const points =
+        path.length > 2 &&
+        Math.abs(path[0].m - path[path.length - 1].m) <= 1e-9 &&
+        Math.abs(path[0].p - path[path.length - 1].p) <= 1e-9
+          ? path.slice(0, -1)
+          : path
+      return points.filter((point) => isIntermediateStationValue(point.station))
+    })
+    return { stations, keys, intermediatePoints }
   }, [nominalVerticalPaths, surface])
 
   const verticalData = useMemo(() => {
     const nominalOnly = view.showNominalReference && !view.showDesignResistance
     const selectedStations = nominalOnly ? nominalVerticalAnnotations.stations : verticalSlice.stations
+    const selectedIntermediatePoints = nominalOnly
+      ? nominalVerticalAnnotations.intermediatePoints
+      : verticalSlice.intermediatePoints
     const selectedKeys = nominalOnly ? nominalVerticalAnnotations.keys : verticalSlice.keys
     const primaryKeys = selectedKeys.filter((point) => point.side === 'primary')
     const oppositeKeys = selectedKeys.filter((point) => point.side === 'opposite')
@@ -1259,6 +1308,22 @@ export function ResultsWorkspace({
         marker: { size: 0 },
         hovertemplate: 'M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra>Design resistance</extra>'
       })) : []),
+      ...(view.showDesignResistance || view.showNominalReference ? [{
+        type: 'scatter',
+        name: 'Intermediate intersections',
+        mode: 'markers',
+        x: selectedIntermediatePoints.map((point) => point.m),
+        y: selectedIntermediatePoints.map((point) => point.p),
+        marker: {
+          size: 4,
+          color: '#2563eb',
+          symbol: 'circle',
+          line: { color: '#2563eb', width: 0 }
+        },
+        customdata: selectedIntermediatePoints.map((point) => point.station),
+        hovertemplate:
+          'Intermediate station=%{customdata:.3f}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra></extra>'
+      }] : []),
       ...(view.showDesignResistance || view.showNominalReference ? [{
         type: 'scatter',
         name: 'Stations',

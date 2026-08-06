@@ -1112,9 +1112,36 @@ body[data-jscad-theme='dark'] .pm-side-panel {
    Metric and status readouts
    --------------------------------------------------------------------------- */
 
+/* Compact profile header: code + analysis method, optional design-method row. */
+.pm-side-panel .pm-result-profile {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: var(--sp-text-2);
+  font-size: var(--sp-fs-2);
+  line-height: 1.4;
+}
+
+.pm-side-panel .pm-result-profile strong {
+  overflow: hidden;
+  color: var(--sp-text);
+  font-size: var(--sp-fs-2);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-side-panel .pm-result-profile span {
+  overflow: hidden;
+  color: var(--sp-text-3);
+  font-size: var(--sp-fs-1);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pm-side-panel .pm-result-status-list,
-.pm-side-panel .pm-metrics,
-.pm-side-panel .pm-analysis-fixed-point {
+.pm-side-panel .pm-metrics {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px 12px;
@@ -1130,6 +1157,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-align: right;
+  white-space: nowrap;
 }
 
 .pm-side-panel .pm-result-status-list strong.is-good {
@@ -1285,9 +1313,111 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 
 .pm-side-panel .pm-chart-data-controls {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.pm-side-panel .pm-chart-data-controls .pm-result-radio-group,
+.pm-side-panel .pm-chart-data-controls .pm-result-check-row {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  width: auto;
+  max-width: none;
+  height: var(--sp-h-2);
+  margin: 0;
+  padding: 2px;
+}
+
+.pm-side-panel .pm-chart-data-controls label {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  width: auto;
+  height: 20px;
+  padding: 0 7px;
+  font-size: var(--sp-fs-1);
+}
+
+/* Chart-data table sits close to the panel edges but keeps rounded corners. */
+.pm-side-panel .pm-chart-data-section .pm-chart-data-table-wrap {
+  margin-right: -8px;
+  margin-left: -8px;
+  width: calc(100% + 16px);
+  max-height: min(42vh, 360px);
+  border: 1px solid var(--sp-line);
+  border-radius: var(--sp-r-3);
+}
+
+.pm-side-panel .pm-chart-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: var(--sp-text-2);
+  font-size: var(--sp-fs-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.pm-side-panel .pm-chart-data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: var(--sp-h-2);
+  padding: 0 8px;
+  border-bottom: 1px solid var(--sp-line);
+  background: var(--sp-surface-sunken);
+  color: var(--sp-text-3);
+  font-size: var(--sp-fs-1);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: right;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.pm-side-panel .pm-chart-data-table th:nth-child(1),
+.pm-side-panel .pm-chart-data-table th:nth-child(2) {
+  text-align: left;
+}
+
+.pm-side-panel .pm-chart-data-table td {
+  height: var(--sp-row-table);
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--sp-line-soft);
+  color: var(--sp-text);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.pm-side-panel .pm-chart-data-table td:nth-child(1),
+.pm-side-panel .pm-chart-data-table td:nth-child(2) {
+  text-align: left;
+}
+
+.pm-side-panel .pm-chart-data-table td:nth-child(1),
+.pm-side-panel .pm-chart-data-table th:nth-child(1) {
+  width: 28px;
+  padding-right: 4px;
+  padding-left: 10px;
+}
+
+.pm-side-panel .pm-chart-data-table td:nth-child(2),
+.pm-side-panel .pm-chart-data-table th:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pm-side-panel .pm-chart-data-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.pm-side-panel .pm-chart-data-table tbody tr:hover td {
+  background: var(--sp-surface-hover);
 }
 
 /* A section header whose action sits on the far edge, same anatomy as
@@ -1298,6 +1428,46 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   justify-content: space-between;
   gap: 8px;
   min-height: var(--sp-h-1);
+}
+
+.pm-side-panel .pm-chart-data-toolbar-actions {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+/* Compact chart-toggle strip at the top of Section Results.
+   Buttons stay content-sized so more controls can join the row later. */
+.pm-side-panel .pm-chart-toggle-section {
+  gap: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.pm-side-panel .pm-chart-toggle-section + .pm-panel-section {
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+.pm-side-panel .pm-chart-toggle-section .pm-chart-visibility-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 4px;
+  width: 100%;
+}
+
+.pm-side-panel .pm-chart-toggle-section .pm-chart-visibility-btn {
+  flex: 0 0 auto;
+  justify-content: center;
+  min-width: 0;
+  height: 20px;
+  padding: 0 7px;
+  font-size: var(--sp-fs-1);
 }
 
 .pm-side-panel .pm-chart-data-section {
@@ -1397,9 +1567,29 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 }
 
 .pm-side-panel .pm-analysis-fixed-label {
+  display: block;
+  overflow: hidden;
   color: var(--sp-text-3);
   font-size: var(--sp-fs-2);
   font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-side-panel .pm-point-table td {
+  overflow: hidden;
+  vertical-align: middle;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pm-side-panel .pm-point-table tbody tr {
+  height: var(--sp-row-table);
+}
+
+.pm-side-panel .pm-point-table .pm-analysis-fixed-point td {
+  height: var(--sp-row-table);
+  color: var(--sp-text-3);
 }
 
 /* Verification-status badge on the design basis. Amber means "not released",
@@ -2399,10 +2589,6 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 
 .pm-side-panel .pm-report-pick {
   max-width: 100%;
-}
-
-.pm-side-panel .pm-analysis-fixed-point td {
-  color: var(--sp-text-3);
 }
 
 .pm-side-panel .pm-loadcase-table col.pm-col-name {

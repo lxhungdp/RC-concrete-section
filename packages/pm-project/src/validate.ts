@@ -412,14 +412,25 @@ const parseAnalysisStation = (value: unknown, path: string): AnalysisStation => 
     }
   }
   if (value.criterion.type === 'strength-reduction-post-transition') {
-    assert(
-      isFiniteNumber(value.criterion.extraStrain) && value.criterion.extraStrain > 0,
-      `${path}.criterion.extraStrain must be positive`
-    )
+    // Legacy projects stored a positive increment past εₜ. Rewrite to absolute steel strain
+    // (compression-positive convention: tension is negative). Migration assumes the KDS
+    // fixed tension-controlled limit 0.005 used when those schedules were authored.
+    const legacyExtra =
+      isFiniteNumber((value.criterion as { extraStrain?: number }).extraStrain) &&
+      (value.criterion as { extraStrain: number }).extraStrain > 0
+        ? (value.criterion as { extraStrain: number }).extraStrain
+        : null
+    const absolute =
+      legacyExtra != null
+        ? -(0.005 + legacyExtra)
+        : isFiniteNumber((value.criterion as { strain?: number }).strain)
+          ? (value.criterion as { strain: number }).strain
+          : null
+    assert(absolute != null && Number.isFinite(absolute) && absolute < 0, `${path}.criterion must provide a tensile strain`)
     return {
       id: value.id,
       label: value.label,
-      criterion: { type: 'strength-reduction-post-transition', extraStrain: value.criterion.extraStrain }
+      criterion: { type: 'steel-strain', strain: absolute }
     }
   }
   throw new Error(`${path}.criterion.type is unsupported`)
