@@ -11,7 +11,7 @@ import {
   MAX_INTERMEDIATE_STATIONS,
   analysisStationCount,
   createDefaultAnalysisOptions,
-  createVerifiedEquivalentBlockAnalysisOptions,
+  createDefaultEquivalentBlockAnalysisOptions,
   type AnalysisOptions,
   type CalculationAnalysisOptions,
   type EquivalentBlockAnalysisOptions,
@@ -38,7 +38,9 @@ const criterionValue = (criterion: AnalysisStationCriterion) => {
 
 const criterionWithValue = (criterion: AnalysisStationCriterion, value: number): AnalysisStationCriterion => {
   if (criterion.type === 'c-over-c1') return { type: criterion.type, ratio: Math.max(1e-6, value) }
+  if (criterion.type === 'depth-ratio') return { type: criterion.type, ratio: Math.max(1, value) }
   if (criterion.type === 'steel-stress-ratio') return { type: criterion.type, ratio: clamp(value, 0, 1) }
+  if (criterion.type === 'bar-tension-yield-ratio') return { type: criterion.type, ratio: Math.max(0, value) }
   if (criterion.type === 'strength-reduction-transition-ratio') {
     return { type: criterion.type, ratio: clamp(value, 1e-6, 1) }
   }
@@ -50,7 +52,9 @@ const criterionWithValue = (criterion: AnalysisStationCriterion, value: number):
 
 const defaultCriterion = (type: AnalysisStationCriterion['type']): AnalysisStationCriterion => {
   if (type === 'c-over-c1') return { type, ratio: 1 }
+  if (type === 'depth-ratio') return { type, ratio: 1 }
   if (type === 'steel-stress-ratio') return { type, ratio: 0 }
+  if (type === 'bar-tension-yield-ratio') return { type, ratio: 0 }
   if (type === 'strength-reduction-transition-ratio') return { type, ratio: 0.5 }
   if (type === 'strength-reduction-post-transition') return { type: 'steel-strain', strain: -0.0075 }
   return { type, strain: -0.003 }
@@ -207,7 +211,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
         <button
           type="button"
           className="pm-table-icon-btn"
-          title="Reset the transition-aware P0–P24 / 36-seed-direction profile"
+          title="Reset the unified 22-station / 36-seed-direction profile"
           onClick={() => onChange(createDefaultAnalysisOptions())}
         >
           <RotateCcw size={14} />
@@ -285,7 +289,9 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
                     }
                   >
                     <option value="c-over-c1">c/c₁</option>
+                    <option value="depth-ratio">c/D</option>
                     <option value="steel-stress-ratio">fs/fyd</option>
+                    <option value="bar-tension-yield-ratio">εₛ/εy</option>
                     <option value="strength-reduction-transition-ratio">φᵣ</option>
                     <option value="steel-strain">εₛ</option>
                   </select>
@@ -336,11 +342,9 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
         </table>
       </div>
       <p className="pm-field-note">
-        c₁ = depth from extreme compression fibre to controlling tension bar
+        D = projected section depth; c₁ = depth to the controlling tension bar
         <br />
-        φᵣ = fraction in the φ transition from compression-controlled to tension-controlled (e.g. 0.65 → 0.85)
-        <br />
-        εₛ = controlling tension-bar strain (final value)
+        εₛ/εy = tensile strain magnitude of that bar normalized by its own yield strain
       </p>
 
       <div className="pm-section-title">
@@ -647,7 +651,7 @@ const resampleBlockStations = (count: number) => {
     return ratio <= 1
       ? { type: 'extreme-tension-strain' as const, strain: epsCuReference * (1 / ratio - 1) }
       : { type: 'depth-ratio' as const, ratio }
-  })
+  }).reverse()
 }
 
 function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { options: EquivalentBlockAnalysisOptions }) {
@@ -656,10 +660,12 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
     mutate(draft)
     onChange(draft)
   }
-  const stationCount = options.neutralAxisStations.values.length
-  const stationMaximum = options.neutralAxisStations.refinement.type === 'adaptive'
+  const intermediateStationCount = options.neutralAxisStations.values.length
+  const stationCount = intermediateStationCount + 2
+  const intermediateStationMaximum = options.neutralAxisStations.refinement.type === 'adaptive'
     ? options.neutralAxisStations.refinement.maxStations
-    : stationCount
+    : intermediateStationCount
+  const stationMaximum = intermediateStationMaximum + 2
   const directionMaximum = options.directions.refinement.type === 'adaptive'
     ? options.directions.refinement.maxDirections
     : options.directions.seedCount
@@ -674,8 +680,8 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
         <button
           type="button"
           className="pm-table-icon-btn"
-          title="Reset the verified 37-station / 24-direction profile"
-          onClick={() => onChange(createVerifiedEquivalentBlockAnalysisOptions())}
+          title="Reset the unified 22-station / 24-direction profile"
+          onClick={() => onChange(createDefaultEquivalentBlockAnalysisOptions())}
         >
           <RotateCcw size={14} />
         </button>
@@ -691,21 +697,21 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
       ) : (
         <>
           <div className="pm-result-status-list">
-            <span>Initial c stations</span><strong>{stationCount}</strong>
-            <span>Maximum c stations</span><strong>{stationMaximum}</strong>
+            <span>Baseline stations</span><strong>{stationCount}</strong>
+            <span>Maximum stations</span><strong>{stationMaximum}</strong>
             <span>Seed directions</span><strong>{options.directions.seedCount}</strong>
             <span>Maximum directions</span><strong>{directionMaximum}</strong>
-            <span>Maximum sampled states</span><strong>{stationMaximum * directionMaximum + 2}</strong>
+            <span>Maximum sampled states</span><strong>{intermediateStationMaximum * directionMaximum + 2}</strong>
           </div>
 
-          <div className="pm-section-title"><div><h3>Neutral-axis depth c</h3><p>Log-spaced from deep tension to compression, then refined by surface interpolation error.</p></div></div>
+          <div className="pm-section-title"><div><h3>Unified station schedule</h3><p>c/D outside the section and εₛ/εy at the controlling bar inside it.</p></div></div>
           <label className="pm-field">
-            <span>Initial station count</span>
+            <span>Intermediate count (poles excluded)</span>
             <NumericInput
               min={4}
               max={MAX_INTERMEDIATE_STATIONS}
               integer
-              value={stationCount}
+              value={intermediateStationCount}
               onCommit={(value) => commit((draft) => {
                 draft.neutralAxisStations.values = resampleBlockStations(value)
                 draft.neutralAxisStations.basedOn = 'custom'
@@ -724,7 +730,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
               value={options.neutralAxisStations.refinement.type}
               onChange={(event) => commit((draft) => {
                 draft.neutralAxisStations.refinement = event.target.value === 'adaptive'
-                  ? { type: 'adaptive', tolerance: 0.0075, maxPasses: 6, maxStations: Math.max(128, stationCount) }
+                  ? { type: 'adaptive', tolerance: 0.0075, maxPasses: 6, maxStations: Math.max(128, intermediateStationCount) }
                   : { type: 'fixed' }
               })}
             >
@@ -740,7 +746,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
               <label className="pm-field"><span>Maximum station passes</span><NumericInput min={0} max={12} integer value={options.neutralAxisStations.refinement.maxPasses} onCommit={(value) => commit((draft) => {
                 if (draft.neutralAxisStations.refinement.type === 'adaptive') draft.neutralAxisStations.refinement.maxPasses = value
               })} /></label>
-              <label className="pm-field"><span>Maximum stations</span><NumericInput min={stationCount} max={MAX_INTERMEDIATE_STATIONS} integer value={options.neutralAxisStations.refinement.maxStations} onCommit={(value) => commit((draft) => {
+              <label className="pm-field"><span>Maximum intermediate stations</span><NumericInput min={intermediateStationCount} max={MAX_INTERMEDIATE_STATIONS} integer value={options.neutralAxisStations.refinement.maxStations} onCommit={(value) => commit((draft) => {
                 if (draft.neutralAxisStations.refinement.type === 'adaptive') draft.neutralAxisStations.refinement.maxStations = value
               })} /></label>
             </>

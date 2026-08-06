@@ -136,9 +136,7 @@ const productionSurfaceOptions = {
   directionTolerance: 0.0075,
   maxRefinementPasses: 6,
   maxDirections: 360,
-  stationTolerance: 0.0075,
-  maxStationRefinementPasses: 6,
-  maxStations: 128
+  maxStationRefinementPasses: 0
 } as const
 
 for (const { standard, model } of models) {
@@ -174,9 +172,6 @@ for (const { standard, model } of models) {
     if (!adaptiveSurface.topology.closed) verificationFailures.push(`${standard}/${item.name}: open adaptive surface`)
     if (!adaptiveSurface.directionRefinementConverged) {
       verificationFailures.push(`${standard}/${item.name}: adaptive direction refinement did not converge`)
-    }
-    if (!adaptiveSurface.stationRefinementConverged) {
-      verificationFailures.push(`${standard}/${item.name}: adaptive station refinement did not converge`)
     }
 
     const raySamples = Array.from({ length: 80 }, (_, index) => {
@@ -274,9 +269,8 @@ for (const { standard, model } of models) {
       adaptiveDirections: adaptiveSurface.directions.length,
       adaptivePoints: adaptiveSurface.points.length,
       adaptiveDirectionalError: adaptiveSurface.maxDirectionalInterpolationError,
-      adaptiveStationError: adaptiveSurface.maxStationInterpolationError,
+      fixedStationChordDiagnostic: adaptiveSurface.maxStationInterpolationError,
       adaptiveDirectionConverged: adaptiveSurface.directionRefinementConverged ? 1 : 0,
-      adaptiveStationConverged: adaptiveSurface.stationRefinementConverged ? 1 : 0,
       surfacePoints: surface.points.length,
       surfaceTriangles: surface.triangles.length,
       degenerateTriangles: surface.topology.degenerateTriangles,

@@ -166,38 +166,21 @@ strain angle is under-tested.
 
 `PreviewSurface.directionError` reports the beta chord error of the grid it actually returned. The
 engine evaluates the true state halfway between sampled directions and compares it with the chord
-used by the triangulation. The production stress-strain default probes all 25 stations; this is a
-sampled estimator, not a mathematical upper bound (§11). An explicit empty probe list disables the
-measurement and returns `NaN`, never a misleading zero.
+used by the triangulation. The production stress-strain default probes all 22 shared stations; this
+is a sampled estimator, not a mathematical upper bound (§11). An explicit empty probe list disables
+the measurement and returns `NaN`, never a misleading zero.
 
-The following table is a historical measurement of the former fixed 24-direction grid. It is kept
-to explain why that default was retired; it is not the current production configuration:
+The direction grid, not the integration mesh, can govern numerical error. For a locally convex
+fixed-P contour, chord interpolation cuts the corner and under-reports capacity, but the sign is not
+a universal theorem for arbitrary non-convex or multi-loop slices. Stress-strain starts from 36
+directions and probes all shared stations at 0.5% relative tolerance. Equivalent-block starts from
+24 directions with a 0.75% direction target. Neither model refines the fixed 22-station coordinate
+or inserts automatic transition stations. The effective direction count and convergence evidence
+are recorded with every surface.
 
-| Section | `max |ΔP|/Pspan` | `max |ΔM|/Mspan` | Capacity change when refined to 192 directions |
-|---|---:|---:|---:|
-| reference | 1.2e-2 | 3.6e-2 | +0.003 % |
-| compact 600×600 | 1.0e-2 | 3.3e-2 | +0.67 % |
-| circular D900 | 3.3e-3 | 1.0e-2 | +0.81 % |
-| hollow circular | 3.6e-3 | 1.1e-2 | +0.82 % |
-| L-shaped core | 4.7e-2 | 8.8e-2 | +0.90 % |
-| thin-walled box | 4.2e-2 | 1.1e-1 | **+3.81 %** |
-
-The direction grid, not the integration mesh, is the governing numerical error: one to sixteen
-percent in moment, against one tenth of a percent from the mesh.
-
-The capacity change was positive for every case in that historical table. For a locally convex
-fixed-P contour, chord interpolation cuts the corner and under-reports capacity, but the measured
-sign is not a universal theorem for arbitrary non-convex or multi-loop slices. The current
-stress-strain default starts from 36 directions and adaptively probes all 25 stations at 0.5%
-relative tolerance. The effective direction count and convergence evidence are recorded with every
-surface. The equivalent-block model retains its independent 24-direction seed and 0.75% adaptive
-default because its station coordinate and exact clipped-block kernel are different. Its code-factor
-kinks are inserted as controlling-bar events before adaptive error refinement.
-
-The permanent post-change benchmark is `npm run bench:strain-sampling`. Against a 144-direction,
-33-transition-node reference, worst 3D ray error over five fixtures fell from 7.800% for the legacy
-19 x 24 fixed grid to 0.521% for the production 25-station/36-seed adaptive configuration. See `12`
-for per-configuration cost and acceptance evidence.
+The permanent direction benchmark is `npm run bench:strain-sampling`; it holds the shared station
+schedule constant while comparing the seed and refined direction surfaces. See `12` for the
+acceptance scope.
 
 ## 6. Error budget hierarchy
 

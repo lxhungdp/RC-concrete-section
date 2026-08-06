@@ -66,10 +66,10 @@ As of 2026-08-05:
   code-equivalent rectangular stress block. Their formulas, defaults, fields, and forward/inverse
   workflows are defined in
   [`12-calculation-models-defaults-and-workflows.md`](12-calculation-models-defaults-and-workflows.md).
-- Stress-strain production sampling uses 25 stations, including nine code-aware transition nodes,
-  with 36 seed directions and adaptive angular refinement to a 0.5% target. Equivalent-block
-  sampling retains its independent 37-state/24-seed-direction defaults, adds bar-controlled event
-  stations, and adaptively refines both coordinates to a 0.75% target.
+- Every stress-strain and equivalent-block profile uses the shared `unified-22-v1` schedule: two
+  exact poles, six outside/on-section `c/D` states, and fourteen inside-section `εₛ/εy` states.
+  Station refinement and automatic transition/event insertion are disabled for this baseline;
+  direction controls remain model-specific and will be assessed separately.
 - Nominal/reference and design-resistance surfaces are separated. Factored ULS loadcases use a
   governing 3D proportional check; Fixed-P utilization is a secondary diagnostic.
 - The KDS 2024 current-set profiles (with resistance clauses explicitly traced to KDS 14 20 10:2021

@@ -29,6 +29,7 @@ import {
   sliceFixedPContour,
   sliceMomentPlane,
   solveInversePreviewFromPrepared,
+  UNIFIED_STATIONS,
   type PreviewSurface,
   type StrainState
 } from '@pm/analysis'
@@ -497,13 +498,25 @@ const exactAxialStrengthAtM = (M: number, theta: number, fromP: number, toP: num
 
 /**
  * Balanced yield exactly as UMD defines it: the extreme tension bar at fs = fyd while the extreme
- * compression fibre sits at epsCu. That is station `fs = fyd` of this engine's own schedule, so the
+ * compression fibre sits at epsCu. That is the `εₛ/εy = 1` station of the shared schedule, so the
  * only thing to solve is which strain-plane direction beta puts the resulting moment vector on the
  * checked moment plane theta.
  */
 const exactBalancedYield = (theta: number) => {
+  const yieldStation = UNIFIED_STATIONS.findIndex(
+    (station) => station.kind === 'bar-tension-yield-ratio' && station.ratio === 1
+  )
+  if (yieldStation < 0) throw new Error('The unified schedule is missing εₛ/εy = 1.')
   const at = (beta: number) => {
-    const state = previewStationState(SECTION, REBARS, beta, 9, EPS_CU, { epsY: EPS_Y, epsU: 0.05 }, ORIGIN)
+    const state = previewStationState(
+      SECTION,
+      REBARS,
+      beta,
+      yieldStation,
+      EPS_CU,
+      { epsY: EPS_Y, epsU: 0.05 },
+      ORIGIN
+    )
     const total = evaluatePreparedState(PREPARED, state).total
     return { state, total, angle: Math.atan2(total.My, total.Mx) }
   }
@@ -736,7 +749,7 @@ console.log(`origin         : (${ORIGIN.x}, ${ORIGIN.y})  fyd = ${FYD.toFixed(3)
 for (const surface of result.surfaces) {
   console.log(
     `${surface.label.padEnd(24)} P0 = ${surface.poles.pureCompression.P.toFixed(0).padStart(8)} kN   ` +
-      `P18 = ${surface.poles.pureTension.P.toFixed(0).padStart(8)} kN`
+      `P${UNIFIED_STATIONS.length - 1} = ${surface.poles.pureTension.P.toFixed(0).padStart(8)} kN`
   )
 }
 console.log()

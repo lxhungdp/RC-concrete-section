@@ -6,6 +6,7 @@ import type {
 } from './types'
 import { EquivalentBlockInputError } from './types'
 import { projectedOuterExtents } from './geometry'
+import { UNIFIED_DEPTH_RATIOS, UNIFIED_STEEL_STRAIN_YIELD_RATIOS } from '@pm/stations'
 
 export type CapacityEvaluation<TSource = unknown> = {
   resultants: CapacityResultants
@@ -26,6 +27,7 @@ export type CapacityEvaluator<TSource = unknown> = (
 export type CapacityStation =
   | { type: 'extreme-tension-strain'; strain: number }
   | { type: 'bar-tension-strain'; strain: number }
+  | { type: 'bar-tension-yield-ratio'; ratio: number }
   | { type: 'depth-ratio'; ratio: number }
 
 export type CapacitySurfacePoint = {
@@ -96,43 +98,11 @@ const finiteResultants = (value: CapacityResultants) =>
   Number.isFinite(value.P) && Number.isFinite(value.Mx) && Number.isFinite(value.My)
 
 export const createDefaultCapacityStations = (): CapacityStation[] => [
-  { type: 'extreme-tension-strain', strain: 0.1 },
-  { type: 'extreme-tension-strain', strain: 0.075 },
-  { type: 'extreme-tension-strain', strain: 0.05 },
-  { type: 'extreme-tension-strain', strain: 0.04 },
-  { type: 'extreme-tension-strain', strain: 0.03 },
-  { type: 'extreme-tension-strain', strain: 0.025 },
-  { type: 'extreme-tension-strain', strain: 0.02 },
-  { type: 'extreme-tension-strain', strain: 0.0175 },
-  { type: 'extreme-tension-strain', strain: 0.015 },
-  { type: 'extreme-tension-strain', strain: 0.0125 },
-  { type: 'extreme-tension-strain', strain: 0.01 },
-  { type: 'extreme-tension-strain', strain: 0.00875 },
-  { type: 'extreme-tension-strain', strain: 0.0075 },
-  { type: 'extreme-tension-strain', strain: 0.00625 },
-  { type: 'extreme-tension-strain', strain: 0.005 },
-  { type: 'extreme-tension-strain', strain: 0.004 },
-  { type: 'extreme-tension-strain', strain: 0.003 },
-  { type: 'extreme-tension-strain', strain: 0.0025 },
-  { type: 'extreme-tension-strain', strain: 0.002 },
-  { type: 'extreme-tension-strain', strain: 0.0015 },
-  { type: 'extreme-tension-strain', strain: 0.001 },
-  { type: 'extreme-tension-strain', strain: 0.0005 },
-  { type: 'extreme-tension-strain', strain: 0 },
-  { type: 'depth-ratio', ratio: 1.1 },
-  { type: 'depth-ratio', ratio: 1.2 },
-  { type: 'depth-ratio', ratio: 1.35 },
-  { type: 'depth-ratio', ratio: 1.5 },
-  { type: 'depth-ratio', ratio: 1.75 },
-  { type: 'depth-ratio', ratio: 2 },
-  { type: 'depth-ratio', ratio: 2.5 },
-  { type: 'depth-ratio', ratio: 3 },
-  { type: 'depth-ratio', ratio: 4 },
-  { type: 'depth-ratio', ratio: 5 },
-  { type: 'depth-ratio', ratio: 7.5 },
-  { type: 'depth-ratio', ratio: 10 },
-  { type: 'depth-ratio', ratio: 20 },
-  { type: 'depth-ratio', ratio: 50 }
+  ...[...UNIFIED_STEEL_STRAIN_YIELD_RATIOS].reverse().map((ratio) => ({
+    type: 'bar-tension-yield-ratio' as const,
+    ratio
+  })),
+  ...[...UNIFIED_DEPTH_RATIOS].reverse().map((ratio) => ({ type: 'depth-ratio' as const, ratio }))
 ]
 
 const stationDepth = (
@@ -147,10 +117,14 @@ const stationDepth = (
         (current, bar) => !current || bar.depth > current.depth ? bar : current,
         undefined
       )
-      const controllingBarDepth = station.type === 'bar-tension-strain' && controllingBar
+      const controllingBarDepth =
+        (station.type === 'bar-tension-strain' || station.type === 'bar-tension-yield-ratio') && controllingBar
         ? controllingBar.depth
         : projectedDepth
-      const requestedDepth = controllingBarDepth / (1 + station.strain / extremeCompressionStrain)
+      const strain = station.type === 'bar-tension-yield-ratio'
+        ? station.ratio * (controllingBar?.yieldStrain ?? 0.002)
+        : station.strain
+      const requestedDepth = controllingBarDepth / (1 + strain / extremeCompressionStrain)
       const ruptureDepth = (barDepths ?? []).reduce((minimum, bar) => bar.ultimateStrain === undefined
         ? minimum
         : Math.max(minimum, bar.depth / (1 + bar.ultimateStrain / extremeCompressionStrain)), 0)
@@ -160,7 +134,9 @@ const stationDepth = (
 const stationDepthRatio = (station: CapacityStation, extremeCompressionStrain: number) =>
   station.type === 'depth-ratio'
     ? station.ratio
-    : 1 / (1 + station.strain / extremeCompressionStrain)
+    : station.type === 'bar-tension-yield-ratio'
+      ? (1 / (1 + station.ratio * 0.002 / extremeCompressionStrain)) * (station.ratio === 0 ? 1 - 1e-9 : 1)
+      : 1 / (1 + station.strain / extremeCompressionStrain)
 
 const capacityScales = (
   evaluations: CapacityEvaluation[][],
@@ -301,7 +277,9 @@ export const buildCapacitySurface = <TSource>(
   let stations = [...(options.stations ?? createDefaultCapacityStations())]
   if (stations.length < 2) throw new EquivalentBlockInputError('SOLVER_INPUT', 'At least two interior capacity stations are required.')
   for (const station of stations) {
-    const value = station.type === 'depth-ratio' ? station.ratio : station.strain
+    const value = station.type === 'depth-ratio' || station.type === 'bar-tension-yield-ratio'
+      ? station.ratio
+      : station.strain
     if (!Number.isFinite(value) || value < 0 || (station.type === 'depth-ratio' && value <= 0)) {
       throw new EquivalentBlockInputError('SOLVER_INPUT', 'Capacity stations must be finite and nonnegative.')
     }
@@ -580,8 +558,6 @@ export const buildCapacitySurface = <TSource>(
   if (activeStationIndices.length === 0) {
     throw new EquivalentBlockInputError('SOLVER_INPUT', 'All interior capacity stations collapsed onto the supplied endpoints.')
   }
-  const activeStations = activeStationIndices.map((index) => stations[index])
-
   const points: CapacitySurfacePoint[] = [{
     id: 0,
     resultants: { ...options.tensionPole.resultants },
@@ -683,10 +659,16 @@ export const buildCapacitySurface = <TSource>(
     points,
     triangles: oriented,
     directions,
-    stations: [...activeStations, ...barEventStations].sort((left, right) =>
-      stationDepthRatio(left, options.extremeCompressionStrain) -
-      stationDepthRatio(right, options.extremeCompressionStrain)
-    ),
+    // Keep the complete requested station schedule in the public surface
+    // metadata. Some station layers can numerically collapse onto a pole or a
+    // neighbouring layer and are intentionally omitted only from the mesh to
+    // avoid degenerate triangles.
+    stations: barEventStations.length === 0
+      ? [...stations]
+      : [...stations, ...barEventStations].sort((left, right) =>
+        stationDepthRatio(left, options.extremeCompressionStrain) -
+        stationDepthRatio(right, options.extremeCompressionStrain)
+      ),
     normalization: scales,
     maxDirectionalInterpolationError,
     maxStationInterpolationError,

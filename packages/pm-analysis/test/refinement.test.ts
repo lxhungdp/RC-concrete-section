@@ -1,6 +1,6 @@
 /**
  * Direction sampling is measured, and refinement reduces what it measures (`docs/05` section 5,
- * `docs/06` section 5). Production starts with 36 directions and adaptively probes all 25 stations;
+ * `docs/06` section 5). Production starts with 36 directions and adaptively probes all 22 stations;
  * fixed grids remain explicit user/benchmark choices.
  */
 import { strict as assert } from 'node:assert'
@@ -37,7 +37,7 @@ test('the default starts from 36 directions and adaptively meets the angular err
   assert.ok(surface.directionError.maxRelativeMoment > 0)
   assert.ok(Number.isFinite(surface.directionError.maxRelativeMoment))
   assert.ok(surface.directionError.maxRelativeMoment <= 0.005)
-  assert.equal(surface.points.length, surface.directionError.directions * 25)
+  assert.equal(surface.points.length, surface.directionError.directions * 22)
 })
 
 test('switching the probe off costs nothing and reports unknown, never zero', () => {
@@ -82,10 +82,10 @@ test('refinement adds directions and lowers the measured error', () => {
     `${fine.directionError.maxRelativeMoment} should be below ${coarse.directionError.maxRelativeMoment}`
   )
   // Every direction still carries the full station schedule.
-  assert.equal(fine.points.length, fine.directionError.directions * 25)
+  assert.equal(fine.points.length, fine.directionError.directions * 22)
   const perDirection = new Map<number, number>()
   for (const point of fine.points) perDirection.set(point.beta, (perDirection.get(point.beta) ?? 0) + 1)
-  assert.ok([...perDirection.values()].every((count) => count === 25))
+  assert.ok([...perDirection.values()].every((count) => count === 22))
 })
 
 test('the direction cap is respected and reported as not converged', () => {

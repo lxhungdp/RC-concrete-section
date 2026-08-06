@@ -10,5 +10,8 @@
   "scripts": {
     "test": "node --import tsx --test test/*.test.ts",
     "bench": "tsx ../../bench/equivalent-block/run.ts"
+  },
+  "dependencies": {
+    "@pm/stations": "0.1.0"
   }
 }

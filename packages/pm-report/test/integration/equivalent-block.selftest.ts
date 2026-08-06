@@ -239,7 +239,7 @@ const runCase = async (
   )].sort((a, b) => b - a)
   const nominalEvaluator = prepared.model.bindNominalEvaluator(prepared.section)
   const designEvaluator = prepared.model.bindDesignEvaluator(prepared.section)
-  console.log(`      audited θ = ${((theta * 180) / Math.PI).toFixed(4)}°, ${depths.length} stations`)
+  console.log(`      audited θ = ${((theta * 180) / Math.PI).toFixed(4)}°, ${depths.length} active mesh layers`)
 
   console.log('== 4. Clipped polygon: shoelace vs exact clipping ==')
   let worstAreaError = 0

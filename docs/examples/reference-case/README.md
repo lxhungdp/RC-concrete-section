@@ -7,11 +7,10 @@ Files in this directory are evidence fixtures, not declarations of current defau
 - `expected/` contains machine-readable comparison oracles;
 - `generated/` contains reproducible Excel/PDF outputs owned by report self-tests.
 
-- `source/PM-advanced (7) 2D.xlsx` preserves the historical P0-P18/24-direction workbook schedule. The
-  matching schema-v1 project JSON carries the same geometry, materials, and loads but uses the
-  current 25-station/36-seed production default. The station self-test selects the historical
-  schedule explicitly when comparing against the source workbook, so the oracle is not confused
-  with the application default.
+- `source/PM-advanced (7) 2D.xlsx` is retained only as an external geometry/material/result oracle.
+  The matching schema-v1 project and every repository-generated calculation use `unified-22-v1`;
+  regression checks compare only source-independent anchors when the external sheet's sampling does
+  not match the canonical schedule.
 - `projects/P16_Column_ULS.pm-project.json` is an archived pre-profile EC2/UMD comparison snapshot. EC2 is
   not a complete current calculation profile, so this file is evidence data and is not expected to
   pass the current schema-v1 profile-consistency checks. It is not an import template. The current
@@ -19,10 +18,8 @@ Files in this directory are evidence fixtures, not declarations of current defau
   [`../../development/02-data-contracts-persistence-and-versioning.md`](../../development/02-data-contracts-persistence-and-versioning.md).
 - UMD comparison JSON/XLSX files record external comparison data and the assumptions of that run.
 - Generated Excel workbooks are audit artifacts and may be overwritten only by the explicit fixture
-  update workflow after test review. Their main sheets reproduce the historical oracle; a separate
-  assertion verifies export of the current 25-station schedule and all nine transition nodes.
+  update workflow after test review. Their station sheets export and verify the canonical 22 points.
 
-New stress-strain projects use 25 stations, nine code-aware transition nodes, 36 seed directions,
-and adaptive angular refinement. Equivalent-block projects use their independent 37-state,
-24-seed-direction adaptive default. See
+All new stress-strain and equivalent-block projects use the shared fixed 22-station schedule. Their
+direction seeds and direction refinement remain method-specific. See
 [`../../12-calculation-models-defaults-and-workflows.md`](../../12-calculation-models-defaults-and-workflows.md).

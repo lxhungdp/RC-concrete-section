@@ -108,7 +108,7 @@ fingerprints remain byte/structure compatible after parsing.
 
 Required regression evidence:
 
-- KDS historical station/workbook oracle;
+- shared 22-station schedule and workbook oracle;
 - KDS and ACI equivalent-block surface/inverse/field integration tests;
 - project round trip for old profiles and EN design-material profile;
 - registry capability/fail-closed tests;

@@ -689,7 +689,7 @@
         lead: "Mình đã dựng lại surface từ đúng file Column-project (5).json, rồi chạy sliceFixedPContour() trên topology thật. Kết quả xác nhận nhận xét của bạn: có nhiều khoảng chứa hai hoặc ba đỉnh trung gian, đặc biệt khi nhìn theo thứ tự góc moment trên contour.",
         formula: "P mặc định 5908.452 kN:\n90×1 + 22×3 = 156 điểm giữa\n\nP = 0 kN:\n2×0 + 94×1 + 8×2 + 8×3 = 134 điểm giữa",
         facts: [
-          "Surface có 112 hướng sampled, 25 station/hướng và 2800 điểm mesh.",
+          "Surface có 112 hướng sampled, 22 station/hướng và 2464 điểm mesh.",
           "Tại P = 0 có 8 khoảng với đúng 2 điểm và 8 khoảng với đúng 3 điểm.",
           "Ví dụ các góc moment nội bộ: 15.254° và 17.735°; một cụm ba điểm: 24.617°, 26.403°, 27.527°."
         ],
@@ -824,7 +824,7 @@
         name: "8 · Kiểm chứng",
         ref: "Column-project (5).json · regression tests",
         title: "Display chỉ còn 112 điểm kinh tuyến",
-        lead: "Với bài của bạn, surface có 112 hướng adaptive và 25 station mỗi hướng. Ở cả hai mức P kiểm tra, đường display chỉ lấy 112 giao điểm sampled; intermediate của mesh không được đưa vào trace.",
+        lead: "Với bài của bạn, surface có 112 hướng adaptive và 22 station mỗi hướng. Ở cả hai mức P kiểm tra, đường display chỉ lấy 112 giao điểm sampled; intermediate của mesh không được đưa vào trace.",
         formula: "P = 5908.452 kN: display = 112 sampled vertices\nP = 0 kN:        display = 112 sampled vertices",
         facts: [
           "112 hướng adaptive tạo 112 kinh tuyến thật.",
@@ -1268,7 +1268,7 @@
     function drawProjectEvidence(progress) {
       var s = '<g>';
       s += screenText(500, 42, "Kiểm tra trực tiếp Column-project (5).json", 19, "#edf5ff", "middle", 800);
-      s += screenText(500, 67, "112 hướng sampled · 25 station/hướng · 2,800 điểm surface", 13, "#9eb1c7", "middle", 600);
+      s += screenText(500, 67, "112 hướng sampled · 22 station/hướng · 2,464 điểm surface", 13, "#9eb1c7", "middle", 600);
 
       s += '<rect x="60" y="92" width="880" height="196" rx="20" fill="rgba(10,27,45,.88)" stroke="rgba(137,178,215,.22)" />';
       s += screenText(88, 123, "P mặc định = 5908.452 kN", 15, "#ffc35b", "start", 800);
@@ -1414,7 +1414,7 @@
     function drawCorrectedEvidence(progress) {
       var s = '<g>';
       s += screenText(500, 46, "Column-project (5).json · sampled-only display", 20, "#edf5ff", "middle", 850);
-      s += screenText(500, 72, "112 hướng adaptive · 25 station/hướng · một vertex cho mỗi beta", 13, "#9eb1c7", "middle", 650);
+      s += screenText(500, 72, "112 hướng adaptive · 22 station/hướng · một vertex cho mỗi beta", 13, "#9eb1c7", "middle", 650);
       var cards = [
         {x:65,title:"P mặc định = 5908.452 kN",value:"112 / 112",note:"sampled display · intermediate hidden"},
         {x:520,title:"P = 0 kN",value:"112 / 112",note:"sampled display · intermediate hidden"}

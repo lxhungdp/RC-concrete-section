@@ -251,11 +251,6 @@ export const createAs3600Model = (input: CreateAs3600ModelInput) => {
   const compressionPhi = input.compressionPhiClass === 'short-column-high-permanent-load'
     ? resistanceFactors.phiCompressionShortColumnHighPermanentLoad
     : resistanceFactors.phiCompressionOrdinary
-  const barStrainEvents = Object.values(input.steel).flatMap((definition) => [
-    definition.yieldStress / definition.elasticModulus,
-    ...(definition.ultimateStrain === undefined ? [] : [definition.ultimateStrain])
-  ])
-
   const bindNominalEvaluator = (
     section: PreparedEquivalentBlockSection
   ): CapacityEvaluator<NominalBlockEvaluation> => {
@@ -372,7 +367,7 @@ export const createAs3600Model = (input: CreateAs3600ModelInput) => {
     return buildCapacitySurface(section, bindNominalEvaluator(section), {
       ...options,
       steelLaws,
-      barStrainEvents,
+      barStrainEvents: options.barStrainEvents ?? [],
       extremeCompressionStrain: blockLaw.extremeCompressionStrain,
       tensionPole: endpoints.tension,
       compressionPole: endpoints.compression
@@ -388,7 +383,7 @@ export const createAs3600Model = (input: CreateAs3600ModelInput) => {
     return buildCapacitySurface(section, bindDesignEvaluator(section), {
       ...surfaceOptions,
       steelLaws,
-      barStrainEvents,
+      barStrainEvents: surfaceOptions.barStrainEvents ?? [],
       extremeCompressionStrain: blockLaw.extremeCompressionStrain,
       tensionPole: endpoints.tension,
       compressionPole: endpoints.compression

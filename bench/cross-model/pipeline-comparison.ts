@@ -21,25 +21,8 @@ const timed = <T>(run: () => T) => {
   return { value, ms: performance.now() - started }
 }
 
-const resampledStations = (count: number) => {
-  const epsCu = 0.003
-  const minRatio = 1 / (1 + 0.1 / epsCu)
-  const maxRatio = 50
-  return Array.from({ length: count }, (_, index) => {
-    const ratio = Math.exp(Math.log(minRatio) + (Math.log(maxRatio) - Math.log(minRatio)) * index / (count - 1))
-    return ratio <= 1
-      ? { type: 'extreme-tension-strain' as const, strain: epsCu * (1 / ratio - 1) }
-      : { type: 'depth-ratio' as const, ratio }
-  })
-}
-
-const fixedBlockOptions = (stations: number, directions: number): EquivalentBlockAnalysisOptions => {
+const fixedBlockOptions = (directions: number): EquivalentBlockAnalysisOptions => {
   const options = createDefaultEquivalentBlockAnalysisOptions()
-  options.neutralAxisStations = {
-    basedOn: 'custom',
-    values: resampledStations(stations),
-    refinement: { type: 'fixed' }
-  }
   options.directions = { seedCount: directions, startDeg: 0, refinement: { type: 'fixed' } }
   return options
 }
@@ -56,16 +39,22 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
   const curve = timed(() => buildDesignPreviewSurface(section, rebars, fixture.materials, design, undefined, curveOptions))
   const blockMaterials = applyCalculationProfileToMaterials(fixture.materials, 'kds-142020-equivalent-block')
   const prepared = prepareBlockAnalysis('kds-142020-equivalent-block', section, rebars, blockMaterials, design)
-  const referenceOptions = fixedBlockOptions(96, 144)
+  const referenceOptions = fixedBlockOptions(144)
   const reference = timed(() => buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, referenceOptions))
   const referenceSamples = reference.value.points.filter((point) => point.equivalentBlock)
     .filter((_, index, values) => index % Math.max(1, Math.floor(values.length / 48)) === 0)
     .slice(0, 48)
 
   const candidates = [
-    { name: 'block-19x24-fixed', options: fixedBlockOptions(19, 24) },
-    { name: 'block-37x24-fixed', options: fixedBlockOptions(37, 24) },
-    { name: 'block-37x24-adaptive-0.75pct', options: createDefaultEquivalentBlockAnalysisOptions() }
+    {
+      name: 'block-unified-22x24-fixed',
+      options: (() => {
+        const options = createDefaultEquivalentBlockAnalysisOptions()
+        options.directions.refinement = { type: 'fixed' }
+        return options
+      })()
+    },
+    { name: 'block-unified-22x24-adaptive', options: createDefaultEquivalentBlockAnalysisOptions() }
   ]
   for (const candidate of candidates) {
     const built = timed(() => buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, candidate.options))
@@ -88,7 +77,7 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
       points: built.value.points.length,
       directions,
       stations,
-      maxRayErrorVs96x144: maxRayError,
+      maxRayErrorVsUnified22x144: maxRayError,
       rayHitRate: hits / Math.max(1, referenceSamples.length),
       curveBuildMs: curve.ms,
       curvePoints: curve.value.points.length,
@@ -96,7 +85,7 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
     })
     if (hits !== referenceSamples.length) failures.push(`${fixture.key}/${candidate.name}: missing demand-ray intersections`)
     if (candidate.name.includes('adaptive') && maxRayError > 0.01) {
-      failures.push(`${fixture.key}/${candidate.name}: ${maxRayError} ray error exceeds 1.5% acceptance`)
+      failures.push(`${fixture.key}/${candidate.name}: ${maxRayError} ray error exceeds 1% acceptance`)
     }
   }
 }
@@ -108,7 +97,7 @@ console.table(reports.map((item) => ({
   points: item.points,
   dirs: item.directions,
   stations: item.stations,
-  'ray err': Number(item.maxRayErrorVs96x144).toExponential(2),
+  'ray err': Number(item.maxRayErrorVsUnified22x144).toExponential(2),
   'curve ms': Number(item.curveBuildMs).toFixed(1)
 })))
 console.log(JSON.stringify({ generatedAt: new Date().toISOString(), reports, failures }, null, 2))

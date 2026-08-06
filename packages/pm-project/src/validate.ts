@@ -2,6 +2,12 @@ import type { GeometryInput, GeometryInputOuter, GeometryInputRebar, Point2 } fr
 import { CONCRETE_MATERIAL_ID, DEFAULT_CONCRETE_DENSITY } from '@pm/materials'
 import type { ConcreteMaterial, MaterialStore, SteelMaterial, StressStrainPoint } from '@pm/materials'
 import {
+  UNIFIED_DEPTH_RATIOS,
+  UNIFIED_INTERMEDIATE_STATION_COUNT,
+  UNIFIED_STATION_SCHEDULE,
+  UNIFIED_STEEL_STRAIN_YIELD_RATIOS
+} from '@pm/stations'
+import {
   DESIGN_BASIS_VERSION,
   assertValidDesignBasis,
   createDefaultDesignBasis,
@@ -382,6 +388,13 @@ const parseAnalysisStation = (value: unknown, path: string): AnalysisStation => 
     )
     return { id: value.id, label: value.label, criterion: { type: 'c-over-c1', ratio: value.criterion.ratio } }
   }
+  if (value.criterion.type === 'depth-ratio') {
+    assert(
+      isFiniteNumber(value.criterion.ratio) && value.criterion.ratio >= 1,
+      `${path}.criterion.ratio must be at least 1`
+    )
+    return { id: value.id, label: value.label, criterion: { type: 'depth-ratio', ratio: value.criterion.ratio } }
+  }
   if (value.criterion.type === 'steel-stress-ratio') {
     assert(
       isFiniteNumber(value.criterion.ratio) && value.criterion.ratio >= 0 && value.criterion.ratio <= 1,
@@ -399,6 +412,17 @@ const parseAnalysisStation = (value: unknown, path: string): AnalysisStation => 
       `${path}.criterion.strain must be finite and non-positive`
     )
     return { id: value.id, label: value.label, criterion: { type: 'steel-strain', strain: value.criterion.strain } }
+  }
+  if (value.criterion.type === 'bar-tension-yield-ratio') {
+    assert(
+      isFiniteNumber(value.criterion.ratio) && value.criterion.ratio >= 0,
+      `${path}.criterion.ratio must be nonnegative`
+    )
+    return {
+      id: value.id,
+      label: value.label,
+      criterion: { type: 'bar-tension-yield-ratio', ratio: value.criterion.ratio }
+    }
   }
   if (value.criterion.type === 'strength-reduction-transition-ratio') {
     assert(
@@ -459,7 +483,7 @@ const parseEquivalentBlockAnalysis = (
 ): EquivalentBlockAnalysisOptions => {
   assertRecord(value.neutralAxisStations, `${path}.neutralAxisStations must be an object`)
   assert(
-    value.neutralAxisStations.basedOn === 'verified-37-v1' || value.neutralAxisStations.basedOn === 'custom',
+    value.neutralAxisStations.basedOn === UNIFIED_STATION_SCHEDULE || value.neutralAxisStations.basedOn === 'custom',
     `${path}.neutralAxisStations.basedOn is invalid`
   )
   assertArray(value.neutralAxisStations.values, `${path}.neutralAxisStations.values must be an array`)
@@ -474,10 +498,29 @@ const parseEquivalentBlockAnalysis = (
       assert(isFiniteNumber(item.strain) && item.strain >= 0, `${itemPath}.strain must be nonnegative`)
       return { type: 'extreme-tension-strain' as const, strain: item.strain }
     }
+    if (item.type === 'bar-tension-yield-ratio') {
+      assert(isFiniteNumber(item.ratio) && item.ratio >= 0, `${itemPath}.ratio must be nonnegative`)
+      return { type: 'bar-tension-yield-ratio' as const, ratio: item.ratio }
+    }
     assert(item.type === 'depth-ratio', `${itemPath}.type is unsupported`)
-    assert(isFiniteNumber(item.ratio) && item.ratio > 1, `${itemPath}.ratio must be greater than 1`)
+    assert(isFiniteNumber(item.ratio) && item.ratio >= 1, `${itemPath}.ratio must be at least 1`)
     return { type: 'depth-ratio' as const, ratio: item.ratio }
   })
+  if (value.neutralAxisStations.basedOn === UNIFIED_STATION_SCHEDULE) {
+    const expected = [
+      ...UNIFIED_DEPTH_RATIOS.map((ratio) => `depth:${ratio}`),
+      ...UNIFIED_STEEL_STRAIN_YIELD_RATIOS.map((ratio) => `bar:${ratio}`)
+    ]
+    const actual = values.map((item) => item.type === 'bar-tension-yield-ratio'
+      ? `bar:${item.ratio}`
+      : item.type === 'depth-ratio'
+        ? `depth:${item.ratio}`
+        : `extreme:${item.strain}`)
+    assert(
+      actual.length === expected.length && actual.every((item, index) => item === expected[index]),
+      `${path}.neutralAxisStations must match the canonical ${UNIFIED_STATION_SCHEDULE} schedule`
+    )
+  }
 
   assertRecord(value.neutralAxisStations.refinement, `${path}.neutralAxisStations.refinement must be an object`)
   const stationRefinement = value.neutralAxisStations.refinement
@@ -552,9 +595,7 @@ const parseAnalysis = (value: unknown): CalculationAnalysisOptions => {
   assert(value.methodId === STRAIN_DOMAIN_SURFACE_METHOD, `${path}.methodId is unsupported`)
   assertRecord(value.stations, `${path}.stations must be an object`)
   assert(
-    value.stations.basedOn === 'transition-aware-p0-p24-v1' ||
-      value.stations.basedOn === 'legacy-p0-p18-v1' ||
-      value.stations.basedOn === 'custom',
+    value.stations.basedOn === UNIFIED_STATION_SCHEDULE || value.stations.basedOn === 'custom',
     `${path}.stations.basedOn is invalid`
   )
   assertArray(value.stations.intermediate, `${path}.stations.intermediate must be an array`)
@@ -567,19 +608,20 @@ const parseAnalysis = (value: unknown): CalculationAnalysisOptions => {
   )
   const stationIds = new Set(intermediate.map((item) => item.id))
   assert(stationIds.size === intermediate.length, `${path}.stations.intermediate ids must be unique`)
-  if (value.stations.basedOn === 'transition-aware-p0-p24-v1') {
-    const hasYield = intermediate.some(
-      (item) => item.criterion.type === 'steel-stress-ratio' && Math.abs(item.criterion.ratio - 1) <= 1e-12
-    )
-    const hasTransitionFractions = Array.from({ length: 8 }, (_, index) => (index + 1) / 8).every(
-      (ratio) => intermediate.some(
-        (item) => item.criterion.type === 'strength-reduction-transition-ratio' &&
-          Math.abs(item.criterion.ratio - ratio) <= 1e-12
-      )
-    )
+  if (value.stations.basedOn === UNIFIED_STATION_SCHEDULE) {
+    const expected = [
+      ...UNIFIED_DEPTH_RATIOS.map((ratio) => `depth:${ratio}`),
+      ...UNIFIED_STEEL_STRAIN_YIELD_RATIOS.map((ratio) => `bar:${ratio}`)
+    ]
+    const actual = intermediate.map((item) => item.criterion.type === 'depth-ratio'
+      ? `depth:${item.criterion.ratio}`
+      : item.criterion.type === 'bar-tension-yield-ratio'
+        ? `bar:${item.criterion.ratio}`
+        : item.criterion.type)
     assert(
-      hasYield && hasTransitionFractions,
-      `${path}.stations must retain yield plus all eight 1/8 transition fractions for transition-aware-p0-p24-v1`
+      intermediate.length === UNIFIED_INTERMEDIATE_STATION_COUNT &&
+        actual.every((item, index) => item === expected[index]),
+      `${path}.stations must match the canonical ${UNIFIED_STATION_SCHEDULE} schedule`
     )
   }
 

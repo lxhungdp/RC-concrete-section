@@ -75,10 +75,9 @@ KDS current profile:
   fy >  400 MPa: eps_t,limit = 2.5 eps_y
 ```
 
-These are persisted as discriminated rules, not one shared `transitionExtraStrain`. The stress-strain
-surface samples nine points from yield through the active rule's upper limit. Both block adapters use
-the same profile-owned limits for phi evaluation and insert those nine events at the controlling
-longitudinal bar for each neutral-axis direction.
+These are persisted as discriminated rules, not one shared `transitionExtraStrain`, and are used for
+resistance-factor evaluation. They do not add stations to the shared 22-point production schedule.
+How transition breakpoints should participate in future adaptive sampling is intentionally separate.
 
 For the block pipeline, a declared steel ultimate strain is a mechanical boundary, not descriptive
 metadata. It must exceed yield strain, bounds surface/end-point states, and is checked against every

@@ -270,14 +270,6 @@ export const createCustomBlockModel = (input: CreateCustomBlockModelInput) => {
   /** The reference pole is only a separate surface pole when it is physically unreachable. */
   const referenceExceedsBlock = referenceCompressionStress > blockLaw.compressionStress * (1 + 1e-12)
 
-  const barStrainEvents = Object.values(input.steel).flatMap((definition) => {
-    const yieldStrain = definition.yieldStress / definition.elasticModulus
-    const tensionLimit = customTensionControlledLimit(input.transitionRule, yieldStrain, definition.yieldStress)
-    return [
-      ...Array.from({ length: 9 }, (_, index) => yieldStrain + (index / 8) * (tensionLimit - yieldStrain)),
-      ...(definition.ultimateStrain === undefined ? [] : [definition.ultimateStrain])
-    ]
-  })
   const compressionPhi = input.transverseReinforcement === 'qualifying-spiral'
     ? resistanceFactors.phiCompressionSpiral
     : resistanceFactors.phiCompressionOther
@@ -389,7 +381,7 @@ export const createCustomBlockModel = (input: CreateCustomBlockModelInput) => {
     return buildCapacitySurface(section, bindNominalEvaluator(section), {
       ...options,
       steelLaws,
-      barStrainEvents,
+      barStrainEvents: options.barStrainEvents ?? [],
       extremeCompressionStrain: blockLaw.extremeCompressionStrain,
       tensionPole: endpoints.tension,
       compressionPole: physicalCompressionEndpoint(section)
@@ -405,7 +397,7 @@ export const createCustomBlockModel = (input: CreateCustomBlockModelInput) => {
     const surface = buildCapacitySurface(section, bindDesignEvaluator(section), {
       ...surfaceOptions,
       steelLaws,
-      barStrainEvents,
+      barStrainEvents: surfaceOptions.barStrainEvents ?? [],
       extremeCompressionStrain: blockLaw.extremeCompressionStrain,
       tensionPole: endpoints.tension,
       compressionPole: {

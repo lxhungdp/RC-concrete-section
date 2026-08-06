@@ -173,16 +173,6 @@ export const createAci318Model = (input: CreateAci318ModelInput) => {
     extremeCompressionStrain: 0.003,
     subtractDisplacedConcrete: true
   }
-  const barStrainEvents = Object.values(input.steel).flatMap((definition) => {
-    const yieldStrain = definition.yieldStress / definition.elasticModulus
-    const tensionLimit = yieldStrain + resistanceFactors.transitionExtraStrain
-    return [
-      ...Array.from({ length: 9 }, (_, index) =>
-        yieldStrain + index / 8 * (tensionLimit - yieldStrain)
-      ),
-      ...(definition.ultimateStrain === undefined ? [] : [definition.ultimateStrain])
-    ]
-  })
   const compressionPhi = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.phiCompressionSpiral : resistanceFactors.phiCompressionOther
   const axialCapRatio = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.axialCapSpiral : resistanceFactors.axialCapOther
 
@@ -257,7 +247,7 @@ export const createAci318Model = (input: CreateAci318ModelInput) => {
     return buildCapacitySurface(section, bindNominalEvaluator(section), {
       ...options,
       steelLaws,
-      barStrainEvents,
+      barStrainEvents: options.barStrainEvents ?? [],
       extremeCompressionStrain: blockLaw.extremeCompressionStrain,
       tensionPole: endpoints.tension,
       compressionPole: endpoints.compression
@@ -272,7 +262,7 @@ export const createAci318Model = (input: CreateAci318ModelInput) => {
     const surface = buildCapacitySurface(section, bindDesignEvaluator(section), {
       ...surfaceOptions,
       steelLaws,
-      barStrainEvents,
+      barStrainEvents: surfaceOptions.barStrainEvents ?? [],
       extremeCompressionStrain: blockLaw.extremeCompressionStrain,
       tensionPole: endpoints.tension,
       compressionPole: endpoints.compression

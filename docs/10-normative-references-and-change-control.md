@@ -129,7 +129,7 @@ introduce another schema version or a migration layer.
 
 | Historical preview problem | Current v1 resolution |
 |---|---|
-| Historical 24×19 grid declared the full surface | Retired: stress-strain production now uses 25 stations, 36 seed directions, and 0.5% adaptive angular refinement; block sampling remains independently adaptive. |
+| Multiple station schedules drifted between mechanics | Retired: every profile now uses `unified-22-v1`; direction sampling remains independently configurable. |
 | Strain direction `beta` or derived N.A. line angle reused as demand moment angle | Demand checks use `thetaLoad = atan2(Muy, Mux)` and geometric ray/plane intersections on the finished `P-Mx-My` surface. |
 | Extreme compression fiber taken from mesh centroid | Exact polygon support vertex defines the extreme edge. |
 | Universal `fy/Es` and hard-coded strain milestones | Adapter/material-derived breakpoints with monotonic validation. |

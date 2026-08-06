@@ -5,9 +5,10 @@
     "id": 1,
     "name": "P16 Column ULS — UMD verification case",
     "createdAt": "2026-07-30T00:00:00.000Z",
-    "updatedAt": "2026-07-30T01:30:11.336Z"
+    "updatedAt": "2026-08-06T11:03:14.317Z"
   },
   "inputs": {
+    "calculationProfileId": "kds-2024-stress-strain",
     "geometry": {
       "id": 1,
       "name": "P16 — UMD hollow rectangular column 4500 x 12000, 650 wall",
@@ -3067,142 +3068,166 @@
       "optionsVersion": 1,
       "methodId": "strain-domain-surface-v1",
       "stations": {
-        "basedOn": "legacy-p0-p18-v1",
+        "basedOn": "unified-22-v1",
         "intermediate": [
           {
             "id": 1,
-            "label": "c = 3·c₁",
+            "label": "c/D = 3",
             "criterion": {
-              "type": "c-over-c1",
+              "type": "depth-ratio",
               "ratio": 3
             }
           },
           {
             "id": 2,
-            "label": "c = 2·c₁",
+            "label": "c/D = 2",
             "criterion": {
-              "type": "c-over-c1",
+              "type": "depth-ratio",
               "ratio": 2
             }
           },
           {
             "id": 3,
-            "label": "c = 1.5·c₁",
+            "label": "c/D = 1.5",
             "criterion": {
-              "type": "c-over-c1",
+              "type": "depth-ratio",
               "ratio": 1.5
             }
           },
           {
             "id": 4,
-            "label": "c = 1.2·c₁",
+            "label": "c/D = 1.2",
             "criterion": {
-              "type": "c-over-c1",
+              "type": "depth-ratio",
               "ratio": 1.2
             }
           },
           {
             "id": 5,
-            "label": "fₛ = 0",
+            "label": "c/D = 1.1",
             "criterion": {
-              "type": "steel-stress-ratio",
-              "ratio": 0
+              "type": "depth-ratio",
+              "ratio": 1.1
             }
           },
           {
             "id": 6,
-            "label": "fₛ = 0.25·fyd",
+            "label": "c/D = 1",
             "criterion": {
-              "type": "steel-stress-ratio",
-              "ratio": 0.25
-            }
-          },
-          {
-            "id": 7,
-            "label": "fₛ = 0.5·fyd",
-            "criterion": {
-              "type": "steel-stress-ratio",
-              "ratio": 0.5
-            }
-          },
-          {
-            "id": 8,
-            "label": "fₛ = 0.75·fyd",
-            "criterion": {
-              "type": "steel-stress-ratio",
-              "ratio": 0.75
-            }
-          },
-          {
-            "id": 9,
-            "label": "fₛ = fyd",
-            "criterion": {
-              "type": "steel-stress-ratio",
+              "type": "depth-ratio",
               "ratio": 1
             }
           },
           {
-            "id": 10,
-            "label": "εₛ = -0.003",
+            "id": 7,
+            "label": "εₛ/εy = 0",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.003
+              "type": "bar-tension-yield-ratio",
+              "ratio": 0
+            }
+          },
+          {
+            "id": 8,
+            "label": "εₛ/εy = 0.25",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 0.25
+            }
+          },
+          {
+            "id": 9,
+            "label": "εₛ/εy = 0.5",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 0.5
+            }
+          },
+          {
+            "id": 10,
+            "label": "εₛ/εy = 0.75",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 0.75
             }
           },
           {
             "id": 11,
-            "label": "εₛ = -0.005",
+            "label": "εₛ/εy = 1",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.005
+              "type": "bar-tension-yield-ratio",
+              "ratio": 1
             }
           },
           {
             "id": 12,
-            "label": "εₛ = -0.0075",
+            "label": "εₛ/εy = 1.5",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.0075
+              "type": "bar-tension-yield-ratio",
+              "ratio": 1.5
             }
           },
           {
             "id": 13,
-            "label": "εₛ = -0.01",
+            "label": "εₛ/εy = 2",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.01
+              "type": "bar-tension-yield-ratio",
+              "ratio": 2
             }
           },
           {
             "id": 14,
-            "label": "εₛ = -0.015",
+            "label": "εₛ/εy = 2.5",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.015
+              "type": "bar-tension-yield-ratio",
+              "ratio": 2.5
             }
           },
           {
             "id": 15,
-            "label": "εₛ = -0.025",
+            "label": "εₛ/εy = 3",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.025
+              "type": "bar-tension-yield-ratio",
+              "ratio": 3
             }
           },
           {
             "id": 16,
-            "label": "εₛ = -0.03",
+            "label": "εₛ/εy = 4",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.03
+              "type": "bar-tension-yield-ratio",
+              "ratio": 4
             }
           },
           {
             "id": 17,
-            "label": "εₛ = -0.05",
+            "label": "εₛ/εy = 5",
             "criterion": {
-              "type": "steel-strain",
-              "strain": -0.05
+              "type": "bar-tension-yield-ratio",
+              "ratio": 5
+            }
+          },
+          {
+            "id": 18,
+            "label": "εₛ/εy = 7.5",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 7.5
+            }
+          },
+          {
+            "id": 19,
+            "label": "εₛ/εy = 10",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 10
+            }
+          },
+          {
+            "id": 20,
+            "label": "εₛ/εy = 20",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 20
             }
           }
         ]
@@ -3210,19 +3235,15 @@
       "directions": {
         "seed": {
           "type": "uniform",
-          "count": 24,
+          "count": 36,
           "startDeg": 0
         },
         "refinement": {
-          "type": "fixed",
-          "probe": {
-            "stationIds": [
-              5,
-              10,
-              14,
-              16
-            ]
-          }
+          "type": "adaptive",
+          "tolerance": 0.005,
+          "maxPasses": 6,
+          "maxDirections": 360,
+          "probe": "all"
         }
       },
       "mesh": {
@@ -3235,7 +3256,7 @@
       }
     },
     "design": {
-      "basisVersion": 1,
+      "basisVersion": 2,
       "profileId": "en-1992-1-1-2004-default",
       "identity": {
         "organization": "CEN",
@@ -3249,10 +3270,44 @@
       "verificationStatus": "draft",
       "format": "designMaterialReevaluation",
       "factors": {
-        "alphaCc": 0.85,
-        "gammaC": 1.5,
-        "gammaS": 1.15
+        "concrete": {
+          "characteristicSymbol": "fck",
+          "designSymbol": "fcd",
+          "components": [
+            {
+              "id": "alphaCc",
+              "symbol": "αcc",
+              "label": "Concrete design-strength coefficient",
+              "operation": "multiply",
+              "value": 1,
+              "clauseRef": "EN 1992-1-1:2004, 3.1.6(1)P"
+            },
+            {
+              "id": "gammaC",
+              "symbol": "γC",
+              "label": "Concrete material partial factor",
+              "operation": "divide",
+              "value": 1.5,
+              "clauseRef": "EN 1992-1-1:2004, 2.4.2.4 and selected National Annex"
+            }
+          ]
+        },
+        "reinforcement": {
+          "characteristicSymbol": "fyk",
+          "designSymbol": "fyd",
+          "components": [
+            {
+              "id": "gammaS",
+              "symbol": "γS",
+              "label": "Reinforcement material partial factor",
+              "operation": "divide",
+              "value": 1.15,
+              "clauseRef": "EN 1992-1-1:2004, 2.4.2.4 and selected National Annex"
+            }
+          ]
+        }
       },
+      "compressionEndpoint": "ultimate-strain",
       "modified": false,
       "overrideReason": ""
     }

@@ -8,9 +8,7 @@ import { createKdsBasicDesignBasis } from '@pm/design'
 import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
 import {
   createDefaultAnalysisOptions,
-  createLegacyAnalysisOptions,
-  type AnalysisOptions,
-  type AnalysisStation
+  type AnalysisOptions
 } from '@pm/project'
 import { BENCH_CASES } from '../../packages/pm-analysis/bench/sections'
 
@@ -28,24 +26,9 @@ const fixed = (options: AnalysisOptions, directions: number): AnalysisOptions =>
   return result
 }
 
-/** Thirty-three transition nodes (including yield) and 144 angles form the benchmark reference. */
+/** The shared 22-station schedule and 144 fixed angles form the directional benchmark reference. */
 const referenceOptions = (): AnalysisOptions => {
-  const result = fixed(createDefaultAnalysisOptions(), 144)
-  const yieldIndex = result.stations.intermediate.findIndex(
-    (station) => station.criterion.type === 'steel-stress-ratio' && station.criterion.ratio === 1
-  )
-  const afterTransition = result.stations.intermediate.filter(
-    (station) => station.criterion.type !== 'strength-reduction-transition-ratio'
-  )
-  const transition: AnalysisStation[] = Array.from({ length: 32 }, (_, index) => ({
-    id: 1000 + index,
-    label: `benchmark phi transition ${index + 1}/32`,
-    criterion: { type: 'strength-reduction-transition-ratio', ratio: (index + 1) / 32 }
-  }))
-  const insertion = Math.max(0, yieldIndex + 1)
-  afterTransition.splice(insertion, 0, ...transition)
-  result.stations = { basedOn: 'custom', intermediate: afterTransition }
-  return result
+  return fixed(createDefaultAnalysisOptions(), 144)
 }
 
 const relative = (actual: number, expected: number) =>
@@ -70,12 +53,10 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
   const samples = available.filter((_, index) => index % stride === 0).slice(0, 96)
 
   const candidates = [
-    { name: 'legacy-19x24-fixed', options: createLegacyAnalysisOptions() },
-    { name: 'transition-25x36-fixed', options: fixed(createDefaultAnalysisOptions(), 36) },
-    { name: 'production-25x36-adaptive', options: createDefaultAnalysisOptions() }
+    { name: 'unified-22x36-fixed', options: fixed(createDefaultAnalysisOptions(), 36) },
+    { name: 'unified-22x36-adaptive', options: createDefaultAnalysisOptions() }
   ]
 
-  let legacyError = Number.POSITIVE_INFINITY
   for (const candidate of candidates) {
     const built = timed(() => buildDesignPreviewSurfaceFromPrepared(
       prepared,
@@ -93,7 +74,6 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
       hits += 1
       maxRayError = Math.max(maxRayError, relative(hit.lambda, 1 / 0.7))
     }
-    if (candidate.name === 'legacy-19x24-fixed') legacyError = maxRayError
     const report = {
       case: fixture.key,
       sampling: candidate.name,
@@ -108,9 +88,8 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
     }
     reports.push(report)
     if (hits !== samples.length) failures.push(`${fixture.key}/${candidate.name}: missing ray intersections`)
-    if (candidate.name === 'production-25x36-adaptive') {
+    if (candidate.name === 'unified-22x36-adaptive') {
       if (maxRayError > 0.0075) failures.push(`${fixture.key}/${candidate.name}: ray error exceeds 0.75%`)
-      if (maxRayError > legacyError + 1e-12) failures.push(`${fixture.key}/${candidate.name}: less accurate than legacy`)
     }
   }
 }

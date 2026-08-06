@@ -11,6 +11,7 @@
     "@pm/design": "0.1.0",
     "@pm/geometry": "0.1.0",
     "@pm/ids": "0.1.0",
-    "@pm/materials": "0.1.0"
+    "@pm/materials": "0.1.0",
+    "@pm/stations": "0.1.0"
   }
 }

@@ -31,7 +31,7 @@ import {
 } from '@pm/materials'
 import {
   createDefaultAnalysisOptions,
-  createVerifiedEquivalentBlockAnalysisOptions,
+  createDefaultEquivalentBlockAnalysisOptions,
   type CalculationAnalysisOptions
 } from './analysis-options'
 
@@ -346,7 +346,7 @@ export const isEquivalentBlockProfileId = (id: CalculationProfileId): id is Equi
 
 export const createAnalysisOptionsForProfile = (id: CalculationProfileId): CalculationAnalysisOptions =>
   calculationProfile(id).mechanics === 'equivalent-rectangular-block'
-    ? createVerifiedEquivalentBlockAnalysisOptions()
+    ? createDefaultEquivalentBlockAnalysisOptions()
     : createDefaultAnalysisOptions()
 
 export const createDesignBasisForCalculationProfile = (id: CalculationProfileId): DesignBasis => {

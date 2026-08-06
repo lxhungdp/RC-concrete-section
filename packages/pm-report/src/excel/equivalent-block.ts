@@ -9,9 +9,9 @@
  * It is deliberately **not** the fibre workbook with different numbers. The block kernel has no
  * integration mesh, so `Mesh` and `Concrete` are replaced by:
  *
- *   Block       one row per neutral-axis station at the audited direction: c, a = β1·c, the clipped
+ *   Block       one row per active neutral-axis layer at the audited direction: c, a = β1·c, the clipped
  *               compression area and its first moments, and the concrete resultants as formulas
- *   Block_Clip  the clipped compression polygon of every station, with area and first moments
+ *   Block_Clip  the clipped compression polygon of every active layer, with area and first moments
  *               recomputed by shoelace formula and reconciled against the values `Block` uses
  *
  * Constants are limited to what a spreadsheet cannot express: exact polygon clipping against the
@@ -372,10 +372,31 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     },
     { row: row++, label: 'xc', value: origin.x, unit: 'mm', name: 'xc', note: 'analysis origin = net concrete centroid' },
     { row: row++, label: 'yc', value: origin.y, unit: 'mm', name: 'yc', note: 'all X, Y below are measured from it' },
-    { row: row++, label: 'stations at θ', value: stations.length, unit: '-', note: 'baseline depth schedule plus solved bar/code events' },
+    {
+      row: row++,
+      label: 'requested station schedule',
+      value: input.analysisOptions.neutralAxisStations.values.length + 2,
+      unit: '-',
+      note: input.analysisOptions.neutralAxisStations.basedOn
+    },
+    {
+      row: row++,
+      label: 'active layers at θ',
+      value: stations.length,
+      unit: '-',
+      note: 'non-pole layers remaining after coincident layers and the design axial cap are removed from mesh topology'
+    },
     { row: row++, label: 'sampled directions', value: sampledDirections.length, unit: '-', note: `seed ${input.analysisOptions.directions.seedCount}` },
     { row: row++, label: 'direction interpolation error', value: designSurfaceCore.maxDirectionalInterpolationError, unit: '-', note: designSurfaceCore.directionRefinementConverged ? 'within the requested tolerance' : 'TOLERANCE NOT REACHED' },
-    { row: row++, label: 'station interpolation error', value: designSurfaceCore.maxStationInterpolationError, unit: '-', note: designSurfaceCore.stationRefinementConverged ? 'within the requested tolerance' : 'TOLERANCE NOT REACHED' },
+    {
+      row: row++,
+      label: 'station chord diagnostic',
+      value: designSurfaceCore.maxStationInterpolationError,
+      unit: '-',
+      note: input.analysisOptions.neutralAxisStations.refinement.type === 'adaptive'
+        ? designSurfaceCore.stationRefinementConverged ? 'within the requested tolerance' : 'TOLERANCE NOT REACHED'
+        : 'diagnostic only; the requested station schedule is fixed'
+    },
     { row: row++, label: 'surface closed', value: designSurfaceCore.topology.closed ? 'yes' : 'no', unit: '', note: `${designSurfaceCore.topology.boundaryEdges} boundary edges` }
   ]
 

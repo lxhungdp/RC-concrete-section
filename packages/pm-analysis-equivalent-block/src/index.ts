@@ -304,7 +304,9 @@ export const prepareBlockAnalysis = (
 }
 
 const surfaceOptions = (options: EquivalentBlockAnalysisOptions) => ({
-  stations: options.neutralAxisStations.values,
+  // Project/report order is compression -> tension, shared with the strain-domain DTO.
+  // The low-level block mesher traverses increasing neutral-axis depth, so it consumes the reverse.
+  stations: [...options.neutralAxisStations.values].reverse(),
   seedDirections: options.directions.seedCount,
   startAngle: options.directions.startDeg * Math.PI / 180,
   directionTolerance: options.directions.refinement.type === 'adaptive'
@@ -417,26 +419,28 @@ const nearestStation = (
   const state = point.state
   if (!state) return 0
   if (point.station) {
-    const sourceKey = point.station.type === 'depth-ratio'
+    const sourceKey = point.station.type === 'depth-ratio' || point.station.type === 'bar-tension-yield-ratio'
       ? `${point.station.type}:${point.station.ratio}`
       : `${point.station.type}:${point.station.strain}`
     const exactIndex = surface.stations.findIndex((station) => {
-      const key = station.type === 'depth-ratio'
+      const key = station.type === 'depth-ratio' || station.type === 'bar-tension-yield-ratio'
         ? `${station.type}:${station.ratio}`
         : `${station.type}:${station.strain}`
       return key === sourceKey
     })
-    if (exactIndex >= 0) return exactIndex + 1
+    if (exactIndex >= 0) return surface.stations.length - exactIndex
   }
   const ratio = state.neutralAxisDepth / projectedDepth(section, state.neutralAxisAngle)
   const stationRatio = (station: CapacitySurface['stations'][number]) => station.type === 'depth-ratio'
     ? station.ratio
-    : 1 / (1 + station.strain / epsCu)
+    : station.type === 'bar-tension-yield-ratio'
+      ? 1 / (1 + station.ratio * 0.002 / epsCu)
+      : 1 / (1 + station.strain / epsCu)
   let best = 0
   for (let index = 1; index < surface.stations.length; index += 1) {
     if (Math.abs(stationRatio(surface.stations[index]) - ratio) < Math.abs(stationRatio(surface.stations[best]) - ratio)) best = index
   }
-  return best + 1
+  return surface.stations.length - best
 }
 
 const convertSurfacePoints = (
@@ -464,9 +468,9 @@ const convertSurfacePoints = (
     id: `block-${point.kind}-${point.id}`,
     beta,
     station: point.kind === 'tension-pole'
-      ? 0
+      ? surface.stations.length + 1
       : point.kind === 'compression-pole'
-        ? surface.stations.length + 1
+        ? 0
         : point.kind === 'axial-cap'
           ? -1
           : station,
@@ -487,16 +491,18 @@ const convertSurfacePoints = (
 })
 
 const blockStations = (surface: CapacitySurface): SurfaceStation[] => [
-  { id: 'pure-tension', label: 'Pure tension', definition: { kind: 'pure-tension' } },
-  ...surface.stations.map((station, index) => {
+  { id: 'pure-compression', label: 'Pure compression', definition: { kind: 'pure-compression' } },
+  ...[...surface.stations].reverse().map((station, index) => {
     const definition = station.type === 'depth-ratio'
       ? { kind: 'block-depth-ratio' as const, ratio: station.ratio }
+      : station.type === 'bar-tension-yield-ratio'
+        ? { kind: 'bar-tension-yield-ratio' as const, ratio: station.ratio }
       : station.type === 'bar-tension-strain'
         ? { kind: 'bar-tension-strain' as const, strain: station.strain }
         : { kind: 'extreme-tension-strain' as const, strain: station.strain }
     return { id: `station-${index + 1}` as const, label: stationDefinitionLabel(definition), definition }
   }),
-  { id: 'pure-compression', label: 'Pure compression', definition: { kind: 'pure-compression' } }
+  { id: 'pure-tension', label: 'Pure tension', definition: { kind: 'pure-tension' } }
 ]
 
 const bounds = (points: PreviewSurfacePoint[]) => {
@@ -578,8 +584,12 @@ export const buildEquivalentBlockPreviewSurfaceFromPrepared = (
   }
   const nominalP0 = prepared.referenceModel.nominalEndpoints(prepared.section).compression.resultants
   const warnings = [
-    ...(!design.directionRefinementConverged ? ['Equivalent-block direction refinement did not reach its requested tolerance.'] : []),
-    ...(!design.stationRefinementConverged ? ['Equivalent-block neutral-axis refinement did not reach its requested tolerance.'] : []),
+    ...(options.directions.refinement.type === 'adaptive' && !design.directionRefinementConverged
+      ? ['Equivalent-block direction refinement did not reach its requested tolerance.']
+      : []),
+    ...(options.neutralAxisStations.refinement.type === 'adaptive' && !design.stationRefinementConverged
+      ? ['Equivalent-block neutral-axis refinement did not reach its requested tolerance.']
+      : []),
     ...(!design.topology.closed ? [`Equivalent-block surface is not closed (${design.topology.boundaryEdges} boundary edges).`] : []),
     ...(prepared.appendixPoleDivergesFromBlockLimit
       ? ['KDS Appendix 3.2(1) equations (3-2) and (3-3) carry no eta, so the concentric design axial strength closing this surface is above the equivalent block\'s own concentric limit. The final band up to that point is an interpolation between the two.']

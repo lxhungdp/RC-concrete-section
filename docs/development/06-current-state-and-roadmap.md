@@ -13,8 +13,8 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 | Profile selection | one Materials selection atomically binds KDS stress-strain, KDS block, ACI block, or either `Custom` mechanics and defaults; the profile table is the single owner of mechanics/material-standard/resistance-profile coherence | add only edition-scoped profiles with independent review evidence |
 | Geometry | multiple solids/holes, rebars, exact properties, clipping, triangle/quadrature mesh | complete production topology/cover acceptance UX |
 | Materials | persisted concrete/steel definitions, compiled stress/tangent laws, material support gates | finish independent curve verification for every declared scope |
-| Stress-strain kernel | prepared mesh, 25-state default, nine code-aware transition nodes, 36-direction seed, adaptive angular refinement, full fields, inverse Newton | accepted-result numerical-uncertainty gate and larger independent oracle set |
-| Equivalent-block kernel | standard-independent exact clipping, forward evaluator, exact-refined inverse solvers, bar-event/adaptive surface, rupture/admissibility, block field | independent clause calculations and additional commercial cross-checks |
+| Stress-strain kernel | prepared mesh, shared 22-state default, 36-direction seed, adaptive angular refinement, full fields, inverse Newton | accepted-result numerical-uncertainty gate and larger independent oracle set |
+| Equivalent-block kernel | shared fixed 22-state schedule, standard-independent exact clipping, forward evaluator, exact-refined inverse solvers, rupture/admissibility, block field | independent clause calculations and additional commercial cross-checks |
 | KDS block adapter | KDS 14 20 20 parameter table, `a=beta1 c`, block stress, KDS phi transition and axial cap | named structural-code review and release status above draft |
 | ACI block adapter | ACI 318-19(22) beta1, Whitney stress, phi transition and axial cap | named structural-code review and release status above draft |
 | Custom block adapter | user-declared beta1/block stress/epsCu, either transition rule shape, elastic-perfectly-plastic, bilinear or tabulated steel; unit-tested to reproduce the ACI and KDS adapters exactly when given their parameters | none — it is `user-defined` by construction and is never promoted |
@@ -30,10 +30,11 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
   fail closed, while the ACI calculation profile routes to the implemented equivalent-block adapter.
 - Missing steel references, empty concrete, mesh resource excess, and failed mesh self-checks are
   typed fatal errors.
-- The former fixed 24-direction stress-strain default was replaced. Production now starts at 36
-  directions and adaptively refines all 25 stations to a 0.5% angular chord target.
-- The sparse design-factor transition was replaced by nine code-aware nodes. ACI and KDS transition
-  limits are stored as different discriminated rules rather than one ambiguous increment.
+- Every mechanics/profile now reads the same `unified-22-v1` station schedule. Production
+  stress-strain starts at 36 directions and probes all 22 stations at a 0.5% angular chord target;
+  block starts at 24 directions with its own direction target.
+- Automatic design-factor transition/event stations are disabled in the baseline. Transition
+  policy will be designed separately without changing the fixed station contract implicitly.
 - Project versioning is the single pre-release v1 family: document, DesignBasis, analysis options,
   methods, and named schedules are all v1. No migration or backward-compatibility work is carried.
   Omitted-field defaults are explicit parser-v1 behavior.
@@ -62,20 +63,12 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
   the bar ledger, the resistance stage and the solver evidence — and `npm run test:excel-block`
   recalculates it in an independent formula engine against the kernel.
 
-## 4. Numerical evidence for the new stress-strain default
+## 4. Numerical evidence for the unified station default
 
-The permanent `bench:strain-sampling` harness uses five structural geometries and a
-144-direction/33-transition-node reference:
-
-| Configuration | Worst 3D demand-ray error | Points per surface | Measured build time |
-|---|---:|---:|---:|
-| legacy 19 x 24 fixed | 7.800% | 456 | 64-675 ms |
-| 25 x 36 fixed | 1.791% | 900 | 172-1,874 ms |
-| production 25 x 36 seed + adaptive | 0.521% | 1,400-2,500 | 456-8,865 ms |
-
-All production runs reached the configured angular tolerance and found every sampled ray
-intersection. The dense tall section exposes the cost clearly; performance work must preserve the
-result fingerprints and convergence evidence.
+The permanent `bench:strain-sampling` harness uses five structural geometries and holds the shared
+22 stations constant while comparing fixed and angular-adaptive direction sampling with a dense
+direction reference. Cross-model tests additionally assert the exact criterion list, both poles,
+all four equivalent-block profiles, workbook export, schema parsing, and surface/inverse reuse.
 
 ## 5. Current P0 blockers before engineering release
 
@@ -113,6 +106,8 @@ result fingerprints and convergence evidence.
 - standard-specific `beta1`, block stress, strain limits, phi rules, and caps live in code adapters or
   DesignBasis, never in the generic block kernel;
 - all demand used by the governing check is factored ULS;
+- the production station schedule is owned only by `@pm/stations` and identified by
+  `unified-22-v1` in both analysis DTOs;
 - every result-affecting default change updates code, tests, benchmarks, schema documentation, UI
   help, and report evidence in one change set.
 

@@ -34,6 +34,8 @@ import {
 import {
   cloneAnalysisOptions,
   createDefaultAnalysisOptions,
+  UNIFIED_DEPTH_RATIOS,
+  UNIFIED_STEEL_STRAIN_YIELD_RATIOS,
   type AnalysisOptions,
   type CalculationAnalysisOptions,
   type AnalysisStationCriterion,
@@ -396,8 +398,10 @@ const STRAIN_LIMIT_TOL = 1e-9
 export type StationDefinition =
   | { kind: 'pure-compression' }
   | { kind: 'neutral-axis-ratio'; cOverC1: number }
+  | { kind: 'neutral-axis-depth-ratio'; ratio: number }
   | { kind: 'steel-strain'; strain: number }
   | { kind: 'steel-stress-ratio'; ratio: number }
+  | { kind: 'bar-tension-yield-ratio'; ratio: number }
   | { kind: 'strength-reduction-transition-ratio'; ratio: number }
   /** @deprecated Prefer `steel-strain`; retained for in-flight definitions only. */
   | { kind: 'strength-reduction-post-transition'; strain: number }
@@ -406,30 +410,14 @@ export type StationDefinition =
   | { kind: 'block-depth-ratio'; ratio: number }
   | { kind: 'pure-tension' }
 
-/**
- * `P0…P18` reporting stations, taken from the `PM-advanced (7) 2D.xlsx` Summary sheet station
- * schedule (see `docs/05` §2 "Compatibility with P0–P18 reports"). Tension strains are negative
- * under the compression-positive convention.
- */
-export const PREVIEW_STATIONS: StationDefinition[] = [
+/** Shared 22-station schedule used by compatibility helpers and the production surface. */
+export const UNIFIED_STATIONS: StationDefinition[] = [
   { kind: 'pure-compression' },
-  { kind: 'neutral-axis-ratio', cOverC1: 3 },
-  { kind: 'neutral-axis-ratio', cOverC1: 2 },
-  { kind: 'neutral-axis-ratio', cOverC1: 1.5 },
-  { kind: 'neutral-axis-ratio', cOverC1: 1.2 },
-  { kind: 'steel-stress-ratio', ratio: 0 },
-  { kind: 'steel-stress-ratio', ratio: 0.25 },
-  { kind: 'steel-stress-ratio', ratio: 0.5 },
-  { kind: 'steel-stress-ratio', ratio: 0.75 },
-  { kind: 'steel-stress-ratio', ratio: 1 },
-  { kind: 'steel-strain', strain: -0.003 },
-  { kind: 'steel-strain', strain: -0.005 },
-  { kind: 'steel-strain', strain: -0.0075 },
-  { kind: 'steel-strain', strain: -0.01 },
-  { kind: 'steel-strain', strain: -0.015 },
-  { kind: 'steel-strain', strain: -0.025 },
-  { kind: 'steel-strain', strain: -0.03 },
-  { kind: 'steel-strain', strain: -0.05 },
+  ...UNIFIED_DEPTH_RATIOS.map((ratio) => ({ kind: 'neutral-axis-depth-ratio' as const, ratio })),
+  ...UNIFIED_STEEL_STRAIN_YIELD_RATIOS.map((ratio) => ({
+    kind: 'bar-tension-yield-ratio' as const,
+    ratio
+  })),
   { kind: 'pure-tension' }
 ]
 
@@ -437,8 +425,10 @@ export const stationDefinitionLabel = (station: StationDefinition): string => {
   if (station.kind === 'pure-compression') return 'Pure compression'
   if (station.kind === 'pure-tension') return 'Pure tension'
   if (station.kind === 'block-depth-ratio') return `c/D = ${station.ratio}`
+  if (station.kind === 'neutral-axis-depth-ratio') return `c/D = ${station.ratio}`
   if (station.kind === 'extreme-tension-strain') return `εt = ${station.strain}`
   if (station.kind === 'bar-tension-strain') return `εₛ = ${station.strain}`
+  if (station.kind === 'bar-tension-yield-ratio') return `εₛ/εy = ${station.ratio}`
   if (station.kind === 'neutral-axis-ratio') {
     const ratio = Number(station.cOverC1.toPrecision(6))
     return `c/c₁ = ${ratio}`
@@ -463,8 +453,12 @@ export const stationDefinitionLabel = (station: StationDefinition): string => {
 
 const criterionDefinition = (criterion: AnalysisStationCriterion): StationDefinition => {
   if (criterion.type === 'c-over-c1') return { kind: 'neutral-axis-ratio', cOverC1: criterion.ratio }
+  if (criterion.type === 'depth-ratio') return { kind: 'neutral-axis-depth-ratio', ratio: criterion.ratio }
   if (criterion.type === 'steel-stress-ratio') return { kind: 'steel-stress-ratio', ratio: criterion.ratio }
   if (criterion.type === 'steel-strain') return { kind: 'steel-strain', strain: criterion.strain }
+  if (criterion.type === 'bar-tension-yield-ratio') {
+    return { kind: 'bar-tension-yield-ratio', ratio: criterion.ratio }
+  }
   if (criterion.type === 'strength-reduction-transition-ratio') {
     return { kind: 'strength-reduction-transition-ratio', ratio: criterion.ratio }
   }
@@ -1025,6 +1019,7 @@ const farTensionSteelStrain = (
 ) => {
   if (station.kind === 'steel-strain') return station.strain
   if (station.kind === 'steel-stress-ratio') return strainAtSteelStressRatio(station.ratio, control)
+  if (station.kind === 'bar-tension-yield-ratio') return -station.ratio * control.epsY
   if (station.kind === 'strength-reduction-transition-ratio') {
     const upper = transitionLimitForStation(basis, control)
     return -(control.epsY + station.ratio * (upper - control.epsY))
@@ -1053,22 +1048,26 @@ const previewStationStateFromExtents = (
 
   const compressionProjection = extents.max
   const c1 = Math.max(1e-9, compressionProjection - extents.tensionControl)
+  const sectionDepth = Math.max(1e-9, extents.max - extents.min)
   const controlProjection =
     station.kind === 'neutral-axis-ratio'
       ? compressionProjection - station.cOverC1 * c1
+      : station.kind === 'neutral-axis-depth-ratio'
+        ? compressionProjection - station.ratio * sectionDepth
       : extents.tensionControl
   // A schedule strain past the controlling bar's declared rupture strain is not a reachable state.
   const requestedStrain =
-    station.kind === 'neutral-axis-ratio' ? 0 : farTensionSteelStrain(station, control, designBasis)
+    station.kind === 'neutral-axis-ratio' || station.kind === 'neutral-axis-depth-ratio'
+      ? 0
+      : farTensionSteelStrain(station, control, designBasis)
   const controlStrain = control.epsU === null ? requestedStrain : Math.max(requestedStrain, -control.epsU)
   let compressionBoundaryStrain = epsCu
   if (
-    station.kind === 'neutral-axis-ratio' &&
+    (station.kind === 'neutral-axis-ratio' || station.kind === 'neutral-axis-depth-ratio') &&
     designBasis.format === 'designMaterialReevaluation' &&
     designBasis.compressionEndpoint === 'peak-stress-strain'
   ) {
     const neutralAxisDepth = compressionProjection - controlProjection
-    const sectionDepth = extents.max - extents.min
     if (neutralAxisDepth > sectionDepth) {
       // KDS Appendix 3.1 distinguishes pure compression (eps_c0), flexure with the neutral
       // axis inside the section (eps_cu), and the all-compression domain between them. The
@@ -1107,7 +1106,7 @@ export const previewStationState = (
   origin: AnalysisOrigin = netConcreteCentroid(section)
 ): StrainState => {
   const limits = typeof steel === 'number' ? { epsY: steel, epsU: null } : steel
-  const definition = PREVIEW_STATIONS[stationIndex] ?? PREVIEW_STATIONS[0]
+  const definition = UNIFIED_STATIONS[stationIndex] ?? UNIFIED_STATIONS[0]
   // Compatibility helper has no compiled law. The default schedules only use the linear pre-yield
   // branch, represented exactly by this minimal evaluator.
   const control: StationSteelControl = {
@@ -1663,7 +1662,7 @@ export const buildPreviewSurfaceFromPrepared = (
       notes: [
         'Reference workbook uses fck=30 MPa, ecu=0.0033, KDS parabolic concrete, Es=200000 MPa, fy=400 MPa.',
         'Reference Summary P0 at 0 degrees: nominal P=33981.43 kN, factored P=23443.29 kN.',
-        'Reference Summary P18 pure tension: nominal P=-5790.58 kN, factored P=-5211.53 kN.'
+        'Reference source pure-tension endpoint: nominal P=-5790.58 kN, factored P=-5211.53 kN.'
       ]
     },
     warnings,

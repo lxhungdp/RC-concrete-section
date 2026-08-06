@@ -235,7 +235,7 @@ function ConcreteMaterialFactorFields({
 }: {
   basis: DesignBasis
   fck: number
-  onFactorChange: (componentId: string, value: number) => void
+  onFactorChange: (componentId: MaterialFactorComponent['id'], value: number) => void
   onOverrideReasonChange: (reason: string) => void
 }) {
   if (basis.format !== 'designMaterialReevaluation') return null

@@ -17,11 +17,13 @@ import { geometryInputRebars, netConcreteCentroid, sectionGeometryFromGeometryIn
 import {
   cloneAnalysisOptions,
   createDefaultAnalysisOptions,
-  createLegacyAnalysisOptions,
-  parseProjectDocument
+  parseProjectDocument,
+  UNIFIED_DEPTH_RATIOS,
+  UNIFIED_STATION_COUNT,
+  UNIFIED_STEEL_STRAIN_YIELD_RATIOS
 } from '@pm/project'
 import {
-  PREVIEW_STATIONS,
+  UNIFIED_STATIONS,
   buildPreviewSurface,
   intersectFixedPContourWithMomentRay,
   contourStrainAngleSamples,
@@ -84,10 +86,8 @@ const run = async () => {
   const section = sectionGeometryFromGeometryInput(geometry)
   const rebars = geometryInputRebars(geometry)
   const materialStore = parsed.document.inputs.materials
-  // The main workbook assertions reproduce the archived 19-station/24-direction source workbook.
-  // Keep that verification grid explicit and independent from the current project default, which
-  // is exercised separately in section 16 below.
-  const analysisOptions = createLegacyAnalysisOptions()
+  // The workbook and engine must use the same canonical station schedule.
+  const analysisOptions = createDefaultAnalysisOptions()
   if (analysisOptions.methodId !== 'strain-domain-surface-v1') throw new Error('Excel selftest requires curve analysis options')
   const loadcase = parsed.document.inputs.loadings.combinations[0]
 
@@ -335,7 +335,7 @@ const run = async () => {
   check('mesh area = polygon area (mm2)', cellValue('Input', `C${findLabelRow(readBack.getWorksheet('Input')!, 'Net concrete area')}`), 1120000, 1e-9)
   console.log()
 
-  console.log('== 4. PM_Angle: historical 19-station fixture reproduces the engine ==')
+  console.log('== 4. PM_Angle: unified 22-station schedule reproduces the engine ==')
   const pmSheet = readBack.getWorksheet('PM_Angle')!
   const PM_HEAD = 5
   const PM_FIRST = 7
@@ -345,11 +345,10 @@ const run = async () => {
   const cSteelP = headerColumn(pmSheet, PM_HEAD, 'P (kN)', cCon.P + 1)
   const cTotP = headerColumn(pmSheet, PM_HEAD, 'P (kN)', cSteelP + 1)
   const cEng = headerColumn(pmSheet, PM_HEAD, 'P engine (kN)')
-  const cE0 = headerColumn(pmSheet, PM_HEAD, 'ε₀')
   console.log(
     `      columns → concrete P ${colName(cCon.P)}, steel P ${colName(cSteelP)}, total P ${colName(cTotP)}, engine ${colName(cEng)}`
   )
-  for (let index = 0; index < PREVIEW_STATIONS.length; index++) {
+  for (let index = 0; index < UNIFIED_STATIONS.length; index++) {
     const r = PM_FIRST + index
     check(`P${index} total P (kN)`, cellValue('PM_Angle', `${colName(cTotP)}${r}`), Number(pmSheet.getCell(r, cEng).value), 1e-9, 1)
   }
@@ -357,7 +356,7 @@ const run = async () => {
 
   console.log('== 5. Concrete + steel ledger closes at every station ==')
   let worstLedger = 0
-  for (let index = 0; index < PREVIEW_STATIONS.length; index++) {
+  for (let index = 0; index < UNIFIED_STATIONS.length; index++) {
     const r = PM_FIRST + index
     const total = cellValue('PM_Angle', `${colName(cTotP)}${r}`)
     const parts = cellValue('PM_Angle', `${colName(cCon.P)}${r}`) + cellValue('PM_Angle', `${colName(cSteelP)}${r}`)
@@ -370,11 +369,12 @@ const run = async () => {
   const stationRowOf = (index: number) => PM_FIRST + index
   check('P0 concrete P (kN)', cellValue('PM_Angle', `${colName(cCon.P)}${stationRowOf(0)}`), 28560, 1e-9)
   check('P0 steel P (kN)', cellValue('PM_Angle', `${colName(cSteelP)}${stationRowOf(0)}`), 5421.433875929294, 1e-9)
-  check('P18 steel P (kN)', cellValue('PM_Angle', `${colName(cSteelP)}${stationRowOf(18)}`), -5790.583579096708, 1e-9)
-  check('P5 steel P (kN)', cellValue('PM_Angle', `${colName(cSteelP)}${stationRowOf(5)}`), 3366.081802600885, 1e-9)
-  check('P5 steel Mx (kN·m)', cellValue('PM_Angle', `${colName(cSteelP + 1)}${stationRowOf(5)}`), 814.449068175329, 1e-9)
-  check('P5 steel My (kN·m)', cellValue('PM_Angle', `${colName(cSteelP + 2)}${stationRowOf(5)}`), 309.19068966766366, 1e-9)
-  check('P5 eps_0', cellValue('PM_Angle', `${colName(cE0)}${stationRowOf(5)}`), 0.0015186813783709227, 1e-9)
+  check(
+    'P21 steel P (kN)',
+    cellValue('PM_Angle', `${colName(cSteelP)}${stationRowOf(UNIFIED_STATION_COUNT - 1)}`),
+    -5790.583579096708,
+    1e-9
+  )
   console.log()
 
   console.log('== 7. Fibre detail block equals its station total ==')
@@ -404,18 +404,21 @@ const run = async () => {
   )
   console.log()
 
-  console.log('== 8. MxMy_FixedP: historical 24-direction fixture vs the engine contour ==')
+  console.log('== 8. MxMy_FixedP: effective directions vs the engine contour ==')
   const inputSheet = readBack.getWorksheet('Input')!
   const cellSize = Number(inputSheet.getCell(`C${findLabelRow(inputSheet, 'mesh cell size')}`).value)
   const surface = buildPreviewSurface(section, rebars, materialStore, { cellSize }, analysisOptions)
   const engineContour = contourStrainAngleSamples(sliceFixedPContour(surface.points, loadcase.P))
-  const stationCount = PREVIEW_STATIONS.length
+  const stationCount = UNIFIED_STATIONS.length
   const MM_FIRST = 8
   const MM_P_COL = 2 + 4 + stationCount * 3
   const MM_RESULT_COL = MM_P_COL + stationCount * 3
 
   // The theta row here duplicates PM_Angle through an independent formula path.
-  const thetaRow = MM_FIRST + Math.round(BETA_DEG / 15)
+  const betaRadians = BETA_DEG * Math.PI / 180
+  const betaDirectionIndex = surface.directions.findIndex((direction) => Math.abs(direction - betaRadians) < 1e-9)
+  assert.ok(betaDirectionIndex >= 0, `the effective direction list must include β = ${BETA_DEG}°`)
+  const thetaRow = MM_FIRST + betaDirectionIndex
   for (const station of [0, 5, 9, 18]) {
     check(
       `MxMy theta row P${station} (kN)`,
@@ -429,9 +432,9 @@ const run = async () => {
   let worstMx = 0
   let worstMy = 0
   let compared = 0
-  for (let angleIndex = 0; angleIndex < 24; angleIndex++) {
+  for (let angleIndex = 0; angleIndex < surface.directions.length; angleIndex++) {
     const r = MM_FIRST + angleIndex
-    const beta = (angleIndex * Math.PI) / 12
+    const beta = surface.directions[angleIndex]
     const engineRow = engineContour.find((point) => Math.abs(point.beta - beta) < 1e-9)
     if (!engineRow) continue
     compared++
@@ -439,7 +442,7 @@ const run = async () => {
     worstMy = Math.max(worstMy, Math.abs(cellValue('MxMy_FixedP', `${colName(MM_RESULT_COL + 3)}${r}`) - engineRow.My / 1e6))
   }
   const momentScale = Math.max(...engineContour.map((point) => Math.hypot(point.Mx, point.My) / 1e6), 1)
-  console.log(`      directions compared: ${compared} / 24, moment scale ${momentScale.toFixed(1)} kN·m`)
+  console.log(`      directions compared: ${compared} / ${surface.directions.length}, moment scale ${momentScale.toFixed(1)} kN·m`)
   check('worst |ΔMx| over the contour', worstMx, 0, 1e-9, momentScale)
   check('worst |ΔMy| over the contour', worstMy, 0, 1e-9, momentScale)
   console.log()
@@ -485,8 +488,7 @@ const run = async () => {
     `      engine ${engineMb.toFixed(3)}   ray on the workbook contour ${workbookMbRay.toFixed(3)}   ` +
       `plane cut of the station rings ${workbookMbPlane.toFixed(3)} kN·m`
   )
-  // This compatibility workbook slices its persisted 24x19 grid; the engine slices the same
-  // triangulation. Current project defaults are tested separately.
+  // The workbook and engine slice the same shared 22-station schedule and sampled directions.
   // to the direction-sampling spread, not to machine precision.
   check('workbook ray Mb vs engine', workbookMbRay, engineMb, 5e-3)
   check('workbook plane Mb vs engine', workbookMbPlane, engineMb, 5e-3)
@@ -503,7 +505,7 @@ const run = async () => {
   let worstM = 0
   let worstP = 0
   let sectionCompared = 0
-  for (let index = 0; index < PREVIEW_STATIONS.length; index++) {
+  for (let index = 0; index < UNIFIED_STATIONS.length; index++) {
     const r = PT_FIRST + index
     if (cellText('PM_Theta', `J${r}`) === 'pole') continue
     const excelP = cellValue('PM_Theta', `E${r}`)
@@ -522,11 +524,14 @@ const run = async () => {
   console.log(`      non-pole stations compared: ${sectionCompared}`)
   check('worst |ΔP| vs the engine plane cut (kN)', worstP, 0, 1e-6, Math.abs(loadcase.P) / 1e3)
   check('worst |ΔM| vs the engine plane cut (kN·m)', worstM, 0, 5e-3, momentScale)
-  const poleRows = Array.from({ length: PREVIEW_STATIONS.length }, (_, index) => index).filter(
+  const poleRows = Array.from({ length: UNIFIED_STATIONS.length }, (_, index) => index).filter(
     (index) => cellText('PM_Theta', `J${PT_FIRST + index}`) === 'pole'
   )
   console.log(`      poles detected and given Mtheta = 0: ${poleRows.map((index) => `P${index}`).join(', ')}`)
-  assert.ok(poleRows.includes(0) && poleRows.includes(PREVIEW_STATIONS.length - 1), 'P0 and P18 must be poles')
+  assert.ok(
+    poleRows.includes(0) && poleRows.includes(UNIFIED_STATIONS.length - 1),
+    'the first and final unified stations must be poles'
+  )
   for (const index of poleRows) {
     check(`P${index} pole Mtheta (kN·m)`, cellValue('PM_Theta', `F${PT_FIRST + index}`), 0, 1e-12, 1)
   }
@@ -760,7 +765,7 @@ const run = async () => {
   assert.equal(customPm.getCell(12, 2).value, null, 'the station block must stop after the configured five rows')
   console.log('PASS  5 custom stations, 5 nonuniform directions, wrap angle and nonlinear inverse\n')
 
-  console.log('== 16. Current 25-station default exports all nine code-aware transition nodes ==')
+  console.log('== 16. The shared 22-station default exports the canonical criteria ==')
   const currentOptions = createDefaultAnalysisOptions()
   const currentWorkbook = await buildSectionWorkbook({
     projectName: `${parsed.document.meta.name} (current sampling default)`,
@@ -778,17 +783,19 @@ const run = async () => {
   const currentRead = new ExcelJS.Workbook()
   await currentRead.xlsx.load(currentBuffer as ArrayBuffer)
   const currentPm = currentRead.getWorksheet('PM_Angle')!
-  assert.match(String(currentPm.getCell('B1').value), /25 STATIONS/)
+  assert.match(String(currentPm.getCell('B1').value), /22 STATIONS/)
   const currentEpsControlColumn = headerColumn(currentPm, 5, 'ε_ctrl')
-  const transitionStrains = Array.from(
-    { length: 9 },
-    (_, index) => Number(currentPm.getCell(16 + index, currentEpsControlColumn).value)
+  const yieldRatioStartRow = 7 + 1 + UNIFIED_DEPTH_RATIOS.length
+  const yieldRatioStrains = Array.from(
+    { length: UNIFIED_STEEL_STRAIN_YIELD_RATIOS.length },
+    (_, index) => Number(currentPm.getCell(yieldRatioStartRow + index, currentEpsControlColumn).value)
   )
-  assert.ok(transitionStrains.every(Number.isFinite))
-  assert.ok(transitionStrains.every((strain, index) => index === 0 || strain < transitionStrains[index - 1]))
-  assert.ok(Math.abs(transitionStrains[0] + 0.002) < 1e-12)
-  assert.ok(Math.abs(transitionStrains[8] + 0.005) < 1e-12)
-  console.log('PASS  25 stations exported; transition strains run from eps_y to the KDS limit at 1/8 spacing\n')
+  const epsY = materialStore.steel[0].fy / materialStore.steel[0].elasticModulus
+  assert.ok(yieldRatioStrains.every(Number.isFinite))
+  yieldRatioStrains.forEach((strain, index) => {
+    assert.ok(Math.abs(strain + UNIFIED_STEEL_STRAIN_YIELD_RATIOS[index] * epsY) < 1e-12)
+  })
+  console.log('PASS  22 stations exported with six c/D points and fourteen εₛ/εy points\n')
 
   if (failures.length > 0) {
     console.log(`${failures.length} check(s) failed:`)

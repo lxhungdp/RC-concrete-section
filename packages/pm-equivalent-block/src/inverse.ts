@@ -189,10 +189,14 @@ export const solveFixedAxialCapacity = (
         (current, bar) => !current || bar.depth > current.depth ? bar : current,
         undefined
       )
-      const controllingDepth = station.type === 'bar-tension-strain' && controllingBar
+      const controllingDepth =
+        (station.type === 'bar-tension-strain' || station.type === 'bar-tension-yield-ratio') && controllingBar
         ? controllingBar.depth
         : depth
-      const requestedDepth = controllingDepth / (1 + station.strain / extremeCompressionStrain)
+      const strain = station.type === 'bar-tension-yield-ratio'
+        ? station.ratio * (controllingBar?.yieldStrain ?? 0.002)
+        : station.strain
+      const requestedDepth = controllingDepth / (1 + strain / extremeCompressionStrain)
       const ruptureDepth = barDepths.reduce((minimum, bar) => bar.ultimateStrain === undefined
         ? minimum
         : Math.max(minimum, bar.depth / (1 + bar.ultimateStrain / extremeCompressionStrain)), 0)

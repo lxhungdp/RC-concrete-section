@@ -31,7 +31,7 @@ import {
 import { stressKdsParabolicConcrete, type MaterialStore } from '@pm/materials'
 import { parseProjectDocument } from '@pm/project'
 import {
-  PREVIEW_STATIONS,
+  UNIFIED_STATIONS,
   evaluatePreviewState,
   previewStationState,
   type ResultantLedger,
@@ -82,16 +82,8 @@ const WORKBOOK = {
     concrete: { P: 28560, Mx: 0, My: 0 },
     steel: { P: 5421.433875929294, Mx: 0, My: 0 }
   },
-  /** Row 88 — `C/C1 = 1`, `fs = 0`; engine station index 5. */
-  neutralAxisAtFarBar: {
-    e0: 0.0015186813783709227,
-    curvature: 2.4675216637955503e-6,
-    concrete: { P: 21576.840299851297, Mx: 2899.71687566737, My: 1122.5900380274104 },
-    steel: { P: 3366.081802600885, Mx: 814.449068175329, My: 309.19068966766366 },
-    total: { P: 24942.922102452183, Mx: 3714.165943842699, My: 1431.7807276950741 }
-  },
   /** Row 92 — pure tension. */
-  p18: {
+  pureTension: {
     concrete: { P: 0, Mx: 0, My: 0 },
     steel: { P: -5790.583579096708, Mx: 0, My: 0 }
   }
@@ -147,41 +139,40 @@ const run = () => {
   const steel = MATERIALS.steel[0]
   const epsY = steel.fy / steel.elasticModulus
 
-  console.log('== 1. Station schedule vs workbook `Summary` C44:F62 ==')
+  console.log('== 1. Unified 22-station schedule ==')
   const expectedSchedule = [
     'pure-compression',
-    'neutral-axis-ratio:3',
-    'neutral-axis-ratio:2',
-    'neutral-axis-ratio:1.5',
-    'neutral-axis-ratio:1.2',
-    'steel-stress-ratio:0',
-    'steel-stress-ratio:0.25',
-    'steel-stress-ratio:0.5',
-    'steel-stress-ratio:0.75',
-    'steel-stress-ratio:1',
-    'steel-strain:-0.003',
-    'steel-strain:-0.005',
-    'steel-strain:-0.0075',
-    'steel-strain:-0.01',
-    'steel-strain:-0.015',
-    'steel-strain:-0.025',
-    'steel-strain:-0.03',
-    'steel-strain:-0.05',
+    'neutral-axis-depth-ratio:3',
+    'neutral-axis-depth-ratio:2',
+    'neutral-axis-depth-ratio:1.5',
+    'neutral-axis-depth-ratio:1.2',
+    'neutral-axis-depth-ratio:1.1',
+    'neutral-axis-depth-ratio:1',
+    'bar-tension-yield-ratio:0',
+    'bar-tension-yield-ratio:0.25',
+    'bar-tension-yield-ratio:0.5',
+    'bar-tension-yield-ratio:0.75',
+    'bar-tension-yield-ratio:1',
+    'bar-tension-yield-ratio:1.5',
+    'bar-tension-yield-ratio:2',
+    'bar-tension-yield-ratio:2.5',
+    'bar-tension-yield-ratio:3',
+    'bar-tension-yield-ratio:4',
+    'bar-tension-yield-ratio:5',
+    'bar-tension-yield-ratio:7.5',
+    'bar-tension-yield-ratio:10',
+    'bar-tension-yield-ratio:20',
     'pure-tension'
   ]
-  const actualSchedule = PREVIEW_STATIONS.map((station) =>
-    station.kind === 'neutral-axis-ratio'
-      ? `${station.kind}:${station.cOverC1}`
-      : station.kind === 'steel-strain'
-        ? `${station.kind}:${station.strain}`
-        : station.kind === 'steel-stress-ratio'
-          ? `${station.kind}:${station.ratio}`
-          : station.kind
+  const actualSchedule = UNIFIED_STATIONS.map((station) =>
+    station.kind === 'neutral-axis-depth-ratio' || station.kind === 'bar-tension-yield-ratio'
+      ? `${station.kind}:${station.ratio}`
+      : station.kind
   )
-  assert.equal(actualSchedule.length, 19, 'P0..P18 requires exactly 19 stations')
+  assert.equal(actualSchedule.length, 22, 'the unified schedule requires exactly 22 stations')
   assert.deepEqual(actualSchedule, expectedSchedule)
-  assert.equal(epsY, 0.002) // workbook P9 is `fs/fyd = 1`; with gammaS=1, eps_s = 0.002 = fyd/Es
-  console.log(`PASS  19 stations P0..P18 match the workbook schedule (eps_y = ${epsY})\n`)
+  assert.equal(epsY, 0.002)
+  console.log(`PASS  shared 22-station schedule uses c/D and εₛ/εy (εy = ${epsY})\n`)
 
   console.log('== 2. Clipped-cell concrete mesh (docs/02 §5, §8) ==')
   const mesh = buildConcreteMesh(SECTION)
@@ -201,7 +192,7 @@ const run = () => {
   if (mesh.report.warnings.length === 0) console.log('PASS  mesh sanity checks clean')
   console.log()
 
-  console.log('== 3. All 19 stations at beta = 15 deg (kN, kNm) ==')
+  console.log('== 3. All 22 stations at beta = 15 deg (kN, kNm) ==')
   console.log(
     `${'pt'.padEnd(6)}${'eps0'.padStart(12)}${'kappa'.padStart(13)}  |${'  concrete P'.padStart(
       12
@@ -211,7 +202,7 @@ const run = () => {
   )
   const ledgers: ResultantLedger[] = []
   const states: StrainState[] = []
-  for (let station = 0; station < PREVIEW_STATIONS.length; station++) {
+  for (let station = 0; station < UNIFIED_STATIONS.length; station++) {
     const state = previewStationState(SECTION, REBARS, BETA, station, epsCu, epsY)
     const ledger = evaluatePreviewState(SECTION, REBARS, MATERIALS, state)
     states.push(state)
@@ -225,40 +216,31 @@ const run = () => {
     const sum = ledger.concrete.P + ledger.steelGross.P + ledger.displacedConcrete.P
     assert.ok(Math.abs(sum - ledger.total.P) < 1e-6 * Math.max(1, Math.abs(ledger.total.P)), `P${index} ledger sum`)
   })
-  console.log('PASS  contribution ledger reproduces the nominal total at all 19 stations')
+  console.log('PASS  contribution ledger reproduces the nominal total at all 22 stations')
   const peaks = states.map((state) => {
     const curvature = Math.hypot(state.kx, state.ky)
     return Math.max(state.e0 + curvature * U_MAX_15, state.e0 + curvature * U_MIN_15)
   })
   const worstPeak = Math.max(...peaks)
-  check('max concrete strain over P0..P18', worstPeak, epsCu, 1e-12)
+  check('max concrete strain over all stations', worstPeak, epsCu, 1e-12)
   console.log()
 
   console.log('== 5. Mesh-independent anchors: discrete bars ==')
   const symmetryScale = Math.abs(WORKBOOK.p0.steel.P) * U_MAX_15 * 1e-3
   checkResultant('P0  steel ', scale(ledgers[0].steel), WORKBOOK.p0.steel, 1e-12, symmetryScale)
-  checkResultant('P18 steel ', scale(ledgers[18].steel), WORKBOOK.p18.steel, 1e-12, symmetryScale)
+  checkResultant('P21 steel ', scale(ledgers[21].steel), WORKBOOK.pureTension.steel, 1e-12, symmetryScale)
   console.log()
 
   console.log('== 6. Pure compression P0: concrete = alpha*fck*A_net exactly ==')
   checkResultant('P0  concrete', scale(ledgers[0].concrete), WORKBOOK.p0.concrete, 1e-9, symmetryScale)
   console.log()
 
-  console.log('== 7. Station P5 at 15 deg: neutral axis at the far tension bar ==')
-  const state5 = states[5]
-  check('curvature (1/mm)', Math.hypot(state5.kx, state5.ky), WORKBOOK.neutralAxisAtFarBar.curvature, 1e-12)
-  check('eps0', state5.e0, WORKBOOK.neutralAxisAtFarBar.e0, 1e-12)
-  const momentScale = Math.abs(WORKBOOK.neutralAxisAtFarBar.total.Mx)
-  checkResultant('P5  steel   ', scale(ledgers[5].steel), WORKBOOK.neutralAxisAtFarBar.steel, 1e-12, momentScale)
-  checkResultant('P5  concrete', scale(ledgers[5].concrete), WORKBOOK.neutralAxisAtFarBar.concrete, 2e-3, momentScale)
-  checkResultant('P5  total   ', scale(ledgers[5].total), WORKBOOK.neutralAxisAtFarBar.total, 2e-3, momentScale)
-  console.log()
-
-  console.log('== 8. Concrete integral convergence at P5 (kN, kNm) ==')
+  console.log('== 7. Concrete integral convergence at P7 (εₛ/εy = 0) ==')
+  const state7 = states[7]
   console.log(`      ${'h (mm)'.padStart(8)}${'points'.padStart(9)}${'P'.padStart(14)}${'Mx'.padStart(14)}${'My'.padStart(14)}`)
   const converged: Array<{ P: number; Mx: number; My: number }> = []
   for (const cellSize of [75, 50, 37.5, 25, 12.5]) {
-    const ledger = evaluatePreviewState(SECTION, REBARS, MATERIALS, state5, { cellSize })
+    const ledger = evaluatePreviewState(SECTION, REBARS, MATERIALS, state7, { cellSize })
     const value = scale(ledger.concrete)
     converged.push(value)
     console.log(
@@ -276,11 +258,11 @@ const run = () => {
   console.log(
     'INFO  the workbook integrates with one centroid point per clipped cell (degree-1 exact); this\n' +
       '      engine uses three points per triangle (degree-2 exact), so the small residual delta in\n' +
-      '      check 7 is the workbook quadrature error, not a mesh error.'
+      '      the workbook comparison is therefore limited to mesh-independent anchors.'
   )
   console.log()
 
-  console.log('== 9. Reference origin and translation invariance ==')
+  console.log('== 8. Reference origin and translation invariance ==')
   // The workbook defines eps0 on the centroidal axis: `eps0 = ecu*(c - (Ymax - yc))/c`, sheet
   // `2D (15deg)` L132, with `yc` = H48. Sheet `Input` geometry is already centred, so yc = 0.
   const origin = netConcreteCentroid(SECTION)
@@ -299,18 +281,18 @@ const run = () => {
   const movedOrigin = netConcreteCentroid(movedSection)
   check('translated origin x (mm)', movedOrigin.x, OFFSET.x, 1e-9)
   check('translated origin y (mm)', movedOrigin.y, OFFSET.y, 1e-9)
-  for (const station of [0, 5, 18]) {
+  for (const station of [0, 7, 21]) {
     const movedState = previewStationState(movedSection, movedRebars, BETA, station, epsCu, epsY)
     const movedLedger = evaluatePreviewState(movedSection, movedRebars, MATERIALS, movedState)
-    const momentScale = Math.abs(WORKBOOK.neutralAxisAtFarBar.total.Mx)
+    const momentScale = Math.max(1, Math.abs(scale(ledgers[station].total).Mx))
     check(`P${station} translated eps0`, movedState.e0, states[station].e0, 1e-12)
     checkResultant(`P${station} translated conc`, scale(movedLedger.concrete), scale(ledgers[station].concrete), 1e-12, momentScale)
     checkResultant(`P${station} translated steel`, scale(movedLedger.steel), scale(ledgers[station].steel), 1e-12, momentScale)
   }
   console.log()
 
-  console.log('== 10. Advisory: concrete law above epsCu ==')
-  // Not exercised by P0..P18 (check 4 proves the peak strain never exceeds epsCu), but the Newton
+  console.log('== 9. Advisory: concrete law above epsCu ==')
+  // Not exercised by the 22 stations (check 4 proves the peak strain never exceeds epsCu), but the Newton
   // inverse solver does visit such planes, where a drop to zero is a force discontinuity.
   const plateau = 0.85 * MATERIALS.concrete.fck
   const justAbove = stressKdsParabolicConcrete(MATERIALS.concrete, epsCu * (1 + 1e-9))

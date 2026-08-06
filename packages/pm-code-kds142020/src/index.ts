@@ -290,21 +290,6 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
       : {}),
     subtractDisplacedConcrete: true
   }
-  const barStrainEvents = Object.values(input.steel).flatMap((definition) => {
-    const yieldStrain =
-      definition.yieldStress *
-      materialStrengthMultipliers.reinforcement /
-      definition.elasticModulus
-    const tensionLimit = definition.yieldStress <= transitionLimitRule.yieldStressThreshold
-      ? transitionLimitRule.fixedStrainLimit
-      : transitionLimitRule.highStrengthYieldMultiple * yieldStrain
-    return [
-      ...Array.from({ length: 9 }, (_, index) =>
-        yieldStrain + index / 8 * (tensionLimit - yieldStrain)
-      ),
-      ...(definition.ultimateStrain === undefined ? [] : [definition.ultimateStrain])
-    ]
-  })
   const compressionPhi = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.phiCompressionSpiral : resistanceFactors.phiCompressionOther
   const axialCapRatio = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.axialCapSpiral : resistanceFactors.axialCapOther
 
@@ -432,7 +417,7 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
     return buildCapacitySurface(section, bindNominalEvaluator(section), {
       ...options,
       steelLaws,
-      barStrainEvents,
+      barStrainEvents: options.barStrainEvents ?? [],
       extremeCompressionStrain: blockLaw.extremeCompressionStrain,
       tensionPole: endpoints.tension,
       compressionPole: surfaceCompressionPole(section)
@@ -448,7 +433,7 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
     const surface = buildCapacitySurface(section, bindDesignEvaluator(section), {
       ...surfaceOptions,
       steelLaws,
-      barStrainEvents,
+      barStrainEvents: surfaceOptions.barStrainEvents ?? [],
       extremeCompressionStrain: blockLaw.extremeCompressionStrain,
       tensionPole: endpoints.tension,
       compressionPole: {

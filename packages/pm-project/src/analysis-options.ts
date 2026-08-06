@@ -1,3 +1,9 @@
+import {
+  UNIFIED_DEPTH_RATIOS,
+  UNIFIED_STATION_SCHEDULE,
+  UNIFIED_STEEL_STRAIN_YIELD_RATIOS
+} from '@pm/stations'
+
 /**
  * Serializable analysis configuration.
  *
@@ -19,8 +25,10 @@ export const MAX_BLOCK_STATIONS = 198
 
 export type AnalysisStationCriterion =
   | { type: 'c-over-c1'; ratio: number }
+  | { type: 'depth-ratio'; ratio: number }
   | { type: 'steel-stress-ratio'; ratio: number }
   | { type: 'steel-strain'; strain: number }
+  | { type: 'bar-tension-yield-ratio'; ratio: number }
   /** Fraction from eps_y to the code-defined tension-controlled strain limit. */
   | { type: 'strength-reduction-transition-ratio'; ratio: number }
   /**
@@ -65,7 +73,7 @@ export type AnalysisOptions = {
   methodId: typeof STRAIN_DOMAIN_SURFACE_METHOD
   stations: {
     /** Informational origin of the resolved list; the list below remains authoritative. */
-    basedOn: 'transition-aware-p0-p24-v1' | 'legacy-p0-p18-v1' | 'custom'
+    basedOn: typeof UNIFIED_STATION_SCHEDULE | 'custom'
     intermediate: AnalysisStation[]
   }
   directions: {
@@ -84,13 +92,14 @@ export type AnalysisOptions = {
  */
 export type EquivalentBlockStation =
   | { type: 'extreme-tension-strain'; strain: number }
+  | { type: 'bar-tension-yield-ratio'; ratio: number }
   | { type: 'depth-ratio'; ratio: number }
 
 export type EquivalentBlockAnalysisOptions = {
   optionsVersion: typeof ANALYSIS_OPTIONS_VERSION
   methodId: typeof EQUIVALENT_BLOCK_SURFACE_METHOD
   neutralAxisStations: {
-    basedOn: 'verified-37-v1' | 'custom'
+    basedOn: typeof UNIFIED_STATION_SCHEDULE | 'custom'
     values: EquivalentBlockStation[]
     refinement:
       | { type: 'fixed' }
@@ -114,78 +123,27 @@ const station = (id: number, label: string, criterion: AnalysisStationCriterion)
   criterion
 })
 
-/** The historical P1…P17 schedule and 24 directions, expressed as canonical data. */
-export const createLegacyAnalysisOptions = (): AnalysisOptions => ({
-  optionsVersion: ANALYSIS_OPTIONS_VERSION,
-  methodId: STRAIN_DOMAIN_SURFACE_METHOD,
-  stations: {
-    basedOn: 'legacy-p0-p18-v1',
-    intermediate: [
-      station(1, 'c/c₁ = 3', { type: 'c-over-c1', ratio: 3 }),
-      station(2, 'c/c₁ = 2', { type: 'c-over-c1', ratio: 2 }),
-      station(3, 'c/c₁ = 1.5', { type: 'c-over-c1', ratio: 1.5 }),
-      station(4, 'c/c₁ = 1.2', { type: 'c-over-c1', ratio: 1.2 }),
-      station(5, 'fs/fyd = 0', { type: 'steel-stress-ratio', ratio: 0 }),
-      station(6, 'fs/fyd = 0.25', { type: 'steel-stress-ratio', ratio: 0.25 }),
-      station(7, 'fs/fyd = 0.5', { type: 'steel-stress-ratio', ratio: 0.5 }),
-      station(8, 'fs/fyd = 0.75', { type: 'steel-stress-ratio', ratio: 0.75 }),
-      station(9, 'fs/fyd = 1', { type: 'steel-stress-ratio', ratio: 1 }),
-      station(10, 'εₛ = -0.003', { type: 'steel-strain', strain: -0.003 }),
-      station(11, 'εₛ = -0.005', { type: 'steel-strain', strain: -0.005 }),
-      station(12, 'εₛ = -0.0075', { type: 'steel-strain', strain: -0.0075 }),
-      station(13, 'εₛ = -0.01', { type: 'steel-strain', strain: -0.01 }),
-      station(14, 'εₛ = -0.015', { type: 'steel-strain', strain: -0.015 }),
-      station(15, 'εₛ = -0.025', { type: 'steel-strain', strain: -0.025 }),
-      station(16, 'εₛ = -0.03', { type: 'steel-strain', strain: -0.03 }),
-      station(17, 'εₛ = -0.05', { type: 'steel-strain', strain: -0.05 })
-    ]
-  },
-  directions: {
-    seed: { type: 'uniform', count: 24, startDeg: 0 },
-    refinement: { type: 'fixed', probe: { stationIds: [5, 10, 14, 16] } }
-  },
-  mesh: {
-    sizing: { type: 'automatic', seedDivisions: 32 },
-    maxCells: 250_000,
-    maxSubdivision: 4
-  }
-})
-
 /**
- * Production default for the strain-domain model.
- *
- * P9 is the yield boundary. P9 plus P10-P17 are the nine mandatory nodes across
- * the code-defined strength-reduction transition. Thirty-six directions are the
- * seed, not a hard ceiling; refinement enforces a 0.5% angular interpolation target.
+ * Shared 22-station production baseline for the strain-domain model.
+ * The neutral axis is parameterized by c/D outside the section and by the controlling bar's
+ * tensile strain divided by its own yield strain inside the section.
  */
 export const createDefaultAnalysisOptions = (): AnalysisOptions => ({
   optionsVersion: ANALYSIS_OPTIONS_VERSION,
   methodId: STRAIN_DOMAIN_SURFACE_METHOD,
   stations: {
-    basedOn: 'transition-aware-p0-p24-v1',
+    basedOn: UNIFIED_STATION_SCHEDULE,
     intermediate: [
-      station(1, 'c/c₁ = 3', { type: 'c-over-c1', ratio: 3 }),
-      station(2, 'c/c₁ = 2', { type: 'c-over-c1', ratio: 2 }),
-      station(3, 'c/c₁ = 1.5', { type: 'c-over-c1', ratio: 1.5 }),
-      station(4, 'c/c₁ = 1.2', { type: 'c-over-c1', ratio: 1.2 }),
-      station(5, 'fs/fyd = 0', { type: 'steel-stress-ratio', ratio: 0 }),
-      station(6, 'fs/fyd = 0.25', { type: 'steel-stress-ratio', ratio: 0.25 }),
-      station(7, 'fs/fyd = 0.5', { type: 'steel-stress-ratio', ratio: 0.5 }),
-      station(8, 'fs/fyd = 0.75', { type: 'steel-stress-ratio', ratio: 0.75 }),
-      station(9, 'fs/fyd = 1', { type: 'steel-stress-ratio', ratio: 1 }),
-      ...Array.from({ length: 8 }, (_, index) => {
-        const numerator = index + 1
-        return station(9 + numerator, `φᵣ = ${numerator / 8}`, {
-          type: 'strength-reduction-transition-ratio',
-          ratio: numerator / 8
-        })
-      }),
-      station(18, 'εₛ = -0.0075', { type: 'steel-strain', strain: -0.0075 }),
-      station(19, 'εₛ = -0.01', { type: 'steel-strain', strain: -0.01 }),
-      station(20, 'εₛ = -0.015', { type: 'steel-strain', strain: -0.015 }),
-      station(21, 'εₛ = -0.025', { type: 'steel-strain', strain: -0.025 }),
-      station(22, 'εₛ = -0.03', { type: 'steel-strain', strain: -0.03 }),
-      station(23, 'εₛ = -0.05', { type: 'steel-strain', strain: -0.05 })
+      ...UNIFIED_DEPTH_RATIOS.map((ratio, index) =>
+        station(index + 1, `c/D = ${ratio}`, { type: 'depth-ratio', ratio })
+      ),
+      ...UNIFIED_STEEL_STRAIN_YIELD_RATIOS.map((ratio, index) =>
+        station(
+          UNIFIED_DEPTH_RATIOS.length + index + 1,
+          `εₛ/εy = ${ratio}`,
+          { type: 'bar-tension-yield-ratio', ratio }
+        )
+      )
     ]
   },
   directions: {
@@ -205,24 +163,20 @@ export const createDefaultAnalysisOptions = (): AnalysisOptions => ({
   }
 })
 
-/** 37 neutral-axis states + the two exact uniform-strain poles. */
+/** Shared 22-station production baseline for every equivalent-block model. */
 export const createDefaultEquivalentBlockAnalysisOptions = (): EquivalentBlockAnalysisOptions => ({
   optionsVersion: ANALYSIS_OPTIONS_VERSION,
   methodId: EQUIVALENT_BLOCK_SURFACE_METHOD,
   neutralAxisStations: {
-    basedOn: 'verified-37-v1',
+    basedOn: UNIFIED_STATION_SCHEDULE,
     values: [
-      ...[
-        0.1, 0.075, 0.05, 0.04, 0.03, 0.025, 0.02, 0.0175, 0.015, 0.0125, 0.01,
-        0.00875, 0.0075, 0.00625, 0.005, 0.004, 0.003, 0.0025, 0.002, 0.0015,
-        0.001, 0.0005, 0
-      ].map((strain) => ({ type: 'extreme-tension-strain' as const, strain })),
-      ...[1.1, 1.2, 1.35, 1.5, 1.75, 2, 2.5, 3, 4, 5, 7.5, 10, 20, 50].map((ratio) => ({
-        type: 'depth-ratio' as const,
+      ...UNIFIED_DEPTH_RATIOS.map((ratio) => ({ type: 'depth-ratio' as const, ratio })),
+      ...UNIFIED_STEEL_STRAIN_YIELD_RATIOS.map((ratio) => ({
+        type: 'bar-tension-yield-ratio' as const,
         ratio
       }))
     ],
-    refinement: { type: 'adaptive', tolerance: 0.0075, maxPasses: 6, maxStations: 128 }
+    refinement: { type: 'fixed' }
   },
   directions: {
     seedCount: 24,
@@ -230,8 +184,6 @@ export const createDefaultEquivalentBlockAnalysisOptions = (): EquivalentBlockAn
     refinement: { type: 'adaptive', tolerance: 0.0075, maxPasses: 6, maxDirections: 360 }
   }
 })
-
-export const createVerifiedEquivalentBlockAnalysisOptions = createDefaultEquivalentBlockAnalysisOptions
 
 export const cloneAnalysisOptions = (options: AnalysisOptions): AnalysisOptions =>
   JSON.parse(JSON.stringify(options)) as AnalysisOptions

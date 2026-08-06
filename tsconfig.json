@@ -23,6 +23,8 @@
       "@pm/design/*": ["./packages/pm-design/src/*"],
       "@pm/project": ["./packages/pm-project/src"],
       "@pm/project/*": ["./packages/pm-project/src/*"],
+      "@pm/stations": ["./packages/pm-stations/src"],
+      "@pm/stations/*": ["./packages/pm-stations/src/*"],
       "@pm/analysis": ["./packages/pm-analysis/src"],
       "@pm/analysis/*": ["./packages/pm-analysis/src/*"],
       "@pm/analysis-equivalent-block": ["./packages/pm-analysis-equivalent-block/src"],

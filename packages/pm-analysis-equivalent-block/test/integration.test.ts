@@ -18,6 +18,8 @@ import {
   createProjectDocument,
   parseProjectDocument,
   serializeProjectDocument,
+  UNIFIED_DEPTH_RATIOS,
+  UNIFIED_STEEL_STRAIN_YIELD_RATIOS,
   type EquivalentBlockAnalysisOptions,
   type EquivalentBlockProfileId
 } from '@pm/project'
@@ -185,9 +187,31 @@ for (const profileId of [
     } else {
       assertCardinalSlicesHaveNoCapToTensionChord(surface, profileId)
     }
-    assert.ok(
+    assert.equal(surface.stations.length, 22)
+    assert.equal(surface.stations[0].definition.kind, 'pure-compression')
+    assert.equal(surface.stations.at(-1)?.definition.kind, 'pure-tension')
+    assert.equal(
+      surface.warnings.some((warning) => warning.includes('neutral-axis refinement')),
+      false,
+      'a fixed station schedule must not emit an adaptive-refinement warning'
+    )
+    assert.deepEqual(
+      surface.stations.slice(1, 1 + UNIFIED_DEPTH_RATIOS.length).map((station) => station.definition),
+      UNIFIED_DEPTH_RATIOS.map((ratio) => ({ kind: 'block-depth-ratio', ratio }))
+    )
+    assert.deepEqual(
+      surface.stations.slice(1 + UNIFIED_DEPTH_RATIOS.length, -1).map((station) => station.definition),
+      UNIFIED_STEEL_STRAIN_YIELD_RATIOS.map((ratio) => ({ kind: 'bar-tension-yield-ratio', ratio }))
+    )
+    assert.equal(
+      surface.stations.filter((station) => station.definition.kind === 'bar-tension-yield-ratio').length,
+      14,
+      'all block models must use the shared controlling-bar yield-ratio schedule'
+    )
+    assert.equal(
       surface.stations.some((station) => station.definition.kind === 'bar-tension-strain'),
-      'code transition events must retain controlling-bar semantics in the shared result DTO'
+      false,
+      'transition event stations are not part of the fixed baseline'
     )
     const reduced = surface.points.find((point) => point.resistance?.factor && point.equivalentBlock)
     assert.ok(reduced?.resistance?.factor)
@@ -234,11 +258,12 @@ test('schema v1 round-trips a block profile without migration', () => {
   }
 })
 
-test('ACI default adaptive profile solves a practical factored demand without a fixed grid', () => {
+test('ACI default keeps 22 fixed stations while direction refinement solves a practical demand', () => {
   const profileId = 'aci-318-19-22-equivalent-block' as const
   const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
   const design = createDesignBasisForCalculationProfile(profileId)
   const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
+  assert.deepEqual(options.neutralAxisStations.refinement, { type: 'fixed' })
   const prepared = prepareBlockAnalysis(
     profileId,
     sectionGeometryFromGeometryInput(geometry),

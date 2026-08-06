@@ -1,7 +1,7 @@
 # P-M-M Surface Sampling, Slices, and Plot Semantics
 
-The filename is retained so existing links remain stable. The production default is no longer the
-historical 19-point/24-direction grid. Current model formulas and complete defaults are summarized in
+Both mechanics use one station definition, `unified-22-v1`. Current model formulas and complete
+defaults are summarized in
 [`12-calculation-models-defaults-and-workflows.md`](12-calculation-models-defaults-and-workflows.md).
 
 ## 1. A surface is a sampled engineering object
@@ -16,7 +16,22 @@ Both coordinates are persisted inputs. The returned result records the effective
 effective direction list, interpolation estimate, refinement passes, and warnings. UI plotting must
 use the returned samples; it must not recreate an assumed fixed grid.
 
-## 2. Model-specific station coordinates
+## 2. Shared 22-station coordinate
+
+The ordered schedule from compression to tension is:
+
+```text
+P0       exact uniform-compression pole
+P1..P6   c/D = 3, 2, 1.5, 1.2, 1.1, 1
+P7..P20  εₛ/εy = 0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10, 20
+P21      exact uniform-tension pole
+```
+
+`D` is the projected total section depth in the active direction. `εₛ` is the tensile-strain
+magnitude of the controlling longitudinal bar and `εy` is that bar material's yield strain. The
+outside/on-section branch is therefore geometry-normalized; the inside-section branch is
+material-normalized. The schedule is owned once by `@pm/stations` and persisted as
+`unified-22-v1` in both analysis DTOs.
 
 ### 2.1 Stress-strain integration
 
@@ -26,28 +41,16 @@ The compatible strain plane is
 eps(x,y) = eps0 + kx (y-y0) + ky (x-x0)
 ```
 
-The default contains 25 stations, `P0...P24`. It includes nine mandatory strength-reduction
-transition nodes: yield at `0/8` and eight additional fractions through `8/8`. Their physical
-strains are resolved from the selected KDS or ACI resistance rule and the controlling steel grade.
-
-The remaining landmarks cover neutral-axis depth, pre-yield steel stress, post-transition tension,
-deep tension, and the two exact uniform-strain poles. See `12` section 2.1 for the authoritative
-schedule.
-
-The legacy `PREVIEW_STATIONS` constant remains only for the imported workbook regression fixture.
-It is a deliberately named 19-station compatibility oracle and is not the project default.
+The strain-domain solver constructs the compatible strain plane that satisfies each shared
+criterion. `UNIFIED_STATIONS` is the derived runtime form used by preview helpers and reports.
 
 ### 2.2 Equivalent rectangular stress block
 
-The state coordinate is physical neutral-axis depth `c`, represented by extreme-tension-strain or
-`c/D` landmarks. The code adapter supplies `a = beta1 c`, constant block stress, and the extreme
-compression strain. The default starts with 37 neutral-axis states plus two exact poles and refines
-stations independently to a 0.75% chord target. The code adapter also inserts nine yield-to-phi
-transition events at the controlling longitudinal bar in every direction, plus a declared steel
-rupture event. These events are not approximated from the concrete tension edge.
-
-The two station systems must not be merged. A stress-strain station does not define a rectangular
-block, and a block `c/D` sample does not define a concrete stress-strain integration state.
+The block solver converts every shared criterion to physical neutral-axis depth `c`, then applies
+the selected code adapter's `a = beta1 c`, block stress, and compression-strain limit. A layer that
+numerically collapses onto a pole is retained in the public 22-station metadata but omitted from the
+triangulation to prevent degenerate triangles. The default performs no station refinement and adds
+no automatic transition or rupture-event station.
 
 ## 3. Direction semantics and defaults
 
@@ -76,6 +79,8 @@ Equivalent-block production default:
 adaptive midpoint refinement
 relative tolerance 0.0075; max passes 6; max directions 360
 ```
+
+These are direction controls only; both models still return the same 22 station definitions.
 
 The final direction count is therefore geometry-dependent. In the 2026-08-04 stress-strain
 benchmark it ranged from 56 to 100 for the five measured fixtures.
@@ -163,15 +168,7 @@ stress-strain curve, would misrepresent the method and is prohibited.
 
 ## 10. Measured sampling evidence
 
-The permanent harness is `npm run bench:strain-sampling`. Against a 144-direction,
-33-transition-node reference, the five-fixture worst 3D ray errors were:
-
-| Sampling | Worst error |
-|---|---:|
-| legacy 19 x 24 fixed | 7.800% |
-| 25 x 36 fixed | 1.791% |
-| production 25 x 36 seed plus adaptive | **0.521%** |
-
-The production configuration reached its angular tolerance for all five cases and found every test
-ray intersection. Exact per-case timing and point counts are recorded in `12` and reproduced by the
-benchmark command.
+The permanent harnesses hold all 22 stations fixed and compare direction policies against a
+144-direction reference. In the 2026-08-06 five-section run, the adaptive worst ray errors were
+0.317% for stress-strain and 0.575% for equivalent block; every tested ray intersected the surface.
+Exact per-case timing and point counts are printed by the benchmark commands and summarized in `12`.

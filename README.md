@@ -12,10 +12,12 @@ The project contains two independent numerical pipelines:
 - **equivalent rectangular stress block**: exact polygon clipping of `a = beta1 c`, code-owned
   block stress and strain limits, independent forward/inverse/surface algorithms.
 
-The current stress-strain default is 25 stations with nine mandatory code-aware transition nodes,
-36 uniform seed directions, and adaptive angular refinement to a 0.5% target. The equivalent-block
-default is independent: 37 initial neutral-axis states, bar-controlled code/rupture event stations,
-24 seed directions, and 0.75% adaptive station and direction refinement.
+Every calculation profile now uses the same fixed `unified-22-v1` station schedule: two exact poles,
+six `c/D` states (`3, 2, 1.5, 1.2, 1.1, 1`), and fourteen controlling-bar tensile-strain states
+`εₛ/εy = 0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10, 20`. Stress-strain and
+equivalent-block models resolve these same physical criteria through their own forward kernels.
+Direction sampling remains model-specific; station refinement and automatic transition/event
+insertion are disabled in this fixed baseline.
 
 The Materials workflow now selects `Code -> calculation method -> concrete model`. KDS exposes both
 implemented mechanics, ACI exposes its implemented equivalent block, EN 1992-1-1:2004 exposes a
@@ -43,6 +45,7 @@ apps/web/                         Next.js application and section editor
 packages/pm-geometry/             Geometry, clipping, and integration mesh
 packages/pm-materials/            Persisted material definitions and compiled laws
 packages/pm-project/              Version-locked project schema v1 and analysis/profile DTOs
+packages/pm-stations/             Single owner of the shared 22-station schedule
 packages/pm-design/               Resistance profile identity, factors, and transition rules
 packages/pm-analysis/             Stress-strain forward/inverse/surface kernel
 packages/pm-equivalent-block/     Standard-independent rectangular-block kernel
@@ -82,16 +85,17 @@ engine and reconciles the shoelace recomputation of the clipped compression poly
 the sheet's own φ interpolation against the block kernel.
 
 `npm test` runs typecheck, unit/integration suites, CAD tests, canonical schema-v1 round trip, the
-historical workbook regression fixture, and formula-recalculated Excel-export verification for both
+shared-station regression fixture, and formula-recalculated Excel-export verification for both
 the stress-strain and the equivalent-block workbook.
 
 `bench:equivalent-block` exercises the production KDS/ACI block configuration, exact inverse
 refinement, fixed-axial queries, topology, admissibility, and batch surface reuse.
 
-`bench:strain-sampling` compares the legacy 19 x 24 fixed grid, the new 25 x 36 fixed grid, and the
-production adaptive configuration against a 144-direction/33-transition-node reference. On the
-five-fixture 2026-08-04 run, worst 3D ray error improved from 7.800% to 0.521%; every production case
-converged and every sampled demand ray intersected the surface.
+`bench:strain-sampling` compares fixed and angular-adaptive surfaces using the same shared 22
+stations against a 144-direction reference. `bench:pipelines` uses that schedule for both mechanics,
+so its comparison measures kernel/direction behaviour rather than changing the station definition.
+In the 2026-08-06 five-section run, the direction-adaptive worst ray errors were 0.317% for
+stress-strain and 0.575% for equivalent block, with 100% ray hits.
 
 ## Fail-closed analysis gates
 

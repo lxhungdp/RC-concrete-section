@@ -12,7 +12,8 @@ import {
   createLoadCombination,
   createProjectDocument,
   parseProjectDocument,
-  serializeProjectDocument
+  serializeProjectDocument,
+  UNIFIED_INTERMEDIATE_STATION_COUNT
 } from '../../src/index'
 
 const run = () => {
@@ -93,7 +94,7 @@ const run = () => {
   const parsedAnalysis = parsed.document.inputs.analysis
   assert.equal(parsedAnalysis.methodId, 'strain-domain-surface-v1')
   if (parsedAnalysis.methodId !== 'strain-domain-surface-v1') throw new Error('Expected curve analysis options')
-  assert.equal(parsedAnalysis.stations.intermediate.length, 23)
+  assert.equal(parsedAnalysis.stations.intermediate.length, UNIFIED_INTERMEDIATE_STATION_COUNT)
   assert.deepEqual(parsedAnalysis.directions.seed, {
     type: 'uniform',
     count: 36,

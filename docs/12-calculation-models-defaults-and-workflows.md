@@ -93,37 +93,20 @@ an interior ULS demand has a unique physical failure state.
 
 ### 2.1 Production sampling default
 
-The default schedule is `P0...P24`, or 25 stations in total:
+All profiles use `unified-22-v1`:
 
-- `P0`: exact uniform-compression pole;
-- four neutral-axis landmarks `c/c1 = 3, 2, 1.5, 1.2`;
-- five steel-stress landmarks `fs/fyd = 0, 0.25, 0.5, 0.75, 1.0`;
-- eight additional code-aware transition landmarks at `1/8...8/8` of the interval from yield to
-  the tension-controlled limit; the yield landmark is `0/8`, so there are nine mandatory nodes in
-  this transition region;
-- six code-aware post-transition landmarks at `eps_t,limit` plus `0.0025, 0.005, 0.010,
-  0.020, 0.025, 0.045`; for the common `eps_t,limit = 0.005` case these resolve to `0.0075,
-  0.010, 0.015, 0.025, 0.030, 0.050`;
-- `P24`: exact uniform-tension pole, limited by the declared steel rupture strain when available.
+| Stations | Physical criterion |
+|---|---|
+| `P0` | exact uniform-compression pole |
+| `P1...P6` | `c/D = 3, 2, 1.5, 1.2, 1.1, 1` |
+| `P7...P20` | `εₛ/εy = 0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10, 20` |
+| `P21` | exact uniform-tension pole |
 
-The transition-node strain is computed for the controlling bar in each direction:
-
-```text
-eps_t(r) = eps_y + r (eps_t,limit - eps_y),  r = 0/8, 1/8, ..., 8/8
-```
-
-The selected resistance profile owns `eps_t,limit`:
-
-```text
-ACI 318-19(22): eps_t,limit = eps_y + 0.003
-
-KDS current profile:
-  fy <= 400 MPa: eps_t,limit = 0.005
-  fy >  400 MPa: eps_t,limit = 2.5 eps_y
-```
-
-Thus, the nine nodes remain correct when steel grade or code changes. They are not nine hard-coded
-strain numbers.
+Here `D` is the projected full section depth in the active direction. `εₛ` is the tensile-strain
+magnitude at the controlling longitudinal bar and `εy` is that bar material's yield strain. The
+schedule deliberately contains no automatically inserted strength-reduction transition point.
+Station refinement is fixed; transition and station-adaptive policies are a separate future design
+decision.
 
 ### 2.2 Direction default
 
@@ -175,25 +158,20 @@ surface independently of the stress-strain solver.
 
 ### 3.1 Production sampling default
 
-The equivalent-block pipeline intentionally has different controls:
+The equivalent-block pipeline consumes the same `unified-22-v1` criteria:
 
 ```text
-initial neutral-axis states = 37, plus two exact poles
-bar events                  = 9 yield-to-phi nodes per steel definition, plus declared eps_u
-station refinement          = adaptive, tolerance 0.0075, max 6 passes, max 128 states
+stations                    = shared fixed 22-station schedule
+automatic bar events        = none
+station refinement          = fixed
 seed directions             = 24
 direction refinement        = adaptive, tolerance 0.0075, max 6 passes, max 360 directions
 ```
 
-Those defaults were verified for the block kernel and must not be relabeled as the stress-strain
-25-station/36-direction schedule. Both models expose their own station and direction controls on the
-same Analysis Options page.
-
-The 37 user-controlled states remain a concrete-edge/depth schedule. Code and rupture events are a
-separate transient layer: for every direction the engine solves `c` so the controlling longitudinal
-bar is exactly at the requested strain. Rows can therefore have different station counts. A monotone
-zipper triangulation connects adjacent rows without warping the baseline states or moving a phi kink
-back to the concrete tension edge.
+For every strain-ratio criterion, the kernel solves `c` so the controlling longitudinal bar is at
+the requested strain. It then applies the selected adapter's block law. A requested layer may
+numerically equal a pole for a particular model; it remains part of the public 22-station schedule
+but is omitted from the mesh topology to avoid degenerate triangles.
 
 ### 3.2 Physical compression closure and code reference points
 
@@ -276,42 +254,31 @@ batch reuses one surface; changing any resistance-domain input invalidates it.
 
 ## 6. Verification and benchmark evidence
 
-`npm run bench:strain-sampling` compares three stress-strain configurations against a
-144-direction/33-transition-node reference. The run dated 2026-08-04 used five structural fixtures
-and 96 three-dimensional demand rays per fixture.
-
-| Configuration | Points | Worst ray error over five fixtures | Build-time range |
-|---|---:|---:|---:|
-| legacy 19 x 24 fixed | 456 | 7.800% | 64-675 ms |
-| 25 stations x 36 fixed | 900 | 1.791% | 172-1,874 ms |
-| production 25 x 36 seed + adaptive | 1,400-2,500 | **0.521%** | 456-8,865 ms |
-
-All 1,440 candidate ray intersections were found. Every production case reported angular
-convergence and was more accurate than the legacy configuration. The benchmark deliberately shows
-the cost: the quality increase is not free, especially for a dense tall section. Worker execution,
-prepared-analysis caching, and result-staleness rules are therefore part of the product workflow.
-
-`npm run bench:pipelines` independently compares the block configurations with a
-96-state/144-direction block reference on the same five geometries:
-
-| Equivalent-block configuration | Points | Worst ray error | Build-time range |
-|---|---:|---:|---:|
-| 19 initial states x 24 fixed | 481 | 4.988% | 37-117 ms |
-| 37 initial states x 24 fixed | 673-697 | 2.079% | 61-189 ms |
-| production 37-state/24-seed adaptive at 0.75% | 1,633-4,267 | **0.601%** | 249-2,271 ms |
-
-The production block pipeline found every ray and reached its 0.75% station/direction targets. Its
-0.601% worst error and the stress-strain pipeline's 0.521% worst error place the two independent
-models at comparable sampling quality for this fixture set; equality of point counts is neither
+`npm run bench:strain-sampling` compares fixed and angular-adaptive stress-strain surfaces against a
+144-direction reference while holding the shared 22 stations constant. `npm run bench:pipelines`
+does the same cross-model check with a dense block reference. Prior station-count comparisons are
+retired: current benchmarks may vary direction sampling, but they do not replace
+or augment the canonical station schedule. Equality of mesh vertex counts is neither
 required nor technically meaningful because the underlying state variables differ.
 
+The 2026-08-06 five-section run used the same 22 stations in every candidate and its 144-direction
+reference:
+
+| Mechanics / direction policy | Worst 3D ray error | Ray hit rate |
+|---|---:|---:|
+| stress-strain, 36 fixed directions | 1.150% | 100% |
+| stress-strain, adaptive from 36 | 0.317% | 100% |
+| equivalent block, 24 fixed directions | 4.199% | 100% |
+| equivalent block, adaptive from 24 | 0.575% | 100% |
+
+These measurements assess direction sampling only. They neither add a station nor establish a
+future station-adaptive or transition policy.
+
 The production-faithful `bench:equivalent-block` matrix adds KDS and ACI versions of rectangle,
-hollow, L-shaped, and disconnected-island sections. Across those eight cases, the worst faceted
-surface-to-exact correction was 0.918%, all topologies were closed, all station/direction refinements
-converged, exact residuals were below `7.4e-10`, and fixed-axial relative error was at most
-`1.21e-13`. The fixed-axial benchmark uses the production 96x96 defaults plus event depths and took
-34-54 ms/solve on the recorded machine. Reusing one surface for 20 load combinations gave an
-estimated measured-component speedup of 5.15x-6.80x over rebuilding it for every combination.
+hollow, L-shaped, and disconnected-island sections. It uses the same fixed 22 stations, verifies
+closed topology and direction convergence, compares faceted rays with exact refinement, and checks
+direct fixed-axial roots. It does not insert bar-event depths or refine the station list. Surface
+reuse for multiple load combinations remains part of the measured workflow.
 
 The benchmark is a regression gate, not design-code validation. Code validation still requires
 independent clause calculations, analytical sections, commercial-program comparisons with matched

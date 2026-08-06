@@ -356,190 +356,166 @@
       "optionsVersion": 1,
       "methodId": "strain-domain-surface-v1",
       "stations": {
-        "basedOn": "transition-aware-p0-p24-v1",
+        "basedOn": "unified-22-v1",
         "intermediate": [
           {
             "id": 1,
-            "label": "c = 3 c1",
+            "label": "c/D = 3",
             "criterion": {
-              "type": "c-over-c1",
+              "type": "depth-ratio",
               "ratio": 3
             }
           },
           {
             "id": 2,
-            "label": "c = 2 c1",
+            "label": "c/D = 2",
             "criterion": {
-              "type": "c-over-c1",
+              "type": "depth-ratio",
               "ratio": 2
             }
           },
           {
             "id": 3,
-            "label": "c = 1.5 c1",
+            "label": "c/D = 1.5",
             "criterion": {
-              "type": "c-over-c1",
+              "type": "depth-ratio",
               "ratio": 1.5
             }
           },
           {
             "id": 4,
-            "label": "c = 1.2 c1",
+            "label": "c/D = 1.2",
             "criterion": {
-              "type": "c-over-c1",
+              "type": "depth-ratio",
               "ratio": 1.2
             }
           },
           {
             "id": 5,
-            "label": "fs = 0",
+            "label": "c/D = 1.1",
             "criterion": {
-              "type": "steel-stress-ratio",
-              "ratio": 0
+              "type": "depth-ratio",
+              "ratio": 1.1
             }
           },
           {
             "id": 6,
-            "label": "fs = 0.25 fyd",
+            "label": "c/D = 1",
             "criterion": {
-              "type": "steel-stress-ratio",
-              "ratio": 0.25
+              "type": "depth-ratio",
+              "ratio": 1
             }
           },
           {
             "id": 7,
-            "label": "fs = 0.5 fyd",
+            "label": "εₛ/εy = 0",
             "criterion": {
-              "type": "steel-stress-ratio",
-              "ratio": 0.5
+              "type": "bar-tension-yield-ratio",
+              "ratio": 0
             }
           },
           {
             "id": 8,
-            "label": "fs = 0.75 fyd",
+            "label": "εₛ/εy = 0.25",
             "criterion": {
-              "type": "steel-stress-ratio",
-              "ratio": 0.75
-            }
-          },
-          {
-            "id": 9,
-            "label": "eps_t = eps_y (transition 0/8)",
-            "criterion": {
-              "type": "steel-stress-ratio",
-              "ratio": 1
-            }
-          },
-          {
-            "id": 10,
-            "label": "phi transition 1/8",
-            "criterion": {
-              "type": "strength-reduction-transition-ratio",
-              "ratio": 0.125
-            }
-          },
-          {
-            "id": 11,
-            "label": "phi transition 2/8",
-            "criterion": {
-              "type": "strength-reduction-transition-ratio",
+              "type": "bar-tension-yield-ratio",
               "ratio": 0.25
             }
           },
           {
-            "id": 12,
-            "label": "phi transition 3/8",
+            "id": 9,
+            "label": "εₛ/εy = 0.5",
             "criterion": {
-              "type": "strength-reduction-transition-ratio",
-              "ratio": 0.375
-            }
-          },
-          {
-            "id": 13,
-            "label": "phi transition 4/8",
-            "criterion": {
-              "type": "strength-reduction-transition-ratio",
+              "type": "bar-tension-yield-ratio",
               "ratio": 0.5
             }
           },
           {
-            "id": 14,
-            "label": "phi transition 5/8",
+            "id": 10,
+            "label": "εₛ/εy = 0.75",
             "criterion": {
-              "type": "strength-reduction-transition-ratio",
-              "ratio": 0.625
-            }
-          },
-          {
-            "id": 15,
-            "label": "phi transition 6/8",
-            "criterion": {
-              "type": "strength-reduction-transition-ratio",
+              "type": "bar-tension-yield-ratio",
               "ratio": 0.75
             }
           },
           {
-            "id": 16,
-            "label": "phi transition 7/8",
+            "id": 11,
+            "label": "εₛ/εy = 1",
             "criterion": {
-              "type": "strength-reduction-transition-ratio",
-              "ratio": 0.875
-            }
-          },
-          {
-            "id": 17,
-            "label": "phi transition 8/8",
-            "criterion": {
-              "type": "strength-reduction-transition-ratio",
+              "type": "bar-tension-yield-ratio",
               "ratio": 1
             }
           },
           {
-            "id": 18,
-            "label": "post-transition +0.0025",
+            "id": 12,
+            "label": "εₛ/εy = 1.5",
             "criterion": {
-              "type": "strength-reduction-post-transition",
-              "extraStrain": 0.0025
+              "type": "bar-tension-yield-ratio",
+              "ratio": 1.5
+            }
+          },
+          {
+            "id": 13,
+            "label": "εₛ/εy = 2",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 2
+            }
+          },
+          {
+            "id": 14,
+            "label": "εₛ/εy = 2.5",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 2.5
+            }
+          },
+          {
+            "id": 15,
+            "label": "εₛ/εy = 3",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 3
+            }
+          },
+          {
+            "id": 16,
+            "label": "εₛ/εy = 4",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 4
+            }
+          },
+          {
+            "id": 17,
+            "label": "εₛ/εy = 5",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 5
+            }
+          },
+          {
+            "id": 18,
+            "label": "εₛ/εy = 7.5",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 7.5
             }
           },
           {
             "id": 19,
-            "label": "post-transition +0.005",
+            "label": "εₛ/εy = 10",
             "criterion": {
-              "type": "strength-reduction-post-transition",
-              "extraStrain": 0.005
+              "type": "bar-tension-yield-ratio",
+              "ratio": 10
             }
           },
           {
             "id": 20,
-            "label": "post-transition +0.01",
+            "label": "εₛ/εy = 20",
             "criterion": {
-              "type": "strength-reduction-post-transition",
-              "extraStrain": 0.01
-            }
-          },
-          {
-            "id": 21,
-            "label": "post-transition +0.02",
-            "criterion": {
-              "type": "strength-reduction-post-transition",
-              "extraStrain": 0.02
-            }
-          },
-          {
-            "id": 22,
-            "label": "post-transition +0.025",
-            "criterion": {
-              "type": "strength-reduction-post-transition",
-              "extraStrain": 0.025
-            }
-          },
-          {
-            "id": 23,
-            "label": "post-transition +0.045",
-            "criterion": {
-              "type": "strength-reduction-post-transition",
-              "extraStrain": 0.045
+              "type": "bar-tension-yield-ratio",
+              "ratio": 20
             }
           }
         ]

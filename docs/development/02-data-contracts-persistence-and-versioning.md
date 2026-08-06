@@ -8,7 +8,7 @@ The project is pre-release and all current persisted calculation code is v1:
 - design basis `basisVersion: 1`;
 - analysis `optionsVersion: 1`;
 - `strain-domain-surface-v1` and `equivalent-block-surface-v1` method IDs;
-- `transition-aware-p0-p24-v1`, `legacy-p0-p18-v1`, and `verified-37-v1` schedule IDs.
+- shared `unified-22-v1` schedule ID for both calculation methods.
 
 The project parser accepts only:
 
@@ -122,7 +122,7 @@ type AnalysisOptions = {
   optionsVersion: 1
   methodId: 'strain-domain-surface-v1'
   stations: {
-    basedOn: 'transition-aware-p0-p24-v1' | 'legacy-p0-p18-v1' | 'custom'
+    basedOn: 'unified-22-v1' | 'custom'
     intermediate: AnalysisStation[]
   }
   directions: {
@@ -134,13 +134,10 @@ type AnalysisOptions = {
 }
 ```
 
-Station criteria are `c-over-c1`, `steel-stress-ratio`, `steel-strain`,
-`strength-reduction-transition-ratio`, and `strength-reduction-post-transition`. The last two are
-standard-independent coordinates: the solver resolves them using the selected DesignBasis.
-
-The production default is 25 total stations, 36 uniform seed directions, and adaptive all-station
-refinement at 0.005 relative tolerance. `legacy-p0-p18-v1` exists only for an explicit regression
-fixture or user-selected legacy schedule; it is not inferred during import.
+The canonical criteria are `depth-ratio` and `bar-tension-yield-ratio`. The production list is six
+`c/D` values plus fourteen `εₛ/εy` values, bracketed by the two exact poles. The parser accepts
+`unified-22-v1` only when the serialized list exactly matches that order and content; any edited
+list must be explicitly marked `custom`. Direction refinement remains independent.
 
 ## 5. Equivalent-block analysis options v1
 
@@ -149,9 +146,10 @@ type EquivalentBlockAnalysisOptions = {
   optionsVersion: 1
   methodId: 'equivalent-block-surface-v1'
   neutralAxisStations: {
-    basedOn: 'verified-37-v1' | 'custom'
+    basedOn: 'unified-22-v1' | 'custom'
     values: Array<
       | { type: 'extreme-tension-strain'; strain: number }
+      | { type: 'bar-tension-yield-ratio'; ratio: number }
       | { type: 'depth-ratio'; ratio: number }
     >
     refinement: BlockStationRefinement
@@ -165,10 +163,9 @@ type EquivalentBlockAnalysisOptions = {
 ```
 
 This DTO intentionally contains no concrete integration-mesh settings. The equivalent-block kernel
-uses exact polygon clipping. Its production defaults are 37 initial neutral-axis states, 24 seed
-directions, and 0.75% adaptive station/direction refinement. Code-owned bar-strain events are
-resolved transiently from the selected profile and steel grades; they are not duplicated in the
-project DTO.
+uses exact polygon clipping. Its production default is the same fixed 22-station schedule, 24 seed
+directions, and adaptive direction refinement at 0.75%. Automatic code-transition and rupture-event
+station insertion is disabled; explicit custom low-level events remain an opt-in kernel facility.
 
 ## 6. Design basis v1
 

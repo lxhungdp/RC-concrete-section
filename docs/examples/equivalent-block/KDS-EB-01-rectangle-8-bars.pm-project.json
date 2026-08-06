@@ -175,119 +175,11 @@
       "optionsVersion": 1,
       "methodId": "equivalent-block-surface-v1",
       "neutralAxisStations": {
-        "basedOn": "verified-37-v1",
+        "basedOn": "unified-22-v1",
         "values": [
           {
-            "type": "extreme-tension-strain",
-            "strain": 0.1
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.075
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.05
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.04
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.03
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.025
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.02
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.0175
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.015
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.0125
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.01
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.00875
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.0075
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.00625
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.005
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.004
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.003
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.0025
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.002
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.0015
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.001
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0.0005
-          },
-          {
-            "type": "extreme-tension-strain",
-            "strain": 0
-          },
-          {
             "type": "depth-ratio",
-            "ratio": 1.1
-          },
-          {
-            "type": "depth-ratio",
-            "ratio": 1.2
-          },
-          {
-            "type": "depth-ratio",
-            "ratio": 1.35
-          },
-          {
-            "type": "depth-ratio",
-            "ratio": 1.5
-          },
-          {
-            "type": "depth-ratio",
-            "ratio": 1.75
+            "ratio": 3
           },
           {
             "type": "depth-ratio",
@@ -295,42 +187,79 @@
           },
           {
             "type": "depth-ratio",
+            "ratio": 1.5
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1.2
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1.1
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 0
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 0.25
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 0.5
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 0.75
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 1
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 1.5
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 2
+          },
+          {
+            "type": "bar-tension-yield-ratio",
             "ratio": 2.5
           },
           {
-            "type": "depth-ratio",
+            "type": "bar-tension-yield-ratio",
             "ratio": 3
           },
           {
-            "type": "depth-ratio",
+            "type": "bar-tension-yield-ratio",
             "ratio": 4
           },
           {
-            "type": "depth-ratio",
+            "type": "bar-tension-yield-ratio",
             "ratio": 5
           },
           {
-            "type": "depth-ratio",
+            "type": "bar-tension-yield-ratio",
             "ratio": 7.5
           },
           {
-            "type": "depth-ratio",
+            "type": "bar-tension-yield-ratio",
             "ratio": 10
           },
           {
-            "type": "depth-ratio",
+            "type": "bar-tension-yield-ratio",
             "ratio": 20
-          },
-          {
-            "type": "depth-ratio",
-            "ratio": 50
           }
         ],
         "refinement": {
-          "type": "adaptive",
-          "tolerance": 0.0075,
-          "maxPasses": 6,
-          "maxStations": 128
+          "type": "fixed"
         }
       },
       "directions": {
@@ -345,7 +274,7 @@
       }
     },
     "design": {
-      "basisVersion": 1,
+      "basisVersion": 2,
       "profileId": "kds-2024-current-set",
       "identity": {
         "organization": "MOLIT/KDS",

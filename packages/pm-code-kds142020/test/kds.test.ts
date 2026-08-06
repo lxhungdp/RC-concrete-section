@@ -154,7 +154,7 @@ test('KDS nominal surfaces close on the physical eta-block limit, never a P0 int
   }
 })
 
-test('KDS strain-event stations land on the extreme longitudinal bar, including the phi kink', () => {
+test('KDS yield-normalized stations land on the controlling longitudinal bar', () => {
   const section = preparedSection()
   const model = createKds142020Model({
     concreteStrength: 40,
@@ -164,8 +164,8 @@ test('KDS strain-event stations land on the extreme longitudinal bar, including 
   const surface = model.buildDesignSurface(section, {
     applyAxialCap: false,
     stations: [
-      { type: 'extreme-tension-strain', strain: 0.005 },
-      { type: 'extreme-tension-strain', strain: 0 },
+      { type: 'bar-tension-yield-ratio', ratio: 2.5 },
+      { type: 'bar-tension-yield-ratio', ratio: 0 },
       { type: 'depth-ratio', ratio: 1.1 }
     ],
     seedDirections: 4,

@@ -118,10 +118,17 @@ const exportMesh = (section: SectionGeometry, maxPoints: number) => {
 }
 
 const stationSchedule = (station: StationDefinition) => ({
-  cOverC1: station.kind === 'neutral-axis-ratio' ? station.cOverC1 : null,
+  depthRatio:
+    station.kind === 'neutral-axis-ratio'
+      ? station.cOverC1
+      : station.kind === 'neutral-axis-depth-ratio'
+        ? station.ratio
+        : null,
   fsRatio:
     station.kind === 'steel-stress-ratio'
       ? station.ratio
+      : station.kind === 'bar-tension-yield-ratio'
+        ? station.ratio
       : station.kind === 'steel-strain' && Math.abs(station.strain) < 1e-12
         ? 0
         : null,
@@ -863,7 +870,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     { label: 'Engine check', span: 2 }
   ]
   const pmHeaders = [
-    'Point', 'C/C1', 'fₛ/fyd', 'εs',
+    'Point', 'c/D or c/c₁', 'εₛ/εy or fₛ/fyd', 'εs',
     'u_ctrl (mm)', 'ε_ctrl', 'c (mm)', 'κ (1/mm)', 'ε₀', 'κx (1/mm)', 'κy (1/mm)',
     'P (kN)', 'Mx (kN·m)', 'My (kN·m)',
     'P (kN)', 'Mx (kN·m)', 'My (kN·m)',
@@ -915,7 +922,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     pmSheet.getCell(r, PM.point).value = `P${index}`
     pmSheet.getCell(r, PM.point).note = stationLabels[index]
     pmSheet.getCell(r, PM.point).font = { bold: true }
-    pmSheet.getCell(r, PM.cRatio).value = schedule.cOverC1
+    pmSheet.getCell(r, PM.cRatio).value = schedule.depthRatio
     pmSheet.getCell(r, PM.fsRatio).value = schedule.fsRatio
     pmSheet.getCell(r, PM.epsS).value = schedule.epsS
     for (const c of [PM.cRatio, PM.fsRatio, PM.epsS]) {
@@ -942,13 +949,18 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       pmSheet.getCell(r, PM.kappa).value = 0
       pmSheet.getCell(r, PM.e0).value = { formula: 'etu' }
     } else {
-      // Control point: neutral-axis stations sit at zero strain a fixed multiple of C1 below the
-      // compression fibre; the remaining stations are driven by the farthest tension bar.
+      // Neutral-axis stations sit at zero strain at their requested depth. The remaining stations
+      // are driven by the controlling tension bar.
       pmSheet.getCell(r, PM.uCtrl).value = {
-        formula: station.kind === 'neutral-axis-ratio' ? `u_max-${col(PM.cRatio)}${r}*u_C1` : 'u_bar'
+        formula: station.kind === 'neutral-axis-ratio'
+          ? `u_max-${col(PM.cRatio)}${r}*u_C1`
+          : station.kind === 'neutral-axis-depth-ratio'
+            ? `u_max-${col(PM.cRatio)}${r}*(u_max-u_min)`
+            : 'u_bar'
       }
       if (
         station.kind === 'steel-stress-ratio' ||
+        station.kind === 'bar-tension-yield-ratio' ||
         station.kind === 'strength-reduction-transition-ratio' ||
         station.kind === 'strength-reduction-post-transition'
       ) {
@@ -962,10 +974,14 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
         }
         pmSheet.getCell(r, PM.epsCtrl).note = station.kind === 'steel-stress-ratio'
           ? 'Engine-resolved inverse of the controlling bar material law at the requested fs/fyd.'
-          : 'Engine-resolved code-aware tensile strain landmark from the selected resistance profile.'
+          : station.kind === 'bar-tension-yield-ratio'
+            ? 'Engine-resolved controlling-bar tensile strain at the requested εₛ/εy.'
+            : 'Engine-resolved code-aware tensile strain landmark from the selected resistance profile.'
       } else {
         pmSheet.getCell(r, PM.epsCtrl).value = {
-          formula: station.kind === 'neutral-axis-ratio' ? 'ROUND(0,0)' : `-${col(PM.epsS)}${r}`
+          formula: station.kind === 'neutral-axis-ratio' || station.kind === 'neutral-axis-depth-ratio'
+            ? 'ROUND(0,0)'
+            : `-${col(PM.epsS)}${r}`
         }
       }
       pmSheet.getCell(r, PM.kappa).value = { formula: `(ecu-${epsCtrl})/(u_max-${uCtrl})` }
@@ -1483,7 +1499,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   sectionHeading(mmSheet, sentinelRow, 'Imported-surface consistency', 8)
   const sentinels: Array<[string, number, string]> = [
     ['P0 pure compression: grid vs PM_Angle', 0, `${col(MM_P_COL)}${MM_FIRST}`],
-    ['P18 pure tension: grid vs PM_Angle', stationCount - 1, `${col(MM_P_COL + stationCount - 1)}${MM_FIRST}`]
+    [`P${stationCount - 1} pure tension: grid vs PM_Angle`, stationCount - 1, `${col(MM_P_COL + stationCount - 1)}${MM_FIRST}`]
   ]
   sentinels.forEach(([label, stationIndex, gridCell], index) => {
     const r = sentinelRow + 1 + index
@@ -1895,4 +1911,3 @@ export const sectionWorkbookFileName = (input: Pick<ExcelExportInput, 'projectNa
   const loadcase = input.loadcase ? `-LC${input.loadcase.id}` : ''
   return `${stem}${loadcase}-beta${Math.round(input.betaDeg)}.xlsx`
 }
-
