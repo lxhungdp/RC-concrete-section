@@ -92,7 +92,7 @@ outside `0 <= depth <= a`.
 ## Acceptance interpretation
 
 The block surface is a branch locator and visualization object, not the final numerical authority.
-Its 0.75% direction-chord target drives adaptive direction sampling; final proportional capacity is reevaluated
+Its 1% direction-chord target drives adaptive direction sampling; final proportional capacity is reevaluated
 by exact clipping and damped LM. Fixed-axial capacity uses bracketed roots directly. This is why
 final equilibrium residuals are many orders of magnitude smaller than interpolation error.
 

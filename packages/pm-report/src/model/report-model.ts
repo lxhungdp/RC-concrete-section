@@ -15,6 +15,10 @@
  */
 import {
   applyDesignCheckToInverse,
+  activeDesignDirectionPoints,
+  activeDesignSurfaceDataset,
+  activeNominalDirectionPoints,
+  activeNominalSurfaceDataset,
   buildExactDirectionCurveFromPrepared,
   checkLoadcaseUtilizationFromSurface,
   codeAdjustedDemandOfCheck,
@@ -23,7 +27,7 @@ import {
   prepareAnalysis,
   sliceMomentPlane,
   solveInversePreviewFromPrepared,
-  sliceFixedDesignPContour,
+  sliceActiveDesignPContour,
   strainGradientDirection,
   type ExactDirectionCurve,
   type InversePreviewResult,
@@ -257,21 +261,11 @@ const planeCurve = (
   return best.path.points.map((point) => ({ m: point.M / KNM, p: point.P / KN }))
 }
 
-const fixedDesignDataset = (surface: PreviewSurface) => ({
-  points: surface.designFixed?.points ?? surface.points,
-  triangles: surface.designFixed?.triangles ?? surface.triangles
-})
-
-const fixedNominalDataset = (surface: PreviewSurface) => ({
-  points: surface.nominalFixed?.points ?? surface.nominalPoints ?? surface.points,
-  triangles: surface.nominalFixed?.triangles ?? surface.nominalTriangles ?? surface.triangles
-})
-
 const buildCurves = (surface: PreviewSurface, loadcases: readonly LoadCombination[]): InteractionCurve[] =>
   curveAngles(loadcases).map((thetaDeg) => {
     const thetaRad = (thetaDeg * Math.PI) / 180
-    const design = fixedDesignDataset(surface)
-    const nominal = fixedNominalDataset(surface)
+    const design = activeDesignSurfaceDataset(surface)
+    const nominal = activeNominalSurfaceDataset(surface)
     return {
       kind: 'moment-plane',
       thetaDeg,
@@ -288,8 +282,8 @@ const directMeridianCurve = (curve: ExactDirectionCurve): InteractionCurve => {
   return {
     kind: 'direct-beta',
     thetaDeg: deg(curve.beta),
-    design: curve.designAdaptive.map(project),
-    nominal: curve.nominalFixed.map(project)
+    design: activeDesignDirectionPoints(curve).map(project),
+    nominal: activeNominalDirectionPoints(curve).map(project)
   }
 }
 
@@ -404,8 +398,8 @@ const interactionFor = (
   const demandTheta =
     Math.abs(loadcase.Mx) < 1e-9 && Math.abs(loadcase.My) < 1e-9 ? 0 : Math.atan2(loadcase.My, loadcase.Mx)
   const demandThetaDeg = deg(demandTheta)
-  const displayDesign = fixedDesignDataset(surface)
-  const displayNominal = fixedNominalDataset(surface)
+  const displayDesign = activeDesignSurfaceDataset(surface)
+  const displayNominal = activeNominalSurfaceDataset(surface)
   const existing = curves.find((curve) =>
     curve.kind === 'moment-plane' && Math.abs(curve.thetaDeg - demandThetaDeg) < 1e-6
   )
@@ -504,7 +498,7 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
     const stateMaterials = buildResistanceMaterialSets(materialStore, basis).stateMaterials
     const prepared = prepareAnalysis(section, rebars, stateMaterials, analysisMeshKernelOptions(options))
     for (const loadcase of input.loadcases) {
-      const contour = sliceFixedDesignPContour(input.surface, loadcase.P)
+      const contour = sliceActiveDesignPContour(input.surface, loadcase.P)
       // The inverse gives the equilibrium state; adequacy is the design-surface ray. Both, composed
       // exactly as the application composes them.
       const designCheck = checkLoadcaseUtilizationFromSurface(input.surface, loadcase)
@@ -550,7 +544,7 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
   const combinations = input.loadcases.map((loadcase) =>
     combinationRow(loadcase, results.get(loadcase.id) ?? null)
   )
-  const axialCapPoint = fixedDesignDataset(input.surface).points
+  const axialCapPoint = activeDesignSurfaceDataset(input.surface).points
     .filter((point) => point.surfaceRole === 'axial-cap')
     .reduce<number | null>((current, point) => (current === null ? point.P : Math.max(current, point.P)), null)
 
@@ -604,7 +598,9 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       ...(designBasisRequiresOverrideReason(basis) && basis.overrideReason.trim().length > 0
         ? [`Modified resistance profile. Stated basis: ${basis.overrideReason}`]
         : []),
-      'Overview interaction diagrams are geometric plane cuts of the fixed 27-station, 10° direction grid. An arbitrary exact direction is calculated only when it is requested.'
+      input.surface.analysisOptions.samplingMode === 'fixed'
+        ? 'Overview interaction diagrams cut the active fixed 27-station, 10° direction surface. An arbitrary exact direction is calculated only when it is requested.'
+        : 'Overview interaction diagrams cut the active independently adaptive surface and its explicit triangle topology. An arbitrary exact direction is calculated only when it is requested.'
     ],
     warnings: input.surface.warnings ?? [],
     drawing,
@@ -694,12 +690,13 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
               : 'not prescribed by this profile']
           ],
     sampling: [
-      ['Governing adaptive points', String(input.surface.points.length)],
-      ['Adaptive directions', String(input.surface.directions.length)],
-      ['Adaptive stations', String(input.surface.stations.length)],
-      ['Fixed display points', String(fixedDesignDataset(input.surface).points.length)],
-      ['Fixed display directions', String(input.surface.designFixed?.directions.length ?? input.surface.directions.length)],
-      ['Fixed stations', String(input.surface.designFixed?.stations.length ?? input.surface.stations.length)],
+      ['Sampling mode', input.surface.analysisOptions.samplingMode],
+      ['Active Design points', String(activeDesignSurfaceDataset(input.surface).points.length)],
+      ['Active Design directions', String(activeDesignSurfaceDataset(input.surface).directions.length)],
+      ['Active Design stations', String(activeDesignSurfaceDataset(input.surface).stations.length)],
+      ['Active Nominal points', String(activeNominalSurfaceDataset(input.surface).points.length)],
+      ['Active Nominal directions', String(activeNominalSurfaceDataset(input.surface).directions.length)],
+      ['Active Nominal stations', String(activeNominalSurfaceDataset(input.surface).stations.length)],
       ['Direction tolerance', fmt(input.surface.directionError.tolerance * 100, 3) + ' %'],
       ['Worst interpolation error', fmt(Math.max(input.surface.directionError.maxRelativeP, input.surface.directionError.maxRelativeMoment) * 100, 4) + ' %'],
       ['Tolerance reached', input.surface.directionError.withinTolerance ? 'yes' : 'NO'],

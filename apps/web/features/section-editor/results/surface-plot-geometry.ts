@@ -18,11 +18,24 @@ export const buildClosedSurfaceTriangles = (
     .map(([, row]) => row.sort((left, right) => left.station - right.station))
 
   if (orderedRows.length < 2) return []
+  const referenceStations = orderedRows[0].map((point) => point.station)
+  const structured = orderedRows.every((row) =>
+    row.length === referenceStations.length &&
+    row.every((point, index) => {
+      const reference = referenceStations[index]
+      return Math.abs(point.station - reference) <= 1e-12 * Math.max(1, Math.abs(reference))
+    })
+  )
+  if (!structured) {
+    throw new Error(
+      'Explicit surface topology is required when direction rows have unequal or independently adaptive station schedules.'
+    )
+  }
   const triangles: SurfaceIndexTriangle[] = []
   for (let rowIndex = 0; rowIndex < orderedRows.length; rowIndex += 1) {
     const current = orderedRows[rowIndex]
     const next = orderedRows[(rowIndex + 1) % orderedRows.length]
-    const stationCount = Math.min(current.length, next.length)
+    const stationCount = current.length
     for (let station = 0; station < stationCount - 1; station += 1) {
       const a = current[station].index
       const b = next[station].index
@@ -43,7 +56,17 @@ export const isMeridianOrParallelEdge = (
   const left = points[leftIndex]
   const right = points[rightIndex]
   if (!left || !right) return false
-  return left.beta === right.beta || left.station === right.station
+  if (left.onSampledDirection === false || right.onSampledDirection === false) return false
+  const directionNeutral = (point: PreviewSurfacePoint) =>
+    point.surfaceRole === 'pure-compression' ||
+    point.surfaceRole === 'pure-tension' ||
+    (point.surfaceRole === 'axial-cap' && Math.hypot(point.Mx, point.My) <= 1e-9)
+  const meridian = left.beta === right.beta ||
+    (directionNeutral(left) !== directionNeutral(right) && (directionNeutral(left) || directionNeutral(right)))
+  const parallel = left.stationId !== null && left.stationId === right.stationId
+  const capBoundary = left.surfaceRole === 'axial-cap' && right.surfaceRole === 'axial-cap' &&
+    !directionNeutral(left) && !directionNeutral(right)
+  return meridian || parallel || capBoundary
 }
 
 /** A vertical-slice vertex between two numbered station levels. */
@@ -54,6 +77,9 @@ export const isIntermediateStationValue = (
   station !== undefined &&
   Number.isFinite(station) &&
   Math.abs(station - Math.round(station)) > tolerance
+
+// Transitional re-export: all consumers now share the kernel implementation and its provenance.
+export { buildDirectMeridianSection } from '@pm/analysis'
 
 export type PlanarPoint = { u: number; v: number }
 

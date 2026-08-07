@@ -32,6 +32,10 @@ export type SectionResultsSummary = {
   surfacePoints: number
   directionCount: number
   stationCount: number
+  stationCountMin: number
+  stationCountAverage: number
+  evaluationCount: number
+  samplingMode: 'fixed' | 'adaptive'
   fixedDirectionCount: number
   fixedStationCount: number
   /** Adaptive-refinement evidence, or null when the surface has none yet. */
@@ -118,8 +122,9 @@ export function SectionResultsPanel({
   projectName
 }: Props) {
   const [source, setSource] = useState<ChartTableSource>('vertical')
-  const [includeDesign, setIncludeDesign] = useState(true)
-  const [includeNominal, setIncludeNominal] = useState(false)
+  const [resistanceStage, setResistanceStage] = useState<'design' | 'nominal'>('design')
+  const includeDesign = resistanceStage === 'design'
+  const includeNominal = resistanceStage === 'nominal'
   const [exporting, setExporting] = useState(false)
 
   const rows = useMemo(
@@ -128,31 +133,19 @@ export function SectionResultsPanel({
         surface,
         exactDirectionCurve,
         source,
-        includeDesign,
-        includeNominal,
+        resistanceStage,
         sliceAngleDeg: view.sliceAngle,
-        includeOpposite: view.includeOppositeMoment,
         fixedP
       }),
     [
       fixedP,
-      includeDesign,
-      includeNominal,
+      resistanceStage,
       source,
       surface,
       exactDirectionCurve,
-      view.includeOppositeMoment,
       view.sliceAngle
     ]
   )
-
-  const setResistanceChecks = (patch: { design?: boolean; nominal?: boolean }) => {
-    const nextDesign = patch.design ?? includeDesign
-    const nextNominal = patch.nominal ?? includeNominal
-    if (!nextDesign && !nextNominal) return
-    if (patch.design != null) setIncludeDesign(patch.design)
-    if (patch.nominal != null) setIncludeNominal(patch.nominal)
-  }
 
   const exportExcel = async () => {
     if (rows.length === 0 || exporting) return
@@ -214,9 +207,13 @@ export function SectionResultsPanel({
               ? `${integer(summary.concreteArea)} / ${integer(summary.steelArea)} mm²`
               : `— / ${integer(summary.steelArea)} mm²`}
           </strong>
-          <span>Adaptive dirs / stations</span>
+          <span>Sampling mode</span>
+          <strong>{summary.samplingMode === 'adaptive' ? 'Independent adaptive' : 'Fixed grid'}</strong>
+          <span>Directions / max stations</span>
           <strong>{`${integer(summary.directionCount)} / ${integer(summary.stationCount)}`}</strong>
-          <span>Fixed visual grid</span>
+          <span>Station range / average</span>
+          <strong>{`${integer(summary.stationCountMin)}-${integer(summary.stationCount)} / ${summary.stationCountAverage.toFixed(1)}`}</strong>
+          <span>Active surface grid</span>
           <strong>{`${integer(summary.fixedDirectionCount)} × ${integer(summary.fixedStationCount)}`}</strong>
           {summary.mechanics === 'stress-strain-integration' ? (
             <>
@@ -226,6 +223,8 @@ export function SectionResultsPanel({
           ) : null}
           <span>Surface points</span>
           <strong>{integer(summary.surfacePoints)}</strong>
+          <span>State evaluations</span>
+          <strong>{integer(summary.evaluationCount)}</strong>
           {summary.refinement ? (
             <>
               <span>Interp. error</span>
@@ -264,24 +263,26 @@ export function SectionResultsPanel({
                   Fixed-P
                 </label>
               </fieldset>
-              <div className="pm-result-check-row" role="group" aria-label="Resistance curves">
-                <label className={includeDesign ? 'is-on' : ''}>
+              <fieldset className="pm-result-radio-group" aria-label="Table resistance stage">
+                <label className={resistanceStage === 'design' ? 'is-active' : ''}>
                   <input
-                    type="checkbox"
-                    checked={includeDesign}
-                    onChange={(event) => setResistanceChecks({ design: event.target.checked })}
+                    type="radio"
+                    name="chart-data-resistance-stage"
+                    checked={resistanceStage === 'design'}
+                    onChange={() => setResistanceStage('design')}
                   />
                   Design
                 </label>
-                <label className={includeNominal ? 'is-on' : ''}>
+                <label className={resistanceStage === 'nominal' ? 'is-active' : ''}>
                   <input
-                    type="checkbox"
-                    checked={includeNominal}
-                    onChange={(event) => setResistanceChecks({ nominal: event.target.checked })}
+                    type="radio"
+                    name="chart-data-resistance-stage"
+                    checked={resistanceStage === 'nominal'}
+                    onChange={() => setResistanceStage('nominal')}
                   />
                   Nominal
                 </label>
-              </div>
+              </fieldset>
             </div>
             <button
               type="button"

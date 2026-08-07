@@ -49,6 +49,8 @@ import {
 } from '@pm/analysis-equivalent-block'
 import type { NominalBlockEvaluation } from '@pm/equivalent-block'
 import {
+  activeDesignDirectionPoints,
+  activeDesignSurfaceDataset,
   intersectFixedPContourWithMomentRay,
   sliceFixedPContour,
   sliceMomentPlane
@@ -173,7 +175,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   )
 
   const auditedDepths = [...new Set(
-    exactCurve.designAdaptive
+    activeDesignDirectionPoints(exactCurve)
       .flatMap((point) => point.equivalentBlock ? [point.equivalentBlock.neutralAxisDepth] : [])
   )].sort((a, b) => b - a)
   if (auditedDepths.length === 0) {
@@ -216,10 +218,11 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
 
   const demandP = input.loadcase ? input.loadcase.P : input.fixedP
   const thetaLoad = input.loadcase ? Math.atan2(input.loadcase.My, input.loadcase.Mx) : 0
+  const activeDesignSurface = activeDesignSurfaceDataset(surface)
   const engineContour = sliceFixedPContour(
-    surface.designFixed?.points ?? surface.points,
+    activeDesignSurface.points,
     demandP,
-    surface.designFixed?.triangles ?? surface.triangles
+    activeDesignSurface.triangles
   )
   const engineBoundary = intersectFixedPContourWithMomentRay(engineContour, thetaLoad)
   const demand = input.loadcase
@@ -988,9 +991,9 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     'Independent geometric demand-plane diagnostic on the fixed 27-station / fixed-direction Design surface. The application Vertical chart is instead a direct exact-β meridian recovered from the valid equilibrium state.')
   ptSheet.mergeCells('B2:G3')
   const planePaths = sliceMomentPlane(
-    surface.designFixed?.points ?? surface.points,
+    activeDesignSurface.points,
     thetaLoad,
-    surface.designFixed?.triangles ?? surface.triangles
+    activeDesignSurface.triangles
   )
   headerRow(ptSheet, 6, ['#', 'path', 'P (kN)', 'Mθ (kN·m)', 'Mx (kN·m)', 'My (kN·m)'])
   let ptRow = 7

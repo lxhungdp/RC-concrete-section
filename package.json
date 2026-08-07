@@ -22,6 +22,7 @@
     "bench:equivalent-block": "tsx bench/equivalent-block/run.ts",
     "bench:pipelines": "tsx bench/cross-model/pipeline-comparison.ts",
     "bench:strain-sampling": "tsx bench/stress-strain/strain-domain-sampling.ts",
+    "bench:sampling-modes": "tsx bench/sampling-modes.ts",
     "bench:record": "tsx packages/pm-analysis/bench/run.ts --repeats 1 --fingerprint-out packages/pm-analysis/bench/baselines/capacity-baseline.json",
     "bench:verify": "tsx packages/pm-analysis/bench/run.ts --repeats 1 --baseline packages/pm-analysis/bench/baselines/capacity-baseline.json",
     "test:excel-block": "tsx packages/pm-report/test/integration/equivalent-block.selftest.ts",

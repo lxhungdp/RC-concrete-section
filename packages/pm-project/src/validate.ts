@@ -2,6 +2,9 @@ import type { GeometryInput, GeometryInputOuter, GeometryInputRebar, Point2 } fr
 import { CONCRETE_MATERIAL_ID, DEFAULT_CONCRETE_DENSITY } from '@pm/materials'
 import type { ConcreteMaterial, MaterialStore, SteelMaterial, StressStrainPoint } from '@pm/materials'
 import {
+  ADAPTIVE_DEPTH_RATIOS,
+  ADAPTIVE_STATION_SCHEDULE,
+  ADAPTIVE_STEEL_STRAIN_YIELD_RATIOS,
   LEGACY_UNIFIED_STATION_SCHEDULES,
   UNIFIED_DEPTH_RATIOS,
   UNIFIED_INTERMEDIATE_STATION_COUNT,
@@ -32,6 +35,8 @@ import {
   MAX_SEED_DIRECTIONS,
   MAX_STATION_LABEL_LENGTH,
   STRAIN_DOMAIN_SURFACE_METHOD,
+  createAdaptiveAnalysisOptions,
+  createAdaptiveEquivalentBlockAnalysisOptions,
   createDefaultAnalysisOptions,
   createDefaultEquivalentBlockAnalysisOptions,
   type AnalysisOptions,
@@ -485,7 +490,9 @@ const parseEquivalentBlockAnalysis = (
 ): EquivalentBlockAnalysisOptions => {
   assertRecord(value.neutralAxisStations, `${path}.neutralAxisStations must be an object`)
   assert(
-    value.neutralAxisStations.basedOn === UNIFIED_STATION_SCHEDULE || value.neutralAxisStations.basedOn === 'custom',
+    value.neutralAxisStations.basedOn === UNIFIED_STATION_SCHEDULE ||
+      value.neutralAxisStations.basedOn === ADAPTIVE_STATION_SCHEDULE ||
+      value.neutralAxisStations.basedOn === 'custom',
     `${path}.neutralAxisStations.basedOn is invalid`
   )
   assertArray(value.neutralAxisStations.values, `${path}.neutralAxisStations.values must be an array`)
@@ -521,6 +528,21 @@ const parseEquivalentBlockAnalysis = (
     assert(
       actual.length === expected.length && actual.every((item, index) => item === expected[index]),
       `${path}.neutralAxisStations must match the canonical ${UNIFIED_STATION_SCHEDULE} schedule`
+    )
+  }
+  if (value.neutralAxisStations.basedOn === ADAPTIVE_STATION_SCHEDULE) {
+    const expected = [
+      ...ADAPTIVE_DEPTH_RATIOS.map((ratio) => `depth:${ratio}`),
+      ...ADAPTIVE_STEEL_STRAIN_YIELD_RATIOS.map((ratio) => `bar:${ratio}`)
+    ]
+    const actual = values.map((item) => item.type === 'bar-tension-yield-ratio'
+      ? `bar:${item.ratio}`
+      : item.type === 'depth-ratio'
+        ? `depth:${item.ratio}`
+        : `extreme:${item.strain}`)
+    assert(
+      actual.length === expected.length && actual.every((item, index) => item === expected[index]),
+      `${path}.neutralAxisStations must match the canonical ${ADAPTIVE_STATION_SCHEDULE} schedule`
     )
   }
 
@@ -573,9 +595,16 @@ const parseEquivalentBlockAnalysis = (
     }
   }
 
+  assert(
+    (value.samplingMode === 'fixed' && refinement.type === 'fixed' && directionsRefinement.type === 'fixed') ||
+      (value.samplingMode === 'adaptive' && refinement.type === 'adaptive' && directionsRefinement.type === 'adaptive'),
+    `${path} must use fixed station and direction sampling together, or adaptive station and direction sampling together`
+  )
+
   return {
     optionsVersion: ANALYSIS_OPTIONS_VERSION,
     methodId: EQUIVALENT_BLOCK_SURFACE_METHOD,
+    samplingMode: value.samplingMode,
     neutralAxisStations: {
       basedOn: value.neutralAxisStations.basedOn,
       values,
@@ -603,8 +632,44 @@ const migrateLegacyAnalysis = (value: unknown): unknown => {
       const directions = isRecord(value.directions) ? value.directions : {}
       return {
         ...value,
+        samplingMode: 'fixed',
         neutralAxisStations: defaults.neutralAxisStations,
         directions: { ...directions, refinement: { type: 'fixed' } }
+      }
+    }
+    if (!('samplingMode' in value)) {
+      const stationType = isRecord(value.neutralAxisStations) &&
+        isRecord(value.neutralAxisStations.refinement)
+        ? value.neutralAxisStations.refinement.type
+        : 'fixed'
+      const directionType = isRecord(value.directions) && isRecord(value.directions.refinement)
+        ? value.directions.refinement.type
+        : 'fixed'
+      const adaptive = stationType === 'adaptive' || directionType === 'adaptive'
+      if (adaptive) {
+        const defaults = createAdaptiveEquivalentBlockAnalysisOptions()
+        const neutralAxisStations = isRecord(value.neutralAxisStations) ? value.neutralAxisStations : {}
+        const directions = isRecord(value.directions) ? value.directions : {}
+        return {
+          ...value,
+          samplingMode: 'adaptive',
+          neutralAxisStations: {
+            ...neutralAxisStations,
+            refinement: stationType === 'adaptive'
+              ? neutralAxisStations.refinement
+              : defaults.neutralAxisStations.refinement
+          },
+          directions: {
+            ...directions,
+            refinement: directionType === 'adaptive'
+              ? directions.refinement
+              : defaults.directions.refinement
+          }
+        }
+      }
+      return {
+        ...value,
+        samplingMode: 'fixed'
       }
     }
     return value
@@ -618,8 +683,39 @@ const migrateLegacyAnalysis = (value: unknown): unknown => {
     const directions = isRecord(value.directions) ? value.directions : {}
     return {
       ...value,
+      samplingMode: 'fixed',
       stations: defaults.stations,
       directions: { ...directions, refinement: { type: 'fixed', probe: 'all' } }
+    }
+  }
+  if (!('samplingMode' in value)) {
+    const stationType = isRecord(value.stations) && isRecord(value.stations.refinement)
+      ? value.stations.refinement.type
+      : 'fixed'
+    const directionType = isRecord(value.directions) && isRecord(value.directions.refinement)
+      ? value.directions.refinement.type
+      : 'fixed'
+    const adaptive = stationType === 'adaptive' || directionType === 'adaptive'
+    if (adaptive) {
+      const defaults = createAdaptiveAnalysisOptions()
+      const stations = isRecord(value.stations) ? value.stations : {}
+      const directions = isRecord(value.directions) ? value.directions : {}
+      return {
+        ...value,
+        samplingMode: 'adaptive',
+        stations: {
+          ...stations,
+          refinement: stationType === 'adaptive' ? stations.refinement : defaults.stations.refinement
+        },
+        directions: {
+          ...directions,
+          refinement: directionType === 'adaptive' ? directions.refinement : defaults.directions.refinement
+        }
+      }
+    }
+    return {
+      ...value,
+      samplingMode: 'fixed'
     }
   }
   return value
@@ -630,11 +726,14 @@ const parseAnalysis = (value: unknown): CalculationAnalysisOptions => {
   value = migrateLegacyAnalysis(value)
   assertRecord(value, `${path} must be an object`)
   assert(value.optionsVersion === ANALYSIS_OPTIONS_VERSION, `${path}.optionsVersion is unsupported`)
+  assert(value.samplingMode === 'fixed' || value.samplingMode === 'adaptive', `${path}.samplingMode is invalid`)
   if (value.methodId === EQUIVALENT_BLOCK_SURFACE_METHOD) return parseEquivalentBlockAnalysis(value, path)
   assert(value.methodId === STRAIN_DOMAIN_SURFACE_METHOD, `${path}.methodId is unsupported`)
   assertRecord(value.stations, `${path}.stations must be an object`)
   assert(
-    value.stations.basedOn === UNIFIED_STATION_SCHEDULE || value.stations.basedOn === 'custom',
+    value.stations.basedOn === UNIFIED_STATION_SCHEDULE ||
+      value.stations.basedOn === ADAPTIVE_STATION_SCHEDULE ||
+      value.stations.basedOn === 'custom',
     `${path}.stations.basedOn is invalid`
   )
   assertArray(value.stations.intermediate, `${path}.stations.intermediate must be an array`)
@@ -661,6 +760,21 @@ const parseAnalysis = (value: unknown): CalculationAnalysisOptions => {
       intermediate.length === UNIFIED_INTERMEDIATE_STATION_COUNT &&
         actual.every((item, index) => item === expected[index]),
       `${path}.stations must match the canonical ${UNIFIED_STATION_SCHEDULE} schedule`
+    )
+  }
+  if (value.stations.basedOn === ADAPTIVE_STATION_SCHEDULE) {
+    const expected = [
+      ...ADAPTIVE_DEPTH_RATIOS.map((ratio) => `depth:${ratio}`),
+      ...ADAPTIVE_STEEL_STRAIN_YIELD_RATIOS.map((ratio) => `bar:${ratio}`)
+    ]
+    const actual = intermediate.map((item) => item.criterion.type === 'depth-ratio'
+      ? `depth:${item.criterion.ratio}`
+      : item.criterion.type === 'bar-tension-yield-ratio'
+        ? `bar:${item.criterion.ratio}`
+        : item.criterion.type)
+    assert(
+      actual.length === expected.length && actual.every((item, index) => item === expected[index]),
+      `${path}.stations must match the canonical ${ADAPTIVE_STATION_SCHEDULE} schedule`
     )
   }
 
@@ -822,9 +936,16 @@ const parseAnalysis = (value: unknown): CalculationAnalysisOptions => {
     }
   }
 
+  assert(
+    (value.samplingMode === 'fixed' && stationRefinement.type === 'fixed' && refinement.type === 'fixed') ||
+      (value.samplingMode === 'adaptive' && stationRefinement.type === 'adaptive' && refinement.type === 'adaptive'),
+    `${path} must use fixed station and direction sampling together, or adaptive station and direction sampling together`
+  )
+
   return {
     optionsVersion: ANALYSIS_OPTIONS_VERSION,
     methodId: STRAIN_DOMAIN_SURFACE_METHOD,
+    samplingMode: value.samplingMode,
     stations: { basedOn: value.stations.basedOn, intermediate, refinement: stationRefinement },
     directions: { seed, refinement },
     mesh

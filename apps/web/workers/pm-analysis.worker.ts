@@ -9,7 +9,7 @@ import {
   checkLoadcasesUtilizationFromSurface,
   codeAdjustedDemandOfCheck,
   prepareAnalysis,
-  sliceFixedDesignPContour,
+  sliceActiveDesignPContour,
   solveInversePreviewFromPrepared,
   surfaceInputKey,
   type PreparedAnalysis,
@@ -227,7 +227,7 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
       }
       const key = `${surfaceInputKey(section, rebars, materialStore, surface.analysisOptions)}:${JSON.stringify(request.payload.designBasis)}`
       const activeSurface = surfaceCache?.key === key ? surfaceCache.value : surface
-      const contour = sliceFixedDesignPContour(activeSurface, loadcase.P)
+      const contour = sliceActiveDesignPContour(activeSurface, loadcase.P)
       const designCheck = checkLoadcaseUtilizationFromSurface(
         activeSurface,
         loadcase

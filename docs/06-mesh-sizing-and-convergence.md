@@ -166,18 +166,20 @@ strain angle is under-tested.
 
 `PreviewSurface.directionError` reports the beta chord error of the grid it actually returned. The
 engine evaluates the true state halfway between sampled directions and compares it with the chord
-used by the triangulation. The production stress-strain default probes all 22 shared stations; this
+used by the triangulation. The independently refined meridian comparison
 is a sampled estimator, not a mathematical upper bound (§11). An explicit empty probe list disables
 the measurement and returns `NaN`, never a misleading zero.
 
 The direction grid, not the integration mesh, can govern numerical error. For a locally convex
 fixed-P contour, chord interpolation cuts the corner and under-reports capacity, but the sign is not
-a universal theorem for arbitrary non-convex or multi-loop slices. Stress-strain starts from 36
-directions. Both mechanics use the same 0.75% relative target for direction and station chord error,
-with at most 360 directions and 48 total stations. The 22 fixed stations remain identifiable while
-Design-only adaptive stations are inserted between them. No automatic transition station is added.
-The effective counts and separate station/direction convergence evidence are recorded with every
-surface; nominal and fixed-P datasets remain fixed.
+a universal theorem for arbitrary non-convex or multi-loop slices. Fixed mode uses the editable
+27-station by 36-direction grid without refinement. Adaptive mode starts from 12 criteria plus the
+two axial poles and 12 directions at 30-degree spacing. Both mechanics use the same 1% relative
+target for direction and station chord error, with at most 360 directions and 48 stations per
+meridian. Each meridian is refined and cached independently; neighboring rows are compared and
+triangulated through a monotone station coordinate rather than paired by array index. Effective
+counts, evaluation counts, and separate station/direction convergence evidence accompany the
+surface.
 
 The permanent direction benchmark is `npm run bench:strain-sampling`; it holds the shared station
 schedule constant while comparing the seed and refined direction surfaces. See `12` for the

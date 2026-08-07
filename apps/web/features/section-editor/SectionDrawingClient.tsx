@@ -68,6 +68,7 @@ import {
   type LoadingsInput
 } from '@pm/project'
 import {
+  activeDesignSurfaceDataset,
   type ExactDirectionCurve,
   type InversePreviewResult,
   type LoadcaseQuickCheckResult,
@@ -572,6 +573,7 @@ export function SectionDrawingClient() {
     []
   )
   const [fixedResultP, setFixedResultP] = useState(0)
+  const fixedPInitializedSurfaceRef = useRef<PreviewSurface | null>(null)
   const [resultSurface, setResultSurface] = useState<PreviewSurface | null>(null)
   const [exactDirectionCurve, setExactDirectionCurve] = useState<ExactDirectionCurve | null>(null)
   const [surfaceStatus, setSurfaceStatus] = useState<'idle' | 'working' | 'error'>('idle')
@@ -703,7 +705,7 @@ export function SectionDrawingClient() {
   }, [resultSurface])
   const stationCount = useMemo(() => {
     if (!resultSurface) return 0
-    return new Set(resultSurface.points.map((point) => point.station)).size
+    return resultSurface.stationError.maxStations ?? resultSurface.stationError.stations
   }, [resultSurface])
 
   /** Everything the Section Results sidebar reports, assembled once per surface. */
@@ -712,6 +714,7 @@ export function SectionDrawingClient() {
     [calculationProfileId]
   )
   const sectionResultsSummary = useMemo<SectionResultsSummary>(() => {
+    const activeDesign = resultSurface ? activeDesignSurfaceDataset(resultSurface) : null
     const hasDesignMethodChoice =
       (activeCalculationProfile.allowedDesignProfileIds?.length ?? 1) > 1
     const designMethodLabel = !hasDesignMethodChoice
@@ -731,8 +734,12 @@ export function SectionDrawingClient() {
       surfacePoints: resultSurface?.points.length ?? 0,
       directionCount: betaCount,
       stationCount,
-      fixedDirectionCount: resultSurface?.designFixed?.directions.length ?? 0,
-      fixedStationCount: resultSurface?.designFixed?.stations.length ?? 0,
+      stationCountMin: resultSurface?.stationError.minStations ?? stationCount,
+      stationCountAverage: resultSurface?.stationError.averageStations ?? stationCount,
+      evaluationCount: resultSurface?.stationError.evaluations ?? resultSurface?.points.length ?? 0,
+      samplingMode: resultSurface?.analysisOptions.samplingMode ?? 'fixed',
+      fixedDirectionCount: activeDesign?.directions.length ?? 0,
+      fixedStationCount: activeDesign?.stations.length ?? 0,
       refinement: resultSurface && (
         Number.isFinite(resultSurface.directionError.maxRelativeComponent) ||
         Number.isFinite(resultSurface.stationError.maxRelative)
@@ -893,11 +900,15 @@ export function SectionDrawingClient() {
   }, [loadingsInput.combinations, resultSurface])
 
   useEffect(() => {
-    if (!resultSurface) return
-    if (fixedResultP !== 0) return
+    if (!resultSurface) {
+      fixedPInitializedSurfaceRef.current = null
+      return
+    }
+    if (fixedPInitializedSurfaceRef.current === resultSurface) return
+    fixedPInitializedSurfaceRef.current = resultSurface
     const mid = (resultSurface.bounds.P[0] + resultSurface.bounds.P[1]) / 2
     setFixedResultP(mid)
-  }, [fixedResultP, resultSurface])
+  }, [resultSurface])
 
   const calculateInverseForLoadcase = (loadcase: LoadCombination, force = false) => {
     setSelectedLoadcaseId(loadcase.id)

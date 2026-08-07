@@ -1,4 +1,9 @@
 import {
+  activeDesignDirectionPoints,
+  activeDesignSurfaceDataset,
+  activeNominalDirectionPoints,
+  activeNominalSurfaceDataset,
+  buildDirectMeridianSection,
   contourStrainAngleSamples,
   sliceFixedPContour,
   stationDefinitionLabel,
@@ -6,7 +11,8 @@ import {
   type PreviewSurface,
   type PreviewSurfacePoint,
   type Resultant,
-  type ResultantLedger
+  type ResultantLedger,
+  type SurfaceStation
 } from '@pm/analysis'
 
 export type ChartTableSource = 'vertical' | 'fixedP'
@@ -57,44 +63,6 @@ const knm = (value: number) => value / 1_000_000
 
 const normalizeAngleDeg = (degrees: number) => ((degrees % 360) + 360) % 360
 
-const stationCriterion = (surface: PreviewSurface, station: number) => {
-  if (!Number.isFinite(station) || station < 0) return '—'
-  const index = Math.round(station)
-  const descriptor = (surface.designFixed?.stations ?? surface.stations)[index]
-  if (!descriptor) return `P${index}`
-  return stationDefinitionLabel(descriptor.definition)
-}
-
-const groupByBeta = (points: PreviewSurfacePoint[]) => {
-  const groups = new Map<number, PreviewSurfacePoint[]>()
-  for (const point of points) {
-    if (point.station < 0) continue
-    groups.set(point.beta, [...(groups.get(point.beta) ?? []), point])
-  }
-  return [...groups.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([beta, curve]) => ({
-      beta,
-      curve: curve.slice().sort((a, b) => a.station - b.station)
-    }))
-}
-
-const nearestBetaCurve = (points: PreviewSurfacePoint[], angleDeg: number) => {
-  const rows = groupByBeta(points)
-  if (rows.length === 0) return null
-  const target = (normalizeAngleDeg(angleDeg) * Math.PI) / 180
-  let best = rows[0]!
-  for (let i = 1; i < rows.length; i++) {
-    const current = rows[i]!
-    const delta = Math.abs(current.beta - target)
-    const wrap = Math.min(delta, Math.abs(delta - 2 * Math.PI))
-    const bestDelta = Math.abs(best.beta - target)
-    const bestWrap = Math.min(bestDelta, Math.abs(bestDelta - 2 * Math.PI))
-    if (wrap < bestWrap) best = current
-  }
-  return best
-}
-
 const momentAlong = (point: Pick<Resultant, 'Mx' | 'My'>, angleDeg: number) => {
   const theta = (normalizeAngleDeg(angleDeg) * Math.PI) / 180
   return point.Mx * Math.cos(theta) + point.My * Math.sin(theta)
@@ -128,54 +96,18 @@ type FixedPDraft = {
 }
 
 const collectVertical = (
-  surface: PreviewSurface,
   points: PreviewSurfacePoint[],
   angleDeg: number,
-  includeOpposite: boolean,
+  descriptors: SurfaceStation[],
   stage: 'design' | 'nominal',
   drafts: Map<string, VerticalDraft>
 ) => {
-  const primary = nearestBetaCurve(points, angleDeg)
-  if (!primary) return
-  const curves = [primary]
-  if (includeOpposite) {
-    const opposite = nearestBetaCurve(points, angleDeg + 180)
-    if (opposite && Math.abs(opposite.beta - primary.beta) > 1e-9) curves.push(opposite)
-  }
+  const primary = buildDirectMeridianSection(points, angleDeg, false).primary.filter((point) =>
+    point.sectionPointRole === 'surface-vertex' && point.stationId !== null
+  )
   const momentOf = (part: Resultant) => momentAlong(part, angleDeg)
-  for (const [curveIndex, curve] of curves.entries()) {
-    for (const point of curve.curve) {
-      const key = `vertical-${curveIndex}-${point.stationId ?? point.station}`
-      const forces = forcesFromLedger(point.ledger, momentOf)
-      const existing = drafts.get(key)
-      if (existing) {
-        if (stage === 'design') existing.design = forces
-        else existing.nominal = forces
-        continue
-      }
-      drafts.set(key, {
-        kind: 'vertical',
-        key,
-        sort: curveIndex * 1000 + point.station,
-        criterion: stationCriterion(surface, point.station),
-        design: stage === 'design' ? forces : null,
-        nominal: stage === 'nominal' ? forces : null
-      })
-    }
-  }
-}
-
-const collectDirectVertical = (
-  surface: PreviewSurface,
-  points: PreviewSurfacePoint[],
-  angleDeg: number,
-  descriptors: ExactDirectionCurve['stations'],
-  stage: 'design' | 'nominal',
-  drafts: Map<string, VerticalDraft>
-) => {
-  const momentOf = (part: Resultant) => momentAlong(part, angleDeg)
-  for (const point of points) {
-    const key = `vertical-0-${point.stationId ?? point.station}`
+  for (const point of primary) {
+    const key = `vertical-${point.stationId}`
     const forces = forcesFromLedger(point.ledger, momentOf)
     const existing = drafts.get(key)
     if (existing) {
@@ -187,13 +119,10 @@ const collectDirectVertical = (
       kind: 'vertical',
       key,
       sort: point.station,
-      criterion: point.stationId == null
-        ? stationCriterion(surface, point.station)
-        : stationDefinitionLabel(
-            descriptors.find((descriptor) => descriptor.id === point.stationId)?.definition ??
-              (surface.designFixed?.stations ?? surface.stations)[Math.max(0, point.station)]?.definition ??
-              { kind: 'block-adaptive', label: 'Adaptive midpoint' }
-          ),
+      criterion: stationDefinitionLabel(
+        descriptors.find((descriptor) => descriptor.id === point.stationId)?.definition ??
+        { kind: 'block-adaptive', label: 'Adaptive midpoint' }
+      ),
       design: stage === 'design' ? forces : null,
       nominal: stage === 'nominal' ? forces : null
     })
@@ -240,36 +169,35 @@ export const buildChartTableRows = (input: {
   surface: PreviewSurface | null
   exactDirectionCurve?: ExactDirectionCurve | null
   source: ChartTableSource
-  includeDesign: boolean
-  includeNominal: boolean
+  resistanceStage: 'design' | 'nominal'
   sliceAngleDeg: number
-  includeOpposite: boolean
   fixedP: number
 }): ChartTableRow[] => {
   const { surface } = input
   if (!surface) return []
-  if (!input.includeDesign && !input.includeNominal) return []
+  const designDataset = activeDesignSurfaceDataset(surface)
+  const nominalDataset = activeNominalSurfaceDataset(surface)
+  const includeDesign = input.resistanceStage === 'design'
+  const includeNominal = input.resistanceStage === 'nominal'
 
   if (input.source === 'vertical') {
     const drafts = new Map<string, VerticalDraft>()
     if (input.exactDirectionCurve) {
       const angleDeg = input.exactDirectionCurve.beta * 180 / Math.PI
-      if (input.includeDesign) {
-        collectDirectVertical(
-          surface,
-          input.exactDirectionCurve.designAdaptive,
+      if (includeDesign) {
+        collectVertical(
+          activeDesignDirectionPoints(input.exactDirectionCurve),
           angleDeg,
           input.exactDirectionCurve.stations,
           'design',
           drafts
         )
       }
-      if (input.includeNominal) {
-        collectDirectVertical(
-          surface,
-          input.exactDirectionCurve.nominalFixed,
+      if (includeNominal) {
+        collectVertical(
+          activeNominalDirectionPoints(input.exactDirectionCurve),
           angleDeg,
-          surface.nominalFixed?.stations ?? surface.stations,
+          input.exactDirectionCurve.nominalStations ?? nominalDataset.stations,
           'nominal',
           drafts
         )
@@ -281,26 +209,24 @@ export const buildChartTableRows = (input: {
           key: row.key,
           index: index + 1,
           criterion: row.criterion,
-          design: input.includeDesign ? row.design : null,
-          nominal: input.includeNominal ? row.nominal : null
+          design: includeDesign ? row.design : null,
+          nominal: includeNominal ? row.nominal : null
         }))
     }
-    if (input.includeDesign) {
+    if (includeDesign) {
       collectVertical(
-        surface,
-        surface.designFixed?.points ?? surface.points,
+        designDataset.points,
         input.sliceAngleDeg,
-        input.includeOpposite,
+        designDataset.stations,
         'design',
         drafts
       )
     }
-    if (input.includeNominal) {
+    if (includeNominal) {
       collectVertical(
-        surface,
-        surface.nominalFixed?.points ?? surface.nominalPoints,
+        nominalDataset.points,
         input.sliceAngleDeg,
-        input.includeOpposite,
+        nominalDataset.stations,
         'nominal',
         drafts
       )
@@ -312,26 +238,26 @@ export const buildChartTableRows = (input: {
         key: row.key,
         index: index + 1,
         criterion: row.criterion,
-        design: input.includeDesign ? row.design : null,
-        nominal: input.includeNominal ? row.nominal : null
+        design: includeDesign ? row.design : null,
+        nominal: includeNominal ? row.nominal : null
       }))
   }
 
   const drafts = new Map<string, FixedPDraft>()
-  if (input.includeDesign) {
+  if (includeDesign) {
     collectFixedP(
-      surface.designFixed?.points ?? surface.points,
+      designDataset.points,
       input.fixedP,
-      surface.designFixed?.triangles ?? surface.triangles,
+      designDataset.triangles,
       'design',
       drafts
     )
   }
-  if (input.includeNominal) {
+  if (includeNominal) {
     collectFixedP(
-      surface.nominalFixed?.points ?? surface.nominalPoints,
+      nominalDataset.points,
       input.fixedP,
-      surface.nominalFixed?.triangles ?? surface.nominalTriangles,
+      nominalDataset.triangles,
       'nominal',
       drafts
     )
@@ -343,8 +269,8 @@ export const buildChartTableRows = (input: {
       key: row.key,
       index: index + 1,
       angleDeg: row.angleDeg,
-      design: input.includeDesign ? row.design : null,
-      nominal: input.includeNominal ? row.nominal : null
+      design: includeDesign ? row.design : null,
+      nominal: includeNominal ? row.nominal : null
     }))
 }
 

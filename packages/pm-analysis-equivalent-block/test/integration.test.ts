@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import test from 'node:test'
 import { checkLoadcaseUtilizationFromSurface, sliceMomentPlane } from '@pm/analysis'
 import {
+  projectedOuterExtents,
   solveProportionalRayCapacity,
   type CapacityEvaluator,
   type NominalBlockEvaluation
@@ -14,6 +15,7 @@ import { createKdsAppendixDesignBasis } from '@pm/design'
 import {
   applyCalculationProfileToMaterials,
   createAnalysisOptionsForProfile,
+  createAdaptiveEquivalentBlockAnalysisOptions,
   createDesignBasisForCalculationProfile,
   createProjectDocument,
   parseProjectDocument,
@@ -33,6 +35,98 @@ import {
   solveEquivalentBlockDemandFromPrepared,
   solveEquivalentBlockDemandsFromPrepared
 } from '../src/index'
+
+const adaptiveBlock = () => {
+  const profileId = 'kds-142020-equivalent-block' as const
+  const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
+  const design = createDesignBasisForCalculationProfile(profileId)
+  const options = createAdaptiveEquivalentBlockAnalysisOptions()
+  if (options.neutralAxisStations.refinement.type !== 'adaptive' || options.directions.refinement.type !== 'adaptive') {
+    throw new Error('Adaptive block preset is invalid.')
+  }
+  options.neutralAxisStations.refinement.maxPasses = 2
+  options.neutralAxisStations.refinement.maxStations = 28
+  options.directions.refinement.maxPasses = 1
+  options.directions.refinement.maxDirections = 24
+  const prepared = prepareBlockAnalysis(
+    profileId,
+    sectionGeometryFromGeometryInput(geometry),
+    geometryInputRebars(geometry),
+    materials,
+    design
+  )
+  return { options, prepared }
+}
+
+test('equivalent-block adaptive rows are independent, closed, and bounded in work', () => {
+  const { options, prepared } = adaptiveBlock()
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+  assert.ok((surface.stationError.minStations ?? 0) >= 14)
+  assert.ok((surface.stationError.maxStations ?? 0) > (surface.stationError.minStations ?? 0))
+  assert.ok(surface.triangles?.length)
+  assert.ok((surface.stationError.evaluations ?? Infinity) < surface.points.length * 10)
+
+  const edges = new Map<string, number>()
+  for (const triangle of surface.triangles ?? []) {
+    for (const [left, right] of [[triangle.a, triangle.b], [triangle.b, triangle.c], [triangle.c, triangle.a]]) {
+      const key = left < right ? `${left}:${right}` : `${right}:${left}`
+      edges.set(key, (edges.get(key) ?? 0) + 1)
+    }
+  }
+  assert.equal([...edges.values()].filter((count) => count === 1).length, 0)
+  assert.equal([...edges.values()].filter((count) => count > 2).length, 0)
+  assert.equal(surface.designFixed?.points, surface.points)
+  assert.equal(surface.nominalFixed?.points, surface.nominalPoints)
+  assert.equal(surface.designSurface?.points, surface.points)
+  assert.equal(surface.nominalSurface?.points, surface.nominalPoints)
+  assert.equal(surface.directionError.probedStationIds.length, surface.stations.length - 2)
+  assert.ok(Number.isNaN(surface.directionError.worstBeta) || (
+    surface.directionError.worstBeta >= 0 && surface.directionError.worstBeta < 2 * Math.PI
+  ))
+})
+
+test('equivalent-block arbitrary direction keeps independently adaptive stations', () => {
+  const { options, prepared } = adaptiveBlock()
+  const curve = buildEquivalentBlockExactDirectionCurveFromPrepared(prepared, options, 17.35 * Math.PI / 180)
+  assert.ok(curve.designAdaptive.length > 14)
+  assert.ok(curve.designAdaptive.some((point) => point.stationId?.startsWith('adaptive-station-')))
+  assert.equal(curve.designAdaptive.length, curve.designFixed.length)
+})
+
+test('adaptive block sampling pins the full-block geometry event and prunes its obsolete parent midpoints', () => {
+  const profileId = 'kds-142020-equivalent-block' as const
+  const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
+  const design = createKdsAppendixDesignBasis()
+  const options = createAdaptiveEquivalentBlockAnalysisOptions()
+  if (options.directions.refinement.type !== 'adaptive') throw new Error('Adaptive directions are required.')
+  options.directions.refinement.maxPasses = 0
+  options.directions.refinement.maxDirections = options.directions.seedCount
+  const prepared = prepareBlockAnalysis(
+    profileId,
+    sectionGeometryFromGeometryInput(geometry),
+    geometryInputRebars(geometry),
+    materials,
+    design
+  )
+  const surface = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  const eventRatio = 1 / prepared.designModel.blockLaw.depthFactor
+  const event = surface.stations.find((station) =>
+    station.type === 'depth-ratio' && Math.abs(station.ratio - eventRatio) <= 1e-12)
+  assert.ok(event, `missing full-block event c/D=${eventRatio}`)
+
+  const extents = projectedOuterExtents(prepared.section, 1, 0)
+  const ratios = surface.points
+    .filter((point) => point.kind === 'state' && point.state?.neutralAxisAngle === 0)
+    .map((point) => point.state!.neutralAxisDepth / extents.depth)
+    .filter((ratio) => ratio >= eventRatio - 1e-12 && ratio < 1.5)
+    .sort((left, right) => left - right)
+  assert.deepEqual(
+    ratios,
+    [eventRatio],
+    `obsolete dyadic midpoints survived above the exact c/D=${eventRatio} event: ${ratios.join(', ')}`
+  )
+  assert.equal(surface.stationRefinementConverged, true)
+})
 
 const geometry: GeometryInput = {
   id: 1,
@@ -72,6 +166,11 @@ const assertCardinalSlicesHaveNoCapToTensionChord = (
   assert.ok(
     syntheticCapPoints.every((point) => point.station === -1 && point.stationId === null),
     `${label}: axial-cap points must not masquerade as physical strain stations`
+  )
+  assert.ok(
+    syntheticCapPoints.some((point) => point.onSampledDirection === true) &&
+    syntheticCapPoints.some((point) => point.onSampledDirection === false),
+    `${label}: cap boundary meridians and internal face vertices must remain distinguishable`
   )
   const capP = syntheticCapPoints[0].P
   const tensionP = Math.min(...surface.points.map((point) => point.P))
@@ -317,6 +416,14 @@ test('an exact equivalent-block direction uses only fixed stations on the reques
     curve.nominalFixed.map((point) => point.stationId ?? point.surfaceRole ?? point.id).join(', ')
   )
   assert.ok(curve.designFixed.some((point) => point.surfaceRole === 'axial-cap'))
+  assert.equal(
+    curve.designFixed.filter((point) => point.surfaceRole === 'axial-cap').length,
+    1,
+    'an exact meridian must contain its one cap crossing, not internal vertices of the cap face'
+  )
+  assert.ok(curve.designFixed.every((point) =>
+    point.surfaceRole !== 'axial-cap' || point.onSampledDirection === true
+  ))
   assert.ok(curve.designFixed.every((point) => point.stationId?.startsWith('adaptive-') !== true))
   assert.equal(curve.stations.filter((station) => station.fixed).length, UNIFIED_STATION_COUNT)
   assert.deepEqual(curve.designAdaptive, curve.designFixed)

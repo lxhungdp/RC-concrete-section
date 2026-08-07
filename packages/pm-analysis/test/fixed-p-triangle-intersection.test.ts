@@ -86,3 +86,76 @@ test('reversing the axial order on a triangle edge does not change its plane int
 test('a fixed-P level outside the triangle mesh returns no contour vertices', () => {
   assert.deepEqual(sliceFixedPContour(points, 100, topology), [])
 })
+
+test('a plane coincident with an axial cap keeps only cap-boundary meridians sampled', () => {
+  const cap0 = {
+    ...point('cap-0', 0, -1, 10, 100, 0),
+    surfaceRole: 'axial-cap' as const,
+    onSampledDirection: true
+  }
+  const cap90 = {
+    ...point('cap-90', Math.PI / 2, -1, 10, 0, 100),
+    surfaceRole: 'axial-cap' as const,
+    onSampledDirection: true
+  }
+  const internal = {
+    ...point('cap-internal', 0, -1, 10, 50, 50),
+    surfaceRole: 'axial-cap' as const,
+    onSampledDirection: false
+  }
+  const contour = sliceFixedPContour(
+    [cap0, cap90, internal],
+    10,
+    [{ a: 0, b: 1, c: 2 }]
+  )
+
+  assert.equal(contour.length, 3)
+  assert.equal(contourStrainAngleSamples(contour).length, 2)
+  assert.equal(contour.filter((item) => !item.onSampledDirection).length, 1)
+})
+
+test('a cap-boundary edge remains a sampled meridian immediately below Pmax', () => {
+  const cap0 = {
+    ...point('cap-0', 0, -1, 10, 100, 0),
+    surfaceRole: 'axial-cap' as const,
+    onSampledDirection: true
+  }
+  const cap90 = {
+    ...point('cap-90', Math.PI / 2, -1, 10, 0, 100),
+    surfaceRole: 'axial-cap' as const,
+    onSampledDirection: true
+  }
+  const low0 = point('low-0', 0, 1, 8, 120, 0)
+  const low90 = point('low-90', Math.PI / 2, 1, 8, 0, 120)
+  const contour = sliceFixedPContour(
+    [cap0, cap90, low0, low90],
+    9,
+    [{ a: 0, b: 1, c: 3 }, { a: 0, b: 3, c: 2 }]
+  )
+  const sampled = contourStrainAngleSamples(contour)
+
+  assert.equal(sampled.length, 2)
+  assert.ok(sampled.some((item) => item.beta === 0 && item.Mx === 110 && item.My === 0))
+  assert.ok(sampled.some((item) => item.beta === Math.PI / 2 && item.Mx === 0 && item.My === 110))
+})
+
+test('a shared axial pole contributes one correctly labelled intersection to every meridian', () => {
+  const pole = { ...point('pole', 0, 0, 10, 0, 0), surfaceRole: 'pure-compression' as const }
+  const rows = [
+    point('row-0', 0, 1, 0, 4, 0),
+    point('row-120', 2 * Math.PI / 3, 1, 0, -2, 3.464),
+    point('row-240', 4 * Math.PI / 3, 1, 0, -2, -3.464)
+  ]
+  const points = [pole, ...rows]
+  const contour = sliceFixedPContour(points, 9, [
+    { a: 0, b: 1, c: 2 },
+    { a: 0, b: 2, c: 3 },
+    { a: 0, b: 3, c: 1 }
+  ])
+  const sampled = contourStrainAngleSamples(contour)
+  assert.equal(sampled.length, 3)
+  assert.deepEqual(
+    sampled.map((entry) => Number(entry.beta.toFixed(12))),
+    rows.map((entry) => Number(entry.beta.toFixed(12)))
+  )
+})

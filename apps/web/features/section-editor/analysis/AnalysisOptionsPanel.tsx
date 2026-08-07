@@ -3,10 +3,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus, RotateCcw, X } from 'lucide-react'
 import {
-  ADAPTIVE_INTERPOLATION_TOLERANCE,
-  ADAPTIVE_MAX_DIRECTIONS,
-  ADAPTIVE_MAX_PASSES,
-  ADAPTIVE_MAX_STATIONS,
   FIXED_DIRECTION_COUNT,
   MAX_BLOCK_STATIONS,
   MAX_MESH_CELLS,
@@ -16,6 +12,8 @@ import {
   MAX_SEED_DIRECTIONS,
   MAX_INTERMEDIATE_STATIONS,
   analysisStationCount,
+  createAdaptiveAnalysisOptions,
+  createAdaptiveEquivalentBlockAnalysisOptions,
   createDefaultAnalysisOptions,
   createDefaultEquivalentBlockAnalysisOptions,
   type AnalysisOptions,
@@ -229,8 +227,10 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
         <button
           type="button"
           className="pm-table-icon-btn"
-          title="Reset the unified 27-station / 36-direction fixed profile"
-          onClick={() => onChange(createDefaultAnalysisOptions())}
+          title="Reset the selected sampling mode"
+          onClick={() => onChange(options.samplingMode === 'adaptive'
+            ? { ...createAdaptiveAnalysisOptions(), mesh: structuredClone(options.mesh) }
+            : { ...createDefaultAnalysisOptions(), mesh: structuredClone(options.mesh) })}
         >
           <RotateCcw size={14} />
         </button>
@@ -238,6 +238,22 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
 
       {view === 'points' && (
         <>
+      <label className="pm-field">
+        <span>Sampling mode</span>
+        <select
+          value={options.samplingMode}
+          onChange={(event) => {
+            const next = event.target.value === 'adaptive'
+              ? createAdaptiveAnalysisOptions()
+              : createDefaultAnalysisOptions()
+            next.mesh = structuredClone(options.mesh)
+            onChange(next)
+          }}
+        >
+          <option value="fixed">Fixed grid · 27 stations × 36 directions</option>
+          <option value="adaptive">Independent adaptive · 12 seeds + 2 poles × 12 directions</option>
+        </select>
+      </label>
       <div className="pm-result-status-list">
         <span>Reporting points</span>
         <strong>{stationCount}</strong>
@@ -367,28 +383,10 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
         εₛ/εy = tensile strain magnitude of that bar normalized by its own yield strain
       </p>
 
-      <label className="pm-field">
-        <span>Station refinement</span>
-        <select
-          value={options.stations.refinement.type}
-          onChange={(event) =>
-            commit((draft) => {
-              draft.stations.refinement =
-                event.target.value === 'adaptive'
-                  ? {
-                      type: 'adaptive',
-                      tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
-                      maxPasses: ADAPTIVE_MAX_PASSES,
-                      maxStations: Math.max(ADAPTIVE_MAX_STATIONS, stationCount)
-                    }
-                  : { type: 'fixed' }
-            })
-          }
-        >
-          <option value="fixed">Fixed 27-point schedule only</option>
-          <option value="adaptive">Adaptive design interpolation</option>
-        </select>
-      </label>
+      <div className="pm-result-status-list">
+        <span>Station behavior</span>
+        <strong>{options.samplingMode === 'adaptive' ? 'Independent per meridian' : 'Fixed points only'}</strong>
+      </div>
 
       {options.stations.refinement.type === 'adaptive' && (
         <>
@@ -435,7 +433,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
             />
           </label>
           <p className="pm-field-note">
-            Adaptive stations refine the design-resistance curve only; nominal and visual grids remain fixed.
+            Every meridian is refined and cached independently. Accepted points participate fully in the surface and ULS checks.
           </p>
         </>
       )}
@@ -566,29 +564,10 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
         </>
       )}
 
-      <label className="pm-field">
-        <span>Refinement</span>
-        <select
-          value={options.directions.refinement.type}
-          onChange={(event) =>
-            commit((draft) => {
-              draft.directions.refinement =
-                event.target.value === 'adaptive'
-                  ? {
-                      type: 'adaptive',
-                      tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
-                      maxPasses: ADAPTIVE_MAX_PASSES,
-                      maxDirections: Math.min(MAX_REFINED_DIRECTIONS, Math.max(seedCount, ADAPTIVE_MAX_DIRECTIONS)),
-                      probe: 'all'
-                    }
-                  : { type: 'fixed', probe: 'all' }
-            })
-          }
-        >
-          <option value="fixed">Fixed seed grid</option>
-          <option value="adaptive">Adaptive midpoint</option>
-        </select>
-      </label>
+      <div className="pm-result-status-list">
+        <span>Direction behavior</span>
+        <strong>{options.samplingMode === 'adaptive' ? 'Adaptive midpoint meridians' : 'Fixed directions only'}</strong>
+      </div>
 
       {options.directions.refinement.type === 'adaptive' && (
         <>
@@ -778,8 +757,10 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
         <button
           type="button"
           className="pm-table-icon-btn"
-          title="Reset the unified 27-station / 36-direction fixed profile"
-          onClick={() => onChange(createDefaultEquivalentBlockAnalysisOptions())}
+          title="Reset the selected sampling mode"
+          onClick={() => onChange(options.samplingMode === 'adaptive'
+            ? createAdaptiveEquivalentBlockAnalysisOptions()
+            : createDefaultEquivalentBlockAnalysisOptions())}
         >
           <RotateCcw size={14} />
         </button>
@@ -794,6 +775,18 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
         </div>
       ) : (
         <>
+          <label className="pm-field">
+            <span>Sampling mode</span>
+            <select
+              value={options.samplingMode}
+              onChange={(event) => onChange(event.target.value === 'adaptive'
+                ? createAdaptiveEquivalentBlockAnalysisOptions()
+                : createDefaultEquivalentBlockAnalysisOptions())}
+            >
+              <option value="fixed">Fixed grid · 27 stations × 36 directions</option>
+              <option value="adaptive">Independent adaptive · 12 seeds + 2 poles × 12 directions</option>
+            </select>
+          </label>
           <div className="pm-result-status-list">
             <span>Baseline stations</span><strong>{stationCount}</strong>
             <span>Maximum stations</span><strong>{stationMaximum}</strong>
@@ -822,25 +815,10 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
               })}
             />
           </label>
-          <label className="pm-field">
-            <span>Station refinement</span>
-            <select
-              value={options.neutralAxisStations.refinement.type}
-              onChange={(event) => commit((draft) => {
-                draft.neutralAxisStations.refinement = event.target.value === 'adaptive'
-                  ? {
-                      type: 'adaptive',
-                      tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
-                      maxPasses: ADAPTIVE_MAX_PASSES,
-                      maxStations: Math.max(ADAPTIVE_MAX_STATIONS, stationCount)
-                    }
-                  : { type: 'fixed' }
-              })}
-            >
-              <option value="fixed">Fixed stations</option>
-              <option value="adaptive">Adaptive interpolation error</option>
-            </select>
-          </label>
+          <div className="pm-result-status-list">
+            <span>Station behavior</span>
+            <strong>{options.samplingMode === 'adaptive' ? 'Independent per meridian' : 'Fixed points only'}</strong>
+          </div>
           {options.neutralAxisStations.refinement.type === 'adaptive' && (
             <>
               <label className="pm-field"><span>Station tolerance</span><NumericInput min={1e-6} max={0.25} step={0.001} value={options.neutralAxisStations.refinement.tolerance} onCommit={(value) => commit((draft) => {
@@ -861,22 +839,10 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
             if (draft.directions.refinement.type === 'adaptive') draft.directions.refinement.maxDirections = Math.max(value, draft.directions.refinement.maxDirections)
           })} /></label>
           <label className="pm-field"><span>Start angle (deg)</span><NumericInput min={0} max={359.999999} value={options.directions.startDeg} onCommit={(value) => commit((draft) => { draft.directions.startDeg = value })} /></label>
-          <label className="pm-field">
-            <span>Direction refinement</span>
-            <select value={options.directions.refinement.type} onChange={(event) => commit((draft) => {
-              draft.directions.refinement = event.target.value === 'adaptive'
-                ? {
-                    type: 'adaptive',
-                    tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
-                    maxPasses: ADAPTIVE_MAX_PASSES,
-                    maxDirections: Math.max(ADAPTIVE_MAX_DIRECTIONS, options.directions.seedCount)
-                  }
-                : { type: 'fixed' }
-            })}>
-              <option value="fixed">Fixed directions</option>
-              <option value="adaptive">Adaptive midpoint</option>
-            </select>
-          </label>
+          <div className="pm-result-status-list">
+            <span>Direction behavior</span>
+            <strong>{options.samplingMode === 'adaptive' ? 'Adaptive midpoint meridians' : 'Fixed directions only'}</strong>
+          </div>
           {options.directions.refinement.type === 'adaptive' && (
             <>
               <label className="pm-field"><span>Direction tolerance</span><NumericInput min={1e-6} max={0.25} step={0.001} value={options.directions.refinement.tolerance} onCommit={(value) => commit((draft) => {

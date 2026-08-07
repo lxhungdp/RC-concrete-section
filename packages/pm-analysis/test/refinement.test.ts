@@ -6,7 +6,13 @@
 import { strict as assert } from 'node:assert'
 import test from 'node:test'
 import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
-import { createDefaultAnalysisOptions, UNIFIED_STATION_COUNT, type AnalysisOptions } from '@pm/project'
+import {
+  ADAPTIVE_INITIAL_STATION_COUNT,
+  createAdaptiveAnalysisOptions,
+  createDefaultAnalysisOptions,
+  UNIFIED_STATION_COUNT,
+  type AnalysisOptions
+} from '@pm/project'
 import {
   buildPreviewSurfaceFromPrepared,
   intersectFixedPContourWithMomentRay,
@@ -26,9 +32,20 @@ const optionsWithRefinement = (
   refinement: AnalysisOptions['directions']['refinement']
 ): AnalysisOptions => {
   const options = createDefaultAnalysisOptions()
-  // Direction tests isolate the angular algorithm; station refinement has its own production test.
-  options.stations.refinement = { type: 'fixed' }
   options.directions.refinement = refinement
+  return options
+}
+
+const adaptiveOptions = (directionPasses: number, maxDirections: number, tolerance = 7.5e-3) => {
+  const options = createAdaptiveAnalysisOptions()
+  if (options.stations.refinement.type !== 'adaptive' || options.directions.refinement.type !== 'adaptive') {
+    throw new Error('Adaptive preset is invalid.')
+  }
+  options.stations.refinement.maxPasses = 2
+  options.stations.refinement.maxStations = 30
+  options.directions.refinement.tolerance = tolerance
+  options.directions.refinement.maxPasses = directionPasses
+  options.directions.refinement.maxDirections = maxDirections
   return options
 }
 
@@ -64,23 +81,8 @@ test('switching the probe off costs nothing and reports unknown, never zero', ()
 })
 
 test('refinement adds directions and lowers the measured error', () => {
-  const coarse = buildPreviewSurfaceFromPrepared(prepared, optionsWithRefinement({
-    type: 'adaptive',
-    tolerance: 5e-3,
-    maxPasses: 0,
-    maxDirections: 36,
-    probe: { stationIds: [5, 10, 14, 16] }
-  }))
-  const fine = buildPreviewSurfaceFromPrepared(
-    prepared,
-    optionsWithRefinement({
-      type: 'adaptive',
-      tolerance: 5e-3,
-      maxPasses: 3,
-      maxDirections: 192,
-      probe: { stationIds: [5, 10, 14, 16] }
-    })
-  )
+  const coarse = buildPreviewSurfaceFromPrepared(prepared, adaptiveOptions(0, 12))
+  const fine = buildPreviewSurfaceFromPrepared(prepared, adaptiveOptions(2, 48))
 
   assert.ok(fine.directionError.directions > coarse.directionError.directions)
   assert.ok(fine.directionError.refinementPasses > 0)
@@ -88,23 +90,17 @@ test('refinement adds directions and lowers the measured error', () => {
     fine.directionError.maxRelativeMoment < coarse.directionError.maxRelativeMoment,
     `${fine.directionError.maxRelativeMoment} should be below ${coarse.directionError.maxRelativeMoment}`
   )
-  // Every direction still carries the full station schedule.
-  assert.equal(fine.points.length, fine.directionError.directions * UNIFIED_STATION_COUNT)
   const perDirection = new Map<number, number>()
   for (const point of fine.points) perDirection.set(point.beta, (perDirection.get(point.beta) ?? 0) + 1)
-  assert.ok([...perDirection.values()].every((count) => count === UNIFIED_STATION_COUNT))
+  assert.ok([...perDirection.values()].every((count) => count >= ADAPTIVE_INITIAL_STATION_COUNT))
+  assert.ok(new Set(perDirection.values()).size > 1, 'independent meridians should be allowed to retain different station counts')
+  assert.ok((fine.triangles?.length ?? 0) > fine.points.length, 'adaptive surface must carry explicit topology')
 })
 
 test('the direction cap is respected and reported as not converged', () => {
   const capped = buildPreviewSurfaceFromPrepared(
     prepared,
-    optionsWithRefinement({
-      type: 'adaptive',
-      tolerance: 1e-9,
-      maxPasses: 10,
-      maxDirections: 60,
-      probe: { stationIds: [5, 10, 14, 16] }
-    })
+    adaptiveOptions(10, 60, 1e-9)
   )
   assert.ok(capped.directionError.directions <= 60)
   assert.equal(capped.directionError.withinTolerance, false)
@@ -118,22 +114,16 @@ test('the coarse grid under-estimates capacity, so refinement may only raise it'
   const P = 24942.922102452183e3
   const theta = Math.atan2(1431.7807276950741e6, 3714.165943842699e6)
   const capacity = (surface: ReturnType<typeof buildPreviewSurfaceFromPrepared>) =>
-    intersectFixedPContourWithMomentRay(sliceFixedPContour(surface.points, P), theta)?.M ?? Number.NaN
+    intersectFixedPContourWithMomentRay(sliceFixedPContour(surface.points, P, surface.triangles), theta)?.M ?? Number.NaN
 
   const coarse = capacity(buildPreviewSurfaceFromPrepared(
     prepared,
-    optionsWithRefinement({ type: 'fixed', probe: 'all' })
+    createDefaultAnalysisOptions()
   ))
   const fine = capacity(
     buildPreviewSurfaceFromPrepared(
       prepared,
-      optionsWithRefinement({
-        type: 'adaptive',
-        tolerance: 2e-3,
-        maxPasses: 3,
-        maxDirections: 192,
-        probe: { stationIds: [5, 10, 14, 16] }
-      })
+      adaptiveOptions(2, 48, 2e-3)
     )
   )
 

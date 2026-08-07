@@ -1,4 +1,7 @@
 import {
+  ADAPTIVE_DEPTH_RATIOS,
+  ADAPTIVE_STATION_SCHEDULE,
+  ADAPTIVE_STEEL_STRAIN_YIELD_RATIOS,
   UNIFIED_DEPTH_RATIOS,
   UNIFIED_STATION_SCHEDULE,
   UNIFIED_STEEL_STRAIN_YIELD_RATIOS
@@ -25,7 +28,8 @@ export const MAX_BLOCK_STATIONS = 198
 
 /** Production direction count plus limits retained for explicit nondefault audit refinement. */
 export const FIXED_DIRECTION_COUNT = 36
-export const ADAPTIVE_INTERPOLATION_TOLERANCE = 0.0075
+export const ADAPTIVE_SEED_DIRECTION_COUNT = 12
+export const ADAPTIVE_INTERPOLATION_TOLERANCE = 0.01
 // These adaptive ceilings are not used by the fixed production defaults.
 export const ADAPTIVE_MAX_PASSES = 8
 export const ADAPTIVE_MAX_STATIONS = 48
@@ -84,9 +88,11 @@ export type AnalysisMeshOptions = {
 export type AnalysisOptions = {
   optionsVersion: typeof ANALYSIS_OPTIONS_VERSION
   methodId: typeof STRAIN_DOMAIN_SURFACE_METHOD
+  /** Fixed and adaptive are complete, mutually-exclusive surface calculations. */
+  samplingMode: 'fixed' | 'adaptive'
   stations: {
     /** Informational origin of the resolved list; the list below remains authoritative. */
-    basedOn: typeof UNIFIED_STATION_SCHEDULE | 'custom'
+    basedOn: typeof UNIFIED_STATION_SCHEDULE | typeof ADAPTIVE_STATION_SCHEDULE | 'custom'
     intermediate: AnalysisStation[]
     refinement: StationRefinement
   }
@@ -112,8 +118,9 @@ export type EquivalentBlockStation =
 export type EquivalentBlockAnalysisOptions = {
   optionsVersion: typeof ANALYSIS_OPTIONS_VERSION
   methodId: typeof EQUIVALENT_BLOCK_SURFACE_METHOD
+  samplingMode: 'fixed' | 'adaptive'
   neutralAxisStations: {
-    basedOn: typeof UNIFIED_STATION_SCHEDULE | 'custom'
+    basedOn: typeof UNIFIED_STATION_SCHEDULE | typeof ADAPTIVE_STATION_SCHEDULE | 'custom'
     values: EquivalentBlockStation[]
     refinement: StationRefinement
   }
@@ -143,6 +150,7 @@ const station = (id: number, label: string, criterion: AnalysisStationCriterion)
 export const createDefaultAnalysisOptions = (): AnalysisOptions => ({
   optionsVersion: ANALYSIS_OPTIONS_VERSION,
   methodId: STRAIN_DOMAIN_SURFACE_METHOD,
+  samplingMode: 'fixed',
   stations: {
     basedOn: UNIFIED_STATION_SCHEDULE,
     intermediate: [
@@ -174,6 +182,7 @@ export const createDefaultAnalysisOptions = (): AnalysisOptions => ({
 export const createDefaultEquivalentBlockAnalysisOptions = (): EquivalentBlockAnalysisOptions => ({
   optionsVersion: ANALYSIS_OPTIONS_VERSION,
   methodId: EQUIVALENT_BLOCK_SURFACE_METHOD,
+  samplingMode: 'fixed',
   neutralAxisStations: {
     basedOn: UNIFIED_STATION_SCHEDULE,
     values: [
@@ -191,6 +200,80 @@ export const createDefaultEquivalentBlockAnalysisOptions = (): EquivalentBlockAn
     refinement: { type: 'fixed' }
   }
 })
+
+/** Sparse seeds plus fully-independent station and direction refinement. */
+export const createAdaptiveAnalysisOptions = (): AnalysisOptions => {
+  const defaults = createDefaultAnalysisOptions()
+  return {
+    ...defaults,
+    samplingMode: 'adaptive',
+    stations: {
+      basedOn: ADAPTIVE_STATION_SCHEDULE,
+      intermediate: [
+        ...ADAPTIVE_DEPTH_RATIOS.map((ratio, index) =>
+          station(index + 1, `c/D = ${ratio}`, { type: 'depth-ratio', ratio })
+        ),
+        ...ADAPTIVE_STEEL_STRAIN_YIELD_RATIOS.map((ratio, index) =>
+          station(
+            ADAPTIVE_DEPTH_RATIOS.length + index + 1,
+            `eps_s/eps_y = ${ratio}`,
+            { type: 'bar-tension-yield-ratio', ratio }
+          )
+        )
+      ],
+      refinement: {
+        type: 'adaptive',
+        tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
+        maxPasses: ADAPTIVE_MAX_PASSES,
+        maxStations: ADAPTIVE_MAX_STATIONS
+      }
+    },
+    directions: {
+      seed: { type: 'uniform', count: ADAPTIVE_SEED_DIRECTION_COUNT, startDeg: 0 },
+      refinement: {
+        type: 'adaptive',
+        tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
+        maxPasses: ADAPTIVE_MAX_PASSES,
+        maxDirections: ADAPTIVE_MAX_DIRECTIONS,
+        probe: 'all'
+      }
+    }
+  }
+}
+
+export const createAdaptiveEquivalentBlockAnalysisOptions = (): EquivalentBlockAnalysisOptions => {
+  const defaults = createDefaultEquivalentBlockAnalysisOptions()
+  return {
+    ...defaults,
+    samplingMode: 'adaptive',
+    neutralAxisStations: {
+      basedOn: ADAPTIVE_STATION_SCHEDULE,
+      values: [
+        ...ADAPTIVE_DEPTH_RATIOS.map((ratio) => ({ type: 'depth-ratio' as const, ratio })),
+        ...ADAPTIVE_STEEL_STRAIN_YIELD_RATIOS.map((ratio) => ({
+          type: 'bar-tension-yield-ratio' as const,
+          ratio
+        }))
+      ],
+      refinement: {
+        type: 'adaptive',
+        tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
+        maxPasses: ADAPTIVE_MAX_PASSES,
+        maxStations: ADAPTIVE_MAX_STATIONS
+      }
+    },
+    directions: {
+      seedCount: ADAPTIVE_SEED_DIRECTION_COUNT,
+      startDeg: 0,
+      refinement: {
+        type: 'adaptive',
+        tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
+        maxPasses: ADAPTIVE_MAX_PASSES,
+        maxDirections: ADAPTIVE_MAX_DIRECTIONS
+      }
+    }
+  }
+}
 
 export const cloneAnalysisOptions = (options: AnalysisOptions): AnalysisOptions =>
   JSON.parse(JSON.stringify(options)) as AnalysisOptions

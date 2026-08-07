@@ -22,7 +22,7 @@ import {
   buildPreviewSurface,
   buildPreviewSurfaceFromPrepared,
   prepareAnalysis,
-  sliceFixedDesignPContour,
+  sliceActiveDesignPContour,
   sliceFixedPContour
 } from '../src/index'
 import { referenceProjectDocument } from './fixtures/reference-case'
@@ -36,6 +36,7 @@ const prepared = prepareAnalysis(section, rebars, materials)
 const explicitOptions = (): AnalysisOptions => ({
   optionsVersion: 1,
   methodId: 'strain-domain-surface-v1',
+  samplingMode: 'fixed',
   stations: {
     basedOn: 'custom',
     refinement: { type: 'fixed' },
@@ -88,7 +89,7 @@ test('the canonical default uses the fixed 27-by-36 production grid without prob
   )
 })
 
-test('the production Fixed-P helper ignores adaptive Design vertices', () => {
+test('the Fixed-P helper cuts the active Design surface', () => {
   const surface = buildDesignPreviewSurfaceFromPrepared(
     prepared,
     materials,
@@ -101,7 +102,7 @@ test('the production Fixed-P helper ignores adaptive Design vertices', () => {
     0,
     surface.designFixed!.triangles
   )
-  const actual = sliceFixedDesignPContour({ ...surface, points: [] }, 0)
+  const actual = sliceActiveDesignPContour({ ...surface, points: [] }, 0)
   assert.ok(actual.length > 0)
   assert.deepEqual(actual, expected)
 })
@@ -198,7 +199,7 @@ test('an explicit nonuniform grid and custom schedule flow through the engine un
   assert.notEqual(surface.analysisOptions, options, 'results must own a snapshot, not mutable UI state')
 })
 
-test('adaptive refinement retains every custom seed direction and uses the custom station count', () => {
+test('station and direction refinement cannot be mixed inside one surface run', () => {
   const options = explicitOptions()
   options.directions.refinement = {
     type: 'adaptive',
@@ -207,14 +208,10 @@ test('adaptive refinement retains every custom seed direction and uses the custo
     maxDirections: 10,
     probe: 'all'
   }
-  const surface = buildPreviewSurfaceFromPrepared(prepared, options)
-  const degrees = surface.directions.map((beta) => Number(((beta * 180) / Math.PI).toFixed(12)))
-
-  for (const seed of [5, 20, 75, 160, 250]) assert.ok(degrees.includes(seed), `lost seed direction ${seed}°`)
-  assert.ok(surface.directions.length > 5)
-  assert.ok(surface.directions.length <= 10)
-  assert.equal(surface.points.length, surface.directions.length * 5)
-  assert.equal(surface.directionError.probedStationIds.length, 3)
+  assert.throws(
+    () => buildPreviewSurfaceFromPrepared(prepared, options),
+    (error: unknown) => error instanceof AnalysisInputError && error.code === 'INVALID_ANALYSIS_OPTIONS'
+  )
 })
 
 test('fₛ/fyd is inverted against the compiled nonlinear steel law, not approximated as f/E', () => {

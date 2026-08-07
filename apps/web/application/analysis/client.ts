@@ -8,7 +8,7 @@ import {
   checkLoadcasesUtilizationFromSurface,
   codeAdjustedDemandOfCheck,
   prepareAnalysis,
-  sliceFixedDesignPContour,
+  sliceActiveDesignPContour,
   solveInversePreviewFromPrepared,
   type InversePreviewResult,
   type ExactDirectionCurve,
@@ -274,7 +274,7 @@ export const checkLoadcaseAsync = (
           payload.loadcase
         )
       }
-      const contour = sliceFixedDesignPContour(payload.surface, payload.loadcase.P)
+      const contour = sliceActiveDesignPContour(payload.surface, payload.loadcase.P)
       const designCheck = checkLoadcaseUtilizationFromSurface(payload.surface, payload.loadcase)
       const inverse = solveInversePreviewFromPrepared(
         fallbackPreparedFor({ ...payload, analysisOptions: payload.surface.analysisOptions }),

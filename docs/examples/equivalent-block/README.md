@@ -22,7 +22,7 @@ rules differ.
 - Every bar has an exact area of 400 mm²; its stored diameter is
   `sqrt(4 × 400 / pi) = 22.5675833419 mm`.
 - Equivalent-block production sampling: shared `unified-27-v2` 27 fixed stations, 36 fixed
-  directions, and Design-only adaptive station/direction tolerance of 0.75%.
+  directions, plus the optional independent adaptive mode with 1% station/direction tolerance.
 - Each project includes three factored ULS audit loads generated from evaluated design states:
   one oblique neutral-axis ray and two cardinal neutral-axis rays at 0° and 90°.
 - Resultants use the shared project convention `Mx = ΣF(y-yc)`, `My = ΣF(x-xc)`. The audit-load

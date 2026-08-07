@@ -11,6 +11,10 @@ import {
   type LoadCombination
 } from '@pm/project'
 import {
+  activeDesignDirectionPoints,
+  activeDesignSurfaceDataset,
+  activeNominalDirectionPoints,
+  activeNominalSurfaceDataset,
   contourStrainAngleSamples,
   sliceFixedPContour,
   strainGradientDirection,
@@ -52,6 +56,7 @@ import {
   strainDirectionToNeutralAxisAngleDeg
 } from './section-field-angles'
 import {
+  buildDirectMeridianSection,
   buildClosedSurfaceTriangles,
   isMeridianOrParallelEdge,
   triangulatePlanarPolygon
@@ -258,7 +263,10 @@ const fieldColorscale: Array<[number, string]> = [
 
 const groupByBeta = (points: PreviewSurfacePoint[]) => {
   const groups = new Map<number, PreviewSurfacePoint[]>()
-  for (const point of points) groups.set(point.beta, [...(groups.get(point.beta) ?? []), point])
+  for (const point of points) {
+    if (point.onSampledDirection === false) continue
+    groups.set(point.beta, [...(groups.get(point.beta) ?? []), point])
+  }
   return [...groups.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([beta, curve]) => ({
@@ -284,21 +292,6 @@ const solverStatus = (result: InversePreviewResult) => {
 
 const loadcaseAngleDeg = (loadcase: LoadCombination) =>
   normalizeAngleDeg((Math.atan2(loadcase.My, loadcase.Mx) * 180) / Math.PI)
-
-const pickBetaCurve = (rows: ReturnType<typeof groupByBeta>, angleDeg: number) => {
-  if (rows.length === 0) return []
-  const target = (normalizeAngleDeg(angleDeg) * Math.PI) / 180
-  let best = rows[0]
-  for (let i = 1; i < rows.length; i++) {
-    const current = rows[i]
-    const delta = Math.abs(current.beta - target)
-    const wrap = Math.min(delta, Math.abs(delta - 2 * Math.PI))
-    const bestDelta = Math.abs(best.beta - target)
-    const bestWrap = Math.min(bestDelta, Math.abs(bestDelta - 2 * Math.PI))
-    if (wrap < bestWrap) best = current
-  }
-  return best.curve
-}
 
 /**
  * Says plainly that the plots below are the previous surface.
@@ -440,6 +433,15 @@ export function ResultsWorkspace({
     return () => exactController.current?.abort()
   }, [onExactDirectionCurveChange, surface])
 
+  const designDataset = useMemo(
+    () => surface ? activeDesignSurfaceDataset(surface) : null,
+    [surface]
+  )
+  const nominalDataset = useMemo(
+    () => surface ? activeNominalSurfaceDataset(surface) : null,
+    [surface]
+  )
+
   const activeFixedP = isLoadcaseMode ? selectedLoadcase.P : fixedP
   const activeAngle = isLoadcaseMode
     ? equilibriumBeta == null ? loadcaseAngleDeg(selectedLoadcase) : equilibriumBeta * 180 / Math.PI
@@ -472,11 +474,9 @@ export function ResultsWorkspace({
   const maxPKn = surface ? kn(surface.bounds.P[1]) : 0
   const surfaceDirectionAnglesDeg = useMemo(
     () => (surface
-      ? uniqueSurfaceDirectionAnglesDeg(
-          surface.designFixed?.directions ?? surface.points.map((point) => point.beta)
-        )
+      ? uniqueSurfaceDirectionAnglesDeg(designDataset?.directions ?? surface.directions)
       : []),
-    [surface]
+    [designDataset, surface]
   )
   const angleSliderStep = directionAngleStepDeg(surfaceDirectionAnglesDeg)
   const angleSliderMax = sliceAngleMax(view, surfaceDirectionAnglesDeg, angleSliderStep)
@@ -504,7 +504,7 @@ export function ResultsWorkspace({
     if (fixedAngle !== undefined) {
       setSliceAngle(fixedAngle)
       setExactAngleDraft(String(Number(fixedAngle.toFixed(6))))
-      setExactCurveMessage(`Fixed β · ${surface.designFixed?.stations.length ?? surface.stations.length} stations`)
+      setExactCurveMessage(`${surface.analysisOptions.samplingMode === 'adaptive' ? 'Adaptive' : 'Fixed'} β · ${surface.stationError.maxStations ?? surface.stationError.stations} stations`)
       return
     }
     const beta = normalizedDegrees * Math.PI / 180
@@ -527,7 +527,7 @@ export function ResultsWorkspace({
         if (exactRequestId.current !== requestId) return
         onExactDirectionCurveChange(curve)
         setExactAngleDraft(String(Number((curve.beta * 180 / Math.PI).toFixed(6))))
-        setExactCurveMessage(`Exact β · ${curve.stationError.fixedStations} fixed stations`)
+        setExactCurveMessage(`Exact β · ${activeDesignDirectionPoints(curve).length} ${surface.analysisOptions.samplingMode === 'adaptive' ? 'adaptive' : 'fixed'} stations`)
       })
       .catch((error) => {
         if (exactRequestId.current === requestId && !isAnalysisAbort(error)) {
@@ -559,27 +559,27 @@ export function ResultsWorkspace({
   }
 
   const contour = useMemo(
-    () => (surface ? sliceFixedPContour(
-      surface.designFixed?.points ?? surface.points,
+    () => (designDataset ? sliceFixedPContour(
+      designDataset.points,
       activeFixedP,
-      surface.designFixed?.triangles ?? surface.triangles
+      designDataset.triangles
     ) : []),
-    [activeFixedP, surface]
+    [activeFixedP, designDataset]
   )
   const nominalContour = useMemo(
-    () => (surface ? sliceFixedPContour(
-      surface.nominalFixed?.points ?? surface.nominalPoints,
+    () => (nominalDataset ? sliceFixedPContour(
+      nominalDataset.points,
       activeFixedP,
-      surface.nominalFixed?.triangles ?? surface.nominalTriangles
+      nominalDataset.triangles
     ) : []),
-    [activeFixedP, surface]
+    [activeFixedP, nominalDataset]
   )
   const axialCapPKn = useMemo(() => {
     const capped = surface?.points.filter((point) => point.resistance?.axialCapApplied) ?? []
     return capped.length > 0 ? kn(Math.max(...capped.map((point) => point.P))) : null
   }, [surface])
 
-  // Fixed-P presentation and interpolation intentionally use only the independent fixed datasets.
+  // Fixed-P presentation cuts the active mode's authoritative Design/Nominal triangulations.
   const strainAngleSamples = useMemo(() => contourStrainAngleSamples(contour), [contour])
   const nominalStrainAngleSamples = useMemo(
     () => contourStrainAngleSamples(nominalContour),
@@ -589,18 +589,18 @@ export function ResultsWorkspace({
     () =>
       surface
         ? view.surfaceResistanceMode === 'design'
-          ? surface.designFixed?.points ?? surface.points
-          : surface.nominalFixed?.points ?? surface.nominalPoints
+          ? designDataset?.points ?? []
+          : nominalDataset?.points ?? []
         : [],
-    [surface, view.surfaceResistanceMode]
+    [designDataset, nominalDataset, surface, view.surfaceResistanceMode]
   )
   const surfaceGrid = useMemo(() => groupByBeta(surfacePoints3d), [surfacePoints3d])
   const surfaceTriangles3d = useMemo(() => {
     const explicit = view.surfaceResistanceMode === 'design'
-      ? surface?.designFixed?.triangles ?? surface?.triangles
-      : surface?.nominalFixed?.triangles ?? surface?.nominalTriangles
+      ? designDataset?.triangles
+      : nominalDataset?.triangles
     return explicit && explicit.length > 0 ? explicit : buildClosedSurfaceTriangles(surfacePoints3d)
-  }, [surface, surfacePoints3d, view.surfaceResistanceMode])
+  }, [designDataset, nominalDataset, surfacePoints3d, view.surfaceResistanceMode])
   const surfaceContour3d = view.surfaceResistanceMode === 'design'
     ? strainAngleSamples
     : nominalStrainAngleSamples
@@ -708,14 +708,17 @@ export function ResultsWorkspace({
     const activeExactFor3d = isLoadcaseMode ? demandExactCurve : exactCurve
     const exactMeridianFor3d = activeExactFor3d
       ? view.surfaceResistanceMode === 'design'
-        ? activeExactFor3d.designFixed
-        : activeExactFor3d.nominalFixed
+        ? activeDesignDirectionPoints(activeExactFor3d)
+        : activeNominalDirectionPoints(activeExactFor3d)
       : null
+    const directSectionFor3d = buildDirectMeridianSection(
+      exactMeridianFor3d ?? surfacePoints3d,
+      activeAngle,
+      !activeExactFor3d && view.includeOppositeMoment
+    )
     const directMeridians = [
-      exactMeridianFor3d ?? pickBetaCurve(surfaceGrid, activeAngle),
-      ...(!activeExactFor3d && view.includeOppositeMoment
-        ? [pickBetaCurve(surfaceGrid, activeAngle + 180)]
-        : [])
+      directSectionFor3d.primary,
+      ...(directSectionFor3d.opposite.length > 0 ? [directSectionFor3d.opposite] : [])
     ].filter((path) => path.length > 0)
     const sliceTraces = directMeridians.map((path, index) => {
       return {
@@ -1161,16 +1164,23 @@ export function ResultsWorkspace({
       station: point.station
     })
     const activeExact = isLoadcaseMode ? demandExactCurve : exactCurve
-    const fixedPoints = surface.designFixed?.points ?? surface.points
-    const primaryPoints = activeExact?.designAdaptive ?? pickBetaCurve(groupByBeta(fixedPoints), activeAngle)
-    const markerPoints = activeExact?.designFixed ?? primaryPoints
-    const oppositePoints = !activeExact && view.includeOppositeMoment
-      ? pickBetaCurve(groupByBeta(fixedPoints), activeAngle + 180)
-      : []
+    const fixedPoints = designDataset?.points ?? surface.points
+    const direct = buildDirectMeridianSection(
+      activeExact ? activeDesignDirectionPoints(activeExact) : fixedPoints,
+      activeAngle,
+      !activeExact && view.includeOppositeMoment
+    )
+    const markerDirect = activeExact
+      ? buildDirectMeridianSection(activeDesignDirectionPoints(activeExact), activeAngle, false)
+      : direct
+    const primaryPoints = direct.primary
+    const markerPoints = markerDirect.primary
+    const oppositePoints = direct.opposite
     const primaryPath = primaryPoints.map(project)
     const oppositePath = oppositePoints.map(project)
     const markerPath = markerPoints.map(project)
-    const keyDescriptors = surface.designFixed?.stations ?? surface.stations
+    const displayPaths = direct.displayPaths.map((path) => path.map(project))
+    const keyDescriptors = designDataset?.stations ?? surface.stations
     const pickKeys = (
       curve: Array<{ m: number; p: number; station: number }>,
       side: 'primary' | 'opposite'
@@ -1186,9 +1196,9 @@ export function ResultsWorkspace({
     return {
       primaryPath,
       oppositePath,
-      displayPaths: [primaryPath, ...(oppositePath.length > 0 ? [oppositePath] : [])],
+      displayPaths,
       intermediatePoints: [],
-      closed: true,
+      closed: direct.closed,
       stations: [
         ...markerPath,
         ...(oppositePath.length > 0 ? oppositePath.filter((point) => Math.abs(point.m) > 1e-6) : [])
@@ -1198,7 +1208,7 @@ export function ResultsWorkspace({
         ...(oppositePath.length > 0 ? pickKeys(oppositePath, 'opposite') : [])
       ]
     }
-  }, [activeAngle, demandExactCurve, equilibriumBeta, exactCurve, isLoadcaseMode, surface, view.includeOppositeMoment])
+  }, [activeAngle, demandExactCurve, designDataset, equilibriumBeta, exactCurve, isLoadcaseMode, surface, view.includeOppositeMoment])
 
   const nominalVerticalPaths = useMemo(() => {
     if (!surface) return [] as Array<Array<{ m: number; p: number; station: number }>>
@@ -1210,17 +1220,18 @@ export function ResultsWorkspace({
       station: point.station
     })
     const activeExact = isLoadcaseMode ? demandExactCurve : exactCurve
-    const fixedPoints = surface.nominalFixed?.points ?? surface.nominalPoints
-    const primary = activeExact?.nominalFixed ?? pickBetaCurve(groupByBeta(fixedPoints), activeAngle)
-    const opposite = !activeExact && view.includeOppositeMoment
-      ? pickBetaCurve(groupByBeta(fixedPoints), activeAngle + 180)
-      : []
-    return [primary.map(project), ...(opposite.length > 0 ? [opposite.map(project)] : [])]
-  }, [activeAngle, demandExactCurve, equilibriumBeta, exactCurve, isLoadcaseMode, surface, view.includeOppositeMoment])
+    const fixedPoints = nominalDataset?.points ?? surface.nominalPoints
+    const direct = buildDirectMeridianSection(
+      activeExact ? activeNominalDirectionPoints(activeExact) : fixedPoints,
+      activeAngle,
+      !activeExact && view.includeOppositeMoment
+    )
+    return direct.displayPaths.map((path) => path.map(project))
+  }, [activeAngle, demandExactCurve, equilibriumBeta, exactCurve, isLoadcaseMode, nominalDataset, surface, view.includeOppositeMoment])
 
   const nominalVerticalAnnotations = useMemo(() => {
     const stations = nominalVerticalPaths.flat()
-    const descriptors = surface?.nominalFixed?.stations ?? surface?.stations ?? []
+    const descriptors = nominalDataset?.stations ?? surface?.stations ?? []
     const keys = descriptors.flatMap((descriptor, station) => {
       const definition = descriptor.definition
       if (
@@ -1235,7 +1246,7 @@ export function ResultsWorkspace({
       }] : []
     })
     return { stations, keys, intermediatePoints: [] }
-  }, [nominalVerticalPaths, surface])
+  }, [nominalDataset, nominalVerticalPaths, surface])
 
   const verticalData = useMemo(() => {
     const nominalOnly = view.showNominalReference && !view.showDesignResistance

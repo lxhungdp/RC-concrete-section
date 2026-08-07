@@ -69,23 +69,34 @@ const surface = {
   nominalFixed: { points: fixedNominal, directions: fixedBetas, stations }
 } as unknown as PreviewSurface
 
-test('fixed-P table interpolates only the fixed surface datasets', () => {
-  const table = buildChartTableRows({
+test('fixed-P table selects exactly one resistance stage from the fixed surface datasets', () => {
+  const designTable = buildChartTableRows({
     surface,
     source: 'fixedP',
-    includeDesign: true,
-    includeNominal: true,
+    resistanceStage: 'design',
     sliceAngleDeg: 0,
-    includeOpposite: false,
+    fixedP: 0
+  })
+  const nominalTable = buildChartTableRows({
+    surface,
+    source: 'fixedP',
+    resistanceStage: 'nominal',
+    sliceAngleDeg: 0,
     fixedP: 0
   })
 
-  assert.equal(table.length, 4)
-  assert.deepEqual(table.map((row) => row.kind === 'fixedP' ? row.angleDeg : -1), [0, 90, 180, 270])
-  for (const row of table) {
+  assert.equal(designTable.length, 4)
+  assert.equal(nominalTable.length, 4)
+  assert.deepEqual(designTable.map((row) => row.kind === 'fixedP' ? row.angleDeg : -1), [0, 90, 180, 270])
+  for (const row of designTable) {
     assert.equal(row.kind, 'fixedP')
     assert.ok(row.design && Math.abs(Math.hypot(row.design.Mx, row.design.My) - 10) < 1e-10)
+    assert.equal(row.nominal, null)
+  }
+  for (const row of nominalTable) {
+    assert.equal(row.kind, 'fixedP')
     assert.ok(row.nominal && Math.abs(Math.hypot(row.nominal.Mx, row.nominal.My) - 12) < 1e-10)
+    assert.equal(row.design, null)
   }
 })
 
@@ -93,10 +104,8 @@ test('fixed direction tables use the direct fixed meridian, not a nearby adaptiv
   const table = buildChartTableRows({
     surface,
     source: 'vertical',
-    includeDesign: true,
-    includeNominal: true,
+    resistanceStage: 'design',
     sliceAngleDeg: 0,
-    includeOpposite: false,
     fixedP: 0
   })
 
@@ -104,10 +113,10 @@ test('fixed direction tables use the direct fixed meridian, not a nearby adaptiv
   const middle = table.find((row) => row.kind === 'vertical' && row.criterion.includes('= 1'))
   assert.equal(middle?.kind, 'vertical')
   assert.equal(middle?.design?.total.M, 10)
-  assert.equal(middle?.nominal?.total.M, 12)
+  assert.equal(middle?.nominal, null)
 })
 
-test('an exact direction table keeps Design and Nominal on the same fixed stations', () => {
+test('an exact direction table selects Design or Nominal without merging their rows', () => {
   const beta = 17.35 * Math.PI / 180
   const designFixed = rows([beta], 10)
   const exact: ExactDirectionCurve = {
@@ -125,17 +134,159 @@ test('an exact direction table keeps Design and Nominal on the same fixed statio
       tolerance: Number.POSITIVE_INFINITY
     }
   }
-  const table = buildChartTableRows({
+  const designTable = buildChartTableRows({
     surface,
     exactDirectionCurve: exact,
     source: 'vertical',
-    includeDesign: true,
-    includeNominal: true,
+    resistanceStage: 'design',
     sliceAngleDeg: 0,
-    includeOpposite: false,
+    fixedP: 0
+  })
+  const nominalTable = buildChartTableRows({
+    surface,
+    exactDirectionCurve: exact,
+    source: 'vertical',
+    resistanceStage: 'nominal',
+    sliceAngleDeg: 0,
+    fixedP: 0
+  })
+
+  assert.equal(designTable.length, 3)
+  assert.equal(nominalTable.length, 3)
+  assert.ok(designTable.every((row) => row.kind === 'vertical' && row.design && !row.nominal))
+  assert.ok(nominalTable.every((row) => row.kind === 'vertical' && !row.design && row.nominal))
+})
+
+test('independently adaptive Design and Nominal tables retain their own station counts', () => {
+  const beta = 17.35 * Math.PI / 180
+  const adaptiveStation = {
+    id: 'adaptive-station-table-test' as const,
+    label: 'Adaptive midpoint',
+    definition: { kind: 'block-adaptive' as const, label: 'Adaptive midpoint' },
+    fixed: false
+  }
+  const nominalPoints = [
+    point(beta, 0, 1, 0, 'pure-compression'),
+    point(beta, 1, 0, 12, 'station-1'),
+    point(beta, 1.5, -0.5, 8, adaptiveStation.id),
+    point(beta, 2, -1, 0, 'pure-tension')
+  ]
+  const exact: ExactDirectionCurve = {
+    beta,
+    designAdaptive: rows([beta], 10),
+    designFixed: rows([beta], 10),
+    nominalFixed: nominalPoints,
+    stations,
+    nominalStations: [...stations.slice(0, 2), adaptiveStation, stations[2]],
+    stationError: {
+      stations: 3,
+      fixedStations: 3,
+      maxRelative: 0,
+      refinementPasses: 1,
+      withinTolerance: true,
+      tolerance: 0.01
+    }
+  }
+
+  const designTable = buildChartTableRows({
+    surface,
+    exactDirectionCurve: exact,
+    source: 'vertical',
+    resistanceStage: 'design',
+    sliceAngleDeg: 0,
+    fixedP: 0
+  })
+  const nominalTable = buildChartTableRows({
+    surface,
+    exactDirectionCurve: exact,
+    source: 'vertical',
+    resistanceStage: 'nominal',
+    sliceAngleDeg: 0,
+    fixedP: 0
+  })
+
+  assert.equal(designTable.length, 3)
+  assert.equal(nominalTable.length, 4)
+  assert.ok(nominalTable.some((row) => row.kind === 'vertical' && row.criterion === 'Adaptive midpoint'))
+})
+
+test('the vertical table remains one direct meridian when the chart shows the opposite side', () => {
+  const table = buildChartTableRows({
+    surface,
+    source: 'vertical',
+    resistanceStage: 'design',
+    sliceAngleDeg: 0,
     fixedP: 0
   })
 
   assert.equal(table.length, 3)
-  assert.ok(table.every((row) => row.kind === 'vertical' && row.design && row.nominal))
+  assert.equal(table.filter((row) => row.kind === 'vertical' && row.criterion === 'Pure compression').length, 1)
+  assert.equal(table.filter((row) => row.kind === 'vertical' && row.criterion === 'Pure tension').length, 1)
+  const stationRows = table.filter((row) => row.kind === 'vertical' && row.criterion.includes('= 1'))
+  assert.equal(stationRows.length, 1)
+})
+
+test('the vertical table attaches singleton equivalent-block poles to every direct meridian', () => {
+  const beta = Math.PI / 2
+  const compression = point(0, 0, 1, 0, 'pure-compression')
+  const tension = point(0, 2, -1, 0, 'pure-tension')
+  const middle = point(beta, 1, 0, 10, 'station-1')
+  const singletonPoleSurface = {
+    ...surface,
+    points: [compression, middle, tension],
+    designFixed: {
+      points: [compression, middle, tension],
+      directions: [beta],
+      stations
+    }
+  } as PreviewSurface
+  const table = buildChartTableRows({
+    surface: singletonPoleSurface,
+    source: 'vertical',
+    resistanceStage: 'design',
+    sliceAngleDeg: 90,
+    fixedP: 0
+  })
+
+  assert.deepEqual(
+    table.map((row) => row.kind === 'vertical' ? row.criterion : ''),
+    ['Pure compression', 'εₛ/εy = 1', 'Pure tension']
+  )
+})
+
+test('synthetic cap vertices are chart topology, not station-table rows', () => {
+  const beta = 17.35 * Math.PI / 180
+  const cap = {
+    ...point(beta, -1, 8, 3, null),
+    surfaceRole: 'axial-cap' as const,
+    onSampledDirection: true
+  }
+  const middle = point(beta, 1, 0, 10, 'station-1')
+  const tension = point(0, 2, -1, 0, 'pure-tension')
+  const exact: ExactDirectionCurve = {
+    beta,
+    designAdaptive: [cap, middle, tension],
+    designFixed: [cap, middle, tension],
+    nominalFixed: [middle, tension],
+    stations,
+    stationError: {
+      stations: 3,
+      fixedStations: 3,
+      maxRelative: 0,
+      refinementPasses: 0,
+      withinTolerance: true,
+      tolerance: 0.01
+    }
+  }
+  const table = buildChartTableRows({
+    surface,
+    exactDirectionCurve: exact,
+    source: 'vertical',
+    resistanceStage: 'design',
+    sliceAngleDeg: beta * 180 / Math.PI,
+    fixedP: 0
+  })
+
+  assert.equal(table.length, 2)
+  assert.ok(table.every((row) => row.kind === 'vertical' && row.criterion !== '—'))
 })

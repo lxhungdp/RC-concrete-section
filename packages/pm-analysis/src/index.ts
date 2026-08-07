@@ -121,10 +121,17 @@ export type PreviewSurfacePoint = Resultant & {
   beta: number
   /** Zero-based display order within one physical direction row; −1 for a synthetic face point. */
   station: number
+  /** Monotone domain coordinate; comparable across independently-adaptive meridians. */
+  stationCoordinate?: number
   /** Stable physical station identity; null for a synthetic face that is not a strain station. */
   stationId: SurfaceStationId | null
   /** Structural/topological meaning; never infer this from numeric station order. */
   surfaceRole: PreviewSurfacePointRole
+  /**
+   * False for a synthetic face vertex that belongs to the triangle mesh but to no sampled
+   * meridian. Undefined preserves compatibility with structured stress-strain surfaces.
+   */
+  onSampledDirection?: boolean
   state: StrainState
   ledger: ResultantLedger
   resistance?: DesignResistanceTrace
@@ -209,6 +216,12 @@ export type SurfaceDirectionError = {
 export type SurfaceStationError = {
   stations: number
   fixedStations: number
+  minStations?: number
+  maxStations?: number
+  averageStations?: number
+  totalStates?: number
+  /** Constitutive integrations, including rejected adaptive probes. */
+  evaluations?: number
   maxRelative: number
   refinementPasses: number
   withinTolerance: boolean
@@ -225,12 +238,28 @@ export type PreviewSurfaceDataset = {
 export type ExactDirectionCurve = {
   /** Exact strain-gradient direction requested by the user or recovered from equilibrium. */
   beta: number
+  /** Active Design meridian for the selected Fixed or Adaptive station policy. */
+  designCurve?: PreviewSurfacePoint[]
+  /** Active nominal/reference meridian; its independently adaptive schedule may differ. */
+  nominalCurve?: PreviewSurfacePoint[]
+  /** @deprecated Compatibility alias for `designCurve`. */
   designAdaptive: PreviewSurfacePoint[]
+  /** @deprecated Compatibility alias for `designCurve`. */
   designFixed: PreviewSurfacePoint[]
+  /** @deprecated Compatibility alias for `nominalCurve`. */
   nominalFixed: PreviewSurfacePoint[]
+  /** Station descriptors for the design meridian. */
   stations: SurfaceStation[]
+  /** Nominal descriptors may differ when that mechanics samples Nominal independently. */
+  nominalStations?: SurfaceStation[]
   stationError: SurfaceStationError
 }
+
+export const activeDesignDirectionPoints = (curve: ExactDirectionCurve): PreviewSurfacePoint[] =>
+  curve.designCurve ?? curve.designAdaptive ?? curve.designFixed
+
+export const activeNominalDirectionPoints = (curve: ExactDirectionCurve): PreviewSurfacePoint[] =>
+  curve.nominalCurve ?? curve.nominalFixed
 
 export type PreviewSurface = {
   calculationProfileId?: import('@pm/project').CalculationProfileId
@@ -243,8 +272,14 @@ export type PreviewSurface = {
   triangles?: SurfaceIndexTriangle[]
   nominalTriangles?: SurfaceIndexTriangle[]
   /** Fixed 27 × 36 visual/diagnostic grid; shared with the production Design surface. */
+  /** Active Design dataset for the selected Fixed or Adaptive mode. */
+  designSurface?: PreviewSurfaceDataset
+  /** Active Nominal/reference dataset; its adaptive topology may differ from Design. */
+  nominalSurface?: PreviewSurfaceDataset
+  /** @deprecated Compatibility alias for `designSurface`. */
   designFixed?: PreviewSurfaceDataset
   /** Nominal values evaluated at the same fixed 27 × 36 states. */
+  /** @deprecated Compatibility alias for `nominalSurface`. */
   nominalFixed?: PreviewSurfaceDataset
   /** Discrete code values for reporting only; never triangulated as equilibrium states. */
   codeReferencePoints?: Array<Resultant & {
@@ -276,6 +311,24 @@ export type PreviewSurface = {
   designBasis: DesignBasis
 }
 
+/** Active Design dataset, independent of whether the calculation mode is Fixed or Adaptive. */
+export const activeDesignSurfaceDataset = (surface: PreviewSurface): PreviewSurfaceDataset =>
+  surface.designSurface ?? surface.designFixed ?? {
+    points: surface.points,
+    triangles: surface.triangles,
+    directions: surface.directions,
+    stations: surface.stations
+  }
+
+/** Active Nominal/reference dataset, which may have a topology independent from Design. */
+export const activeNominalSurfaceDataset = (surface: PreviewSurface): PreviewSurfaceDataset =>
+  surface.nominalSurface ?? surface.nominalFixed ?? {
+    points: surface.nominalPoints,
+    triangles: surface.nominalTriangles,
+    directions: surface.directions,
+    stations: surface.stations
+  }
+
 export type PreviewContourPoint = {
   beta: number
   P: number
@@ -293,6 +346,145 @@ export type PreviewContourPoint = {
 /** The sampled-direction subset of a fixed-P contour, in ascending `beta`. */
 export const contourStrainAngleSamples = (contour: PreviewContourPoint[]): PreviewContourPoint[] =>
   contour.filter((point) => point.onSampledDirection).sort((a, b) => a.beta - b.beta)
+
+/**
+ * A point used to present one direct sampled meridian. `surface-vertex` retains an authoritative
+ * resistance-surface vertex. `axial-center` is a section-only vertex required when one half of a
+ * vertical plane cuts a triangulated axial-cap face from M=0 to its boundary crossing.
+ */
+export type DirectMeridianSectionPoint = PreviewSurfacePoint & {
+  sectionPointRole: 'surface-vertex' | 'axial-center'
+}
+
+export type DirectMeridianSection = {
+  primary: DirectMeridianSectionPoint[]
+  opposite: DirectMeridianSectionPoint[]
+  displayPaths: DirectMeridianSectionPoint[][]
+  closed: boolean
+}
+
+const wrapSectionAngle = (angle: number) => {
+  const wrapped = angle % (2 * Math.PI)
+  return wrapped < 0 ? wrapped + 2 * Math.PI : wrapped
+}
+
+const sectionAngularDistance = (left: number, right: number) => {
+  const delta = Math.abs(wrapSectionAngle(left) - wrapSectionAngle(right))
+  return Math.min(delta, 2 * Math.PI - delta)
+}
+
+const sameDirectSectionPoint = (
+  left: DirectMeridianSectionPoint,
+  right: DirectMeridianSectionPoint
+) => {
+  if (left.id === right.id) return true
+  const forceScale = Math.max(1, Math.abs(left.P), Math.abs(right.P))
+  const momentScale = Math.max(
+    1,
+    Math.hypot(left.Mx, left.My),
+    Math.hypot(right.Mx, right.My)
+  )
+  return Math.abs(left.P - right.P) <= forceScale * 1e-12 &&
+    Math.hypot(left.Mx - right.Mx, left.My - right.My) <= momentScale * 1e-12
+}
+
+const axialCapSectionCenter = (
+  cap: DirectMeridianSectionPoint,
+  beta: number
+): DirectMeridianSectionPoint => {
+  const zeroMoment = <T extends { Mx: number; My: number }>(part: T): T => ({
+    ...part,
+    Mx: 0,
+    My: 0
+  })
+  return {
+    ...cap,
+    id: `${cap.id}:axis:${wrapSectionAngle(beta).toPrecision(12)}`,
+    beta: wrapSectionAngle(beta),
+    station: -2,
+    stationCoordinate: undefined,
+    stationId: null,
+    surfaceRole: 'axial-cap',
+    onSampledDirection: true,
+    sectionPointRole: 'axial-center',
+    Mx: 0,
+    My: 0,
+    ledger: {
+      concrete: zeroMoment(cap.ledger.concrete),
+      steelGross: zeroMoment(cap.ledger.steelGross),
+      displacedConcrete: zeroMoment(cap.ledger.displacedConcrete),
+      steel: zeroMoment(cap.ledger.steel),
+      total: zeroMoment(cap.ledger.total)
+    }
+  }
+}
+
+const directSurfaceMeridian = (
+  points: readonly PreviewSurfacePoint[],
+  target: number,
+  sharedPoles: readonly PreviewSurfacePoint[]
+): DirectMeridianSectionPoint[] => {
+  const rows = new Map<number, PreviewSurfacePoint[]>()
+  for (const point of points) {
+    if (point.surfaceRole === 'pure-compression' || point.surfaceRole === 'pure-tension') continue
+    if (point.onSampledDirection === false) continue
+    rows.set(point.beta, [...(rows.get(point.beta) ?? []), point])
+  }
+  const nearest = [...rows.entries()].sort((left, right) =>
+    sectionAngularDistance(left[0], target) - sectionAngularDistance(right[0], target)
+  )[0]?.[1] ?? []
+  const withPoles = nearest.map((point): DirectMeridianSectionPoint => ({
+    ...point,
+    sectionPointRole: 'surface-vertex'
+  }))
+  for (const pole of sharedPoles) {
+    if (withPoles.some((point) => point.surfaceRole === pole.surfaceRole)) continue
+    withPoles.push({ ...pole, sectionPointRole: 'surface-vertex' })
+  }
+  const cap = withPoles.find((point) => point.surfaceRole === 'axial-cap')
+  if (cap) {
+    const momentScale = Math.max(1, ...withPoles.map((point) => Math.hypot(point.Mx, point.My)))
+    const hasAxis = withPoles.some((point) =>
+      point.surfaceRole === 'axial-cap' && Math.hypot(point.Mx, point.My) <= momentScale * 1e-12
+    )
+    if (!hasAxis) withPoles.push(axialCapSectionCenter(cap, target))
+  }
+  return withPoles.sort((left, right) => left.station - right.station)
+}
+
+/**
+ * Canonical presentation section for one sampled direction and, optionally, its opposite. Shared
+ * axial poles are attached explicitly because equivalent-block surfaces store each pole only once.
+ * The returned paths are consumed unchanged by the vertical chart, its table, and the 3D overlay.
+ */
+export const buildDirectMeridianSection = (
+  points: readonly PreviewSurfacePoint[],
+  angleDeg: number,
+  includeOpposite: boolean
+): DirectMeridianSection => {
+  const target = wrapSectionAngle(angleDeg * Math.PI / 180)
+  const sharedPoles = (['pure-compression', 'pure-tension'] as const).flatMap((role) => {
+    const pole = points.find((point) => point.surfaceRole === role)
+    return pole ? [pole] : []
+  })
+  const primary = directSurfaceMeridian(points, target, sharedPoles)
+  const opposite = includeOpposite
+    ? directSurfaceMeridian(points, target + Math.PI, sharedPoles)
+    : []
+  if (!includeOpposite || primary.length === 0 || opposite.length === 0) {
+    return { primary, opposite, displayPaths: primary.length > 0 ? [primary] : [], closed: false }
+  }
+
+  const reversedOpposite = [...opposite].reverse()
+  const loop = [
+    ...primary,
+    ...reversedOpposite.slice(
+      sameDirectSectionPoint(primary[primary.length - 1], reversedOpposite[0]) ? 1 : 0
+    )
+  ]
+  if (!sameDirectSectionPoint(loop[0], loop[loop.length - 1])) loop.push(loop[0])
+  return { primary, opposite, displayPaths: [loop], closed: true }
+}
 
 export type PreviewMomentPlanePoint = PreviewContourPoint & {
   /** Moment coordinate on the checked load direction. */
@@ -486,7 +678,7 @@ export const stationDefinitionLabel = (station: StationDefinition): string => {
     return `cover-gap = ${Number(station.ratio.toPrecision(6))}`
   }
   if (station.kind === 'tension-pole-transition-ratio') {
-    return `tension-pole = ${Number(station.ratio.toPrecision(6))}`
+    return `Pure tens ${Number((station.ratio * 100).toPrecision(6))}%`
   }
   if (station.kind === 'adaptive-state-interpolation') {
     return `adaptive ${Number(station.ratio.toPrecision(6))}`
@@ -1427,15 +1619,30 @@ type SurfaceTriangle = {
 
 const surfaceTrianglesCache = new WeakMap<PreviewSurfacePoint[], SurfaceTriangle[]>()
 
+const directionNeutralSurfaceVertex = (point: PreviewSurfacePoint) =>
+  point.surfaceRole === 'pure-compression' ||
+  point.surfaceRole === 'pure-tension' ||
+  (
+    point.surfaceRole === 'axial-cap' &&
+    point.onSampledDirection !== false &&
+    Math.hypot(point.Mx, point.My) <= 1e-9
+  )
+
+const physicalEdgeDirection = (left: PreviewSurfacePoint, right: PreviewSurfacePoint) => {
+  if (left.onSampledDirection === false || right.onSampledDirection === false) return null
+  if (left.beta === right.beta) return left.beta
+  if (directionNeutralSurfaceVertex(left) && !directionNeutralSurfaceVertex(right)) return right.beta
+  if (directionNeutralSurfaceVertex(right) && !directionNeutralSurfaceVertex(left)) return left.beta
+  return null
+}
+
 const previewSurfaceTriangles = (
   points: PreviewSurfacePoint[],
   topology?: readonly SurfaceIndexTriangle[]
 ): SurfaceTriangle[] => {
   if (topology) {
     const samePhysicalDirection = (left: PreviewSurfacePoint, right: PreviewSurfacePoint) =>
-      left.surfaceRole !== 'axial-cap' &&
-      right.surfaceRole !== 'axial-cap' &&
-      left.beta === right.beta
+      physicalEdgeDirection(left, right) !== null
     return topology.flatMap(({ a, b, c }) => {
       const vertices = [points[a], points[b], points[c]] as const
       if (vertices.some((point) => point === undefined)) return []
@@ -1458,10 +1665,24 @@ const previewSurfaceTriangles = (
     return triangles
   }
 
+  const referenceStations = rows[0].curve.map((point) => point.station)
+  const structured = rows.every(({ curve }) =>
+    curve.length === referenceStations.length &&
+    curve.every((point, index) => {
+      const reference = referenceStations[index]
+      return Math.abs(point.station - reference) <= 1e-12 * Math.max(1, Math.abs(reference))
+    })
+  )
+  if (!structured) {
+    throw new Error(
+      'Explicit surface topology is required when direction rows have unequal or independently adaptive station schedules.'
+    )
+  }
+
   for (let i = 0; i < rows.length; i++) {
     const current = rows[i].curve
     const next = rows[(i + 1) % rows.length].curve
-    const stationCount = Math.min(current.length, next.length)
+    const stationCount = current.length
     for (let station = 0; station < stationCount - 1; station++) {
       const a = current[station]
       const b = next[station]
@@ -1587,13 +1808,36 @@ const trianglePlaneIntersections = (
     const aOn = Math.abs(da) <= tol
     const bOn = Math.abs(db) <= tol
 
-    // A vertex of the surface always sits on a sampled direction, whichever edge reaches it.
-    if (aOn) appendUniquePoint(intersections, { ...a, onSampledDirection: true }, tol, tol)
-    if (bOn) appendUniquePoint(intersections, { ...b, onSampledDirection: true }, tol, tol)
+    // A physical grid vertex or cap-boundary vertex belongs to a sampled meridian. Synthetic
+    // vertices created on cross-beta cap edges deliberately do not; preserve that provenance when
+    // the cutting plane is coincident with the cap face.
+    if (aOn) appendUniquePoint(
+      intersections,
+      { ...a, onSampledDirection: a.onSampledDirection !== false },
+      tol,
+      tol
+    )
+    if (bOn) appendUniquePoint(
+      intersections,
+      { ...b, onSampledDirection: b.onSampledDirection !== false },
+      tol,
+      tol
+    )
     if (aOn || bOn || da * db > 0) continue
 
     const t = da / (da - db)
-    appendUniquePoint(intersections, { ...lerpPoint(a, b, t), onSampledDirection: sameDirection }, tol, tol)
+    const point = lerpPoint(a, b, t)
+    const edgeDirection = sameDirection ? physicalEdgeDirection(a, b) : null
+    appendUniquePoint(
+      intersections,
+      {
+        ...point,
+        ...(edgeDirection === null ? {} : { beta: edgeDirection }),
+        onSampledDirection: edgeDirection !== null
+      },
+      tol,
+      tol
+    )
   }
 
   return intersections
@@ -1653,9 +1897,11 @@ type PreviewSamplingHooks = {
   mapRow?: (points: PreviewSurfacePoint[]) => PreviewSurfacePoint[]
   /** Prevent cancellation between concrete and reinforcement in material-factor calculations. */
   componentAware?: boolean
+  /** Internal performance counter; one call per constitutive integration. */
+  onEvaluate?: () => void
 }
 
-export const buildPreviewSurfaceFromPrepared = (
+const buildPreviewSurfaceFromPreparedLegacy = (
   prepared: PreparedAnalysis,
   analysisOptions: AnalysisOptions = createDefaultAnalysisOptions(),
   designBasis: DesignBasis = createDefaultDesignBasis(prepared.materialStore),
@@ -1771,6 +2017,7 @@ export const buildPreviewSurfaceFromPrepared = (
       }
     }
     const row = resolved.map(({ station, descriptor, state }) => {
+      sampling.onEvaluate?.()
       const ledger = evaluate(fibers, materials, state)
       const point: PreviewSurfacePoint = {
         id: `${degrees}-${descriptor.id}`,
@@ -2088,6 +2335,542 @@ export const buildPreviewSurfaceFromPrepared = (
   }
 }
 
+type IndependentlySampledRow = {
+  beta: number
+  points: PreviewSurfacePoint[]
+  stations: SurfaceStation[]
+  coordinates: number[]
+  stationError: SurfaceStationError
+  warnings: string[]
+}
+
+const wrapSurfaceBeta = (beta: number) => ((beta % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)
+
+const independentlySampledTopology = (
+  rows: readonly IndependentlySampledRow[],
+  points: readonly PreviewSurfacePoint[]
+): SurfaceIndexTriangle[] => {
+  if (rows.length < 2) return []
+  const indexByPoint = new Map(points.map((point, index) => [point, index]))
+  const compressionPole = indexByPoint.get(rows[0].points[0])
+  const tensionPole = indexByPoint.get(rows[0].points[rows[0].points.length - 1])
+  if (compressionPole === undefined || tensionPole === undefined) return []
+  const triangles: SurfaceIndexTriangle[] = []
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const leftRow = rows[rowIndex]
+    const rightRow = rows[(rowIndex + 1) % rows.length]
+    const left = leftRow.points.slice(1, -1)
+    const right = rightRow.points.slice(1, -1)
+    const leftCoordinates = leftRow.coordinates.slice(1, -1)
+    const rightCoordinates = rightRow.coordinates.slice(1, -1)
+    if (left.length === 0 || right.length === 0) continue
+    const leftIds = left.map((point) => indexByPoint.get(point)!)
+    const rightIds = right.map((point) => indexByPoint.get(point)!)
+    triangles.push({ a: compressionPole, b: leftIds[0], c: rightIds[0] })
+    let leftIndex = 0
+    let rightIndex = 0
+    while (leftIndex < left.length - 1 || rightIndex < right.length - 1) {
+      const advanceLeft = rightIndex === right.length - 1 || (
+        leftIndex < left.length - 1 &&
+        leftCoordinates[leftIndex + 1] <= rightCoordinates[rightIndex + 1]
+      )
+      if (advanceLeft) {
+        triangles.push({ a: leftIds[leftIndex], b: leftIds[leftIndex + 1], c: rightIds[rightIndex] })
+        leftIndex += 1
+      } else {
+        triangles.push({ a: leftIds[leftIndex], b: rightIds[rightIndex + 1], c: rightIds[rightIndex] })
+        rightIndex += 1
+      }
+    }
+    triangles.push({ a: leftIds[leftIds.length - 1], b: tensionPole, c: rightIds[rightIds.length - 1] })
+  }
+  return triangles
+}
+
+const interpolateRowLedger = (row: IndependentlySampledRow, coordinate: number): ResultantLedger => {
+  if (coordinate <= row.coordinates[0]) return row.points[0].ledger
+  const last = row.coordinates.length - 1
+  if (coordinate >= row.coordinates[last]) return row.points[last].ledger
+  let high = 1
+  while (high < row.coordinates.length && row.coordinates[high] < coordinate) high += 1
+  const leftCoordinate = row.coordinates[high - 1]
+  const rightCoordinate = row.coordinates[high]
+  const ratio = (coordinate - leftCoordinate) / Math.max(1e-15, rightCoordinate - leftCoordinate)
+  return lerpLedgerValue(row.points[high - 1].ledger, row.points[high].ledger, ratio)
+}
+
+const buildIndependentAdaptivePreviewSurface = (
+  prepared: PreparedAnalysis,
+  analysisOptions: AnalysisOptions,
+  designBasis: DesignBasis,
+  sampling: PreviewSamplingHooks
+): PreviewSurface => {
+  const seedStations = analysisStations(analysisOptions)
+  const { section, rebars, materialStore, origin, fibers, materials } = prepared
+  const meshReport = prepared.mesh.report
+  const epsCu = materialStore.concrete.limits.epsCu
+  const pureCompressionStrain = resolvePureCompressionStrain(materialStore, designBasis)
+  let evaluationCount = 0
+  let duplicateStationWarning = false
+  const warnings: string[] = []
+  if (section.solids.length !== 1) warnings.push('Preview engine supports one concrete region best; multi-region output is approximate.')
+  for (const issue of meshReport.warnings) warnings.push(`Concrete mesh: ${issue}`)
+  if (rebars.length === 0) warnings.push('No rebars are present; steel contribution is zero.')
+  const domainMismatch = strainDomainMismatch(materialStore.concrete)
+  if (domainMismatch) warnings.push(`Strain domain: ${domainMismatch.message} See ${domainMismatch.reference}.`)
+
+  const usedSteel = new Map<number, CompiledMaterial>()
+  for (const bar of rebars) {
+    const materialId = bar.steelMaterialId ?? materialStore.defaults.steelMaterialId
+    const steel = materials.steel.get(materialId)
+    if (steel) usedSteel.set(materialId, steel)
+  }
+  if (usedSteel.size === 0) {
+    const fallback = materials.steel.get(materialStore.defaults.steelMaterialId) ?? [...materials.steel.values()][0]
+    if (fallback) usedSteel.set(fallback.id, fallback)
+  }
+  const declaredTensionLimits = [...usedSteel.values()]
+    .map((steel) => steel.limits.epsTensionUltimate)
+    .filter((value): value is number => value !== undefined)
+  const undeclaredYieldStrains = [...usedSteel.values()]
+    .filter((steel) => steel.limits.epsTensionUltimate === undefined)
+    .map((steel) => steel.limits.epsYield ?? DEFAULT_STATION_STEEL_LIMITS.epsY)
+  const effectiveTensionLimits = [
+    ...declaredTensionLimits,
+    ...(undeclaredYieldStrains.length > 0
+      ? [PURE_TENSION_YIELD_MULTIPLE * Math.max(...undeclaredYieldStrains)]
+      : [])
+  ]
+  const deepestConfiguredTensionStrain = Math.max(
+    0,
+    ...seedStations.map((station) => station.definition.kind === 'steel-strain'
+      ? Math.abs(station.definition.strain)
+      : 0)
+  )
+  const globalPureTensionStrain = -(
+    declaredTensionLimits.length > 0
+      ? Math.min(...effectiveTensionLimits)
+      : Math.max(
+          ...effectiveTensionLimits,
+          deepestConfiguredTensionStrain,
+          PURE_TENSION_YIELD_MULTIPLE * DEFAULT_STATION_STEEL_LIMITS.epsY
+        )
+  )
+  const parts = ['total', 'concrete', 'steelGross', 'displacedConcrete', 'steel'] as const
+  type Part = (typeof parts)[number]
+  const evaluatorCache = new Map<string, {
+    beta: number
+    point: (station: SurfaceStation, coordinate: number) => PreviewSurfacePoint
+    validate: (stations: SurfaceStation[], points: PreviewSurfacePoint[]) => void
+  }>()
+  const evaluatorAt = (betaInput: number) => {
+    const beta = wrapSurfaceBeta(betaInput)
+    const key = beta.toPrecision(15)
+    const cached = evaluatorCache.get(key)
+    if (cached) return cached
+    const extents = projectedExtents(section, beta, origin, rebars)
+    const control = stationSteelControl(
+      materials,
+      materialStore,
+      rebars,
+      materialStore.defaults.steelMaterialId,
+      extents.controllingRebarIndex
+    )
+    const pointCache = new Map<SurfaceStationId, PreviewSurfacePoint>()
+    const point = (station: SurfaceStation, coordinate: number) => {
+      const existing = pointCache.get(station.id)
+      if (existing) return existing
+      const state = previewStationStateFromExtents(
+        beta,
+        station.definition,
+        epsCu,
+        pureCompressionStrain,
+        control,
+        designBasis,
+        globalPureTensionStrain,
+        extents
+      )
+      sampling.onEvaluate?.()
+      evaluationCount += 1
+      const ledger = evaluate(fibers, materials, state)
+      const raw: PreviewSurfacePoint = {
+        id: `${key}-${station.id}`,
+        beta,
+        station: coordinate,
+        stationCoordinate: coordinate,
+        stationId: station.id,
+        surfaceRole: station.id === 'pure-compression'
+          ? 'pure-compression'
+          : station.id === 'pure-tension'
+            ? 'pure-tension'
+            : 'physical-state',
+        state,
+        ledger,
+        ...ledger.total
+      }
+      const mapped = sampling.mapPoint?.(raw) ?? raw
+      pointCache.set(station.id, mapped)
+      return mapped
+    }
+    const validate = (stations: SurfaceStation[], points: PreviewSurfacePoint[]) => {
+      if (rebars.length === 0) return
+      const bar = rebars[extents.controllingRebarIndex]
+      let previous = Number.POSITIVE_INFINITY
+      for (let index = 0; index < points.length; index += 1) {
+        const state = points[index].state
+        const strain = state.e0 + state.kx * (bar.y - origin.y) + state.ky * (bar.x - origin.x)
+        const tolerance = 1e-11 * Math.max(1, Math.abs(previous), Math.abs(strain))
+        if (strain > previous + tolerance) {
+          throw new AnalysisInputError(
+            'INVALID_ANALYSIS_OPTIONS',
+            `Station "${stations[index].label}" breaks the compression-to-tension order at beta=${beta * 180 / Math.PI} degrees.`
+          )
+        }
+        if (Math.abs(strain - previous) <= tolerance && Number.isFinite(previous)) duplicateStationWarning = true
+        previous = strain
+      }
+    }
+    const created = { beta, point, validate }
+    evaluatorCache.set(key, created)
+    return created
+  }
+  const initialRowAt = (beta: number): IndependentlySampledRow => {
+    const evaluator = evaluatorAt(beta)
+    const coordinates = seedStations.map((_, index) => index)
+    const points = seedStations.map((station, index) => evaluator.point(station, coordinates[index]))
+    evaluator.validate(seedStations, points)
+    return {
+      beta: evaluator.beta,
+      points,
+      stations: [...seedStations],
+      coordinates,
+      stationError: {
+        stations: seedStations.length,
+        fixedStations: seedStations.length,
+        maxRelative: Number.NaN,
+        refinementPasses: 0,
+        withinTolerance: false,
+        tolerance: Number.POSITIVE_INFINITY
+      },
+      warnings: []
+    }
+  }
+  const seedBetas = analysisDirections(analysisOptions)
+  const initialRows = seedBetas.map(initialRowAt)
+  const scales = Object.fromEntries(parts.map((part) => [part, { P: 1, M: 1 }])) as Record<Part, { P: number; M: number }>
+  const scalePoints = initialRows.flatMap((row) => row.points)
+  for (const point of scalePoints) {
+    for (const part of parts) {
+      scales[part].P = Math.max(scales[part].P, Math.abs(point.ledger[part].P))
+      scales[part].M = Math.max(scales[part].M, Math.hypot(point.ledger[part].Mx, point.ledger[part].My))
+    }
+  }
+  const stationRefinement = analysisOptions.stations.refinement
+  if (stationRefinement.type !== 'adaptive') throw new Error('Independent adaptive surface requires adaptive stations.')
+  const rowError = (middle: ResultantLedger, left: ResultantLedger, right: ResultantLedger) => {
+    let error = 0
+    for (const part of parts) {
+      if (!sampling.componentAware && part !== 'total') continue
+      error = Math.max(
+        error,
+        Math.abs(middle[part].P - (left[part].P + right[part].P) / 2) / scales[part].P,
+        Math.hypot(
+          middle[part].Mx - (left[part].Mx + right[part].Mx) / 2,
+          middle[part].My - (left[part].My + right[part].My) / 2
+        ) / scales[part].M
+      )
+    }
+    return error
+  }
+  const completeRow = (source: IndependentlySampledRow): IndependentlySampledRow => {
+    let stations = [...source.stations]
+    let coordinates = [...source.coordinates]
+    let points = [...source.points]
+    let passes = 0
+    const candidates = () => stations.slice(0, -1).flatMap((left, interval) => {
+      const right = stations[interval + 1]
+      // Pure tension is an axial pole, not another finite neutral-axis state. The path from the
+      // last finite strain criterion to uniform tension is non-unique, so refining a constructed
+      // transition would add visually dense points to an arbitrary path. Keep this as one explicit
+      // topology edge, consistent with the fixed schedule.
+      if (
+        right.definition.kind === 'pure-tension' ||
+        left.definition.kind === 'tension-pole-transition-ratio' ||
+        right.definition.kind === 'tension-pole-transition-ratio'
+      ) return []
+      const coordinate = (coordinates[interval] + coordinates[interval + 1]) / 2
+      const station = adaptiveStation(midpointStationDefinition(left.definition, right.definition))
+      const point = evaluatorAt(source.beta).point(station, coordinate)
+      return [{
+        interval,
+        coordinate,
+        station,
+        point,
+        error: rowError(point.ledger, points[interval].ledger, points[interval + 1].ledger)
+      }]
+    })
+    while (passes < stationRefinement.maxPasses && stations.length < stationRefinement.maxStations) {
+      const selected = candidates()
+        .filter((candidate) => candidate.error > stationRefinement.tolerance)
+        .sort((left, right) => right.error - left.error || left.coordinate - right.coordinate)
+        .slice(0, stationRefinement.maxStations - stations.length)
+      if (selected.length === 0) break
+      const selectedByInterval = new Map(selected.map((candidate) => [candidate.interval, candidate]))
+      stations = stations.flatMap((station, interval) => {
+        const candidate = selectedByInterval.get(interval)
+        return candidate ? [station, candidate.station] : [station]
+      })
+      coordinates = coordinates.flatMap((coordinate, interval) => {
+        const candidate = selectedByInterval.get(interval)
+        return candidate ? [coordinate, candidate.coordinate] : [coordinate]
+      })
+      points = points.flatMap((point, interval) => {
+        const candidate = selectedByInterval.get(interval)
+        return candidate ? [point, candidate.point] : [point]
+      })
+      passes += 1
+    }
+    const maxRelative = candidates().reduce((maximum, candidate) => Math.max(maximum, candidate.error), 0)
+    evaluatorAt(source.beta).validate(stations, points)
+    return {
+      beta: source.beta,
+      stations,
+      coordinates,
+      points: sampling.mapRow?.(points) ?? points,
+      stationError: {
+        stations: stations.length,
+        fixedStations: seedStations.length,
+        maxRelative,
+        refinementPasses: passes,
+        withinTolerance: maxRelative <= stationRefinement.tolerance,
+        tolerance: stationRefinement.tolerance
+      },
+      warnings: []
+    }
+  }
+  const rowCache = new Map<string, IndependentlySampledRow>()
+  const initialByKey = new Map(initialRows.map((row) => [row.beta.toPrecision(15), row]))
+  const rowAt = (betaInput: number) => {
+    const beta = wrapSurfaceBeta(betaInput)
+    const key = beta.toPrecision(15)
+    const cached = rowCache.get(key)
+    if (cached) return cached
+    const completed = completeRow(initialByKey.get(key) ?? initialRowAt(beta))
+    rowCache.set(key, completed)
+    return completed
+  }
+  const rows = new Map<number, IndependentlySampledRow>()
+  for (const row of initialRows) {
+    const completed = rowAt(row.beta)
+    rows.set(completed.beta, completed)
+  }
+  const errorAt = (
+    actual: ResultantLedger,
+    left: ResultantLedger,
+    right: ResultantLedger
+  ) => {
+    let relativeP = 0
+    let relativeMoment = 0
+    let relativeComponent = 0
+    for (const part of parts) {
+      if (!sampling.componentAware && part !== 'total') continue
+      const p = Math.abs(actual[part].P - (left[part].P + right[part].P) / 2) / scales[part].P
+      const moment = Math.hypot(
+        actual[part].Mx - (left[part].Mx + right[part].Mx) / 2,
+        actual[part].My - (left[part].My + right[part].My) / 2
+      ) / scales[part].M
+      if (part === 'total') {
+        relativeP = Math.max(relativeP, p)
+        relativeMoment = Math.max(relativeMoment, moment)
+      }
+      relativeComponent = Math.max(relativeComponent, p, moment)
+    }
+    return { relativeP, relativeMoment, relativeComponent }
+  }
+  const sortedBetas = () => [...rows.keys()].sort((left, right) => left - right)
+  const measureIntervals = () => {
+    const betas = sortedBetas()
+    return betas.map((leftBeta, index) => {
+      const rightBeta = index === betas.length - 1 ? betas[0] + 2 * Math.PI : betas[index + 1]
+      const rightKey = index === betas.length - 1 ? betas[0] : rightBeta
+      const middle = rowAt((leftBeta + rightBeta) / 2)
+      const left = rows.get(leftBeta)!
+      const right = rows.get(rightKey)!
+      let relativeP = 0
+      let relativeMoment = 0
+      let relativeComponent = 0
+      for (let pointIndex = 1; pointIndex < middle.points.length - 1; pointIndex += 1) {
+        const coordinate = middle.coordinates[pointIndex]
+        const error = errorAt(
+          middle.points[pointIndex].ledger,
+          interpolateRowLedger(left, coordinate),
+          interpolateRowLedger(right, coordinate)
+        )
+        relativeP = Math.max(relativeP, error.relativeP)
+        relativeMoment = Math.max(relativeMoment, error.relativeMoment)
+        relativeComponent = Math.max(relativeComponent, error.relativeComponent)
+      }
+      return { beta: middle.beta, row: middle, relativeP, relativeMoment, relativeComponent }
+    })
+  }
+
+  const direction = analysisOptions.directions.refinement
+  if (direction.type !== 'adaptive') throw new Error('Independent adaptive surface requires adaptive directions.')
+  let directionPasses = 0
+  while (directionPasses < direction.maxPasses && rows.size < direction.maxDirections) {
+    const selected = measureIntervals()
+      .filter((entry) => entry.relativeComponent > direction.tolerance)
+      .sort((left, right) => right.relativeComponent - left.relativeComponent || left.beta - right.beta)
+      .slice(0, direction.maxDirections - rows.size)
+    if (selected.length === 0) break
+    for (const entry of selected) rows.set(entry.beta, entry.row)
+    directionPasses += 1
+  }
+
+  const finalIntervals = measureIntervals()
+  const finalRows = sortedBetas().map((beta) => rows.get(beta)!)
+  const points = finalRows.flatMap((row) => row.points)
+  const triangles = independentlySampledTopology(finalRows, points)
+  const stationCounts = finalRows.map((row) => row.points.length)
+  const stationErrors = finalRows.map((row) => row.stationError.maxRelative)
+  const finiteStationErrors = stationErrors.filter(Number.isFinite)
+  const maxStationError = finiteStationErrors.length ? Math.max(...finiteStationErrors) : Number.NaN
+  const maxRelativeP = finalIntervals.length ? Math.max(...finalIntervals.map((entry) => entry.relativeP)) : Number.NaN
+  const maxRelativeMoment = finalIntervals.length
+    ? Math.max(...finalIntervals.map((entry) => entry.relativeMoment))
+    : Number.NaN
+  const worst = finalIntervals.reduce<typeof finalIntervals[number] | null>(
+    (current, entry) => !current || entry.relativeComponent > current.relativeComponent ? entry : current,
+    null
+  )
+  const uniqueStations = new Map<SurfaceStationId, SurfaceStation>()
+  for (const station of seedStations) uniqueStations.set(station.id, station)
+  for (const row of finalRows) for (const station of row.stations) uniqueStations.set(station.id, station)
+  const P = points.map((point) => point.P)
+  const Mx = points.map((point) => point.Mx)
+  const My = points.map((point) => point.My)
+  const finalWarnings = [...new Set([...warnings, ...finalRows.flatMap((row) => row.warnings).filter((warning) =>
+    !warning.startsWith('Direction sampling did not reach') &&
+    !warning.startsWith('Station sampling did not reach')
+  )])]
+  const directionWithinTolerance = (worst?.relativeComponent ?? Number.POSITIVE_INFINITY) <= direction.tolerance
+  const stationWithinTolerance = Number.isFinite(maxStationError) && maxStationError <= stationRefinement.tolerance
+  if (!directionWithinTolerance) finalWarnings.push(
+    `Direction sampling did not reach the requested tolerance ${direction.tolerance.toExponential(2)}; ` +
+      `the estimate is ${(worst?.relativeComponent ?? Number.NaN).toExponential(2)} over ${rows.size} directions.`
+  )
+  if (!stationWithinTolerance) finalWarnings.push(
+    `Station sampling did not reach the requested tolerance ${stationRefinement.tolerance.toExponential(2)}; ` +
+      `the worst independent meridian estimate is ${maxStationError.toExponential(2)}.`
+  )
+  if (duplicateStationWarning && analysisOptions.stations.basedOn === 'custom') {
+    finalWarnings.push('Two or more reporting stations collapse to the same effective material-limit state.')
+  }
+  return {
+    mechanics: 'stress-strain-integration',
+    points,
+    nominalPoints: points,
+    triangles,
+    nominalTriangles: triangles,
+    bounds: {
+      P: [Math.min(...P), Math.max(...P)],
+      Mx: [Math.min(...Mx), Math.max(...Mx)],
+      My: [Math.min(...My), Math.max(...My)]
+    },
+    mesh: meshReport,
+    sectionBoundaryPoints: sectionBoundaryPoints(section),
+    stations: [...uniqueStations.values()],
+    directions: sortedBetas(),
+    analysisOptions: cloneAnalysisOptions(analysisOptions),
+    strainDomain: IMPLEMENTED_STRAIN_DOMAIN,
+    directionError: {
+      directions: rows.size,
+      probedStations: [],
+      probedStationIds: [...uniqueStations.keys()],
+      maxRelativeP,
+      maxRelativeMoment,
+      maxRelativeComponent: worst?.relativeComponent ?? Number.NaN,
+      worstBeta: worst?.beta ?? Number.NaN,
+      refinementPasses: directionPasses,
+      withinTolerance: directionWithinTolerance,
+      tolerance: direction.tolerance
+    },
+    stationError: {
+      stations: Math.max(...stationCounts),
+      fixedStations: seedStations.length,
+      minStations: Math.min(...stationCounts),
+      maxStations: Math.max(...stationCounts),
+      averageStations: stationCounts.reduce((sum, count) => sum + count, 0) / stationCounts.length,
+      totalStates: points.length,
+      evaluations: evaluationCount,
+      maxRelative: maxStationError,
+      refinementPasses: Math.max(...finalRows.map((row) => row.stationError.refinementPasses)),
+      withinTolerance: stationWithinTolerance,
+      tolerance: stationRefinement.tolerance
+    },
+    comparison: {
+      workbook: 'docs/examples/reference-case/source/PM-advanced (7) 2D.xlsx',
+      notes: [
+        'Reference workbook uses fck=30 MPa, ecu=0.0033, KDS parabolic concrete, Es=200000 MPa, fy=400 MPa.',
+        'Reference Summary P0 at 0 degrees: nominal P=33981.43 kN, factored P=23443.29 kN.',
+        'Reference source pure-tension endpoint: nominal P=-5790.58 kN, factored P=-5211.53 kN.'
+      ]
+    },
+    warnings: finalWarnings,
+    designBasis: cloneDesignBasis(designBasis)
+  }
+}
+
+export const buildPreviewSurfaceFromPrepared = (
+  prepared: PreparedAnalysis,
+  analysisOptions: AnalysisOptions = createDefaultAnalysisOptions(),
+  designBasis: DesignBasis = createDefaultDesignBasis(prepared.materialStore),
+  sampling: PreviewSamplingHooks = {}
+): PreviewSurface => {
+  const mode = analysisOptions.samplingMode ?? (
+    analysisOptions.stations.refinement.type === 'adaptive' &&
+    analysisOptions.directions.refinement.type === 'adaptive'
+      ? 'adaptive'
+      : 'fixed'
+  )
+  const stationType = analysisOptions.stations.refinement.type
+  const directionType = analysisOptions.directions.refinement.type
+  if (
+    (mode === 'fixed' && (stationType !== 'fixed' || directionType !== 'fixed')) ||
+    (mode === 'adaptive' && (stationType !== 'adaptive' || directionType !== 'adaptive'))
+  ) {
+    throw new AnalysisInputError(
+      'INVALID_ANALYSIS_OPTIONS',
+      'Fixed and adaptive sampling are complete modes; station and direction refinement cannot be mixed.'
+    )
+  }
+  if (mode === 'adaptive') {
+    return buildIndependentAdaptivePreviewSurface(prepared, analysisOptions, designBasis, sampling)
+  }
+  const surface = buildPreviewSurfaceFromPreparedLegacy(prepared, analysisOptions, designBasis, sampling)
+  surface.points.forEach((point) => { point.stationCoordinate = point.station })
+  surface.nominalPoints.forEach((point) => { point.stationCoordinate = point.station })
+  const rows = groupSurfaceRows(surface.points).map(({ beta, curve }) => ({
+    beta,
+    points: curve,
+    stations: surface.stations,
+    coordinates: curve.map((point) => point.station),
+    stationError: surface.stationError,
+    warnings: surface.warnings
+  }))
+  surface.triangles = independentlySampledTopology(rows, surface.points)
+  surface.nominalTriangles = surface.triangles
+  surface.stationError = {
+    ...surface.stationError,
+    minStations: surface.stations.length,
+    maxStations: surface.stations.length,
+    averageStations: surface.stations.length,
+    totalStates: surface.points.length,
+    evaluations: surface.points.length
+  }
+  return surface
+}
+
 export const buildPreviewSurface = (
   section: SectionGeometry,
   rebars: GeometryInputRebarView[],
@@ -2310,7 +3093,9 @@ const applyAxialCap = (
         ...crossing,
         id: point.id,
         station: point.station,
-        stationId: point.stationId,
+        stationId: null,
+        surfaceRole: 'axial-cap',
+        onSampledDirection: true,
         P: cap,
         Mx: crossing.Mx * radialRatio,
         My: crossing.My * radialRatio,
@@ -2356,6 +3141,38 @@ export const buildDesignPreviewSurfaceFromPrepared = (
   // Refinement must see the resistance actually checked: φ-scaled resultants for the global route
   // and independently re-evaluated concrete/steel ledgers for the material-factor route.
   const buildResistanceSurface = (options: AnalysisOptions) => {
+    if (
+      designBasis.format === 'designMaterialReevaluation' &&
+      designPrepared === statePrepared
+    ) {
+      // `statePrepared` is already compiled from `stateMaterials`, which equals the Design
+      // materials for this route. Refine directly on those resultants. Nominal/reference values
+      // do not govern the sampled geometry, so evaluating them for every rejected midpoint is
+      // pure overhead; pair them only with the vertices retained by adaptive refinement.
+      const surface = buildPreviewSurfaceFromPrepared(
+        statePrepared,
+        options,
+        designBasis,
+        { componentAware: false }
+      )
+      const paired = surface.points.map((point) => designPointFromState(
+        point,
+        statePrepared,
+        referencePrepared,
+        designPrepared,
+        designBasis
+      ))
+      surface.points = paired.map((resistance) => resistance.design)
+      return {
+        surface,
+        nominalPoints: paired.map((resistance, index) => ({
+          ...resistance.nominal,
+          station: surface.points[index].station,
+          stationCoordinate: surface.points[index].stationCoordinate
+        }))
+      }
+    }
+
     const nominalByPointId = new Map<string, PreviewSurfacePoint>()
     const surface = buildPreviewSurfaceFromPrepared(
       statePrepared,
@@ -2373,7 +3190,10 @@ export const buildDesignPreviewSurfaceFromPrepared = (
           nominalByPointId.set(point.id, resistance.nominal)
           return resistance.design
         },
-        componentAware: designBasis.format === 'designMaterialReevaluation'
+        // Surface interpolation and ULS checks consume the total Design resultants. Refining
+        // hidden concrete/steel ledger components can chase cancellation that is absent from the
+        // resistance surface, especially along the nearly straight transition to pure tension.
+        componentAware: false
       }
     )
     return {
@@ -2381,34 +3201,24 @@ export const buildDesignPreviewSurfaceFromPrepared = (
       nominalPoints: surface.points.map((point) => {
         const nominal = nominalByPointId.get(point.id)
         if (!nominal) throw new Error(`Missing nominal resistance for surface point "${point.id}".`)
-        return nominal
+        return {
+          ...nominal,
+          station: point.station,
+          stationCoordinate: point.stationCoordinate
+        }
       })
     }
   }
   const built = buildResistanceSurface(analysisOptions)
   const base = built.surface
-  const fixedOptions = cloneAnalysisOptions(analysisOptions)
-  fixedOptions.stations.refinement = { type: 'fixed' }
-  fixedOptions.directions.refinement = {
-    type: 'fixed',
-    probe: analysisOptions.directions.refinement.probe
-  }
-  const fullyFixed =
-    analysisOptions.stations.refinement.type === 'fixed' &&
-    analysisOptions.directions.refinement.type === 'fixed'
-  const fixedBuilt = fullyFixed ? built : buildResistanceSurface(fixedOptions)
-  const fixedDesignBase = fixedBuilt.surface
+  // A run owns exactly one sampling mode.  Legacy display fields below alias that authoritative
+  // dataset; they no longer trigger or retain a second fixed calculation beside an adaptive one.
   const nominalPoints = built.nominalPoints
   const uncappedDesign = base.points
   const points =
     designBasis.format === 'globalResultantFactor'
       ? applyAxialCap(uncappedDesign, designBasis)
       : uncappedDesign
-  const fixedDesignPoints = fullyFixed
-    ? points
-    : designBasis.format === 'globalResultantFactor'
-      ? applyAxialCap(fixedDesignBase.points, designBasis)
-      : fixedDesignBase.points
   const warnings = [...base.warnings]
   if (designBasis.verificationStatus !== 'verified') {
     warnings.push(`Design profile status is ${designBasis.verificationStatus}; results are for review, not release.`)
@@ -2422,23 +3232,28 @@ export const buildDesignPreviewSurfaceFromPrepared = (
     warnings.push('Maximum axial-compression limit is disabled by analysis option.')
   }
 
+  const designSurface: PreviewSurfaceDataset = {
+    points,
+    triangles: base.triangles,
+    directions: base.directions,
+    stations: base.stations
+  }
+  const nominalSurface: PreviewSurfaceDataset = {
+    points: nominalPoints,
+    triangles: base.triangles,
+    directions: base.directions,
+    stations: base.stations
+  }
+
   return {
     ...base,
     points,
     nominalPoints,
     nominalTriangles: base.triangles,
-    designFixed: {
-      points: fixedDesignPoints,
-      triangles: fixedDesignBase.triangles,
-      directions: fixedDesignBase.directions,
-      stations: fixedDesignBase.stations
-    },
-    nominalFixed: {
-      points: fixedBuilt.nominalPoints,
-      triangles: fixedDesignBase.triangles,
-      directions: fixedDesignBase.directions,
-      stations: fixedDesignBase.stations
-    },
+    designSurface,
+    nominalSurface,
+    designFixed: designSurface,
+    nominalFixed: nominalSurface,
     bounds: surfaceBounds(points),
     warnings,
     designBasis: cloneDesignBasis(designBasis)
@@ -2462,7 +3277,7 @@ export const buildDesignPreviewSurface = (
   )
 }
 
-/** Exact one-direction calculation on the canonical fixed station schedule. */
+/** Exact one-direction calculation using the active mode's fixed or independently adaptive stations. */
 export const buildExactDirectionCurveFromPrepared = (
   statePrepared: PreparedAnalysis,
   sourceMaterials: MaterialStore,
@@ -2476,20 +3291,31 @@ export const buildExactDirectionCurveFromPrepared = (
     type: 'explicit',
     anglesDeg: [normalized * 180 / Math.PI]
   }
-  exactOptions.stations.refinement = { type: 'fixed' }
-  exactOptions.directions.refinement = { type: 'fixed', probe: 'all' }
+  if (exactOptions.samplingMode === 'adaptive') {
+    const refinement = exactOptions.directions.refinement
+    if (refinement.type !== 'adaptive') throw new Error('Adaptive mode requires adaptive directions.')
+    exactOptions.directions.refinement = { ...refinement, maxPasses: 0, maxDirections: 1 }
+  } else {
+    exactOptions.stations.refinement = { type: 'fixed' }
+    exactOptions.directions.refinement = { type: 'fixed', probe: 'all' }
+  }
   const surface = buildDesignPreviewSurfaceFromPrepared(
     statePrepared,
     sourceMaterials,
     designBasis,
     exactOptions
   )
+  const designSurface = activeDesignSurfaceDataset(surface)
+  const nominalSurface = activeNominalSurfaceDataset(surface)
   return {
     beta: normalized,
+    designCurve: designSurface.points,
+    nominalCurve: nominalSurface.points,
     designAdaptive: surface.points,
-    designFixed: surface.designFixed?.points ?? surface.points.filter((point) => point.stationId?.startsWith('adaptive-') !== true),
-    nominalFixed: surface.nominalFixed?.points ?? surface.nominalPoints,
+    designFixed: designSurface.points,
+    nominalFixed: nominalSurface.points,
     stations: surface.stations,
+    nominalStations: nominalSurface.stations,
     stationError: surface.stationError
   }
 }
@@ -2526,18 +3352,21 @@ export const sliceFixedPContour = (
   return contour.sort((a, b) => Math.atan2(a.My, a.Mx) - Math.atan2(b.My, b.Mx))
 }
 
-/** Production Fixed-P query on the fixed Design dataset. */
-export const sliceFixedDesignPContour = (
+/** Fixed-P query on the active mode's authoritative Design dataset. */
+export const sliceActiveDesignPContour = (
   surface: PreviewSurface,
   fixedP: number
 ): PreviewContourPoint[] => {
-  const fixed = surface.designFixed
+  const active = activeDesignSurfaceDataset(surface)
   return sliceFixedPContour(
-    fixed?.points ?? surface.points,
+    active.points,
     fixedP,
-    fixed?.triangles ?? surface.triangles
+    active.triangles
   )
 }
+
+/** @deprecated Use `sliceActiveDesignPContour`. */
+export const sliceFixedDesignPContour = sliceActiveDesignPContour
 
 /**
  * Intersect the preview surface with the vertical demand plane
@@ -2639,7 +3468,10 @@ export const sliceMomentPlane = (
   for (const triangle of previewSurfaceTriangles(points, triangles)) {
     const intersections = new Map<string, PreviewMomentPlanePoint>()
     const addVertex = (point: PreviewSurfacePoint) =>
-      intersections.set(vertexKey(point), projected({ ...point, onSampledDirection: true }))
+      intersections.set(vertexKey(point), projected({
+        ...point,
+        onSampledDirection: point.onSampledDirection !== false
+      }))
     const edges: Array<[PreviewSurfacePoint, PreviewSurfacePoint, boolean]> = [
       [triangle.vertices[0], triangle.vertices[1], triangle.sameDirectionEdge[0]],
       [triangle.vertices[1], triangle.vertices[2], triangle.sameDirectionEdge[1]],
@@ -2940,7 +3772,7 @@ const checkRawLoadcaseUtilizationFromSurface = (
   surface: PreviewSurface,
   loadcase: LoadCombination
 ): LoadcaseQuickCheckResult => {
-  const contour = sliceFixedDesignPContour(surface, loadcase.P)
+  const contour = sliceActiveDesignPContour(surface, loadcase.P)
   const fixedP = estimateUtilization(loadcase, contour)
   const proportional = intersectSurfaceWithDemandRay(surface, loadcase)
   const proportionalUtilization =

@@ -12,9 +12,15 @@ A P-M-M surface is built from two independent coordinates:
 - a direction coordinate, which rotates the strain gradient or compression-block normal through
   360 degrees.
 
-Both coordinates are persisted inputs. Production builds one fixed 27-by-36 grid. The result keeps
-the fixed dataset aliases required by existing report/chart consumers, but no station midpoint or
-direction bisector is generated in the standard workflow.
+Both coordinates are persisted inputs. A calculation selects exactly one independent mode:
+
+- **Fixed** builds the editable 27-by-36 grid and performs no adaptive probes;
+- **Adaptive** starts from its declared fixed criteria/directions, refines each meridian's station
+  schedule independently, and refines directions from the common angular seeds.
+
+The result exposes the selected mode as `designSurface` and `nominalSurface`. Deprecated
+`designFixed`/`nominalFixed` fields are compatibility aliases to those same objects; they do not
+trigger a hidden second fixed calculation.
 
 ## 2. Shared 27-station coordinate
 
@@ -65,7 +71,7 @@ ky = kappa sin(beta)
 The neutral-axis line is perpendicular to that gradient. The demand angle is calculated from
 `(Mx,My)` in result space and is not interchangeable with either line angle.
 
-Production default shared by both mechanics:
+Fixed default shared by both mechanics:
 
 ```text
 36 uniform seed directions (10-degree spacing)
@@ -74,9 +80,9 @@ Production default shared by both mechanics:
 no production midpoint probes or adaptive insertion
 ```
 
-The 27 definitions and 36 directions remain the immutable production/reporting baseline. Optional
-adaptive DTOs remain readable for explicit audit and backwards compatibility, but the default app
-surface does not use them.
+Adaptive mode instead owns its refined station set per meridian. Rows with unequal station counts
+are connected by explicit geometry/topology using their monotone state coordinates; station array
+indices across two directions are never treated as physical correspondence.
 
 ## 4. Surface topology
 
@@ -97,28 +103,32 @@ Nominal/Design resistance evidence where applicable
 Equivalent-block points additionally carry `c`, `a`, `beta1`, block polygon, controlling tensile
 strain, and adapter provenance.
 
-## 5. Fixed production sampling and optional audit refinement
+## 5. Independent Fixed and Adaptive modes
 
 Fixed mode does not evaluate hidden midpoint probes. It calculates only the 27 × 36 requested
 states, so changing to Section Results does not pay for a second error-measurement grid.
 
-The numerical engine still supports explicit adaptive DTOs for regression/audit experiments. In
-that nondefault mode it measures true midpoint states against chords and can insert station or
-direction midpoints. Those points are not part of the production schedule described here.
+Adaptive mode is a separate calculation, not an overlay on Fixed. It measures true midpoint states
+against chords and inserts station or direction midpoints only when the error exceeds tolerance.
+Each meridian is retained after it converges; inserting a station in one meridian does not rebuild
+or index-pair every other meridian. ULS checks and plots consume all points and the explicit
+triangulation of the selected mode.
 
 ## 6. Dataset ownership
 
-Every production result distinguishes these datasets:
+Every result distinguishes these datasets:
 
-- `designAdaptive`: compatibility name for the governing Design surface; under production options
-  it is the same fixed grid as `designFixed`;
-- `designFixed`: Design surface on the fixed 27-by-36 grid;
-- `nominalFixed`: nominal/reference result at those same fixed states and directions;
+- `designSurface`: active Design surface for the selected Fixed or Adaptive mode;
+- `nominalSurface`: active nominal/reference surface, whose independently adaptive station
+  topology may differ from Design;
+- `points` and `nominalPoints`: compatibility top-level arrays for those active datasets;
+- `designFixed` and `nominalFixed`: deprecated aliases to the active datasets, retained for old
+  persisted/report consumers only;
 - `exactDirection`: a newly evaluated direct meridian for a typed angle or a valid solved demand
-  state; it contains the same 27 fixed station definitions and no angular interpolation.
+  state; it uses the selected mode's station policy and no angular interpolation.
 
-The 3D display and fixed-P interpolation use the fixed dataset. A fixed-P diagnostic interpolates
-actual `P` on the fixed triangulation, never by station index.
+The 3D display and fixed-P interpolation use the active dataset. A fixed-P diagnostic interpolates
+actual `P` on its authoritative triangulation, never by station index.
 
 ## 7. Fixed-P contour
 
@@ -128,7 +138,7 @@ ordered closed paths. Plot markers are elements of those same paths, not results
 interpolator.
 
 The contour is useful for visualization and for a secondary fixed-P diagnostic. It is built from
-`designFixed` or `nominalFixed`; it is not the governing utilization calculation.
+`designSurface` or `nominalSurface`; it is not the governing utilization calculation.
 
 ## 8. Direct vertical meridian and exact angles
 
