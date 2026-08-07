@@ -1,12 +1,12 @@
 /**
  * Direction sampling is measured, and refinement reduces what it measures (`docs/05` section 5,
- * `docs/06` section 5). Production starts with 36 directions and adaptively probes all 22 stations;
- * fixed grids remain explicit user/benchmark choices.
+ * `docs/06` section 5). Production uses the fixed 27-by-36 grid; adaptive sampling remains an
+ * explicit audit/benchmark choice.
  */
 import { strict as assert } from 'node:assert'
 import test from 'node:test'
 import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
-import { createDefaultAnalysisOptions, type AnalysisOptions } from '@pm/project'
+import { createDefaultAnalysisOptions, UNIFIED_STATION_COUNT, type AnalysisOptions } from '@pm/project'
 import {
   buildPreviewSurfaceFromPrepared,
   intersectFixedPContourWithMomentRay,
@@ -32,15 +32,15 @@ const optionsWithRefinement = (
   return options
 }
 
-test('the default adaptively meets the shared station and angular error target', () => {
+test('the default fixed grid performs no station or direction probes', () => {
   const surface = buildPreviewSurfaceFromPrepared(prepared)
-  assert.ok(surface.stations.length >= 22 && surface.stations.length <= 48)
-  assert.ok(surface.directionError.directions >= 36)
-  assert.ok(surface.directionError.refinementPasses > 0)
-  assert.ok(surface.directionError.maxRelativeMoment > 0)
-  assert.ok(Number.isFinite(surface.directionError.maxRelativeMoment))
-  assert.ok(surface.directionError.maxRelativeComponent <= 0.0075)
-  assert.ok(surface.stationError.maxRelative <= 0.0075)
+  assert.equal(surface.stations.length, UNIFIED_STATION_COUNT)
+  assert.equal(surface.directionError.directions, 36)
+  assert.equal(surface.directionError.refinementPasses, 0)
+  assert.equal(surface.stationError.refinementPasses, 0)
+  assert.ok(Number.isNaN(surface.directionError.maxRelativeMoment))
+  assert.ok(Number.isNaN(surface.stationError.maxRelative))
+  assert.deepEqual(surface.directionError.probedStations, [])
   assert.equal(surface.points.length, surface.directionError.directions * surface.stations.length)
 })
 
@@ -64,10 +64,13 @@ test('switching the probe off costs nothing and reports unknown, never zero', ()
 })
 
 test('refinement adds directions and lowers the measured error', () => {
-  const coarse = buildPreviewSurfaceFromPrepared(
-    prepared,
-    optionsWithRefinement({ type: 'fixed', probe: 'all' })
-  )
+  const coarse = buildPreviewSurfaceFromPrepared(prepared, optionsWithRefinement({
+    type: 'adaptive',
+    tolerance: 5e-3,
+    maxPasses: 0,
+    maxDirections: 36,
+    probe: { stationIds: [5, 10, 14, 16] }
+  }))
   const fine = buildPreviewSurfaceFromPrepared(
     prepared,
     optionsWithRefinement({
@@ -86,10 +89,10 @@ test('refinement adds directions and lowers the measured error', () => {
     `${fine.directionError.maxRelativeMoment} should be below ${coarse.directionError.maxRelativeMoment}`
   )
   // Every direction still carries the full station schedule.
-  assert.equal(fine.points.length, fine.directionError.directions * 22)
+  assert.equal(fine.points.length, fine.directionError.directions * UNIFIED_STATION_COUNT)
   const perDirection = new Map<number, number>()
   for (const point of fine.points) perDirection.set(point.beta, (perDirection.get(point.beta) ?? 0) + 1)
-  assert.ok([...perDirection.values()].every((count) => count === 22))
+  assert.ok([...perDirection.values()].every((count) => count === UNIFIED_STATION_COUNT))
 })
 
 test('the direction cap is respected and reported as not converged', () => {

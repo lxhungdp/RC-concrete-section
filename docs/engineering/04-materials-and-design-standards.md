@@ -76,7 +76,7 @@ KDS current profile:
 ```
 
 These are persisted as discriminated rules, not one shared `transitionExtraStrain`, and are used for
-resistance-factor evaluation. They do not add stations to the shared 22-point production schedule.
+resistance-factor evaluation. They do not add stations to the shared 27-point production schedule.
 How transition breakpoints should participate in future adaptive sampling is intentionally separate.
 
 For the block pipeline, a declared steel ultimate strain is a mechanical boundary, not descriptive

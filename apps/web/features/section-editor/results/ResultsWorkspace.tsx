@@ -496,7 +496,18 @@ export function ResultsWorkspace({
       setExactCurveMessage('Enter a finite β angle.')
       return
     }
-    const beta = normalizeAngleDeg(value) * Math.PI / 180
+    const normalizedDegrees = normalizeAngleDeg(value)
+    const fixedAngle = surfaceDirectionAnglesDeg.find((candidate) => {
+      const difference = Math.abs(candidate - normalizedDegrees)
+      return Math.min(difference, 360 - difference) <= 1e-9
+    })
+    if (fixedAngle !== undefined) {
+      setSliceAngle(fixedAngle)
+      setExactAngleDraft(String(Number(fixedAngle.toFixed(6))))
+      setExactCurveMessage(`Fixed β · ${surface.designFixed?.stations.length ?? surface.stations.length} stations`)
+      return
+    }
+    const beta = normalizedDegrees * Math.PI / 180
     const requestId = exactRequestId.current + 1
     exactRequestId.current = requestId
     const controller = new AbortController()
@@ -516,11 +527,7 @@ export function ResultsWorkspace({
         if (exactRequestId.current !== requestId) return
         onExactDirectionCurveChange(curve)
         setExactAngleDraft(String(Number((curve.beta * 180 / Math.PI).toFixed(6))))
-        setExactCurveMessage(
-          `Exact β · ${curve.stationError.fixedStations} fixed + ${
-            curve.stationError.stations - curve.stationError.fixedStations
-          } adaptive stations`
-        )
+        setExactCurveMessage(`Exact β · ${curve.stationError.fixedStations} fixed stations`)
       })
       .catch((error) => {
         if (exactRequestId.current === requestId && !isAnalysisAbort(error)) {

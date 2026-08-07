@@ -95,24 +95,13 @@ const run = () => {
   assert.equal(parsedAnalysis.methodId, 'strain-domain-surface-v1')
   if (parsedAnalysis.methodId !== 'strain-domain-surface-v1') throw new Error('Expected curve analysis options')
   assert.equal(parsedAnalysis.stations.intermediate.length, UNIFIED_INTERMEDIATE_STATION_COUNT)
-  assert.deepEqual(parsedAnalysis.stations.refinement, {
-    type: 'adaptive',
-    tolerance: 0.0075,
-    maxPasses: 8,
-    maxStations: 48
-  })
+  assert.deepEqual(parsedAnalysis.stations.refinement, { type: 'fixed' })
   assert.deepEqual(parsedAnalysis.directions.seed, {
     type: 'uniform',
     count: 36,
     startDeg: 0
   })
-  assert.deepEqual(parsedAnalysis.directions.refinement, {
-    type: 'adaptive',
-    tolerance: 0.0075,
-    maxPasses: 8,
-    maxDirections: 360,
-    probe: 'all'
-  })
+  assert.deepEqual(parsedAnalysis.directions.refinement, { type: 'fixed', probe: 'all' })
 
   const empty = createEmptyProjectDocument({ id: 1, name: 'Empty' })
   const emptyParsed = parseProjectDocument(serializeProjectDocument(empty))

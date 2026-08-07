@@ -629,7 +629,7 @@ export const renderColumnReport = (model: ColumnReportModel): Uint8Array => {
       bounds: detailBounds,
       preserveAspect: false,
       caption: detail.interaction.kind === 'direct-beta'
-        ? 'solid = adaptive Design · dashed = fixed Nominal · points are projected on βeq'
+        ? 'solid = fixed Design · dashed = fixed Nominal · points are projected on βeq'
         : 'solid = fixed Design · dashed = fixed Nominal · dotted ray = governing proportional check'
     })
     drawInteraction(interactionFrame, detailBounds, detail.interaction, {

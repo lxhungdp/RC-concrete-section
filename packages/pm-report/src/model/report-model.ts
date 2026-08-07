@@ -604,7 +604,7 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       ...(designBasisRequiresOverrideReason(basis) && basis.overrideReason.trim().length > 0
         ? [`Modified resistance profile. Stated basis: ${basis.overrideReason}`]
         : []),
-      'Overview interaction diagrams are geometric plane cuts of the fixed 22-station, 10° direction grid. Adaptive design points are reserved for governing resistance checks and exact demand meridians.'
+      'Overview interaction diagrams are geometric plane cuts of the fixed 27-station, 10° direction grid. An arbitrary exact direction is calculated only when it is requested.'
     ],
     warnings: input.surface.warnings ?? [],
     drawing,

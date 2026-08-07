@@ -36,10 +36,10 @@ independent.
 | KDS SD300/SD400 ambiguity | `0.005` is used through 400 MPa and `2.5 eps_y` above; SD300, SD400, and SD500 boundary tests are present |
 | tautological closure diagnostic | renamed to component-assembly residual; equilibrium residual is independently evaluated as response minus scaled demand |
 | admissibility stub | physical inverse states evaluate concrete vertices and every bar; violations carry values, limits, and bar IDs |
-| station schedules drifted by mechanics | both pipelines now consume `unified-22-v1`; automatic transition/event insertion is disabled in the production baseline |
+| station schedules drifted by mechanics | both pipelines now consume `unified-27-v2`; automatic transition/event insertion is disabled in the production baseline |
 | argument-spread overflow | extrema/scales use loops; the maximum validated surface and large polygon paths are stress-tested |
 | surface rebuilt per loadcase | worker caches a core Design surface with a complete resistance-domain key; integration test proves four checks cause one build |
-| benchmark confused verification density with defaults | dense references remain explicitly benchmark-only; production surfaces always start from the shared 22 stations |
+| benchmark confused verification density with defaults | dense references remain explicitly benchmark-only; production surfaces use the shared 27 stations |
 | failed LM reported converged | status is `mesh-fallback`, `converged=false`, `ok=false`; the raw last exact state and residual remain auditable |
 
 ## Commands and outcome
@@ -62,12 +62,11 @@ observations, not contractual speed limits.
 |---|---:|
 | Exact forward evaluation | 177.7-492.2 thousand evaluations/s |
 | Controlled surface | 25.28-37.18 ms |
-| Direction-adaptive production surface | measured by the current harness |
-| Effective directions / points | geometry-dependent; emitted by every run |
-| Direction convergence | asserted for every case |
+| Fixed production surface | measured by the current harness |
+| Effective directions / points | 36 directions and the fixed station schedule |
 | Surface ray query | 3,564-17,495 queries/s; 100% hits |
 | Coarse 36-direction ray error | at most 2.622% |
-| Production surface to exact LM correction | at most 0.918% |
+| Fixed surface seed to exact LM correction | emitted by every run |
 | Exact proportional inverse | 0.32-1.01 ms/solve |
 | Exact proportional inverse residual | at most 7.39e-10 |
 | Fixed-axial inverse | solved directly and checked against known states |
@@ -78,7 +77,7 @@ observations, not contractual speed limits.
 ## Sampling benchmark against a high-resolution reference
 
 Five structurally different sections are compared against dense direction/reference evaluations.
-Every production candidate uses `unified-22-v1`; the benchmark is allowed to increase evaluation
+Every production candidate uses `unified-27-v2`; the benchmark is allowed to increase evaluation
 density only for an independent numerical oracle. It does not publish or persist another default
 station schedule. Fixed and adaptive candidates differ only in direction policy.
 
@@ -86,7 +85,7 @@ station schedule. Fixed and adaptive candidates differ only in direction policy.
 
 The integration fixture verifies that the UI bridge exposes `c`, `a`, `beta1`, exact block area,
 block polygon, controlling bar/strain, resistance evidence, component-assembly residuals, and actual
-admissibility. Switching profiles keeps the same 22 stations and restores the independent KDS
+admissibility. Switching profiles keeps the same 27 stations and restores the independent KDS
 stress-strain direction controls. The block result never paints constant concrete stress
 outside `0 <= depth <= a`.
 

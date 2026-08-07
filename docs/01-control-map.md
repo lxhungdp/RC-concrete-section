@@ -47,7 +47,7 @@ Accepted-analysis parameters must eventually live in versioned package options, 
 
 | Parameter or behavior | Current edit location | Authority | Status |
 |---|---|---|---|
-| Shared 22-station schedule for both mechanics | `packages/pm-stations/src/index.ts` | [`12-calculation-models-defaults-and-workflows.md`](12-calculation-models-defaults-and-workflows.md) | implemented preview |
+| Shared 27-station schedule for both mechanics | `packages/pm-stations/src/index.ts` | [`12-calculation-models-defaults-and-workflows.md`](12-calculation-models-defaults-and-workflows.md) | implemented preview |
 | Shared adaptive sampling: 22 fixed stations, 36 fixed directions, 0.75% station/direction tolerance | `packages/pm-project/src/analysis-options.ts` | [`05-pm-diagram-stations-angles-plotting.md`](05-pm-diagram-stations-angles-plotting.md) | implemented for both mechanics on Design resistance only; nominal and visual grids remain fixed |
 | Resultant signs | `engineering/02-data-conventions-and-terminology.md`, then each mechanics ledger | [`03-forward-analysis-and-jacobian.md`](03-forward-analysis-and-jacobian.md) | implemented consistently: `Mx = ΣF(y-yc)`, `My = ΣF(x-xc)` in both mechanics, DTOs, plots and exports; asymmetric ledger tests guard the contract |
 | Concrete integration-mesh density | `AnalysisOptions.mesh` and `packages/pm-geometry` | [`06-mesh-sizing-and-convergence.md`](06-mesh-sizing-and-convergence.md) | used only by stress-strain integration |

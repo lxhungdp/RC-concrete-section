@@ -807,6 +807,7 @@ export const buildEquivalentBlockExactDirectionCurveFromPrepared = (
 ): ExactDirectionCurve => {
   const normalizedBeta = wrap(beta)
   const exactOptions = cloneCalculationAnalysisOptions(options)
+  exactOptions.neutralAxisStations.refinement = { type: 'fixed' }
   exactOptions.directions.seedCount = 4
   exactOptions.directions.startDeg = wrap(Math.PI / 2 - normalizedBeta) * 180 / Math.PI
   exactOptions.directions.refinement = { type: 'fixed' }

@@ -1,5 +1,5 @@
 /**
- * Fixed-P is the horizontal intersection of the independent fixed 22 × 36 surface. Sampled
+ * Fixed-P is the horizontal intersection of the independent fixed 27 × 36 surface. Sampled
  * meridian crossings are labelled markers; diagonal/cross-beta crossings remain polygon vertices.
  */
 import { strict as assert } from 'node:assert'

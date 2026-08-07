@@ -21,7 +21,7 @@ rules differ.
 - Reinforcement yield strength: 420 MPa; elastic modulus: 200,000 MPa.
 - Every bar has an exact area of 400 mm²; its stored diameter is
   `sqrt(4 × 400 / pi) = 22.5675833419 mm`.
-- Equivalent-block production sampling: shared `unified-22-v1` 22 fixed stations, 36 fixed seed
+- Equivalent-block production sampling: shared `unified-27-v2` 27 fixed stations, 36 fixed
   directions, and Design-only adaptive station/direction tolerance of 0.75%.
 - Each project includes three factored ULS audit loads generated from evaluated design states:
   one oblique neutral-axis ray and two cardinal neutral-axis rays at 0° and 90°.

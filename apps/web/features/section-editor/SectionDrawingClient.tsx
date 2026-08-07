@@ -733,12 +733,22 @@ export function SectionDrawingClient() {
       stationCount,
       fixedDirectionCount: resultSurface?.designFixed?.directions.length ?? 0,
       fixedStationCount: resultSurface?.designFixed?.stations.length ?? 0,
-      refinement: resultSurface
+      refinement: resultSurface && (
+        Number.isFinite(resultSurface.directionError.maxRelativeComponent) ||
+        Number.isFinite(resultSurface.stationError.maxRelative)
+      )
         ? {
-            tolerance: resultSurface.directionError.tolerance,
+            tolerance: Math.min(
+              resultSurface.directionError.tolerance,
+              resultSurface.stationError.tolerance
+            ),
             maxRelative: Math.max(
-              resultSurface.directionError.maxRelativeComponent,
-              resultSurface.stationError.maxRelative
+              Number.isFinite(resultSurface.directionError.maxRelativeComponent)
+                ? resultSurface.directionError.maxRelativeComponent
+                : 0,
+              Number.isFinite(resultSurface.stationError.maxRelative)
+                ? resultSurface.stationError.maxRelative
+                : 0
             ),
             withinTolerance:
               resultSurface.directionError.withinTolerance &&

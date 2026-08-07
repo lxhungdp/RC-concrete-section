@@ -13,8 +13,8 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 | Profile selection | one Materials selection atomically binds KDS stress-strain, KDS block, ACI block, or either `Custom` mechanics and defaults; the profile table is the single owner of mechanics/material-standard/resistance-profile coherence | add only edition-scoped profiles with independent review evidence |
 | Geometry | multiple solids/holes, rebars, exact properties, clipping, triangle/quadrature mesh | complete production topology/cover acceptance UX |
 | Materials | persisted concrete/steel definitions, compiled stress/tangent laws, material support gates | finish independent curve verification for every declared scope |
-| Stress-strain kernel | prepared mesh, shared 22-state default, 36-direction seed, adaptive angular refinement, full fields, inverse Newton | accepted-result numerical-uncertainty gate and larger independent oracle set |
-| Equivalent-block kernel | shared fixed 22-state schedule, standard-independent exact clipping, forward evaluator, exact-refined inverse solvers, rupture/admissibility, block field | independent clause calculations and additional commercial cross-checks |
+| Stress-strain kernel | prepared mesh, shared 27-state default, 36 fixed directions, full fields, inverse Newton | accepted-result numerical-uncertainty gate and larger independent oracle set |
+| Equivalent-block kernel | shared fixed 27-state schedule, standard-independent exact clipping, forward evaluator, exact-refined inverse solvers, rupture/admissibility, block field | independent clause calculations and additional commercial cross-checks |
 | KDS block adapter | KDS 14 20 20 parameter table, `a=beta1 c`, block stress, KDS phi transition and axial cap | named structural-code review and release status above draft |
 | ACI block adapter | ACI 318-19(22) beta1, Whitney stress, phi transition and axial cap | named structural-code review and release status above draft |
 | Custom block adapter | user-declared beta1/block stress/epsCu, either transition rule shape, elastic-perfectly-plastic, bilinear or tabulated steel; unit-tested to reproduce the ACI and KDS adapters exactly when given their parameters | none — it is `user-defined` by construction and is never promoted |
@@ -30,11 +30,10 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
   fail closed, while the ACI calculation profile routes to the implemented equivalent-block adapter.
 - Missing steel references, empty concrete, mesh resource excess, and failed mesh self-checks are
   typed fatal errors.
-- Every mechanics/profile now reads the same `unified-22-v1` station schedule and starts at 36
-  directions. Both station and direction refinement use a 0.75% Design chord target; nominal,
-  fixed-P, and 3D presentation retain the independent fixed grid.
-- Automatic design-factor transition/event stations are disabled. Resistance-factor and material-
-  factor curvature is captured by Design-only adaptive error measurement instead.
+- Every mechanics/profile now reads the same `unified-27-v2` station schedule and uses 36 fixed
+  directions. Production surface construction performs no station/direction midpoint probes.
+- Automatic design-factor transition/event stations are disabled. Five fixed tensile-strain ratios
+  increase resolution in the high-curvature yield range.
 - Project versioning is the single pre-release v1 family: document, DesignBasis, analysis options,
   methods, and named schedules are all v1. No migration or backward-compatibility work is carried.
   Omitted-field defaults are explicit parser-v1 behavior.
@@ -66,7 +65,7 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 ## 4. Numerical evidence for the unified station default
 
 The permanent `bench:strain-sampling` harness uses five structural geometries and holds the shared
-22 stations constant while comparing fixed and angular-adaptive direction sampling with a dense
+27 stations constant while comparing fixed direction sampling with a dense
 direction reference. Cross-model tests additionally assert the exact criterion list, both poles,
 all four equivalent-block profiles, workbook export, schema parsing, and surface/inverse reuse.
 
@@ -107,7 +106,7 @@ all four equivalent-block profiles, workbook export, schema parsing, and surface
   DesignBasis, never in the generic block kernel;
 - all demand used by the governing check is factored ULS;
 - the production station schedule is owned only by `@pm/stations` and identified by
-  `unified-22-v1` in both analysis DTOs;
+  `unified-27-v2` in both analysis DTOs;
 - every result-affecting default change updates code, tests, benchmarks, schema documentation, UI
   help, and report evidence in one change set.
 

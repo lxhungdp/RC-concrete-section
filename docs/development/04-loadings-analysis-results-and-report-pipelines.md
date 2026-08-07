@@ -64,11 +64,11 @@ Current schema v1 resolves one of two independent mechanics before preparation:
 
 ```text
 strain-domain-surface-v1
-  -> @pm/analysis (stress-strain mesh, shared 22 stations, 36-direction adaptive seed)
+  -> @pm/analysis (stress-strain mesh, shared 27 stations, 36 fixed directions)
 
 equivalent-block-surface-v1
   -> @pm/analysis-equivalent-block
-  -> @pm/equivalent-block + selected adapter (shared 22 stations)
+  -> @pm/equivalent-block + selected adapter (shared 27 stations)
 ```
 
 The orchestration may normalize both outputs to common Nominal/Design/Demand result contracts, but
@@ -131,9 +131,9 @@ EquivalentBlockAnalysisOptions editor
   -> structural validation in @pm/project
   -> @pm/analysis-equivalent-block profile bridge
   -> @pm/equivalent-block + selected KDS/ACI adapter
-  -> shared fixed 22-state schedule
+  -> shared fixed 27-state schedule
   -> Design-only adaptive station and direction refinement at the shared 0.75% target
-  -> separate fixed 22-station / 36-direction datasets for display and Fixed-P
+  -> fixed 27-station / 36-direction datasets for display and Fixed-P
   -> common PreviewSurface and model-specific block fields
 ```
 

@@ -19,6 +19,7 @@ import {
   parseProjectDocument,
   serializeProjectDocument,
   UNIFIED_DEPTH_RATIOS,
+  UNIFIED_STATION_COUNT,
   UNIFIED_STEEL_STRAIN_YIELD_RATIOS,
   type EquivalentBlockAnalysisOptions,
   type EquivalentBlockProfileId
@@ -188,7 +189,7 @@ for (const profileId of [
     } else {
       assertCardinalSlicesHaveNoCapToTensionChord(surface, profileId)
     }
-    assert.equal(surface.stations.length, 22)
+    assert.equal(surface.stations.length, UNIFIED_STATION_COUNT)
     assert.equal(surface.stations[0].definition.kind, 'pure-compression')
     assert.equal(surface.stations.at(-1)?.definition.kind, 'pure-tension')
     assert.equal(
@@ -206,7 +207,7 @@ for (const profileId of [
     )
     assert.equal(
       surface.stations.filter((station) => station.definition.kind === 'bar-tension-yield-ratio').length,
-      14,
+      UNIFIED_STEEL_STRAIN_YIELD_RATIOS.length,
       'all block models must use the shared controlling-bar yield-ratio schedule'
     )
     assert.equal(
@@ -259,17 +260,13 @@ test('schema v1 round-trips a block profile without migration', () => {
   }
 })
 
-test('ACI default keeps an independent 22-by-36 fixed grid while adaptive design solves a practical demand', () => {
+test('ACI default keeps one independent 27-by-36 fixed grid and solves a practical demand', () => {
   const profileId = 'aci-318-19-22-equivalent-block' as const
   const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
   const design = createDesignBasisForCalculationProfile(profileId)
   const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
-  assert.deepEqual(options.neutralAxisStations.refinement, {
-    type: 'adaptive',
-    tolerance: 0.0075,
-    maxPasses: 8,
-    maxStations: 48
-  })
+  assert.deepEqual(options.neutralAxisStations.refinement, { type: 'fixed' })
+  assert.deepEqual(options.directions.refinement, { type: 'fixed' })
   const prepared = prepareBlockAnalysis(
     profileId,
     sectionGeometryFromGeometryInput(geometry),
@@ -278,15 +275,13 @@ test('ACI default keeps an independent 22-by-36 fixed grid while adaptive design
     design
   )
   const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
-  assert.equal(surface.designFixed?.stations.length, 22)
+  assert.equal(surface.designFixed?.stations.length, UNIFIED_STATION_COUNT)
   assert.equal(surface.designFixed?.directions.length, 36)
-  assert.equal(surface.nominalFixed?.stations.length, 22)
+  assert.equal(surface.nominalFixed?.stations.length, UNIFIED_STATION_COUNT)
   assert.equal(surface.nominalFixed?.directions.length, 36)
-  assert.ok(surface.stations.length >= 22 && surface.stations.length <= 48)
-  assert.ok(surface.stationError.refinementPasses > 0)
-  assert.ok(surface.directionError.refinementPasses > 0)
-  assert.ok(surface.stationError.maxRelative <= 0.0075)
-  assert.ok(surface.directionError.maxRelativeComponent <= 0.0075)
+  assert.equal(surface.stations.length, UNIFIED_STATION_COUNT)
+  assert.equal(surface.stationError.refinementPasses, 0)
+  assert.equal(surface.directionError.refinementPasses, 0)
   const inverse = solveEquivalentBlockDemandFromPrepared(prepared, options, {
     id: 9,
     name: 'Practical ULS demand',
@@ -300,7 +295,7 @@ test('ACI default keeps an independent 22-by-36 fixed grid while adaptive design
   assert.ok(inverse.equivalentBlock)
 })
 
-test('an exact equivalent-block direction refines stations only on the requested meridian', () => {
+test('an exact equivalent-block direction uses only fixed stations on the requested meridian', () => {
   const profileId = 'aci-318-19-22-equivalent-block' as const
   const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
   const design = createDesignBasisForCalculationProfile(profileId)
@@ -318,17 +313,17 @@ test('an exact equivalent-block direction refines stations only on the requested
   assert.ok(Math.abs(curve.beta - beta) < 1e-14)
   assert.equal(
     curve.nominalFixed.length,
-    22,
+    UNIFIED_STATION_COUNT,
     curve.nominalFixed.map((point) => point.stationId ?? point.surfaceRole ?? point.id).join(', ')
   )
   assert.ok(curve.designFixed.some((point) => point.surfaceRole === 'axial-cap'))
   assert.ok(curve.designFixed.every((point) => point.stationId?.startsWith('adaptive-') !== true))
-  assert.equal(curve.stations.filter((station) => station.fixed).length, 22)
-  assert.ok(curve.designAdaptive.length >= 22 && curve.designAdaptive.length <= 48)
+  assert.equal(curve.stations.filter((station) => station.fixed).length, UNIFIED_STATION_COUNT)
+  assert.deepEqual(curve.designAdaptive, curve.designFixed)
   assert.ok(curve.designAdaptive
     .filter((point) => point.surfaceRole !== 'pure-compression' && point.surfaceRole !== 'pure-tension')
     .every((point) => Math.abs(point.beta - beta) < 1e-10))
-  assert.ok(curve.stationError.maxRelative <= 0.0075)
+  assert.equal(curve.stationError.refinementPasses, 0)
 })
 
 test('equivalent-block inverse reports evaluated steel admissibility and honours epsU', () => {

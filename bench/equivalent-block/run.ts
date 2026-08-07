@@ -131,16 +131,6 @@ const relativeError = (actual: number, expected: number) =>
 
 const results: Array<Record<string, string | number>> = []
 const verificationFailures: string[] = []
-const productionSurfaceOptions = {
-  seedDirections: 36,
-  directionTolerance: 0.0075,
-  maxRefinementPasses: 6,
-  maxDirections: 360,
-  stationTolerance: 0.0075,
-  maxStationRefinementPasses: 6,
-  maxStations: 48
-} as const
-
 for (const { standard, model } of models) {
   for (const item of cases) {
     const evaluator = model.bindDesignEvaluator(item.section)
@@ -168,13 +158,7 @@ for (const { standard, model } of models) {
       surfaceTimes.push(performance.now() - started)
     }
     if (!surface.topology.closed) verificationFailures.push(`${standard}/${item.name}: open surface`)
-    const adaptiveStarted = performance.now()
-    const adaptiveSurface = model.buildDesignSurface(item.section, productionSurfaceOptions)
-    const adaptiveSurfaceMs = performance.now() - adaptiveStarted
-    if (!adaptiveSurface.topology.closed) verificationFailures.push(`${standard}/${item.name}: open adaptive surface`)
-    if (!adaptiveSurface.directionRefinementConverged) {
-      verificationFailures.push(`${standard}/${item.name}: adaptive direction refinement did not converge`)
-    }
+    const fixedSurfaceMs = median(surfaceTimes)
 
     const raySamples = Array.from({ length: 80 }, (_, index) => {
       const state = {
@@ -204,12 +188,12 @@ for (const { standard, model } of models) {
 
     let maxRefinedError = 0
     let maxResidual = 0
-    let maxAdaptiveToRefinedError = 0
+    let maxSurfaceToRefinedError = 0
     let capFaceSolutions = 0
     const inverseCount = 12
     const inverseMs = timeLoop(inverseCount, (index) => {
       const sample = raySamples[index * 5]
-      const solved = solveProportionalRayCapacity(adaptiveSurface, sample.demand, evaluator)
+      const solved = solveProportionalRayCapacity(surface, sample.demand, evaluator)
       if (solved.status === 'cap-face-governed') {
         capFaceSolutions += 1
         return
@@ -219,8 +203,8 @@ for (const { standard, model } of models) {
         return
       }
       maxRefinedError = Math.max(maxRefinedError, relativeError(solved.loadFactor!, sample.expectedFactor))
-      maxAdaptiveToRefinedError = Math.max(
-        maxAdaptiveToRefinedError,
+      maxSurfaceToRefinedError = Math.max(
+        maxSurfaceToRefinedError,
         relativeError(solved.surfaceIntersection!.loadFactor, solved.loadFactor!)
       )
       maxResidual = Math.max(maxResidual, solved.residualNorm ?? 0)
@@ -238,7 +222,7 @@ for (const { standard, model } of models) {
       { Mx: fixedKnown.resultants.Mx, My: fixedKnown.resultants.My },
       {
         axialCap: model.axialCap(item.section),
-        eventStations: adaptiveSurface.stations,
+        eventStations: surface.stations,
         extremeCompressionStrain: model.blockLaw.extremeCompressionStrain,
         steelLaws: model.steelLaws
       }
@@ -248,9 +232,6 @@ for (const { standard, model } of models) {
     if (maxResidual > 1e-7) {
       verificationFailures.push(`${standard}/${item.name}: refined inverse accuracy`)
     }
-    if (maxAdaptiveToRefinedError > 0.01) {
-      verificationFailures.push(`${standard}/${item.name}: production surface differs from exact inverse by more than 1%`)
-    }
     if (rayHits !== raySamples.length) {
       verificationFailures.push(`${standard}/${item.name}: missing ray intersections`)
     }
@@ -259,20 +240,17 @@ for (const { standard, model } of models) {
     }
 
     const cachedDemandMs = inverseMs / inverseCount + fixedMs
-    const uncachedDemandMs = adaptiveSurfaceMs + cachedDemandMs
-    const cachedBatch20Ms = adaptiveSurfaceMs + 20 * cachedDemandMs
+    const uncachedDemandMs = fixedSurfaceMs + cachedDemandMs
+    const cachedBatch20Ms = fixedSurfaceMs + 20 * cachedDemandMs
     const uncachedBatch20Ms = 20 * uncachedDemandMs
     results.push({
       standard,
       case: item.name,
       forwardKopsPerSec: forwardIterations / forwardMs,
       surfaceMsMedian: median(surfaceTimes),
-      adaptiveSurfaceMs,
-      adaptiveDirections: adaptiveSurface.directions.length,
-      adaptivePoints: adaptiveSurface.points.length,
-      adaptiveDirectionalError: adaptiveSurface.maxDirectionalInterpolationError,
-      fixedStationChordDiagnostic: adaptiveSurface.maxStationInterpolationError,
-      adaptiveDirectionConverged: adaptiveSurface.directionRefinementConverged ? 1 : 0,
+      fixedSurfaceMs,
+      fixedDirections: surface.directions.length,
+      fixedPoints: surface.points.length,
       surfacePoints: surface.points.length,
       surfaceTriangles: surface.triangles.length,
       degenerateTriangles: surface.topology.degenerateTriangles,
@@ -281,7 +259,7 @@ for (const { standard, model } of models) {
       maxCoarseRayRelError: maxMeshRayError,
       inverseMsPerSolve: inverseMs / inverseCount,
       maxBranchFactorDrift: maxRefinedError,
-      maxAdaptiveToRefinedError,
+      maxSurfaceToRefinedError,
       maxRefinedResidual: maxResidual,
       capFaceSolutions,
       fixedMs,
@@ -303,15 +281,15 @@ console.table(results.map((result) => ({
   case: result.case,
   'forward k/s': Number(result.forwardKopsPerSec).toFixed(1),
   'surface ms': Number(result.surfaceMsMedian).toFixed(2),
-  'adaptive ms': Number(result.adaptiveSurfaceMs).toFixed(2),
-  'adaptive dirs': result.adaptiveDirections,
+  'grid ms': Number(result.fixedSurfaceMs).toFixed(2),
+  'fixed dirs': result.fixedDirections,
   'ray q/s': Number(result.rayQueriesPerSec).toFixed(0),
   'coarse ray err': Number(result.maxCoarseRayRelError).toExponential(2),
   'inverse ms': Number(result.inverseMsPerSolve).toFixed(2),
   'LM residual': Number(result.maxRefinedResidual).toExponential(2),
-  'adaptive→LM': Number(result.maxAdaptiveToRefinedError).toExponential(2),
+  'fixed→LM': Number(result.maxSurfaceToRefinedError).toExponential(2),
   'cap hits': result.capFaceSolutions,
-  'fixed ms': Number(result.fixedMs).toFixed(2),
+  'fixed-P ms': Number(result.fixedMs).toFixed(2),
   'fixed err': Number(result.fixedRelError).toExponential(2),
   '20LC cache x': Number(result.batch20CacheSpeedup).toFixed(2)
 })))

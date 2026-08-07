@@ -222,7 +222,7 @@ but adapter-permitted cases. A warning never overrides a fatal gate.
 | Axial cap plane | cap face closed and ray intersection correct |
 | Asymmetric bars and nonzero uniform-strain moments | handled in full 3D; no assumption that poles lie on moment origin |
 | Multiple fixed-P loops | preserve loops and hole parity |
-| Demand angle between fixed strain directions | governing 3D ray uses the adaptive Design mesh; exact demand beta comes from the valid inverse state and is recalculated |
+| Demand angle between fixed strain directions | quick governing 3D ray uses the fixed Design mesh; selecting the demand recalculates its valid inverse state and exact beta meridian |
 | Near-tangent demand ray | targeted refinement or `indeterminate` |
 | Non-star-shaped design domain | point location available; proportional UR blocked/indeterminate |
 | Mesh/surface limit reached | typed failure, never accepted with console warning |

@@ -23,11 +23,10 @@ export const MAX_MESH_CELLS = 1_000_000
 export const MAX_MESH_SUBDIVISION = 8
 export const MAX_BLOCK_STATIONS = 198
 
-/** Production sampling policy shared by both mechanics. */
+/** Production direction count plus limits retained for explicit nondefault audit refinement. */
 export const FIXED_DIRECTION_COUNT = 36
 export const ADAPTIVE_INTERPOLATION_TOLERANCE = 0.0075
-// Eight is a ceiling, not a prescribed pass count. Production benchmarks include a dense tall
-// rectangle that converges on station pass seven while remaining below the 48-station cap.
+// These adaptive ceilings are not used by the fixed production defaults.
 export const ADAPTIVE_MAX_PASSES = 8
 export const ADAPTIVE_MAX_STATIONS = 48
 export const ADAPTIVE_MAX_DIRECTIONS = 360
@@ -137,7 +136,7 @@ const station = (id: number, label: string, criterion: AnalysisStationCriterion)
 })
 
 /**
- * Shared 22-station production baseline for the strain-domain model.
+ * Shared 27-station production baseline for the strain-domain model.
  * The neutral axis is parameterized by c/D outside the section and by the controlling bar's
  * tensile strain divided by its own yield strain inside the section.
  */
@@ -158,22 +157,11 @@ export const createDefaultAnalysisOptions = (): AnalysisOptions => ({
         )
       )
     ],
-    refinement: {
-      type: 'adaptive',
-      tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
-      maxPasses: ADAPTIVE_MAX_PASSES,
-      maxStations: ADAPTIVE_MAX_STATIONS
-    }
+    refinement: { type: 'fixed' }
   },
   directions: {
     seed: { type: 'uniform', count: FIXED_DIRECTION_COUNT, startDeg: 0 },
-    refinement: {
-      type: 'adaptive',
-      tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
-      maxPasses: ADAPTIVE_MAX_PASSES,
-      maxDirections: ADAPTIVE_MAX_DIRECTIONS,
-      probe: 'all'
-    }
+    refinement: { type: 'fixed', probe: 'all' }
   },
   mesh: {
     sizing: { type: 'automatic', seedDivisions: 32 },
@@ -182,7 +170,7 @@ export const createDefaultAnalysisOptions = (): AnalysisOptions => ({
   }
 })
 
-/** Shared 22-station production baseline for every equivalent-block model. */
+/** Shared 27-station production baseline for every equivalent-block model. */
 export const createDefaultEquivalentBlockAnalysisOptions = (): EquivalentBlockAnalysisOptions => ({
   optionsVersion: ANALYSIS_OPTIONS_VERSION,
   methodId: EQUIVALENT_BLOCK_SURFACE_METHOD,
@@ -195,22 +183,12 @@ export const createDefaultEquivalentBlockAnalysisOptions = (): EquivalentBlockAn
         ratio
       }))
     ],
-    refinement: {
-      type: 'adaptive',
-      tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
-      maxPasses: ADAPTIVE_MAX_PASSES,
-      maxStations: ADAPTIVE_MAX_STATIONS
-    }
+    refinement: { type: 'fixed' }
   },
   directions: {
     seedCount: FIXED_DIRECTION_COUNT,
     startDeg: 0,
-    refinement: {
-      type: 'adaptive',
-      tolerance: ADAPTIVE_INTERPOLATION_TOLERANCE,
-      maxPasses: ADAPTIVE_MAX_PASSES,
-      maxDirections: ADAPTIVE_MAX_DIRECTIONS
-    }
+    refinement: { type: 'fixed' }
   }
 })
 

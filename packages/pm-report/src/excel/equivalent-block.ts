@@ -395,7 +395,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
       unit: '-',
       note: 'non-pole layers remaining after coincident layers and the design axial cap are removed from mesh topology'
     },
-    { row: row++, label: 'adaptive Design directions', value: sampledDirections.length, unit: '-', note: `seed ${input.analysisOptions.directions.seedCount}` },
+    { row: row++, label: 'Design directions', value: sampledDirections.length, unit: '-', note: `fixed ${input.analysisOptions.directions.seedCount}` },
     { row: row++, label: 'fixed-P directions', value: fixedDirections.length, unit: '-', note: 'independent fixed grid used by MxMy_FixedP' },
     { row: row++, label: 'direction interpolation error', value: designSurfaceCore.maxDirectionalInterpolationError, unit: '-', note: designSurfaceCore.directionRefinementConverged ? 'within the requested tolerance' : 'TOLERANCE NOT REACHED' },
     {
@@ -907,7 +907,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   mmSheet.columns = [{ width: 4 }, { width: 10 }, { width: 12 }, ...Array.from({ length: 12 }, () => ({ width: 14 }))]
   title(mmSheet, 1, 'DESIGN SURFACE AT P = Pu, AND THE DEMAND-RAY QUERY', 13)
   noteCell(mmSheet, 2, 2,
-    'The grid is the independent fixed Design surface (22 stations and 36 directions). Everything after it — the P-interval bracket, the linear interpolation to Pu, and the ray query at θ_L — is a formula. Adaptive vertices are intentionally excluded.')
+    'The grid is the independent fixed Design surface (27 stations and 36 directions). Everything after it — the P-interval bracket, the linear interpolation to Pu, and the ray query at θ_L — is a formula. No adaptive vertices are generated.')
   mmSheet.mergeCells('B2:N4')
   mmSheet.getRow(2).height = 30
 
@@ -985,7 +985,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   ptSheet.columns = [{ width: 4 }, { width: 10 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 46 }]
   title(ptSheet, 1, 'GEOMETRIC P–Mθ DEMAND-PLANE DIAGNOSTIC', 5)
   noteCell(ptSheet, 2, 2,
-    'Independent geometric demand-plane diagnostic on the fixed 22-station / fixed-direction Design surface. The application Vertical chart is instead a direct exact-β meridian recovered from the valid equilibrium state.')
+    'Independent geometric demand-plane diagnostic on the fixed 27-station / fixed-direction Design surface. The application Vertical chart is instead a direct exact-β meridian recovered from the valid equilibrium state.')
   ptSheet.mergeCells('B2:G3')
   const planePaths = sliceMomentPlane(
     surface.designFixed?.points ?? surface.points,

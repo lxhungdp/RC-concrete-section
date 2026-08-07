@@ -45,7 +45,7 @@ test('a mesh over its cell budget is a typed fatal error, not a steel-only surfa
 
 test('raising the budget deliberately lets the same section through', () => {
   // This test exercises only the mesh gate and compression pole. Keep surface sampling minimal so
-  // a 327k-cell mesh is not multiplied by the unrelated production adaptive schedule.
+  // a 327k-cell mesh is not multiplied by any optional audit refinement schedule.
   const surface = buildPreviewSurface(
     section,
     rebars,

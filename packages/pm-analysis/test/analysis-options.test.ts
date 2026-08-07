@@ -9,6 +9,8 @@ import {
   parseProjectDocument,
   serializeProjectDocument,
   UNIFIED_DEPTH_RATIOS,
+  UNIFIED_STATION_COUNT,
+  UNIFIED_STATION_SCHEDULE,
   UNIFIED_STEEL_STRAIN_YIELD_RATIOS,
   type AnalysisOptions
 } from '@pm/project'
@@ -62,19 +64,23 @@ const controllingBarStrain = (
   return point.state.e0 + point.state.kx * control.y + point.state.ky * control.x
 }
 
-test('the canonical default preserves 22 fixed stations and refines the production surface adaptively', () => {
+test('the canonical default uses the fixed 27-by-36 production grid without probes', () => {
   const implicit = buildPreviewSurfaceFromPrepared(prepared)
   const defaults = createDefaultAnalysisOptions()
   const explicit = buildPreviewSurfaceFromPrepared(prepared, defaults)
 
-  assert.equal(defaults.stations.intermediate.length + 2, 22)
-  assert.equal(explicit.stations.filter((station) => station.fixed).length, 22)
-  assert.ok(explicit.stations.length >= 22 && explicit.stations.length <= 48)
-  assert.ok(explicit.stationError.maxRelative <= 0.0075)
-  assert.ok(explicit.directionError.maxRelativeComponent <= 0.0075)
+  assert.equal(defaults.stations.intermediate.length + 2, UNIFIED_STATION_COUNT)
+  assert.equal(explicit.stations.filter((station) => station.fixed).length, UNIFIED_STATION_COUNT)
+  assert.equal(explicit.stations.length, UNIFIED_STATION_COUNT)
+  assert.equal(defaults.stations.refinement.type, 'fixed')
+  assert.equal(defaults.directions.refinement.type, 'fixed')
+  assert.ok(Number.isNaN(explicit.stationError.maxRelative))
+  assert.ok(Number.isNaN(explicit.directionError.maxRelativeComponent))
+  assert.equal(explicit.stationError.refinementPasses, 0)
+  assert.equal(explicit.directionError.refinementPasses, 0)
   assert.equal(defaults.directions.seed.type, 'uniform')
   assert.equal(defaults.directions.seed.type === 'uniform' ? defaults.directions.seed.count : 0, 36)
-  assert.ok(explicit.directions.length >= 36)
+  assert.equal(explicit.directions.length, 36)
   assert.equal(explicit.points.length, explicit.stations.length * explicit.directions.length)
   assert.deepEqual(
     explicit.points.map(({ P, Mx, My, state }) => ({ P, Mx, My, state })),
@@ -100,24 +106,16 @@ test('the production Fixed-P helper ignores adaptive Design vertices', () => {
   assert.deepEqual(actual, expected)
 })
 
-test('stress-strain and equivalent-stress serialize the exact same 20 intermediate criteria', () => {
+test('stress-strain and equivalent-stress serialize the exact same 25 intermediate criteria', () => {
   const stressStrain = createDefaultAnalysisOptions()
   const equivalentStress = createDefaultEquivalentBlockAnalysisOptions()
 
-  assert.equal(stressStrain.stations.basedOn, 'unified-22-v1')
-  assert.equal(equivalentStress.neutralAxisStations.basedOn, 'unified-22-v1')
-  assert.deepEqual(stressStrain.stations.refinement, {
-    type: 'adaptive', tolerance: 0.0075, maxPasses: 8, maxStations: 48
-  })
+  assert.equal(stressStrain.stations.basedOn, UNIFIED_STATION_SCHEDULE)
+  assert.equal(equivalentStress.neutralAxisStations.basedOn, UNIFIED_STATION_SCHEDULE)
+  assert.deepEqual(stressStrain.stations.refinement, { type: 'fixed' })
   assert.deepEqual(equivalentStress.neutralAxisStations.refinement, stressStrain.stations.refinement)
   assert.equal(equivalentStress.directions.seedCount, 36)
-  assert.equal(equivalentStress.directions.refinement.type, 'adaptive')
-  assert.equal(
-    equivalentStress.directions.refinement.type === 'adaptive'
-      ? equivalentStress.directions.refinement.tolerance
-      : 0,
-    0.0075
-  )
+  assert.equal(equivalentStress.directions.refinement.type, 'fixed')
   assert.deepEqual(
     equivalentStress.neutralAxisStations.values,
     stressStrain.stations.intermediate.map((station) => station.criterion)
@@ -135,13 +133,13 @@ test('an exact stress-strain direction uses no angular interpolation and keeps i
   )
 
   assert.ok(Math.abs(curve.beta - beta) < 1e-14)
-  assert.equal(curve.designFixed.length, 22)
-  assert.equal(curve.nominalFixed.length, 22)
-  assert.ok(curve.designAdaptive.length >= 22 && curve.designAdaptive.length <= 48)
-  assert.equal(curve.stations.filter((station) => station.fixed).length, 22)
+  assert.equal(curve.designFixed.length, UNIFIED_STATION_COUNT)
+  assert.equal(curve.nominalFixed.length, UNIFIED_STATION_COUNT)
+  assert.equal(curve.designAdaptive.length, UNIFIED_STATION_COUNT)
+  assert.equal(curve.stations.filter((station) => station.fixed).length, UNIFIED_STATION_COUNT)
   assert.ok(curve.designAdaptive.every((point) => Math.abs(point.beta - beta) < 1e-14))
   assert.ok(curve.designFixed.every((point) => point.stationId?.startsWith('adaptive-') !== true))
-  assert.ok(curve.stationError.maxRelative <= 0.0075)
+  assert.ok(Number.isNaN(curve.stationError.maxRelative))
 })
 
 test('the controlling-bar branch resolves the canonical yield-strain multiples', () => {
@@ -318,5 +316,28 @@ test('analysis options are required and round-trip exactly in project JSON', () 
   unified.stations.intermediate.pop()
   incomplete.inputs.analysis = unified
   const rejectedUnified = parseProjectDocument(serializeProjectDocument(incomplete))
-  assert.equal(rejectedUnified.ok, false, 'the canonical profile must retain all 22 stations')
+  assert.equal(rejectedUnified.ok, false, 'the canonical profile must retain all 27 stations')
+})
+
+test('legacy canonical station schedules migrate to fixed unified-27-v2', () => {
+  for (const legacyId of ['unified-22-v1', 'transition-aware-p0-p24-v1']) {
+    const legacy = JSON.parse(serializeProjectDocument(referenceProjectDocument())) as {
+      inputs: { analysis: Record<string, unknown> }
+    }
+    const analysis = legacy.inputs.analysis
+    const stations = analysis.stations as Record<string, unknown>
+    const directions = analysis.directions as Record<string, unknown>
+    stations.basedOn = legacyId
+    stations.intermediate = []
+    stations.refinement = { type: 'adaptive', tolerance: 0.005, maxPasses: 6, maxStations: 48 }
+    directions.refinement = { type: 'adaptive', tolerance: 0.005, maxPasses: 6, maxDirections: 360, probe: 'all' }
+
+    const parsed = parseProjectDocument(JSON.stringify(legacy))
+    assert.equal(parsed.ok, true, legacyId)
+    if (!parsed.ok || parsed.document.inputs.analysis.methodId !== 'strain-domain-surface-v1') continue
+    assert.equal(parsed.document.inputs.analysis.stations.basedOn, UNIFIED_STATION_SCHEDULE)
+    assert.equal(parsed.document.inputs.analysis.stations.intermediate.length + 2, UNIFIED_STATION_COUNT)
+    assert.deepEqual(parsed.document.inputs.analysis.stations.refinement, { type: 'fixed' })
+    assert.deepEqual(parsed.document.inputs.analysis.directions.refinement, { type: 'fixed', probe: 'all' })
+  }
 })

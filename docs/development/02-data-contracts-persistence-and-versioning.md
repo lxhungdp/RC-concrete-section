@@ -8,7 +8,7 @@ The project is pre-release and all current persisted calculation code is v1:
 - design basis `basisVersion: 1`;
 - analysis `optionsVersion: 1`;
 - `strain-domain-surface-v1` and `equivalent-block-surface-v1` method IDs;
-- shared `unified-22-v1` schedule ID for both calculation methods.
+- shared `unified-27-v2` schedule ID for both calculation methods.
 
 The project parser accepts only:
 
@@ -122,7 +122,7 @@ type AnalysisOptions = {
   optionsVersion: 1
   methodId: 'strain-domain-surface-v1'
   stations: {
-    basedOn: 'unified-22-v1' | 'custom'
+    basedOn: 'unified-27-v2' | 'custom'
     intermediate: AnalysisStation[]
   }
   directions: {
@@ -135,8 +135,8 @@ type AnalysisOptions = {
 ```
 
 The canonical criteria are `depth-ratio` and `bar-tension-yield-ratio`. The production list is six
-`c/D` values plus fourteen `εₛ/εy` values, bracketed by the two exact poles. The parser accepts
-`unified-22-v1` only when the serialized list exactly matches that order and content; any edited
+`c/D` values plus nineteen `εₛ/εy` values, bracketed by the two exact poles. The parser accepts
+`unified-27-v2` only when the serialized list exactly matches that order and content; any edited
 list must be explicitly marked `custom`. Direction refinement remains independent.
 
 ## 5. Equivalent-block analysis options v1
@@ -146,7 +146,7 @@ type EquivalentBlockAnalysisOptions = {
   optionsVersion: 1
   methodId: 'equivalent-block-surface-v1'
   neutralAxisStations: {
-    basedOn: 'unified-22-v1' | 'custom'
+    basedOn: 'unified-27-v2' | 'custom'
     values: Array<
       | { type: 'extreme-tension-strain'; strain: number }
       | { type: 'bar-tension-yield-ratio'; ratio: number }
@@ -163,9 +163,8 @@ type EquivalentBlockAnalysisOptions = {
 ```
 
 This DTO intentionally contains no concrete integration-mesh settings. The equivalent-block kernel
-uses exact polygon clipping. Its production default is the shared 22 fixed stations, 36 fixed seed
-directions, and 0.75% Design-only adaptive refinement in both coordinates (48 stations and 360
-directions maximum). Automatic code-transition and rupture-event station insertion is disabled;
+uses exact polygon clipping. Its production default is the shared 27 fixed stations and 36 fixed
+directions. Automatic code-transition, rupture-event, and adaptive station insertion is disabled;
 explicit custom low-level events remain an opt-in kernel facility.
 
 ## 6. Design basis v1

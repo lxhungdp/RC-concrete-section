@@ -107,32 +107,22 @@ test('fixed direction tables use the direct fixed meridian, not a nearby adaptiv
   assert.equal(middle?.nominal?.total.M, 12)
 })
 
-test('an exact direction table includes adaptive design rows but keeps nominal on fixed stations', () => {
+test('an exact direction table keeps Design and Nominal on the same fixed stations', () => {
   const beta = 17.35 * Math.PI / 180
-  const adaptiveStation: SurfaceStation = {
-    id: 'adaptive-station-test',
-    label: 'Adaptive midpoint',
-    definition: { kind: 'block-adaptive', label: 'Adaptive midpoint' },
-    fixed: false
-  }
+  const designFixed = rows([beta], 10)
   const exact: ExactDirectionCurve = {
     beta,
-    designAdaptive: [
-      point(beta, 0, 1, 0, 'pure-compression'),
-      point(beta, 0.5, 0.5, 8, adaptiveStation.id),
-      point(beta, 1, 0, 10, 'station-1'),
-      point(beta, 2, -1, 0, 'pure-tension')
-    ],
-    designFixed: rows([beta], 10),
+    designAdaptive: designFixed,
+    designFixed,
     nominalFixed: rows([beta], 12),
-    stations: [stations[0], adaptiveStation, stations[1], stations[2]],
+    stations,
     stationError: {
-      stations: 4,
+      stations: 3,
       fixedStations: 3,
-      maxRelative: 0.004,
-      refinementPasses: 1,
+      maxRelative: Number.NaN,
+      refinementPasses: 0,
       withinTolerance: true,
-      tolerance: 0.0075
+      tolerance: Number.POSITIVE_INFINITY
     }
   }
   const table = buildChartTableRows({
@@ -146,9 +136,6 @@ test('an exact direction table includes adaptive design rows but keeps nominal o
     fixedP: 0
   })
 
-  assert.equal(table.length, 4)
-  const adaptiveRow = table.find((row) => row.key.includes('adaptive-station-test'))
-  assert.equal(adaptiveRow?.kind, 'vertical')
-  assert.ok(adaptiveRow?.design)
-  assert.equal(adaptiveRow?.nominal, null)
+  assert.equal(table.length, 3)
+  assert.ok(table.every((row) => row.kind === 'vertical' && row.design && row.nominal))
 })

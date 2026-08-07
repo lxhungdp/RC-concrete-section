@@ -242,9 +242,9 @@ export type PreviewSurface = {
   /** Explicit connectivity is authoritative for independently triangulated/capped surfaces. */
   triangles?: SurfaceIndexTriangle[]
   nominalTriangles?: SurfaceIndexTriangle[]
-  /** Fixed 22 × 36 visual/diagnostic grid; never derived by filtering the adaptive mesh. */
+  /** Fixed 27 × 36 visual/diagnostic grid; shared with the production Design surface. */
   designFixed?: PreviewSurfaceDataset
-  /** Independent nominal 22 × 36 grid. */
+  /** Nominal values evaluated at the same fixed 27 × 36 states. */
   nominalFixed?: PreviewSurfaceDataset
   /** Discrete code values for reporting only; never triangulated as equilibrium states. */
   codeReferencePoints?: Array<Resultant & {
@@ -462,7 +462,7 @@ export type StationDefinition =
     }
   | { kind: 'pure-tension' }
 
-/** Shared 22-station schedule used by compatibility helpers and the production surface. */
+/** Shared 27-station schedule used by compatibility helpers and the production surface. */
 export const UNIFIED_STATIONS: StationDefinition[] = [
   { kind: 'pure-compression' },
   ...UNIFIED_DEPTH_RATIOS.map((ratio) => ({ kind: 'neutral-axis-depth-ratio' as const, ratio })),
@@ -1885,6 +1885,8 @@ export const buildPreviewSurfaceFromPrepared = (
   const maxDirectionPasses = directionRefinement.type === 'adaptive' ? directionRefinement.maxPasses : 0
   const maxDirections = directionRefinement.type === 'adaptive' ? directionRefinement.maxDirections : rows.size
   const stationRefinement = analysisOptions.stations.refinement
+  const directionAdaptive = directionRefinement.type === 'adaptive'
+  const stationAdaptive = stationRefinement.type === 'adaptive'
   const stationTolerance = stationRefinement.type === 'adaptive'
     ? stationRefinement.tolerance
     : Number.POSITIVE_INFINITY
@@ -1963,10 +1965,10 @@ export const buildPreviewSurfaceFromPrepared = (
   }
 
   // Alternate both coordinates. A new direction can expose station curvature and vice versa.
-  while (true) {
+  while (stationAdaptive || directionAdaptive) {
     let changed = false
     let currentScales = scales()
-    const stationEntries = measureStationIntervals(currentScales)
+    const stationEntries = stationAdaptive ? measureStationIntervals(currentScales) : []
     if (stationPasses < maxStationPasses && stations.length < maxStations) {
       const available = maxStations - stations.length
       const selected = stationEntries
@@ -1987,7 +1989,7 @@ export const buildPreviewSurfaceFromPrepared = (
       }
     }
 
-    const directionEntries = measureDirectionIntervals(currentScales)
+    const directionEntries = directionAdaptive ? measureDirectionIntervals(currentScales) : []
     if (directionPasses < maxDirectionPasses && rows.size < maxDirections) {
       const selected = directionEntries
         .filter((entry) => entry.error > directionTolerance)
@@ -2006,16 +2008,19 @@ export const buildPreviewSurfaceFromPrepared = (
   }
 
   // Measurements in a changing pass describe the pre-insertion grid; always audit the returned one.
-  const finalScales = scales()
-  measureStationIntervals(finalScales)
-  measureDirectionIntervals(finalScales)
+  if (stationAdaptive || directionAdaptive) {
+    const finalScales = scales()
+    if (stationAdaptive) measureStationIntervals(finalScales)
+    if (directionAdaptive) measureDirectionIntervals(finalScales)
+  }
 
   const points = allPoints()
   const P = points.map((point) => point.P)
   const Mx = points.map((point) => point.Mx)
   const My = points.map((point) => point.My)
-  const withinTolerance = maxRelativeComponent <= directionTolerance
-  const stationWithinTolerance = maxStationError <= stationTolerance
+  const withinTolerance = !directionAdaptive || maxRelativeComponent <= directionTolerance
+  const stationWithinTolerance = !stationAdaptive || maxStationError <= stationTolerance
+  const reportedProbeStationOrders = directionAdaptive ? probeStationOrders() : []
 
   if (directionRefinement.type === 'adaptive' && !withinTolerance) {
     warnings.push(
@@ -2052,8 +2057,8 @@ export const buildPreviewSurfaceFromPrepared = (
     strainDomain: IMPLEMENTED_STRAIN_DOMAIN,
     directionError: {
       directions: rows.size,
-      probedStations: probeStationOrders(),
-      probedStationIds: probeStationOrders().map((station) => stations[station].id),
+      probedStations: reportedProbeStationOrders,
+      probedStationIds: reportedProbeStationOrders.map((station) => stations[station].id),
       maxRelativeP,
       maxRelativeMoment,
       maxRelativeComponent,
@@ -2145,11 +2150,14 @@ const controllingSteelEvidence = (
 
 const designPointFromState = (
   point: PreviewSurfacePoint,
+  statePrepared: PreparedAnalysis,
   referencePrepared: PreparedAnalysis,
   designPrepared: PreparedAnalysis,
   basis: DesignBasis
 ): { nominal: PreviewSurfacePoint; design: PreviewSurfacePoint } => {
-  const nominalLedger = evaluatePreparedState(referencePrepared, point.state)
+  const nominalLedger = referencePrepared === statePrepared
+    ? point.ledger
+    : evaluatePreparedState(referencePrepared, point.state)
   const nominal: PreviewSurfacePoint = {
     ...point,
     ...nominalLedger.total,
@@ -2186,7 +2194,9 @@ const designPointFromState = (
     }
   }
 
-  const designLedger = evaluatePreparedState(designPrepared, point.state)
+  const designLedger = designPrepared === statePrepared
+    ? point.ledger
+    : evaluatePreparedState(designPrepared, point.state)
   return {
     nominal,
     design: {
@@ -2345,48 +2355,60 @@ export const buildDesignPreviewSurfaceFromPrepared = (
         )
   // Refinement must see the resistance actually checked: φ-scaled resultants for the global route
   // and independently re-evaluated concrete/steel ledgers for the material-factor route.
-  const base = buildPreviewSurfaceFromPrepared(
-    statePrepared,
-    analysisOptions,
-    designBasis,
-    {
-      mapPoint: (point) =>
-        designPointFromState(point, referencePrepared, designPrepared, designBasis).design,
-      componentAware: designBasis.format === 'designMaterialReevaluation'
+  const buildResistanceSurface = (options: AnalysisOptions) => {
+    const nominalByPointId = new Map<string, PreviewSurfacePoint>()
+    const surface = buildPreviewSurfaceFromPrepared(
+      statePrepared,
+      options,
+      designBasis,
+      {
+        mapPoint: (point) => {
+          const resistance = designPointFromState(
+            point,
+            statePrepared,
+            referencePrepared,
+            designPrepared,
+            designBasis
+          )
+          nominalByPointId.set(point.id, resistance.nominal)
+          return resistance.design
+        },
+        componentAware: designBasis.format === 'designMaterialReevaluation'
+      }
+    )
+    return {
+      surface,
+      nominalPoints: surface.points.map((point) => {
+        const nominal = nominalByPointId.get(point.id)
+        if (!nominal) throw new Error(`Missing nominal resistance for surface point "${point.id}".`)
+        return nominal
+      })
     }
-  )
+  }
+  const built = buildResistanceSurface(analysisOptions)
+  const base = built.surface
   const fixedOptions = cloneAnalysisOptions(analysisOptions)
   fixedOptions.stations.refinement = { type: 'fixed' }
   fixedOptions.directions.refinement = {
     type: 'fixed',
     probe: analysisOptions.directions.refinement.probe
   }
-  const fixedDesignBase = buildPreviewSurfaceFromPrepared(
-    statePrepared,
-    fixedOptions,
-    designBasis,
-    {
-      mapPoint: (point) =>
-        designPointFromState(point, referencePrepared, designPrepared, designBasis).design,
-      componentAware: designBasis.format === 'designMaterialReevaluation'
-    }
-  )
-  const fixedReferenceBase = buildPreviewSurfaceFromPrepared(
-    referencePrepared,
-    fixedOptions,
-    designBasis
-  )
-  const nominalPoints = base.points.map((point) =>
-    designPointFromState(point, referencePrepared, designPrepared, designBasis).nominal
-  )
+  const fullyFixed =
+    analysisOptions.stations.refinement.type === 'fixed' &&
+    analysisOptions.directions.refinement.type === 'fixed'
+  const fixedBuilt = fullyFixed ? built : buildResistanceSurface(fixedOptions)
+  const fixedDesignBase = fixedBuilt.surface
+  const nominalPoints = built.nominalPoints
   const uncappedDesign = base.points
   const points =
     designBasis.format === 'globalResultantFactor'
       ? applyAxialCap(uncappedDesign, designBasis)
       : uncappedDesign
-  const fixedDesignPoints = designBasis.format === 'globalResultantFactor'
-    ? applyAxialCap(fixedDesignBase.points, designBasis)
-    : fixedDesignBase.points
+  const fixedDesignPoints = fullyFixed
+    ? points
+    : designBasis.format === 'globalResultantFactor'
+      ? applyAxialCap(fixedDesignBase.points, designBasis)
+      : fixedDesignBase.points
   const warnings = [...base.warnings]
   if (designBasis.verificationStatus !== 'verified') {
     warnings.push(`Design profile status is ${designBasis.verificationStatus}; results are for review, not release.`)
@@ -2412,10 +2434,10 @@ export const buildDesignPreviewSurfaceFromPrepared = (
       stations: fixedDesignBase.stations
     },
     nominalFixed: {
-      points: fixedReferenceBase.points,
-      triangles: fixedReferenceBase.triangles,
-      directions: fixedReferenceBase.directions,
-      stations: fixedReferenceBase.stations
+      points: fixedBuilt.nominalPoints,
+      triangles: fixedDesignBase.triangles,
+      directions: fixedDesignBase.directions,
+      stations: fixedDesignBase.stations
     },
     bounds: surfaceBounds(points),
     warnings,
@@ -2440,7 +2462,7 @@ export const buildDesignPreviewSurface = (
   )
 }
 
-/** Exact one-direction calculation: no angular interpolation and no angular adaptive points. */
+/** Exact one-direction calculation on the canonical fixed station schedule. */
 export const buildExactDirectionCurveFromPrepared = (
   statePrepared: PreparedAnalysis,
   sourceMaterials: MaterialStore,
@@ -2454,6 +2476,7 @@ export const buildExactDirectionCurveFromPrepared = (
     type: 'explicit',
     anglesDeg: [normalized * 180 / Math.PI]
   }
+  exactOptions.stations.refinement = { type: 'fixed' }
   exactOptions.directions.refinement = { type: 'fixed', probe: 'all' }
   const surface = buildDesignPreviewSurfaceFromPrepared(
     statePrepared,
@@ -2503,7 +2526,7 @@ export const sliceFixedPContour = (
   return contour.sort((a, b) => Math.atan2(a.My, a.Mx) - Math.atan2(b.My, b.Mx))
 }
 
-/** Production Fixed-P query: adaptive Design vertices are deliberately excluded. */
+/** Production Fixed-P query on the fixed Design dataset. */
 export const sliceFixedDesignPContour = (
   surface: PreviewSurface,
   fixedP: number

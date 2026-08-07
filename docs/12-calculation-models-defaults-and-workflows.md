@@ -93,39 +93,34 @@ an interior ULS demand has a unique physical failure state.
 
 ### 2.1 Production sampling default
 
-All profiles use `unified-22-v1`:
+All profiles use `unified-27-v2`:
 
 | Stations | Physical criterion |
 |---|---|
 | `P0` | exact uniform-compression pole |
 | `P1...P6` | `c/D = 3, 2, 1.5, 1.2, 1.1, 1` |
-| `P7...P20` | `εₛ/εy = 0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10, 20` |
-| `P21` | exact uniform-tension pole |
+| `P7...P25` | `εₛ/εy = 0, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 7.5, 10, 20` |
+| `P26` | exact uniform-tension pole |
 
 Here `D` is the projected full section depth in the active direction. `εₛ` is the tensile-strain
 magnitude at the controlling longitudinal bar and `εy` is that bar material's yield strain. The
 schedule deliberately contains no automatically inserted strength-reduction transition point.
-Design resistance is station-adaptive between these fixed criteria at 0.75% chord error; nominal
-resistance remains fixed at the 22 criteria.
+Design and nominal resistance use the same 27 fixed states. The five additional values around the
+high-curvature yield range are fixed criteria, not adaptive results.
 
 ### 2.2 Direction default
 
-The stress-strain model starts with 36 uniform directions at 10 degrees. The production default then
-performs midpoint refinement over all stations with:
+The stress-strain model uses 36 uniform directions at 10 degrees. The production default is:
 
 ```text
-relative chord tolerance = 0.0075
-maximum passes           = 6
-maximum directions       = 360
+stations                 = 27 fixed
+directions               = 36 fixed
+midpoint probes          = none
+adaptive insertion       = none
 ```
 
-Thirty-six is the seed count, not the promised final count. A result records the actual directions,
-passes, maximum measured interpolation error, and whether the tolerance was reached. A fixed
-36-direction run remains available as an explicit user option, but it does not have the same error
-control as the production adaptive default.
-
-Station refinement uses the same 0.0075 target, an eight-pass ceiling, and a cap of 48 total stations. Both
-mechanics share these values.
+An arbitrary typed vertical angle is evaluated as one new exact 27-station meridian. It is not added
+to or used to rebuild the 3D surface. Fixed angles reuse the existing 36 meridians.
 
 `beta` is the strain-gradient direction. It is not the neutral-axis line angle and it is not the
 demand moment angle. All conversions live in the angle-semantics utilities and are tested at the
@@ -161,21 +156,20 @@ surface independently of the stress-strain solver.
 
 ### 3.1 Production sampling default
 
-The equivalent-block pipeline consumes the same `unified-22-v1` criteria:
+The equivalent-block pipeline consumes the same `unified-27-v2` criteria:
 
 ```text
-fixed stations              = shared 22-station schedule
-Design station refinement   = 0.75%, max eight passes, 48 total stations
-nominal stations            = fixed 22-station schedule
+fixed stations              = shared 27-station schedule
+Design station refinement   = none
+nominal stations            = the same 27 fixed states
 automatic bar events        = none
-station refinement          = adaptive Design only, tolerance 0.0075, max 6 passes, max 48 total
 seed directions             = 36
-direction refinement        = adaptive, tolerance 0.0075, max 6 passes, max 360 directions
+direction refinement        = none
 ```
 
 For every strain-ratio criterion, the kernel solves `c` so the controlling longitudinal bar is at
 the requested strain. It then applies the selected adapter's block law. A requested layer may
-numerically equal a pole for a particular model; it remains part of the public 22-station schedule
+numerically equal a pole for a particular model; it remains part of the public 27-station schedule
 but is omitted from the mesh topology to avoid degenerate triangles.
 
 ### 3.2 Physical compression closure and code reference points
@@ -259,22 +253,18 @@ batch reuses one surface; changing any resistance-domain input invalidates it.
 
 ## 6. Verification and benchmark evidence
 
-`npm run bench:strain-sampling` compares the fixed and adaptive stress-strain datasets against a
-144-direction reference. `npm run bench:pipelines` does the same cross-model check with a dense
-equivalent-block reference. Both start from the canonical 22 stations and 36 directions; adaptive
-Design candidates may add station midpoints and direction bisectors. Fixed candidates preserve the
-22 × 36 grid exactly. Equality of mesh vertex counts is neither required nor technically meaningful
-because the underlying state variables differ.
+`npm run bench:strain-sampling` compares the fixed stress-strain dataset against a 144-direction
+reference. `npm run bench:pipelines` does the same cross-model check with a dense equivalent-block
+reference. Both production candidates preserve the canonical 27 × 36 grid exactly. The denser
+reference is benchmark-only and does not change application results.
 
-The archived 2026-08-06 direction-only run predates common station refinement and is not a current
-acceptance result. Each current benchmark run prints its own measured fixed/adaptive errors and ray
-hit rates; measured values are deliberately not copied into this document because they depend on the
-case matrix and runtime revision. Acceptance requires a 100% ray-hit rate and uses the common 0.75%
-station and direction chord targets. No resistance-factor or material-factor transition station is
-inserted explicitly.
+Each benchmark run prints its own fixed-grid differences and ray-hit rates; measured values are not
+copied into this document because they depend on the case matrix and runtime revision. Acceptance
+requires a 100% ray-hit rate. No resistance-factor or material-factor transition station is
+inserted dynamically.
 
 The production-faithful `bench:equivalent-block` matrix adds KDS and ACI versions of rectangle,
-hollow, L-shaped, and disconnected-island sections. It uses the same fixed 22 stations, verifies
+hollow, L-shaped, and disconnected-island sections. It uses the same fixed 27 stations, verifies
 closed topology and station/direction convergence, compares faceted rays with exact refinement, and
 checks direct fixed-axial roots. It does not insert resistance-transition stations. Surface
 reuse for multiple load combinations remains part of the measured workflow.

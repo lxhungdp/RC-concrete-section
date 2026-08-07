@@ -69,58 +69,58 @@
       "rebars": [
         {
           "id": 1,
+          "dia": 22.56758334191025,
           "x": -260,
           "y": -170,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         },
         {
           "id": 2,
+          "dia": 22.56758334191025,
           "x": -140,
           "y": -170,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         },
         {
           "id": 3,
+          "dia": 22.56758334191025,
           "x": -140,
           "y": 170,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         },
         {
           "id": 4,
+          "dia": 22.56758334191025,
           "x": -260,
           "y": 170,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         },
         {
           "id": 5,
+          "dia": 22.56758334191025,
           "x": 140,
           "y": -170,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         },
         {
           "id": 6,
+          "dia": 22.56758334191025,
           "x": 260,
           "y": -170,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         },
         {
           "id": 7,
+          "dia": 22.56758334191025,
           "x": 260,
           "y": 170,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         },
         {
           "id": 8,
+          "dia": 22.56758334191025,
           "x": 140,
           "y": 170,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         }
       ]
@@ -133,7 +133,6 @@
         "standard": "ACI318",
         "fck": 40,
         "mc": 2350,
-        "elasticModulus": 29725.410005582766,
         "stressStrain": {
           "type": "aci-whitney-block",
           "beta1": 0.7642857142857142,
@@ -144,6 +143,7 @@
           "epsCu": 0.003,
           "ignoreTension": true
         },
+        "elasticModulus": 29725.410005582766,
         "factors": {
           "alpha": 0.85
         }
@@ -200,7 +200,7 @@
       "optionsVersion": 1,
       "methodId": "equivalent-block-surface-v1",
       "neutralAxisStations": {
-        "basedOn": "unified-22-v1",
+        "basedOn": "unified-27-v2",
         "values": [
           {
             "type": "depth-ratio",
@@ -236,7 +236,15 @@
           },
           {
             "type": "bar-tension-yield-ratio",
+            "ratio": 0.375
+          },
+          {
+            "type": "bar-tension-yield-ratio",
             "ratio": 0.5
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 0.625
           },
           {
             "type": "bar-tension-yield-ratio",
@@ -244,11 +252,23 @@
           },
           {
             "type": "bar-tension-yield-ratio",
+            "ratio": 0.875
+          },
+          {
+            "type": "bar-tension-yield-ratio",
             "ratio": 1
           },
           {
             "type": "bar-tension-yield-ratio",
+            "ratio": 1.25
+          },
+          {
+            "type": "bar-tension-yield-ratio",
             "ratio": 1.5
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 1.75
           },
           {
             "type": "bar-tension-yield-ratio",
@@ -284,26 +304,19 @@
           }
         ],
         "refinement": {
-          "type": "adaptive",
-          "tolerance": 0.0075,
-          "maxPasses": 8,
-          "maxStations": 48
+          "type": "fixed"
         }
       },
       "directions": {
         "seedCount": 36,
         "startDeg": 0,
         "refinement": {
-          "type": "adaptive",
-          "tolerance": 0.0075,
-          "maxPasses": 8,
-          "maxDirections": 360
+          "type": "fixed"
         }
       }
     },
     "design": {
       "basisVersion": 2,
-      "profileId": "aci-318-19-22",
       "identity": {
         "organization": "ACI",
         "document": "ACI CODE-318-19 (Reapproved 2022)",
@@ -311,9 +324,13 @@
         "methodId": "aci-318-19-22-global-strength-reduction",
         "profileVersion": "1.0.0"
       },
+      "profileId": "aci-318-19-22",
       "verificationStatus": "draft",
+      "modified": false,
+      "overrideReason": "",
       "format": "globalResultantFactor",
       "transverseReinforcement": "other",
+      "axialCapEnabled": true,
       "factors": {
         "phiCompressionOther": 0.65,
         "phiCompressionSpiral": 0.75,
@@ -324,10 +341,7 @@
       "transition": {
         "type": "yield-plus-strain",
         "extraStrain": 0.003
-      },
-      "axialCapEnabled": true,
-      "modified": false,
-      "overrideReason": ""
+      }
     }
   }
 }

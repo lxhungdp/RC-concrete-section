@@ -338,7 +338,7 @@ const run = async () => {
   check('mesh area = polygon area (mm2)', cellValue('Input', `C${findLabelRow(readBack.getWorksheet('Input')!, 'Net concrete area')}`), 1120000, 1e-9)
   console.log()
 
-  console.log('== 4. PM_Angle: unified 22-station schedule reproduces the engine ==')
+  console.log('== 4. PM_Angle: unified 27-station schedule reproduces the engine ==')
   const pmSheet = readBack.getWorksheet('PM_Angle')!
   const PM_HEAD = 5
   const PM_FIRST = 7
@@ -373,7 +373,7 @@ const run = async () => {
   check('P0 concrete P (kN)', cellValue('PM_Angle', `${colName(cCon.P)}${stationRowOf(0)}`), 28560, 1e-9)
   check('P0 steel P (kN)', cellValue('PM_Angle', `${colName(cSteelP)}${stationRowOf(0)}`), 5421.433875929294, 1e-9)
   check(
-    'P21 steel P (kN)',
+    'P26 steel P (kN)',
     cellValue('PM_Angle', `${colName(cSteelP)}${stationRowOf(UNIFIED_STATION_COUNT - 1)}`),
     -5790.583579096708,
     1e-9
@@ -502,7 +502,7 @@ const run = async () => {
     `      engine ${engineMb.toFixed(3)}   ray on the workbook contour ${workbookMbRay.toFixed(3)}   ` +
       `plane cut of the station rings ${workbookMbPlane.toFixed(3)} kN·m`
   )
-  // The workbook and engine slice the same shared fixed 22 × 36 grid. The ray and plane
+  // The workbook and engine slice the same shared fixed 27 × 36 grid. The ray and plane
   // routes are different geometric queries, so their agreement is checked at sampling tolerance.
   check('workbook ray Mb vs engine', workbookMbRay, engineMb, 5e-3)
   check('workbook plane Mb vs engine', workbookMbPlane, engineMb, 5e-3)
@@ -797,7 +797,7 @@ const run = async () => {
   assert.equal(customPm.getCell(12, 2).value, null, 'the station block must stop after the configured five rows')
   console.log('PASS  5 custom stations, 5 nonuniform directions, wrap angle and nonlinear inverse\n')
 
-  console.log('== 16. The shared 22-station default exports the canonical criteria ==')
+  console.log('== 16. The shared 27-station default exports the canonical criteria ==')
   const currentOptions = createDefaultAnalysisOptions()
   const currentWorkbook = await buildSectionWorkbook({
     projectName: `${parsed.document.meta.name} (current sampling default)`,
@@ -815,7 +815,7 @@ const run = async () => {
   const currentRead = new ExcelJS.Workbook()
   await currentRead.xlsx.load(currentBuffer as ArrayBuffer)
   const currentPm = currentRead.getWorksheet('PM_Angle')!
-  assert.match(String(currentPm.getCell('B1').value), /22 STATIONS/)
+  assert.match(String(currentPm.getCell('B1').value), /27 STATIONS/)
   const currentEpsControlColumn = headerColumn(currentPm, 5, 'ε_ctrl')
   const yieldRatioStartRow = 7 + 1 + UNIFIED_DEPTH_RATIOS.length
   const yieldRatioStrains = Array.from(
@@ -827,7 +827,7 @@ const run = async () => {
   yieldRatioStrains.forEach((strain, index) => {
     assert.ok(Math.abs(strain + UNIFIED_STEEL_STRAIN_YIELD_RATIOS[index] * epsY) < 1e-12)
   })
-  console.log('PASS  22 stations exported with six c/D points and fourteen εₛ/εy points\n')
+  console.log('PASS  27 stations exported with six c/D points and nineteen εₛ/εy points\n')
 
   if (failures.length > 0) {
     console.log(`${failures.length} check(s) failed:`)

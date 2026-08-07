@@ -229,7 +229,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
         <button
           type="button"
           className="pm-table-icon-btn"
-          title="Reset the unified 22-station / 36-seed-direction profile"
+          title="Reset the unified 27-station / 36-direction fixed profile"
           onClick={() => onChange(createDefaultAnalysisOptions())}
         >
           <RotateCcw size={14} />
@@ -385,7 +385,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
             })
           }
         >
-          <option value="fixed">Fixed 22-point schedule only</option>
+          <option value="fixed">Fixed 27-point schedule only</option>
           <option value="adaptive">Adaptive design interpolation</option>
         </select>
       </label>
@@ -778,7 +778,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
         <button
           type="button"
           className="pm-table-icon-btn"
-          title="Reset the unified 22-station / 36-seed-direction profile"
+          title="Reset the unified 27-station / 36-direction fixed profile"
           onClick={() => onChange(createDefaultEquivalentBlockAnalysisOptions())}
         >
           <RotateCcw size={14} />

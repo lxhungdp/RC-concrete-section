@@ -66,10 +66,10 @@ As of 2026-08-05:
   code-equivalent rectangular stress block. Their formulas, defaults, fields, and forward/inverse
   workflows are defined in
   [`12-calculation-models-defaults-and-workflows.md`](12-calculation-models-defaults-and-workflows.md).
-- Every stress-strain and equivalent-block profile uses the shared `unified-22-v1` schedule: two
-  exact poles, six outside/on-section `c/D` states, and fourteen inside-section `εₛ/εy` states.
-  Station refinement and automatic transition/event insertion are disabled for this baseline;
-  direction controls remain model-specific and will be assessed separately.
+- Every stress-strain and equivalent-block profile uses the shared `unified-27-v2` schedule: two
+  exact poles, six outside/on-section `c/D` states, and nineteen inside-section `εₛ/εy` states.
+  Production station/direction refinement and automatic transition/event insertion are disabled;
+  both mechanics use 36 fixed directions.
 - Nominal/reference and design-resistance surfaces are separated. Factored ULS loadcases use a
   governing 3D proportional check; Fixed-P utilization is a secondary diagnostic.
 - The KDS 2024 current-set profiles (with resistance clauses explicitly traced to KDS 14 20 10:2021

@@ -139,7 +139,7 @@ const run = () => {
   const steel = MATERIALS.steel[0]
   const epsY = steel.fy / steel.elasticModulus
 
-  console.log('== 1. Unified 22-station schedule ==')
+  console.log('== 1. Unified 27-station schedule ==')
   const expectedSchedule = [
     'pure-compression',
     'neutral-axis-depth-ratio:3',
@@ -150,10 +150,15 @@ const run = () => {
     'neutral-axis-depth-ratio:1',
     'bar-tension-yield-ratio:0',
     'bar-tension-yield-ratio:0.25',
+    'bar-tension-yield-ratio:0.375',
     'bar-tension-yield-ratio:0.5',
+    'bar-tension-yield-ratio:0.625',
     'bar-tension-yield-ratio:0.75',
+    'bar-tension-yield-ratio:0.875',
     'bar-tension-yield-ratio:1',
+    'bar-tension-yield-ratio:1.25',
     'bar-tension-yield-ratio:1.5',
+    'bar-tension-yield-ratio:1.75',
     'bar-tension-yield-ratio:2',
     'bar-tension-yield-ratio:2.5',
     'bar-tension-yield-ratio:3',
@@ -169,10 +174,10 @@ const run = () => {
       ? `${station.kind}:${station.ratio}`
       : station.kind
   )
-  assert.equal(actualSchedule.length, 22, 'the unified schedule requires exactly 22 stations')
+  assert.equal(actualSchedule.length, 27, 'the unified schedule requires exactly 27 stations')
   assert.deepEqual(actualSchedule, expectedSchedule)
   assert.equal(epsY, 0.002)
-  console.log(`PASS  shared 22-station schedule uses c/D and εₛ/εy (εy = ${epsY})\n`)
+  console.log(`PASS  shared 27-station schedule uses c/D and εₛ/εy (εy = ${epsY})\n`)
 
   console.log('== 2. Clipped-cell concrete mesh (docs/02 §5, §8) ==')
   const mesh = buildConcreteMesh(SECTION)
@@ -192,7 +197,7 @@ const run = () => {
   if (mesh.report.warnings.length === 0) console.log('PASS  mesh sanity checks clean')
   console.log()
 
-  console.log('== 3. All 22 stations at beta = 15 deg (kN, kNm) ==')
+  console.log('== 3. All 27 stations at beta = 15 deg (kN, kNm) ==')
   console.log(
     `${'pt'.padEnd(6)}${'eps0'.padStart(12)}${'kappa'.padStart(13)}  |${'  concrete P'.padStart(
       12
@@ -216,7 +221,7 @@ const run = () => {
     const sum = ledger.concrete.P + ledger.steelGross.P + ledger.displacedConcrete.P
     assert.ok(Math.abs(sum - ledger.total.P) < 1e-6 * Math.max(1, Math.abs(ledger.total.P)), `P${index} ledger sum`)
   })
-  console.log('PASS  contribution ledger reproduces the nominal total at all 22 stations')
+  console.log('PASS  contribution ledger reproduces the nominal total at all 27 stations')
   const peaks = states.map((state) => {
     const curvature = Math.hypot(state.kx, state.ky)
     return Math.max(state.e0 + curvature * U_MAX_15, state.e0 + curvature * U_MIN_15)
@@ -228,7 +233,14 @@ const run = () => {
   console.log('== 5. Mesh-independent anchors: discrete bars ==')
   const symmetryScale = Math.abs(WORKBOOK.p0.steel.P) * U_MAX_15 * 1e-3
   checkResultant('P0  steel ', scale(ledgers[0].steel), WORKBOOK.p0.steel, 1e-12, symmetryScale)
-  checkResultant('P21 steel ', scale(ledgers[21].steel), WORKBOOK.pureTension.steel, 1e-12, symmetryScale)
+  const pureTensionIndex = UNIFIED_STATIONS.length - 1
+  checkResultant(
+    `P${pureTensionIndex} steel `,
+    scale(ledgers[pureTensionIndex].steel),
+    WORKBOOK.pureTension.steel,
+    1e-12,
+    symmetryScale
+  )
   console.log()
 
   console.log('== 6. Pure compression P0: concrete = alpha*fck*A_net exactly ==')
@@ -281,7 +293,7 @@ const run = () => {
   const movedOrigin = netConcreteCentroid(movedSection)
   check('translated origin x (mm)', movedOrigin.x, OFFSET.x, 1e-9)
   check('translated origin y (mm)', movedOrigin.y, OFFSET.y, 1e-9)
-  for (const station of [0, 7, 21]) {
+  for (const station of [0, 7, pureTensionIndex]) {
     const movedState = previewStationState(movedSection, movedRebars, BETA, station, epsCu, epsY)
     const movedLedger = evaluatePreviewState(movedSection, movedRebars, MATERIALS, movedState)
     const momentScale = Math.max(1, Math.abs(scale(ledgers[station].total).Mx))
@@ -292,7 +304,7 @@ const run = () => {
   console.log()
 
   console.log('== 9. Advisory: concrete law above epsCu ==')
-  // Not exercised by the 22 stations (check 4 proves the peak strain never exceeds epsCu), but the Newton
+  // Not exercised by the 27 stations (check 4 proves the peak strain never exceeds epsCu), but the Newton
   // inverse solver does visit such planes, where a drop to zero is a force discontinuity.
   const plateau = 0.85 * MATERIALS.concrete.fck
   const justAbove = stressKdsParabolicConcrete(MATERIALS.concrete, epsCu * (1 + 1e-9))

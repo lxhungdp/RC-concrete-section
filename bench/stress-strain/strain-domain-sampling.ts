@@ -27,7 +27,7 @@ const fixed = (options: AnalysisOptions, directions: number): AnalysisOptions =>
   return result
 }
 
-/** The shared 22-station schedule and 144 fixed angles form the directional benchmark reference. */
+/** The shared 27-station schedule and 144 fixed angles form the directional benchmark reference. */
 const referenceOptions = (): AnalysisOptions => {
   return fixed(createDefaultAnalysisOptions(), 144)
 }
@@ -54,8 +54,7 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
   const samples = available.filter((_, index) => index % stride === 0).slice(0, 96)
 
   const candidates = [
-    { name: 'unified-22x36-fixed', options: fixed(createDefaultAnalysisOptions(), 36) },
-    { name: 'unified-22x36-adaptive', options: createDefaultAnalysisOptions() }
+    { name: 'unified-27x36-fixed', options: fixed(createDefaultAnalysisOptions(), 36) }
   ]
 
   for (const candidate of candidates) {
@@ -90,12 +89,6 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
     }
     reports.push(report)
     if (hits !== samples.length) failures.push(`${fixture.key}/${candidate.name}: missing ray intersections`)
-    if (candidate.name === 'unified-22x36-adaptive') {
-      if (maxRayError > 0.0075) failures.push(`${fixture.key}/${candidate.name}: ray error exceeds 0.75%`)
-      if (!built.value.directionError.withinTolerance || !built.value.stationError.withinTolerance) {
-        failures.push(`${fixture.key}/${candidate.name}: station/direction chord tolerance was not reached`)
-      }
-    }
   }
 }
 

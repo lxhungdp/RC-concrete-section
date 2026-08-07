@@ -43,58 +43,58 @@
       "rebars": [
         {
           "id": 1,
+          "dia": 22.56758334191025,
           "x": -150,
           "y": -200,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         },
         {
           "id": 2,
+          "dia": 22.56758334191025,
           "x": 0,
           "y": -200,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         },
         {
           "id": 3,
+          "dia": 22.56758334191025,
           "x": 150,
           "y": -200,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         },
         {
           "id": 4,
+          "dia": 22.56758334191025,
           "x": 150,
           "y": 0,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         },
         {
           "id": 5,
+          "dia": 22.56758334191025,
           "x": 150,
           "y": 200,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         },
         {
           "id": 6,
+          "dia": 22.56758334191025,
           "x": 0,
           "y": 200,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         },
         {
           "id": 7,
+          "dia": 22.56758334191025,
           "x": -150,
           "y": 200,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         },
         {
           "id": 8,
+          "dia": 22.56758334191025,
           "x": -150,
           "y": 0,
-          "dia": 22.56758334191025,
           "steelMaterialId": 1
         }
       ]
@@ -107,7 +107,6 @@
         "standard": "KDS",
         "fck": 40,
         "mc": 2350,
-        "elasticModulus": 30967.78031257298,
         "stressStrain": {
           "type": "kds-parabolic",
           "n": 2,
@@ -116,10 +115,11 @@
           "alpha": 0.85
         },
         "limits": {
-          "eps0": 0.002,
           "epsCu": 0.0033,
-          "ignoreTension": true
+          "ignoreTension": true,
+          "eps0": 0.002
         },
+        "elasticModulus": 30967.78031257298,
         "factors": {
           "alpha": 0.85
         }
@@ -175,7 +175,7 @@
       "optionsVersion": 1,
       "methodId": "equivalent-block-surface-v1",
       "neutralAxisStations": {
-        "basedOn": "unified-22-v1",
+        "basedOn": "unified-27-v2",
         "values": [
           {
             "type": "depth-ratio",
@@ -211,7 +211,15 @@
           },
           {
             "type": "bar-tension-yield-ratio",
+            "ratio": 0.375
+          },
+          {
+            "type": "bar-tension-yield-ratio",
             "ratio": 0.5
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 0.625
           },
           {
             "type": "bar-tension-yield-ratio",
@@ -219,11 +227,23 @@
           },
           {
             "type": "bar-tension-yield-ratio",
+            "ratio": 0.875
+          },
+          {
+            "type": "bar-tension-yield-ratio",
             "ratio": 1
           },
           {
             "type": "bar-tension-yield-ratio",
+            "ratio": 1.25
+          },
+          {
+            "type": "bar-tension-yield-ratio",
             "ratio": 1.5
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 1.75
           },
           {
             "type": "bar-tension-yield-ratio",
@@ -259,37 +279,34 @@
           }
         ],
         "refinement": {
-          "type": "adaptive",
-          "tolerance": 0.0075,
-          "maxPasses": 8,
-          "maxStations": 48
+          "type": "fixed"
         }
       },
       "directions": {
         "seedCount": 36,
         "startDeg": 0,
         "refinement": {
-          "type": "adaptive",
-          "tolerance": 0.0075,
-          "maxPasses": 8,
-          "maxDirections": 360
+          "type": "fixed"
         }
       }
     },
     "design": {
       "basisVersion": 2,
-      "profileId": "kds-2024-current-set",
       "identity": {
         "organization": "MOLIT/KDS",
         "document": "KDS 2024 current set · resistance: KDS 14 20 10:2021 + KDS 14 20 20:2022",
         "edition": "2024 partial-revision framework (effective 2025-01-05)",
+        "amendment": "MOLIT Notice 2024-879, 2024-12-30",
         "methodId": "kds-2024-current-set-global-strength-reduction",
-        "profileVersion": "1.0.0",
-        "amendment": "MOLIT Notice 2024-879, 2024-12-30"
+        "profileVersion": "1.0.0"
       },
+      "profileId": "kds-2024-current-set",
       "verificationStatus": "draft",
+      "modified": false,
+      "overrideReason": "",
       "format": "globalResultantFactor",
       "transverseReinforcement": "other",
+      "axialCapEnabled": true,
       "factors": {
         "phiCompressionOther": 0.65,
         "phiCompressionSpiral": 0.7,
@@ -302,10 +319,7 @@
         "yieldStressThreshold": 400,
         "fixedStrainLimit": 0.005,
         "highStrengthYieldMultiple": 2.5
-      },
-      "axialCapEnabled": true,
-      "modified": false,
-      "overrideReason": ""
+      }
     }
   }
 }

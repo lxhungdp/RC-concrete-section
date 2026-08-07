@@ -1,6 +1,6 @@
 # P-M-M Surface Sampling, Slices, and Plot Semantics
 
-Both mechanics use one station definition, `unified-22-v1`. Current model formulas and complete
+Both mechanics use one station definition, `unified-27-v2`. Current model formulas and complete
 defaults are summarized in
 [`12-calculation-models-defaults-and-workflows.md`](12-calculation-models-defaults-and-workflows.md).
 
@@ -12,27 +12,27 @@ A P-M-M surface is built from two independent coordinates:
 - a direction coordinate, which rotates the strain gradient or compression-block normal through
   360 degrees.
 
-Both coordinates are persisted inputs. Production starts from the fixed 22-by-36 grid and returns
-separate fixed and adaptive datasets. The result records the effective station/direction lists,
-interpolation estimates, passes, and warnings; consumers must select the dataset required by the
-workflow below instead of filtering one mesh into another.
+Both coordinates are persisted inputs. Production builds one fixed 27-by-36 grid. The result keeps
+the fixed dataset aliases required by existing report/chart consumers, but no station midpoint or
+direction bisector is generated in the standard workflow.
 
-## 2. Shared 22-station coordinate
+## 2. Shared 27-station coordinate
 
 The ordered schedule from compression to tension is:
 
 ```text
 P0       exact uniform-compression pole
 P1..P6   c/D = 3, 2, 1.5, 1.2, 1.1, 1
-P7..P20  εₛ/εy = 0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10, 20
-P21      exact uniform-tension pole
+P7..P25  εₛ/εy = 0, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 1.25, 1.5, 1.75,
+          2, 2.5, 3, 4, 5, 7.5, 10, 20
+P26      exact uniform-tension pole
 ```
 
 `D` is the projected total section depth in the active direction. `εₛ` is the tensile-strain
 magnitude of the controlling longitudinal bar and `εy` is that bar material's yield strain. The
 outside/on-section branch is therefore geometry-normalized; the inside-section branch is
 material-normalized. The schedule is owned once by `@pm/stations` and persisted as
-`unified-22-v1` in both analysis DTOs.
+`unified-27-v2` in both analysis DTOs.
 
 ### 2.1 Stress-strain integration
 
@@ -49,9 +49,9 @@ criterion. `UNIFIED_STATIONS` is the derived runtime form used by preview helper
 
 The block solver converts every shared criterion to physical neutral-axis depth `c`, then applies
 the selected code adapter's `a = beta1 c`, block stress, and compression-strain limit. A layer that
-numerically collapses onto a pole is retained in the public 22-station metadata but omitted from the
-triangulation to prevent degenerate triangles. Both mechanics may add adaptive Design stations by
-measured chord error. No code transition or rupture-event station is inserted automatically.
+numerically collapses onto a pole is retained in the public 27-station metadata but omitted from the
+triangulation to prevent degenerate triangles. No code transition, rupture-event, or adaptive
+station is inserted automatically.
 
 ## 3. Direction semantics and defaults
 
@@ -69,16 +69,14 @@ Production default shared by both mechanics:
 
 ```text
 36 uniform seed directions (10-degree spacing)
-22 fixed stations plus adaptive station midpoints
-relative station tolerance 0.0075; max passes 8; max stations 48
-relative direction tolerance 0.0075; max passes 8; max directions 360
+27 fixed stations
+36 fixed directions
+no production midpoint probes or adaptive insertion
 ```
 
-The 22 definitions remain the immutable reporting baseline. Adaptive IDs are deterministic and do
-not renumber fixed IDs.
-
-The final direction count is therefore geometry-dependent. In the 2026-08-04 stress-strain
-benchmark it ranged from 56 to 100 for the five measured fixtures.
+The 27 definitions and 36 directions remain the immutable production/reporting baseline. Optional
+adaptive DTOs remain readable for explicit audit and backwards compatibility, but the default app
+surface does not use them.
 
 ## 4. Surface topology
 
@@ -99,38 +97,28 @@ Nominal/Design resistance evidence where applicable
 Equivalent-block points additionally carry `c`, `a`, `beta1`, block polygon, controlling tensile
 strain, and adapter provenance.
 
-## 5. Adaptive station and direction tests
+## 5. Fixed production sampling and optional audit refinement
 
-For an adjacent pair of sampled directions, the engine evaluates the true midpoint state and
-compares it with the chord used by the triangulation. A midpoint is inserted when the normalized
-resultant error exceeds the configured tolerance. The process stops only when all probes pass or a
-configured pass/direction cap is reached.
+Fixed mode does not evaluate hidden midpoint probes. It calculates only the 27 × 36 requested
+states, so changing to Section Results does not pay for a second error-measurement grid.
 
-The stress-strain default probes every station. An empty explicit probe list means “measurement not
-taken” and reports `NaN`; it must never be displayed as zero error. A fixed grid can report a finite
-estimate but does not refine itself.
-
-Station refinement applies the same midpoint-chord test along each direct meridian. Outside the
-section the midpoint is formed in the `D/c` coordinate; inside the section it is formed from the
-controlling-bar strain coordinate. For material-factor resistance, concrete and steel component
-ledgers are checked separately so cancellation cannot hide curvature.
-
-Adaptive refinement is evaluated on Design resistance only. Nominal resistance remains the fixed
-22-station reference.
+The numerical engine still supports explicit adaptive DTOs for regression/audit experiments. In
+that nondefault mode it measures true midpoint states against chords and can insert station or
+direction midpoints. Those points are not part of the production schedule described here.
 
 ## 6. Dataset ownership
 
 Every production result distinguishes these datasets:
 
-- `designAdaptive`: governing Design surface used by proportional 3D demand checks;
-- `designFixed`: independent Design surface on the fixed 22-by-36 grid;
-- `nominalFixed`: independent nominal/reference surface on the fixed 22-by-36 grid;
+- `designAdaptive`: compatibility name for the governing Design surface; under production options
+  it is the same fixed grid as `designFixed`;
+- `designFixed`: Design surface on the fixed 27-by-36 grid;
+- `nominalFixed`: nominal/reference result at those same fixed states and directions;
 - `exactDirection`: a newly evaluated direct meridian for a typed angle or a valid solved demand
-  state; Design uses fixed plus station-adaptive samples and nominal stays fixed.
+  state; it contains the same 27 fixed station definitions and no angular interpolation.
 
-The 3D display and fixed-P interpolation use only fixed datasets. Adaptive vertices are not drawn
-on the 3D surface. A fixed-P diagnostic interpolates actual `P` on the fixed triangulation, never by
-station index and never using adaptive vertices.
+The 3D display and fixed-P interpolation use the fixed dataset. A fixed-P diagnostic interpolates
+actual `P` on the fixed triangulation, never by station index.
 
 ## 7. Fixed-P contour
 
@@ -193,12 +181,10 @@ stress-strain curve, would misrepresent the method and is prohibited.
 - fixed-P contour points satisfy the requested P within numerical tolerance;
 - principal-axis and quadrant angle tests pass;
 - changing only display units does not rebuild engineering states;
-- a result that misses its configured refinement tolerance carries a visible warning and cannot be
-  promoted to an accepted result.
+- production surfaces contain exactly the configured fixed station/direction rows.
 
 ## 12. Measured sampling evidence
 
-The permanent harnesses hold all 22 stations fixed and compare direction policies against a
-144-direction reference. In the 2026-08-06 five-section run, the adaptive worst ray errors were
-0.317% for stress-strain and 0.575% for equivalent block; every tested ray intersected the surface.
-Exact per-case timing and point counts are printed by the benchmark commands and summarized in `12`.
+The permanent harnesses hold all 27 stations fixed and compare the production 36-direction grid
+against a 144-direction reference. Exact per-case timing, point counts, and ray differences are
+printed by the benchmark commands and summarized in `12`.

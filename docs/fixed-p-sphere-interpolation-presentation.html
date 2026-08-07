@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Fixed-P và adaptive sampling — kiến trúc hiện hành</title>
+  <title>Fixed-P và lấy mẫu cố định — kiến trúc hiện hành</title>
   <style>
     :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
     body { margin: 0; background: #07111f; color: #edf5ff; }
@@ -24,42 +24,42 @@
 </head>
 <body>
 <main>
-  <span class="tag">KIẾN TRÚC HIỆN HÀNH · 22 × 36 · 0,75%</span>
-  <h1>Fixed‑P không dùng điểm adaptive</h1>
+  <span class="tag">KIẾN TRÚC HIỆN HÀNH · 27 × 36 · FIXED</span>
+  <h1>Một surface cố định, chỉ tính thêm khi thật sự cần</h1>
   <p class="lead">
-    Tài liệu trình diễn cũ đã được thay thế. Hệ thống hiện tách bốn tập dữ liệu để điểm adaptive
-    chỉ phục vụ sức kháng Design, không làm nặng hoặc gây rối biểu đồ quan sát và phép nội suy Fixed‑P.
+    Hệ thống tạo đúng 27 station trên 36 kinh tuyến. Không dò midpoint và không thêm điểm adaptive
+    khi mở Section Results. Năm station mới tập trung trong vùng cong mạnh εₛ/εy = 0,25 đến 2.
   </p>
 
   <section class="grid">
     <article class="card">
-      <h2>Design adaptive</h2>
-      <p>Khởi đầu từ 22 station và 36 direction cố định. Tự chèn midpoint đến sai số dây cung tương đối 0,75% hoặc giới hạn cấu hình.</p>
-      <p>Dùng cho kiểm tra sức kháng 3D governing.</p>
+      <h2>Surface Design</h2>
+      <p>Đúng 27 station × 36 direction: <code>972</code> trạng thái trước khi xử lý pole/cap trùng hình học.</p>
+      <p>Không có lượt probe hoặc surface fixed thứ hai.</p>
     </article>
     <article class="card">
       <h2>Design fixed</h2>
-      <p>Đúng 22 station và các hướng <code>0°, 10°, …, 350°</code>. Không lọc ngược từ mesh adaptive.</p>
+      <p>Đúng 27 station và các hướng <code>0°, 10°, …, 350°</code>.</p>
       <p>Dùng cho mặt 3D hiển thị và nội suy Fixed‑P.</p>
     </article>
     <article class="card">
       <h2>Nominal fixed</h2>
-      <p>Được tính độc lập trên cùng lưới fixed 22 × 36. Nominal không có adaptive.</p>
+      <p>Được lấy tại cùng trạng thái của lưới fixed 27 × 36 trong cùng lượt tính.</p>
       <p>Dùng làm đường tham chiếu và kiểm toán.</p>
     </article>
     <article class="card">
       <h2>Exact direction</h2>
       <p>Khi nhập góc bất kỳ hoặc nhận β từ trạng thái cân bằng, engine tính trực tiếp đúng β đó.</p>
-      <p>Design có adaptive station; Nominal vẫn giữ 22 station cố định.</p>
+      <p>Góc fixed dùng lại dữ liệu sẵn có; góc bất kỳ chỉ tính một kinh tuyến mới gồm 27 station.</p>
     </article>
   </section>
 
   <h2>Luồng Fixed‑P</h2>
   <div class="flow">
-    <div class="step">1. Chọn tập <strong>Design fixed 22 × 36</strong>.</div>
+    <div class="step">1. Chọn tập <strong>Design fixed 27 × 36</strong>.</div>
     <div class="step">2. Cắt từng tam giác với mặt <code>P = Pu</code> bằng giá trị P thực, không dựa vào index station.</div>
     <div class="step">3. Sắp contour trong mặt Mx–My và giao với tia moment demand.</div>
-    <div class="step">4. Điểm adaptive không tham gia contour hoặc phép nội suy Fixed‑P.</div>
+    <div class="step">4. Không có điểm adaptive trong contour hoặc phép nội suy Fixed‑P.</div>
   </div>
 
   <h2 style="margin-top:36px">Luồng Vertical</h2>
@@ -71,7 +71,7 @@
   </div>
 
   <p class="warning">
-    Quy tắc cũ “Fixed‑P display nối các kinh tuyến adaptive” đã bị loại bỏ. Xem đặc tả sống tại
+    Quy tắc cũ “xây surface adaptive rồi lọc lại để vẽ” đã bị loại bỏ. Xem đặc tả sống tại
     <a href="05-pm-diagram-stations-angles-plotting.md">05 — P‑M Diagram Stations, Angles, and Plotting</a>.
   </p>
 </main>

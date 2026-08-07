@@ -154,129 +154,129 @@
       "rebars": [
         {
           "id": 1,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": -400,
-          "y": 530
+          "y": 530,
+          "steelMaterialId": 1
         },
         {
           "id": 2,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": -200,
-          "y": 530
+          "y": 530,
+          "steelMaterialId": 1
         },
         {
           "id": 3,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": 0,
-          "y": 530
+          "y": 530,
+          "steelMaterialId": 1
         },
         {
           "id": 4,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": 200,
-          "y": 530
+          "y": 530,
+          "steelMaterialId": 1
         },
         {
           "id": 5,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": 400,
-          "y": 530
+          "y": 530,
+          "steelMaterialId": 1
         },
         {
           "id": 6,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": -400,
-          "y": -530
+          "y": -530,
+          "steelMaterialId": 1
         },
         {
           "id": 7,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": -200,
-          "y": -530
+          "y": -530,
+          "steelMaterialId": 1
         },
         {
           "id": 8,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": 0,
-          "y": -530
+          "y": -530,
+          "steelMaterialId": 1
         },
         {
           "id": 9,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": 200,
-          "y": -530
+          "y": -530,
+          "steelMaterialId": 1
         },
         {
           "id": 10,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": 400,
-          "y": -530
+          "y": -530,
+          "steelMaterialId": 1
         },
         {
           "id": 11,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": -680,
-          "y": 300
+          "y": 300,
+          "steelMaterialId": 1
         },
         {
           "id": 12,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": -680,
-          "y": 100
+          "y": 100,
+          "steelMaterialId": 1
         },
         {
           "id": 13,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": -680,
-          "y": -100
+          "y": -100,
+          "steelMaterialId": 1
         },
         {
           "id": 14,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": -680,
-          "y": -300
+          "y": -300,
+          "steelMaterialId": 1
         },
         {
           "id": 15,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": 680,
-          "y": 300
+          "y": 300,
+          "steelMaterialId": 1
         },
         {
           "id": 16,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": 680,
-          "y": 100
+          "y": 100,
+          "steelMaterialId": 1
         },
         {
           "id": 17,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": 680,
-          "y": -100
+          "y": -100,
+          "steelMaterialId": 1
         },
         {
           "id": 18,
-          "steelMaterialId": 1,
           "dia": 32,
           "x": 680,
-          "y": -300
+          "y": -300,
+          "steelMaterialId": 1
         }
       ]
     },
@@ -288,19 +288,19 @@
         "standard": "KDS",
         "fck": 30,
         "mc": 2350,
-        "elasticModulus": 28417.47528313351,
         "stressStrain": {
           "type": "kds-parabolic",
+          "n": 2,
           "eps0": 0.002,
           "epsCu": 0.0033,
-          "n": 2,
           "alpha": 0.85
         },
         "limits": {
-          "eps0": 0.002,
           "epsCu": 0.0033,
-          "ignoreTension": true
+          "ignoreTension": true,
+          "eps0": 0.002
         },
+        "elasticModulus": 28417.47528313351,
         "factors": {
           "alpha": 0.85
         }
@@ -356,7 +356,7 @@
       "optionsVersion": 1,
       "methodId": "strain-domain-surface-v1",
       "stations": {
-        "basedOn": "unified-22-v1",
+        "basedOn": "unified-27-v2",
         "intermediate": [
           {
             "id": 1,
@@ -424,6 +424,14 @@
           },
           {
             "id": 9,
+            "label": "εₛ/εy = 0.375",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 0.375
+            }
+          },
+          {
+            "id": 10,
             "label": "εₛ/εy = 0.5",
             "criterion": {
               "type": "bar-tension-yield-ratio",
@@ -431,7 +439,15 @@
             }
           },
           {
-            "id": 10,
+            "id": 11,
+            "label": "εₛ/εy = 0.625",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 0.625
+            }
+          },
+          {
+            "id": 12,
             "label": "εₛ/εy = 0.75",
             "criterion": {
               "type": "bar-tension-yield-ratio",
@@ -439,7 +455,15 @@
             }
           },
           {
-            "id": 11,
+            "id": 13,
+            "label": "εₛ/εy = 0.875",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 0.875
+            }
+          },
+          {
+            "id": 14,
             "label": "εₛ/εy = 1",
             "criterion": {
               "type": "bar-tension-yield-ratio",
@@ -447,7 +471,15 @@
             }
           },
           {
-            "id": 12,
+            "id": 15,
+            "label": "εₛ/εy = 1.25",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 1.25
+            }
+          },
+          {
+            "id": 16,
             "label": "εₛ/εy = 1.5",
             "criterion": {
               "type": "bar-tension-yield-ratio",
@@ -455,7 +487,15 @@
             }
           },
           {
-            "id": 13,
+            "id": 17,
+            "label": "εₛ/εy = 1.75",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 1.75
+            }
+          },
+          {
+            "id": 18,
             "label": "εₛ/εy = 2",
             "criterion": {
               "type": "bar-tension-yield-ratio",
@@ -463,7 +503,7 @@
             }
           },
           {
-            "id": 14,
+            "id": 19,
             "label": "εₛ/εy = 2.5",
             "criterion": {
               "type": "bar-tension-yield-ratio",
@@ -471,7 +511,7 @@
             }
           },
           {
-            "id": 15,
+            "id": 20,
             "label": "εₛ/εy = 3",
             "criterion": {
               "type": "bar-tension-yield-ratio",
@@ -479,7 +519,7 @@
             }
           },
           {
-            "id": 16,
+            "id": 21,
             "label": "εₛ/εy = 4",
             "criterion": {
               "type": "bar-tension-yield-ratio",
@@ -487,7 +527,7 @@
             }
           },
           {
-            "id": 17,
+            "id": 22,
             "label": "εₛ/εy = 5",
             "criterion": {
               "type": "bar-tension-yield-ratio",
@@ -495,7 +535,7 @@
             }
           },
           {
-            "id": 18,
+            "id": 23,
             "label": "εₛ/εy = 7.5",
             "criterion": {
               "type": "bar-tension-yield-ratio",
@@ -503,7 +543,7 @@
             }
           },
           {
-            "id": 19,
+            "id": 24,
             "label": "εₛ/εy = 10",
             "criterion": {
               "type": "bar-tension-yield-ratio",
@@ -511,7 +551,7 @@
             }
           },
           {
-            "id": 20,
+            "id": 25,
             "label": "εₛ/εy = 20",
             "criterion": {
               "type": "bar-tension-yield-ratio",
@@ -520,10 +560,7 @@
           }
         ],
         "refinement": {
-          "type": "adaptive",
-          "tolerance": 0.0075,
-          "maxPasses": 8,
-          "maxStations": 48
+          "type": "fixed"
         }
       },
       "directions": {
@@ -533,10 +570,7 @@
           "startDeg": 0
         },
         "refinement": {
-          "type": "adaptive",
-          "tolerance": 0.0075,
-          "maxPasses": 8,
-          "maxDirections": 360,
+          "type": "fixed",
           "probe": "all"
         }
       },
@@ -551,18 +585,21 @@
     },
     "design": {
       "basisVersion": 2,
-      "profileId": "kds-2024-current-set",
       "identity": {
         "organization": "MOLIT/KDS",
         "document": "KDS 2024 current set · resistance: KDS 14 20 10:2021 + KDS 14 20 20:2022",
         "edition": "2024 partial-revision framework (effective 2025-01-05)",
+        "amendment": "MOLIT Notice 2024-879, 2024-12-30",
         "methodId": "kds-2024-current-set-global-strength-reduction",
-        "profileVersion": "1.0.0",
-        "amendment": "MOLIT Notice 2024-879, 2024-12-30"
+        "profileVersion": "1.0.0"
       },
+      "profileId": "kds-2024-current-set",
       "verificationStatus": "draft",
+      "modified": false,
+      "overrideReason": "",
       "format": "globalResultantFactor",
       "transverseReinforcement": "other",
+      "axialCapEnabled": true,
       "factors": {
         "phiCompressionOther": 0.65,
         "phiCompressionSpiral": 0.7,
@@ -575,10 +612,7 @@
         "yieldStressThreshold": 400,
         "fixedStrainLimit": 0.005,
         "highStrengthYieldMultiple": 2.5
-      },
-      "axialCapEnabled": true,
-      "modified": false,
-      "overrideReason": ""
+      }
     }
   }
 }

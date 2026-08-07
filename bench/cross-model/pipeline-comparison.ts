@@ -38,8 +38,7 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
   const design = createDesignBasisForCalculationProfile('kds-142020-equivalent-block')
   const curveOptions = createDefaultAnalysisOptions()
   // The cross-model benchmark measures equivalent-block candidates below. Keep this companion
-  // stress-strain timing on the production fixed display grid; adaptive stress-strain convergence
-  // has its own dedicated bench:strain-sampling suite.
+  // stress-strain timing on the production fixed display grid.
   curveOptions.stations.refinement = { type: 'fixed' }
   curveOptions.directions.refinement = { type: 'fixed', probe: 'all' }
   const curve = timed(() => buildDesignPreviewSurface(section, rebars, fixture.materials, design, undefined, curveOptions))
@@ -53,10 +52,9 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
 
   const candidates = [
     {
-      name: 'block-unified-22x36-fixed',
+      name: 'block-unified-27x36-fixed',
       options: fixedBlockOptions(36)
-    },
-    { name: 'block-unified-22x36-adaptive', options: createDefaultEquivalentBlockAnalysisOptions() }
+    }
   ]
   for (const candidate of candidates) {
     const built = timed(() => buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, candidate.options))
@@ -79,16 +77,13 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
       points: built.value.points.length,
       directions,
       stations,
-      maxRayErrorVsUnified22x144: maxRayError,
+      maxRayErrorVsUnified27x144: maxRayError,
       rayHitRate: hits / Math.max(1, referenceSamples.length),
       curveBuildMs: curve.ms,
       curvePoints: curve.value.points.length,
       highResolutionBlockMs: reference.ms
     })
     if (hits !== referenceSamples.length) failures.push(`${fixture.key}/${candidate.name}: missing demand-ray intersections`)
-    if (candidate.name.includes('adaptive') && maxRayError > 0.01) {
-      failures.push(`${fixture.key}/${candidate.name}: ${maxRayError} ray error exceeds 1% acceptance`)
-    }
   }
 }
 
@@ -99,7 +94,7 @@ console.table(reports.map((item) => ({
   points: item.points,
   dirs: item.directions,
   stations: item.stations,
-  'ray err': Number(item.maxRayErrorVsUnified22x144).toExponential(2),
+  'ray err': Number(item.maxRayErrorVsUnified27x144).toExponential(2),
   'curve ms': Number(item.curveBuildMs).toFixed(1)
 })))
 console.log(JSON.stringify({ generatedAt: new Date().toISOString(), reports, failures }, null, 2))

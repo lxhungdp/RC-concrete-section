@@ -2,6 +2,7 @@ import type { GeometryInput, GeometryInputOuter, GeometryInputRebar, Point2 } fr
 import { CONCRETE_MATERIAL_ID, DEFAULT_CONCRETE_DENSITY } from '@pm/materials'
 import type { ConcreteMaterial, MaterialStore, SteelMaterial, StressStrainPoint } from '@pm/materials'
 import {
+  LEGACY_UNIFIED_STATION_SCHEDULES,
   UNIFIED_DEPTH_RATIOS,
   UNIFIED_INTERMEDIATE_STATION_COUNT,
   UNIFIED_STATION_SCHEDULE,
@@ -32,6 +33,7 @@ import {
   MAX_STATION_LABEL_LENGTH,
   STRAIN_DOMAIN_SURFACE_METHOD,
   createDefaultAnalysisOptions,
+  createDefaultEquivalentBlockAnalysisOptions,
   type AnalysisOptions,
   type AnalysisStation,
   type CalculationAnalysisOptions,
@@ -587,8 +589,45 @@ const parseEquivalentBlockAnalysis = (
   }
 }
 
+const migrateLegacyAnalysis = (value: unknown): unknown => {
+  if (!isRecord(value)) return value
+  const isLegacyCanonicalSchedule = (candidate: unknown) =>
+    typeof candidate === 'string' &&
+    (LEGACY_UNIFIED_STATION_SCHEDULES as readonly string[]).includes(candidate)
+  if (value.methodId === EQUIVALENT_BLOCK_SURFACE_METHOD) {
+    if (
+      isRecord(value.neutralAxisStations) &&
+      isLegacyCanonicalSchedule(value.neutralAxisStations.basedOn)
+    ) {
+      const defaults = createDefaultEquivalentBlockAnalysisOptions()
+      const directions = isRecord(value.directions) ? value.directions : {}
+      return {
+        ...value,
+        neutralAxisStations: defaults.neutralAxisStations,
+        directions: { ...directions, refinement: { type: 'fixed' } }
+      }
+    }
+    return value
+  }
+  if (
+    value.methodId === STRAIN_DOMAIN_SURFACE_METHOD &&
+    isRecord(value.stations) &&
+    isLegacyCanonicalSchedule(value.stations.basedOn)
+  ) {
+    const defaults = createDefaultAnalysisOptions()
+    const directions = isRecord(value.directions) ? value.directions : {}
+    return {
+      ...value,
+      stations: defaults.stations,
+      directions: { ...directions, refinement: { type: 'fixed', probe: 'all' } }
+    }
+  }
+  return value
+}
+
 const parseAnalysis = (value: unknown): CalculationAnalysisOptions => {
   const path = 'inputs.analysis'
+  value = migrateLegacyAnalysis(value)
   assertRecord(value, `${path} must be an object`)
   assert(value.optionsVersion === ANALYSIS_OPTIONS_VERSION, `${path}.optionsVersion is unsupported`)
   if (value.methodId === EQUIVALENT_BLOCK_SURFACE_METHOD) return parseEquivalentBlockAnalysis(value, path)
