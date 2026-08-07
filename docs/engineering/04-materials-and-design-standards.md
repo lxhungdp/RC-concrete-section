@@ -113,7 +113,7 @@ analysis options, and DesignBasis. The target accepted-result/report contract ex
 - phi classification, controlling tensile/yield strains, and tension-controlled limit;
 - axial-cap status and actual surface refinement evidence.
 
-The project document remains schema v1, while its embedded DesignBasis is version 2. The parser can
+The project document remains schema v1, while its embedded DesignBasis is version 3. The parser can
 derive a missing basis and migrates legacy EN scalar partial factors to generic factor expressions;
 canonical exports write the current basis explicitly.
 

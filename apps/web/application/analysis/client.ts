@@ -77,6 +77,15 @@ let sequence = 0
 const pending = new Map<string, PendingJob>()
 let fallbackPreparedCache: { key: string; value: PreparedAnalysis } | null = null
 let fallbackBlockCache: { key: string; value: PreparedBlockAnalysis } | null = null
+let pdfUnicodeFontPromise: Promise<Uint8Array> | null = null
+
+const pdfUnicodeFont = () => {
+  pdfUnicodeFontPromise ??= fetch('/fonts/PMReportUnicode-Regular.ttf').then(async (response) => {
+    if (!response.ok) throw new Error(`Unicode PDF font could not be loaded (${response.status}).`)
+    return new Uint8Array(await response.arrayBuffer())
+  })
+  return pdfUnicodeFontPromise
+}
 
 const fallbackPreparedFor = (
   payload: Pick<BuildSurfacePayload, 'section' | 'rebars' | 'materialStore'> & { analysisOptions: AnalysisOptions } & {
@@ -133,10 +142,6 @@ const getWorker = () => {
           job.reject(error)
           return
         }
-        if (response.type === 'cancelled') {
-          job.reject(new AnalysisAbortError())
-          return
-        }
         job.resolve(response.result)
       })
     }
@@ -166,9 +171,14 @@ const requestWorker = <T>(request: Omit<AnalysisWorkerJob, 'jobId'>, signal?: Ab
 
   return new Promise<T>((resolve, reject) => {
     const onAbort = () => {
-      // Withdraw it from the worker queue, then stop waiting. A job already running still finishes
-      // inside the worker, but its result is dropped here and never reaches the UI.
-      instance.postMessage({ type: 'cancel', jobId } satisfies AnalysisWorkerRequest)
+      // A Web Worker cannot process a cancellation message while its synchronous kernel is busy.
+      // When this is the only outstanding request, termination is the only real interruption and
+      // the next request transparently creates a fresh worker. With concurrent jobs, preserve the
+      // shared worker and discard only this late result.
+      if (pending.size === 1 && pending.has(jobId) && worker === instance) {
+        instance.terminate()
+        worker = null
+      }
       settle(jobId, (job) => job.reject(new AnalysisAbortError()))
     }
     signal?.addEventListener('abort', onAbort, { once: true })
@@ -404,7 +414,9 @@ export const exportColumnReportPdfAsync = async (
     { type: 'exportPdfReport', payload },
     async () => {
       const { buildColumnReportPdf } = await import('@pm/report/pdf')
-      const report = buildColumnReportPdf(payload)
+      const report = buildColumnReportPdf(payload, {
+        unicodeFontBytes: await pdfUnicodeFont()
+      })
       return {
         bytes: report.bytes.buffer.slice(
           report.bytes.byteOffset,

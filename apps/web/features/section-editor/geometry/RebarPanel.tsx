@@ -296,9 +296,7 @@ export function RebarPanel({
                   className={selectedRebarId === bar.id ? 'is-selected' : ''}
                   onClick={() => onSelectRebar(bar.id)}
                 >
-                  <td>
-                    <span className="pm-point-index">{bar.id}</span>
-                  </td>
+                  <td className="pm-rebar-id">{bar.id}</td>
                   <td>
                     <input
                       type="number"

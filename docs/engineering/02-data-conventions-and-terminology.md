@@ -3,7 +3,7 @@
 ## 1. Canonical units
 
 The current codebase uses only persisted calculation contract version 1: project version 1,
-design-basis version 1, analysis-options version 1, both `*-surface-v1` method IDs, and v1 station
+design-basis version 3, analysis-options version 1, both `*-surface-v1` method IDs, and v1 station
 schedules. There is no migration or backward-compatibility layer. The parser's documented v1
 defaults do not change these units:
 

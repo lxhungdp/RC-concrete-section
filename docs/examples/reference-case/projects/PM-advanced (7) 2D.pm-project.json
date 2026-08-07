@@ -154,129 +154,129 @@
       "rebars": [
         {
           "id": 1,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": -400,
-          "y": 530,
-          "steelMaterialId": 1
+          "y": 530
         },
         {
           "id": 2,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": -200,
-          "y": 530,
-          "steelMaterialId": 1
+          "y": 530
         },
         {
           "id": 3,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": 0,
-          "y": 530,
-          "steelMaterialId": 1
+          "y": 530
         },
         {
           "id": 4,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": 200,
-          "y": 530,
-          "steelMaterialId": 1
+          "y": 530
         },
         {
           "id": 5,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": 400,
-          "y": 530,
-          "steelMaterialId": 1
+          "y": 530
         },
         {
           "id": 6,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": -400,
-          "y": -530,
-          "steelMaterialId": 1
+          "y": -530
         },
         {
           "id": 7,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": -200,
-          "y": -530,
-          "steelMaterialId": 1
+          "y": -530
         },
         {
           "id": 8,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": 0,
-          "y": -530,
-          "steelMaterialId": 1
+          "y": -530
         },
         {
           "id": 9,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": 200,
-          "y": -530,
-          "steelMaterialId": 1
+          "y": -530
         },
         {
           "id": 10,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": 400,
-          "y": -530,
-          "steelMaterialId": 1
+          "y": -530
         },
         {
           "id": 11,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": -680,
-          "y": 300,
-          "steelMaterialId": 1
+          "y": 300
         },
         {
           "id": 12,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": -680,
-          "y": 100,
-          "steelMaterialId": 1
+          "y": 100
         },
         {
           "id": 13,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": -680,
-          "y": -100,
-          "steelMaterialId": 1
+          "y": -100
         },
         {
           "id": 14,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": -680,
-          "y": -300,
-          "steelMaterialId": 1
+          "y": -300
         },
         {
           "id": 15,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": 680,
-          "y": 300,
-          "steelMaterialId": 1
+          "y": 300
         },
         {
           "id": 16,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": 680,
-          "y": 100,
-          "steelMaterialId": 1
+          "y": 100
         },
         {
           "id": 17,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": 680,
-          "y": -100,
-          "steelMaterialId": 1
+          "y": -100
         },
         {
           "id": 18,
+          "steelMaterialId": 1,
           "dia": 32,
           "x": 680,
-          "y": -300,
-          "steelMaterialId": 1
+          "y": -300
         }
       ]
     },
@@ -288,19 +288,19 @@
         "standard": "KDS",
         "fck": 30,
         "mc": 2350,
+        "elasticModulus": 28417.47528313351,
         "stressStrain": {
           "type": "kds-parabolic",
-          "n": 2,
           "eps0": 0.002,
           "epsCu": 0.0033,
+          "n": 2,
           "alpha": 0.85
         },
         "limits": {
+          "eps0": 0.002,
           "epsCu": 0.0033,
-          "ignoreTension": true,
-          "eps0": 0.002
+          "ignoreTension": true
         },
-        "elasticModulus": 28417.47528313351,
         "factors": {
           "alpha": 0.85
         }
@@ -355,6 +355,7 @@
     "analysis": {
       "optionsVersion": 1,
       "methodId": "strain-domain-surface-v1",
+      "samplingMode": "fixed",
       "stations": {
         "basedOn": "unified-27-v2",
         "intermediate": [
@@ -584,22 +585,19 @@
       }
     },
     "design": {
-      "basisVersion": 2,
+      "basisVersion": 3,
+      "profileId": "kds-2024-current-set",
       "identity": {
         "organization": "MOLIT/KDS",
         "document": "KDS 2024 current set · resistance: KDS 14 20 10:2021 + KDS 14 20 20:2022",
         "edition": "2024 partial-revision framework (effective 2025-01-05)",
-        "amendment": "MOLIT Notice 2024-879, 2024-12-30",
         "methodId": "kds-2024-current-set-global-strength-reduction",
-        "profileVersion": "1.0.0"
+        "profileVersion": "1.0.0",
+        "amendment": "MOLIT Notice 2024-879, 2024-12-30"
       },
-      "profileId": "kds-2024-current-set",
       "verificationStatus": "draft",
-      "modified": false,
-      "overrideReason": "",
       "format": "globalResultantFactor",
       "transverseReinforcement": "other",
-      "axialCapEnabled": true,
       "factors": {
         "phiCompressionOther": 0.65,
         "phiCompressionSpiral": 0.7,
@@ -612,7 +610,10 @@
         "yieldStressThreshold": 400,
         "fixedStrainLimit": 0.005,
         "highStrengthYieldMultiple": 2.5
-      }
+      },
+      "axialCapEnabled": true,
+      "modified": false,
+      "overrideReason": ""
     }
   }
 }

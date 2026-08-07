@@ -1,11 +1,11 @@
 # Data Contracts, Persistence, and Versioning
 
-## 1. Current rule: every persisted calculation contract is v1
+## 1. Current persisted contracts
 
-The project is pre-release and all current persisted calculation code is v1:
+The project is pre-release. The outer schema remains v1, while nested contracts carry their own versions:
 
 - project document `version: 1`;
-- design basis `basisVersion: 1`;
+- design basis `basisVersion: 3`;
 - analysis `optionsVersion: 1`;
 - `strain-domain-surface-v1` and `equivalent-block-surface-v1` method IDs;
 - shared `unified-27-v2` schedule ID for both calculation methods.
@@ -17,9 +17,10 @@ schema  = "pm-column-project"
 version = 1
 ```
 
-No other persisted calculation version exists. There is no migration or backward-compatibility
-layer. Unsupported schema, version, profile, method, and options discriminants fail. Within v1, the
-field-by-field parser applies these documented defaults/repairs:
+Unsupported schema, profile, method, and options discriminants fail. The parser migrates legacy
+DesignBasis v1 scalar EN factors to v2 expressions and the former v1/v2 EN `eps_cu` compression
+endpoint to the v3 `eps_c2` point-C pivot. Within project schema v1, the field-by-field parser also
+applies these documented defaults/repairs:
 
 - omitted `inputs.design` receives a material-derived default;
 - omitted stress-strain `analysis.mesh` receives the current default mesh object;

@@ -157,6 +157,55 @@ test('design-material format reevaluates the same strain states with design mate
   assert.ok(point.resistance?.stages.includes('design-material-reevaluation'))
 })
 
+test('EN 1992 domain 5 rotates about eps_c2 and joins the eps_cu2 boundary continuously', () => {
+  const enMaterials = applyCalculationProfileToMaterials(materials, 'en-1992-1-1-2004-stress-strain')
+  const basis = createEn1992DesignBasis()
+  const sets = buildResistanceMaterialSets(enMaterials, basis)
+  const surface = buildDesignPreviewSurfaceFromPrepared(
+    prepareAnalysis(section, rebars, sets.stateMaterials),
+    enMaterials,
+    basis,
+    compactOptions()
+  )
+  const epsC2 = enMaterials.concrete.limits.eps0!
+  const epsCu2 = enMaterials.concrete.limits.epsCu
+  assert.equal(basis.compressionEndpoint, 'peak-stress-strain')
+
+  const atBetaZero = (label: string) => {
+    const station = surface.stations.find((item) => item.label === label)
+    assert.ok(station, `missing ${label}`)
+    const point = surface.points.find((item) => item.beta === 0 && item.stationId === station.id)
+    assert.ok(point, `missing beta=0 point for ${label}`)
+    return point
+  }
+  const origin = netConcreteCentroid(section)
+  const ordinates = section.solids.flatMap((solid) =>
+    solid.outer.map((vertex) => vertex.y - origin.y)
+  )
+  const maxY = Math.max(...ordinates)
+  const minY = Math.min(...ordinates)
+  const strainAt = (point: ReturnType<typeof atBetaZero>, ordinate: number) =>
+    point.state.e0 + point.state.kx * ordinate
+  const close = (actual: number, expected: number) =>
+    assert.ok(Math.abs(actual - expected) < 1e-12, `${actual} != ${expected}`)
+
+  const pole = surface.points.find((point) => point.surfaceRole === 'pure-compression')
+  assert.ok(pole)
+  close(pole.state.e0, epsC2)
+
+  const boundary = atBetaZero('c/D = 1')
+  close(strainAt(boundary, maxY), epsCu2)
+  close(strainAt(boundary, minY), 0)
+
+  const domainFive = atBetaZero('c/D = 1.5')
+  const ratio = 1.5
+  const pivotDepthRatio = 1 - epsC2 / epsCu2
+  const expectedCompression = epsC2 * ratio / (ratio - pivotDepthRatio)
+  close(strainAt(domainFive, maxY), expectedCompression)
+  close(strainAt(domainFive, minY), expectedCompression * (1 - 1 / ratio))
+  assert.ok(expectedCompression > epsC2 && expectedCompression < epsCu2)
+})
+
 test('KDS Appendix compiles reduced strength ordinates without changing Es or fck-based strain parameters', () => {
   const basis = createKdsAppendixDesignBasis()
   const sets = buildResistanceMaterialSets(materials, basis)

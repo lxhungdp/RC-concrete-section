@@ -118,10 +118,29 @@ test('legacy EN scalar partial factors migrate to the generic factor-expression 
   const parsed = parseProjectDocument(legacy)
   assert.equal(parsed.ok, true, parsed.ok ? 'legacy EN parsed' : parsed.error)
   if (!parsed.ok || parsed.document.inputs.design.format !== 'designMaterialReevaluation') return
-  assert.equal(parsed.document.inputs.design.basisVersion, 2)
+  assert.equal(parsed.document.inputs.design.basisVersion, 3)
+  assert.equal(parsed.document.inputs.design.compressionEndpoint, 'peak-stress-strain')
   assert.equal(materialFactorComponent(parsed.document.inputs.design, 'alphaCc')?.value, 0.9)
   assert.equal(materialFactorComponent(parsed.document.inputs.design, 'gammaC')?.value, 1.6)
   assert.equal(materialFactorComponent(parsed.document.inputs.design, 'gammaS')?.value, 1.2)
+})
+
+test('DesignBasis v2 EN projects migrate the former eps_cu endpoint to the domain-5 eps_c2 pivot', () => {
+  const profileId = 'en-1992-1-1-2004-stress-strain' as const
+  const legacy = createProjectDocument({
+    calculationProfileId: profileId,
+    geometry: createEmptyGeometryInput({ id: 1, name: 'Legacy EN endpoint' }),
+    materials: applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId),
+    design: createDesignBasisForCalculationProfile(profileId)
+  }) as unknown as { inputs: { design: Record<string, unknown> } }
+  legacy.inputs.design.basisVersion = 2
+  legacy.inputs.design.compressionEndpoint = 'ultimate-strain'
+
+  const parsed = parseProjectDocument(legacy)
+  assert.equal(parsed.ok, true, parsed.ok ? 'legacy EN endpoint parsed' : parsed.error)
+  if (!parsed.ok || parsed.document.inputs.design.format !== 'designMaterialReevaluation') return
+  assert.equal(parsed.document.inputs.design.basisVersion, 3)
+  assert.equal(parsed.document.inputs.design.compressionEndpoint, 'peak-stress-strain')
 })
 
 test('a user curve is a concrete-model choice under a Code, not a Custom standard', () => {

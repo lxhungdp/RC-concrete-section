@@ -84,10 +84,7 @@ export type AnalysisWorkerJob =
   | { type: 'exportBlockExcel'; jobId: string; payload: EquivalentBlockExcelInput }
   | { type: 'exportPdfReport'; jobId: string; payload: ReportInput }
 
-/** Withdraws a queued job. A synchronous job that is already running finishes in isolation. */
-export type AnalysisWorkerCancel = { type: 'cancel'; jobId: string }
-
-export type AnalysisWorkerRequest = AnalysisWorkerJob | AnalysisWorkerCancel
+export type AnalysisWorkerRequest = AnalysisWorkerJob
 
 export type AnalysisWorkerResultMap = {
   buildSurface: PreviewSurface
@@ -118,4 +115,3 @@ export type AnalysisWorkerResponse =
       /** Present when the calculation kernel rejected the input rather than failing unexpectedly. */
       code?: AnalysisErrorCode
     }
-  | { type: 'cancelled'; jobId: string; requestType: AnalysisWorkerJob['type'] }

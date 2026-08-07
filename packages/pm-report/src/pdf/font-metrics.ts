@@ -1,19 +1,20 @@
 /**
- * Advance widths for the PDF standard-14 fonts this report uses.
+ * Advance widths for the PDF standard-14 fonts and the optional embedded Unicode fallback.
  *
- * Nothing is embedded: Helvetica, Helvetica-Bold and Symbol are guaranteed present in every
- * conforming reader, so the file carries no font programme, no licence question, and no subsetting
- * step whose output could vary between runs. The cost is that we must carry the metrics ourselves,
- * because text measurement — centring a label, wrapping a note, sizing a table column — happens
- * here rather than in a layout engine.
+ * Helvetica and Helvetica-Bold keep ordinary reports compact. Text outside WinAnsi/Symbol uses a
+ * deterministic OFL-licensed TrueType fallback supplied by the app; it is embedded with ToUnicode
+ * so user-entered Korean, Vietnamese and other supported text remains visible and searchable.
  *
  * Widths are in 1/1000 em, exactly as the AFM files publish them.
  */
-export type PdfFontId = 'F1' | 'F2' | 'F3'
+import type { UnicodeTrueTypeFont } from './unicode-font'
+
+export type PdfFontId = 'F1' | 'F2' | 'F3' | 'F4'
 
 export const HELVETICA: PdfFontId = 'F1'
 export const HELVETICA_BOLD: PdfFontId = 'F2'
 export const SYMBOL: PdfFontId = 'F3'
+export const UNICODE: PdfFontId = 'F4'
 
 const ascii = (widths: readonly number[]) => {
   const table = new Map<number, number>()
@@ -68,7 +69,7 @@ const SYMBOL_WIDTHS = new Map<number, number>([
   [163, 549], [179, 549], [187, 549], [185, 549], [64, 549]
 ])
 
-const WIDTHS: Record<PdfFontId, Map<number, number>> = {
+const WIDTHS: Record<Exclude<PdfFontId, 'F4'>, Map<number, number>> = {
   F1: HELVETICA_WIDTHS,
   F2: HELVETICA_BOLD_WIDTHS,
   F3: SYMBOL_WIDTHS
@@ -78,8 +79,8 @@ const WIDTHS: Record<PdfFontId, Map<number, number>> = {
  * Greek letters and relational symbols that WinAnsi simply does not encode.
  *
  * Engineering notation is not decoration here — a report that writes "beta1" where the code writes
- * `β1` is harder to reconcile against the standard it cites. Mapping them onto the Symbol font
- * keeps the notation without embedding anything.
+ * `β1` is harder to reconcile against the standard it cites. The embedded Unicode font is
+ * preferred; Symbol remains the compact fallback for callers that intentionally omit it.
  */
 const SYMBOL_CODES = new Map<string, number>([
   ['α', 97], ['β', 98], ['χ', 99], ['δ', 100], ['ε', 101], ['φ', 102], ['γ', 103], ['η', 104],
@@ -99,6 +100,19 @@ const WIN_ANSI_CODES = new Map<string, number>([
   ['−', 45], ['‑', 45], ['‒', 150]
 ])
 
+/**
+ * Readable semantic fallback for typographic subscripts absent from the embedded CJK font. These
+ * are never dropped: `α₂` becomes `α2`, preserving the engineering symbol in readers whose font
+ * repertoire does not contain Unicode subscripts.
+ */
+const BASELINE_COMPATIBILITY_CODES = new Map<string, number>([
+  ['₀', 48], ['₁', 49], ['₂', 50], ['₃', 51], ['₄', 52],
+  ['₅', 53], ['₆', 54], ['₇', 55], ['₈', 56], ['₉', 57],
+  ['ₐ', 97], ['ₑ', 101], ['ₕ', 104], ['ᵢ', 105], ['ⱼ', 106],
+  ['ₖ', 107], ['ₗ', 108], ['ₘ', 109], ['ₙ', 110], ['ₒ', 111],
+  ['ₚ', 112], ['ᵣ', 114], ['ₛ', 115], ['ₜ', 116], ['ₓ', 120]
+])
+
 export type TextRun = {
   font: PdfFontId
   /** Byte codes in the run's own encoding, ready to be escaped into a PDF string. */
@@ -108,11 +122,14 @@ export type TextRun = {
 /**
  * Split a string into runs by font.
  *
- * A character with no representation in either encoding is dropped rather than substituted: a
- * silent `?` in a dimension or a factor would be worse than a visible gap, and every character the
- * report actually emits is covered by the maps above.
+ * A character with no available glyph is a hard error. Silent deletion can change a project name,
+ * dimension or engineering symbol while leaving a superficially valid report.
  */
-export const splitTextRuns = (text: string, latin: PdfFontId): TextRun[] => {
+export const splitTextRuns = (
+  text: string,
+  latin: PdfFontId,
+  unicodeFont?: UnicodeTrueTypeFont
+): TextRun[] => {
   const runs: TextRun[] = []
   let current: TextRun | null = null
   const push = (font: PdfFontId, code: number) => {
@@ -125,7 +142,16 @@ export const splitTextRuns = (text: string, latin: PdfFontId): TextRun[] => {
   for (const character of text) {
     const symbol = SYMBOL_CODES.get(character)
     if (symbol !== undefined) {
-      push(SYMBOL, symbol)
+      // Prefer the embedded font when available. Standard-14 Symbol is legal PDF, but some
+      // headless/browser readers do not ship a display font for it and render engineering notation
+      // as blanks even though extraction succeeds.
+      const codePoint = character.codePointAt(0) ?? 0
+      const glyph = unicodeFont?.glyphForCodePoint(codePoint)
+      if (glyph !== null && glyph !== undefined) push(UNICODE, glyph)
+      else if (!unicodeFont) push(SYMBOL, symbol)
+      else throw new RangeError(
+        `Embedded PDF font cannot represent engineering symbol ${JSON.stringify(character)} (U+${codePoint.toString(16).toUpperCase().padStart(4, '0')}).`
+      )
       continue
     }
     const winAnsi = WIN_ANSI_CODES.get(character)
@@ -138,30 +164,61 @@ export const splitTextRuns = (text: string, latin: PdfFontId): TextRun[] => {
       push(latin, code)
       continue
     }
-    if (WIDTHS[latin].has(code) && code <= 255) push(latin, code)
+    if (latin !== UNICODE && WIDTHS[latin].has(code) && code <= 255) {
+      push(latin, code)
+      continue
+    }
+    const glyph = unicodeFont?.glyphForCodePoint(code)
+    if (glyph !== null && glyph !== undefined) {
+      push(UNICODE, glyph)
+      continue
+    }
+    const baseline = BASELINE_COMPATIBILITY_CODES.get(character)
+    if (baseline !== undefined) {
+      push(latin, baseline)
+      continue
+    }
+    throw new RangeError(
+      `PDF text contains unsupported character ${JSON.stringify(character)} (U+${code.toString(16).toUpperCase().padStart(4, '0')}).`
+    )
   }
   return runs
 }
 
-export const runWidth = (run: TextRun, size: number) => {
+export const runWidth = (run: TextRun, size: number, unicodeFont?: UnicodeTrueTypeFont) => {
+  if (run.font === UNICODE) {
+    if (!unicodeFont) throw new Error('Unicode PDF text requires an embedded Unicode font.')
+    return run.codes.reduce((sum, glyph) => sum + unicodeFont.widthForGlyph(glyph), 0) * size / 1000
+  }
   const table = WIDTHS[run.font]
   let total = 0
   for (const code of run.codes) total += table.get(code) ?? 500
   return (total * size) / 1000
 }
 
-export const measureText = (text: string, latin: PdfFontId, size: number) =>
-  splitTextRuns(text, latin).reduce((sum, run) => sum + runWidth(run, size), 0)
+export const measureText = (
+  text: string,
+  latin: PdfFontId,
+  size: number,
+  unicodeFont?: UnicodeTrueTypeFont
+) => splitTextRuns(text, latin, unicodeFont)
+  .reduce((sum, run) => sum + runWidth(run, size, unicodeFont), 0)
 
 /** Longest prefix of `text` that fits `width`, split on spaces where possible. */
-export const wrapText = (text: string, latin: PdfFontId, size: number, width: number): string[] => {
+export const wrapText = (
+  text: string,
+  latin: PdfFontId,
+  size: number,
+  width: number,
+  unicodeFont?: UnicodeTrueTypeFont
+): string[] => {
   const words = text.split(/\s+/).filter((word) => word.length > 0)
   if (words.length === 0) return ['']
   const lines: string[] = []
   let line = ''
   for (const word of words) {
     const candidate = line.length === 0 ? word : `${line} ${word}`
-    if (measureText(candidate, latin, size) <= width || line.length === 0) {
+    if (measureText(candidate, latin, size, unicodeFont) <= width || line.length === 0) {
       line = candidate
       continue
     }

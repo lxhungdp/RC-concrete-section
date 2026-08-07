@@ -76,11 +76,11 @@ export type StrainDomainMismatch = {
 }
 
 /**
- * EN 1992-1-1 builds its ULS states from several pivots: domains 3 to 5 pivot on `εcu2` exactly as
- * implemented here, but domains 1 and 2 — low axial load and high tension — pivot on the
- * reinforcement strain limit `εud` with the concrete below `εcu2`. Pinning `εcu` everywhere is
- * therefore incomplete rather than wrong: the states it does produce are admissible EC2 states, but
- * the tension-controlled part of the boundary is not the one EN 1992 prescribes.
+ * EN 1992-1-1 builds its ULS states from several pivots. Domains 3 and 4 reach `εcu2` at the
+ * extreme compression fibre, and domain 5 rotates about the concrete point-C pivot at `εc2`;
+ * both compression regions are implemented by the design basis. Domains 1 and 2 — low axial load
+ * and high tension — instead pivot on the reinforcement strain limit `εud`, which is not yet a
+ * complete input to this preview surface.
  *
  * That is a warning, not a block — unlike the Whitney block, nothing here is evaluated with a law it
  * was not written for.
@@ -91,7 +91,7 @@ export const strainDomainMismatch = (material: ConcreteMaterial): StrainDomainMi
     domain: IMPLEMENTED_STRAIN_DOMAIN,
     standard: 'EC2',
     message:
-      'EN 1992-1-1 material laws are paired with the ACI/KDS concrete-pivot strain domain. EC2 domains 1–2 pivot on the reinforcement limit εud instead, so the tension-controlled part of this surface is not an EN 1992 boundary and the result is preview only.',
+      'EN 1992-1-1 compression domains 3–5 are implemented, including the εc2 point-C pivot in domain 5. Domains 1–2 still require the reinforcement limit εud, so the tension-controlled boundary remains preview only.',
     reference: 'docs/11-design-standards-and-resistance-formats.md §7'
   }
 }

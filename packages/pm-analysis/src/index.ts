@@ -75,6 +75,33 @@ export type Resultant = {
 }
 
 /**
+ * Reduction helpers deliberately use a loop instead of spreading sampled surfaces into function
+ * arguments. The public adaptive limits allow more than 140,000 vertices, above the argument
+ * limit of common JavaScript engines.
+ */
+const mappedRange = <T>(items: readonly T[], valueOf: (item: T) => number): [number, number] => {
+  if (items.length === 0) return [Number.NaN, Number.NaN]
+  let minimum = Number.POSITIVE_INFINITY
+  let maximum = Number.NEGATIVE_INFINITY
+  for (const item of items) {
+    const value = valueOf(item)
+    minimum = Math.min(minimum, value)
+    maximum = Math.max(maximum, value)
+  }
+  return [minimum, maximum]
+}
+
+const mappedMaximum = <T>(
+  items: readonly T[],
+  valueOf: (item: T) => number,
+  minimum = Number.NEGATIVE_INFINITY
+) => {
+  let maximum = minimum
+  for (const item of items) maximum = Math.max(maximum, valueOf(item))
+  return maximum
+}
+
+/**
  * Strain plane `eps(x,y) = e0 + kx*y + ky*x`.
  *
  * `x, y` are measured from the analysis reference origin, i.e. the exact centroid of the net
@@ -1524,10 +1551,10 @@ const previewStationStateFromExtents = (
   ) {
     const neutralAxisDepth = compressionProjection - controlProjection
     if (neutralAxisDepth > sectionDepth) {
-      // KDS Appendix 3.1 distinguishes pure compression (eps_c0), flexure with the neutral
-      // axis inside the section (eps_cu), and the all-compression domain between them. The
-      // latter rotates about the standard compression pivot, producing a continuous strain
-      // boundary from uniform eps_c0 to eps_cu when the neutral axis reaches the far edge.
+      // KDS Appendix 3.1 and EN 1992 domain 5 distinguish the uniform peak-stress strain
+      // (eps_c0/eps_c2), flexure with the neutral axis inside the section (eps_cu/eps_cu2), and
+      // the all-compression domain between them. The latter rotates about the code's compression
+      // pivot, producing a continuous boundary between those two limits.
       const pivotDepth = (1 - pureCompressionStrain / epsCu) * sectionDepth
       compressionBoundaryStrain =
         pureCompressionStrain * neutralAxisDepth /
@@ -1859,10 +1886,10 @@ export const evaluatePreviewState = (
 /**
  * Resolve the uniform strain that defines pure compression for the selected basis.
  *
- * KDS 14 20 20:2022 Appendix 3.1(2) reaches the ultimate state at `eps_c0`, not at `eps_cu`. A
- * missing `eps_c0` is a fatal input, never a silent fall back to `eps_cu`: for reinforcement whose
- * design yield strain exceeds `eps_c0` the two limits select different branches of Appendix
- * equations (3-2) and (3-3) and overstate the steel term of the design axial strength.
+ * KDS 14 20 20:2022 Appendix 3.1(2) and EN 1992 Figure 6.1 domain 5 reach uniform pure
+ * compression at the peak-stress strain (`eps_c0`/`eps_c2`), not at `eps_cu`. A missing peak
+ * strain is a fatal input, never a silent fallback: the endpoint selects both the compatible
+ * all-compression strain plane and the steel stress present at the pure-compression pole.
  */
 export const resolvePureCompressionStrain = (
   materialStore: MaterialStore,
@@ -2262,9 +2289,6 @@ const buildPreviewSurfaceFromPreparedLegacy = (
   }
 
   const points = allPoints()
-  const P = points.map((point) => point.P)
-  const Mx = points.map((point) => point.Mx)
-  const My = points.map((point) => point.My)
   const withinTolerance = !directionAdaptive || maxRelativeComponent <= directionTolerance
   const stationWithinTolerance = !stationAdaptive || maxStationError <= stationTolerance
   const reportedProbeStationOrders = directionAdaptive ? probeStationOrders() : []
@@ -2292,9 +2316,9 @@ const buildPreviewSurfaceFromPreparedLegacy = (
     points,
     nominalPoints: points,
     bounds: {
-      P: [Math.min(...P), Math.max(...P)],
-      Mx: [Math.min(...Mx), Math.max(...Mx)],
-      My: [Math.min(...My), Math.max(...My)]
+      P: mappedRange(points, (point) => point.P),
+      Mx: mappedRange(points, (point) => point.Mx),
+      My: mappedRange(points, (point) => point.My)
     },
     mesh: meshReport,
     sectionBoundaryPoints: sectionBoundaryPoints(section),
@@ -2746,9 +2770,6 @@ const buildIndependentAdaptivePreviewSurface = (
   const uniqueStations = new Map<SurfaceStationId, SurfaceStation>()
   for (const station of seedStations) uniqueStations.set(station.id, station)
   for (const row of finalRows) for (const station of row.stations) uniqueStations.set(station.id, station)
-  const P = points.map((point) => point.P)
-  const Mx = points.map((point) => point.Mx)
-  const My = points.map((point) => point.My)
   const finalWarnings = [...new Set([...warnings, ...finalRows.flatMap((row) => row.warnings).filter((warning) =>
     !warning.startsWith('Direction sampling did not reach') &&
     !warning.startsWith('Station sampling did not reach')
@@ -2773,9 +2794,9 @@ const buildIndependentAdaptivePreviewSurface = (
     triangles,
     nominalTriangles: triangles,
     bounds: {
-      P: [Math.min(...P), Math.max(...P)],
-      Mx: [Math.min(...Mx), Math.max(...Mx)],
-      My: [Math.min(...My), Math.max(...My)]
+      P: mappedRange(points, (point) => point.P),
+      Mx: mappedRange(points, (point) => point.Mx),
+      My: mappedRange(points, (point) => point.My)
     },
     mesh: meshReport,
     sectionBoundaryPoints: sectionBoundaryPoints(section),
@@ -2895,9 +2916,9 @@ const scaleLedger = (ledger: ResultantLedger, factor: number): ResultantLedger =
 })
 
 const surfaceBounds = (points: PreviewSurfacePoint[]) => ({
-  P: [Math.min(...points.map((point) => point.P)), Math.max(...points.map((point) => point.P))] as [number, number],
-  Mx: [Math.min(...points.map((point) => point.Mx)), Math.max(...points.map((point) => point.Mx))] as [number, number],
-  My: [Math.min(...points.map((point) => point.My)), Math.max(...points.map((point) => point.My))] as [number, number]
+  P: mappedRange(points, (point) => point.P),
+  Mx: mappedRange(points, (point) => point.Mx),
+  My: mappedRange(points, (point) => point.My)
 })
 
 const controllingSteelEvidence = (
@@ -3038,7 +3059,7 @@ const applyAxialCap = (
   basis: GlobalStrengthReductionBasis
 ): PreviewSurfacePoint[] => {
   if (!basis.axialCapEnabled || points.length === 0) return points
-  const pole = Math.max(...points.map((point) => point.P))
+  const pole = mappedMaximum(points, (point) => point.P)
   const ratio =
     basis.transverseReinforcement === 'qualifying-spiral'
       ? basis.factors.axialCapSpiral
@@ -3336,8 +3357,8 @@ export const sliceFixedPContour = (
   fixedP: number,
   triangles?: readonly SurfaceIndexTriangle[]
 ): PreviewContourPoint[] => {
-  const momentScale = Math.max(...points.map((point) => Math.hypot(point.Mx, point.My)), 1)
-  const forceScale = Math.max(...points.map((point) => Math.abs(point.P)), 1)
+  const momentScale = mappedMaximum(points, (point) => Math.hypot(point.Mx, point.My), 1)
+  const forceScale = mappedMaximum(points, (point) => Math.abs(point.P), 1)
   const momentTol = momentScale * PREVIEW_GEOMETRY_TOL
   const forceTol = forceScale * PREVIEW_GEOMETRY_TOL
   const contour: PreviewContourPoint[] = []
@@ -3390,8 +3411,8 @@ export const sliceMomentPlane = (
   if (points.length === 0) return []
   const c = Math.cos(theta)
   const s = Math.sin(theta)
-  const momentScale = Math.max(...points.map((point) => Math.hypot(point.Mx, point.My)), 1)
-  const forceScale = Math.max(...points.map((point) => Math.abs(point.P)), 1)
+  const momentScale = mappedMaximum(points, (point) => Math.hypot(point.Mx, point.My), 1)
+  const forceScale = mappedMaximum(points, (point) => Math.abs(point.P), 1)
   const momentTol = momentScale * PREVIEW_GEOMETRY_TOL
   const forceTol = forceScale * PREVIEW_GEOMETRY_TOL
   const planeDistance = (point: PreviewSurfacePoint) => point.Mx * s - point.My * c
@@ -3597,7 +3618,7 @@ export const intersectFixedPContourWithMomentRay = (
   const c = Math.cos(theta)
   const s = Math.sin(theta)
   const direction = { Mx: c, My: s }
-  const momentScale = Math.max(...contour.map((point) => Math.hypot(point.Mx, point.My)), 1)
+  const momentScale = mappedMaximum(contour, (point) => Math.hypot(point.Mx, point.My), 1)
   const tol = momentScale * PREVIEW_GEOMETRY_TOL
   let best: PreviewMomentPlanePoint | null = null
 

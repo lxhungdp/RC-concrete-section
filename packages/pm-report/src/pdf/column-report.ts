@@ -405,7 +405,15 @@ const barLegend = (doc: ReportDocument, bars: readonly BarState[]) => {
   )
 }
 
-export const renderColumnReport = (model: ColumnReportModel): Uint8Array => {
+export type ColumnReportRenderOptions = {
+  /** Browser-loaded, OFL-licensed fallback used for user-entered Unicode outside WinAnsi/Symbol. */
+  unicodeFontBytes?: Uint8Array
+}
+
+export const renderColumnReport = (
+  model: ColumnReportModel,
+  options: ColumnReportRenderOptions = {}
+): Uint8Array => {
   const identity = Object.fromEntries(model.identity) as Record<string, string>
   const doc = new ReportDocument(
     {
@@ -416,7 +424,8 @@ export const renderColumnReport = (model: ColumnReportModel): Uint8Array => {
       watermark: model.watermark,
       generated: model.generated
     },
-    `${identity.Project ?? 'Column'} — P-M-M report`
+    `${identity.Project ?? 'Column'} — P-M-M report`,
+    options.unicodeFontBytes
   )
 
   // ---- 1. Input -----------------------------------------------------------

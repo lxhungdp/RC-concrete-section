@@ -60,12 +60,6 @@ const workerSelf = self as unknown as {
   onmessage: ((event: MessageEvent<AnalysisWorkerRequest>) => void) | null
 }
 
-/**
- * Jobs withdrawn before they were dequeued. A worker cannot interrupt itself mid-computation, so
- * this drains the backlog that accumulates while one job runs — which is exactly what a rapid edit
- * produces. The job already running still completes; the client discards its result.
- */
-const cancelled = new Set<string>()
 let preparedCache: { key: string; value: PreparedAnalysis } | null = null
 let preparedBlockCache: { key: string; value: PreparedBlockAnalysis } | null = null
 let surfaceCache: { key: string; value: PreviewSurface } | null = null
@@ -73,6 +67,15 @@ let blockSurfaceCache: {
   key: string
   core: EquivalentBlockDesignSurface
 } | null = null
+let pdfUnicodeFontPromise: Promise<Uint8Array> | null = null
+
+const pdfUnicodeFont = () => {
+  pdfUnicodeFontPromise ??= fetch('/fonts/PMReportUnicode-Regular.ttf').then(async (response) => {
+    if (!response.ok) throw new Error(`Unicode PDF font could not be loaded (${response.status}).`)
+    return new Uint8Array(await response.arrayBuffer())
+  })
+  return pdfUnicodeFontPromise
+}
 
 const blockSurfaceInputKey = (payload: Pick<BuildSurfacePayload,
   'calculationProfileId' | 'section' | 'rebars' | 'materialStore' | 'analysisOptions' | 'designBasis'>) => JSON.stringify({
@@ -116,16 +119,6 @@ const preparedBlockFor = (payload: Pick<BuildSurfacePayload,
 
 workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
   const request = event.data
-
-  if (request.type === 'cancel') {
-    cancelled.add(request.jobId)
-    return
-  }
-
-  if (cancelled.delete(request.jobId)) {
-    workerSelf.postMessage({ type: 'cancelled', jobId: request.jobId, requestType: request.type })
-    return
-  }
 
   try {
     if (request.type === 'buildSurface') {
@@ -302,7 +295,9 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
       // Imported here rather than at module scope so the drawing code stays out of the worker
       // bundle until a report is actually asked for.
       const { buildColumnReportPdf } = await import('@pm/report/pdf')
-      const report = buildColumnReportPdf(request.payload)
+      const report = buildColumnReportPdf(request.payload, {
+        unicodeFontBytes: await pdfUnicodeFont()
+      })
       const buffer = report.bytes.buffer.slice(
         report.bytes.byteOffset,
         report.bytes.byteOffset + report.bytes.byteLength

@@ -197,9 +197,10 @@ limits. If the requested verification tolerance is likely to exceed browser reso
 typed `RESOURCE_LIMIT` result with suggested actions; do not silently loosen tolerances.
 
 Long meshing operations run in a worker when available and the client accepts `AbortSignal`.
-Current cancellation stops awaiting the request and discards a late result; it does not
-cooperatively interrupt a synchronous meshing loop already running. Progress stages and inner-loop
-cancellation checkpoints remain release work.
+When one request is outstanding, cancellation terminates the busy worker and the next request
+creates a fresh worker. If jobs are concurrently sharing the worker, cancellation stops awaiting
+only the selected request and discards its late result. Progress stages, cooperative inner-loop
+checkpoints, and a worker pool remain release work.
 
 ## 8. Mesh sanity checks
 

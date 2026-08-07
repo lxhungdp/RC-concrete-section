@@ -31,6 +31,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Repository structure
+        run: npm run check:structure
+
       - name: Unit tests
         run: npm run test:unit
 
@@ -46,10 +49,16 @@ jobs:
       - name: Excel export verification
         run: npm run test:excel-export
 
+      - name: Equivalent-block Excel verification
+        run: npm run test:excel-block
+
+      - name: PDF report verification
+        run: npm run test:pdf-report
+
       - name: Reference fixture is current
         run: |
           npm run fixture:reference-json
-          git diff --exit-code -- "docs/example case/PM-advanced (7) 2D.pm-project.json"
+          git diff --exit-code -- "docs/examples/reference-case/projects/PM-advanced (7) 2D.pm-project.json"
 
       # Bit-identity gate over 8 sections x 24 capacity quantities. An optimisation, a refactor or a
       # dependency bump that moves a single bit of capacity fails here rather than in a report.

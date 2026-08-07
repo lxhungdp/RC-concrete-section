@@ -29,6 +29,9 @@ import { buildColumnReportModel } from '../../src/model/report-model'
 import { columnReportFileName, renderColumnReport } from '../../src/pdf/column-report'
 
 const OUT_DIR = resolve(process.cwd(), 'docs/examples/reference-case/generated')
+const UNICODE_FONT = new Uint8Array(readFileSync(
+  resolve(process.cwd(), 'apps/web/public/fonts/PMReportUnicode-Regular.ttf')
+))
 
 const CASES = [
   {
@@ -226,7 +229,7 @@ const runCase = async (
   )
 
   console.log('== 4. File structure ==')
-  const bytes = renderColumnReport(model)
+  const bytes = renderColumnReport(model, { unicodeFontBytes: UNICODE_FONT })
   const text = decode(bytes)
   pass('starts with a PDF header', text.startsWith('%PDF-1.4'))
   pass('ends with %%EOF', text.trimEnd().endsWith('%%EOF'))
@@ -251,9 +254,24 @@ const runCase = async (
   pass('the watermark is present', text.includes('PREVIEW'))
 
   console.log('== 5. Reproducibility ==')
-  const again = renderColumnReport(buildColumnReportModel(input))
+  const again = renderColumnReport(buildColumnReportModel(input), { unicodeFontBytes: UNICODE_FONT })
   pass('the same input produces byte-identical output',
     again.length === bytes.length && again.every((byte, index) => byte === bytes[index]))
+
+  console.log('== 6. Unicode text ==')
+  const unicodeModel = buildColumnReportModel({
+    ...input,
+    projectName: '기둥 C1 설계',
+    sectionName: 'Cột trục A — tầng 3 · Säule Nr. 5'
+  })
+  const unicodeBytes = renderColumnReport(unicodeModel, { unicodeFontBytes: UNICODE_FONT })
+  const unicodePdf = decode(unicodeBytes)
+  pass('user-entered Korean, Vietnamese and German text activates an embedded Unicode font',
+    unicodePdf.includes('/Subtype /Type0') &&
+      unicodePdf.includes('/PMReportUnicode-Regular') &&
+      unicodePdf.includes('/ToUnicode'))
+  pass('Unicode document metadata uses a UTF-16BE PDF string instead of dropping characters',
+    unicodePdf.includes('/Title <FEFF') && unicodePdf.includes('/Subject <FEFF'))
 
   if (archive) {
     const name = columnReportFileName(model)

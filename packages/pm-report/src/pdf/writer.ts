@@ -5,12 +5,12 @@
  * audit artifact, so broad reader compatibility and byte-level predictability matter more than
  * document-model features. Concretely this buys three things a general PDF library does not:
  *
- *   - **Determinism.** No embedded font subset, no compression dictionary, no creation timestamp
- *     unless the caller supplies one. The same model produces the same bytes, which is what makes
- *     a result-identity hash over the file meaningful (`docs/engineering/05` §7, `ENG-RES-002`).
+ *   - **Determinism.** Fixed object ordering, a stable Unicode font asset, no compression dictionary,
+ *     and no creation timestamp unless the caller supplies one. The same model produces the same
+ *     bytes, which is what makes a result-identity hash over the file meaningful.
  *   - **Vector output.** Section drawings and interaction diagrams are paths and text, not a
  *     rasterised canvas, so labels stay selectable and legible at any zoom.
- *   - **No dependency.** The web bundle gains nothing; the standard-14 fonts are in the reader.
+ *   - **No runtime PDF dependency.** The web app loads the fallback TTF only during report export.
  *
  * The trade is that layout is our problem. `layout.ts` builds the report primitives on top; this
  * file knows only about pages, paths, colours and text.
@@ -19,8 +19,10 @@ import {
   HELVETICA,
   measureText,
   splitTextRuns,
+  UNICODE,
   type PdfFontId
 } from './font-metrics'
+import { UnicodeTrueTypeFont } from './unicode-font'
 
 export type Rgb = { r: number; g: number; b: number }
 
@@ -56,6 +58,8 @@ const num = (value: number) => {
   return Object.is(rounded, -0) ? '0' : String(rounded)
 }
 
+const hex4 = (value: number) => value.toString(16).toUpperCase().padStart(4, '0')
+
 const escapeCodes = (codes: readonly number[]) => {
   let out = ''
   for (const code of codes) {
@@ -65,6 +69,28 @@ const escapeCodes = (codes: readonly number[]) => {
   }
   return out
 }
+
+const latin1Bytes = (value: string) => {
+  const bytes = new Uint8Array(value.length)
+  for (let index = 0; index < value.length; index += 1) bytes[index] = value.charCodeAt(index) & 0xff
+  return bytes
+}
+
+const concatenateBytes = (parts: readonly Uint8Array[]) => {
+  const result = new Uint8Array(parts.reduce((sum, part) => sum + part.byteLength, 0))
+  let offset = 0
+  for (const part of parts) {
+    result.set(part, offset)
+    offset += part.byteLength
+  }
+  return result
+}
+
+const binaryStream = (bytes: Uint8Array, entries = '') => concatenateBytes([
+  latin1Bytes(`<< /Length ${bytes.byteLength}${entries ? ` ${entries}` : ''} >>\nstream\n`),
+  bytes,
+  latin1Bytes('\nendstream')
+])
 
 export type TextOptions = {
   font?: PdfFontId
@@ -79,9 +105,11 @@ export type TextOptions = {
 export class PdfPage {
   readonly size: PdfPageSize
   private readonly parts: string[] = []
+  private readonly unicodeFont?: UnicodeTrueTypeFont
 
-  constructor(size: PdfPageSize) {
+  constructor(size: PdfPageSize, unicodeFont?: UnicodeTrueTypeFont) {
     this.size = size
+    this.unicodeFont = unicodeFont
   }
 
   /** Raw content-stream escape hatch; used by the drawing helpers below. */
@@ -185,9 +213,9 @@ export class PdfPage {
   text(x: number, y: number, value: string, options: TextOptions = {}) {
     const font = options.font ?? HELVETICA
     const size = options.size ?? 9
-    const runs = splitTextRuns(value, font)
+    const runs = splitTextRuns(value, font, this.unicodeFont)
     if (runs.length === 0) return
-    const width = measureText(value, font, size)
+    const width = measureText(value, font, size, this.unicodeFont)
     const offset = options.align === 'center' ? -width / 2 : options.align === 'right' ? -width : 0
 
     this.save()
@@ -206,7 +234,11 @@ export class PdfPage {
     }
     for (const run of runs) {
       this.op(`/${run.font} ${num(size)} Tf`)
-      this.op(`(${escapeCodes(run.codes)}) Tj`)
+      this.op(
+        run.font === UNICODE
+          ? `<${this.unicodeFont!.encodedGlyphs(run.codes)}> Tj`
+          : `(${escapeCodes(run.codes)}) Tj`
+      )
     }
     this.op('ET')
     this.restore()
@@ -228,13 +260,15 @@ export type PdfDocumentInfo = {
 export class PdfDocument {
   private readonly pages: PdfPage[] = []
   private readonly info: PdfDocumentInfo
+  readonly unicodeFont?: UnicodeTrueTypeFont
 
-  constructor(info: PdfDocumentInfo) {
+  constructor(info: PdfDocumentInfo, unicodeFontBytes?: Uint8Array) {
     this.info = info
+    this.unicodeFont = unicodeFontBytes ? new UnicodeTrueTypeFont(unicodeFontBytes) : undefined
   }
 
   addPage(size: PdfPageSize = A4_PORTRAIT) {
-    const page = new PdfPage(size)
+    const page = new PdfPage(size, this.unicodeFont)
     this.pages.push(page)
     return page
   }
@@ -246,12 +280,12 @@ export class PdfDocument {
   /**
    * Serialise to a complete PDF 1.4 file.
    *
-   * Object numbering is fixed by construction — catalog, page tree, three fonts, then two objects
-   * per page — so two runs over the same content produce identical bytes.
+   * Object numbering is fixed by construction, including optional Unicode font objects, so two
+   * runs over the same content produce identical bytes.
    */
   serialize(): Uint8Array {
-    const objects: string[] = []
-    const add = (body: string) => {
+    const objects: Array<string | Uint8Array> = []
+    const add = (body: string | Uint8Array) => {
       objects.push(body)
       return objects.length // 1-based object number
     }
@@ -262,8 +296,42 @@ export class PdfDocument {
       F1: add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>'),
       F2: add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>'),
       // Symbol carries its own built-in encoding; naming WinAnsi here would remap the Greek glyphs.
-      F3: add('<< /Type /Font /Subtype /Type1 /BaseFont /Symbol >>')
+      F3: this.unicodeFont
+        ? undefined
+        : add('<< /Type /Font /Subtype /Type1 /BaseFont /Symbol >>'),
+      F4: undefined as number | undefined
     }
+
+    if (this.unicodeFont?.used) {
+      const fontFileId = add(binaryStream(
+        this.unicodeFont.bytes,
+        `/Length1 ${this.unicodeFont.bytes.byteLength}`
+      ))
+      const [xMin, yMin, xMax, yMax] = this.unicodeFont.bbox
+      const descriptorId = add(
+        '<< /Type /FontDescriptor /FontName /PMReportUnicode-Regular /Flags 4 ' +
+        `/FontBBox [${xMin} ${yMin} ${xMax} ${yMax}] /ItalicAngle 0 ` +
+        `/Ascent ${this.unicodeFont.ascent} /Descent ${this.unicodeFont.descent} ` +
+        `/CapHeight ${this.unicodeFont.capHeight} /StemV 80 /FontFile2 ${fontFileId} 0 R >>`
+      )
+      const cidFontId = add(
+        '<< /Type /Font /Subtype /CIDFontType2 /BaseFont /PMReportUnicode-Regular ' +
+        '/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> ' +
+        `/FontDescriptor ${descriptorId} 0 R /DW 1000 /W [${this.unicodeFont.pdfWidths()}] ` +
+        '/CIDToGIDMap /Identity >>'
+      )
+      const cmap = this.unicodeFont.toUnicodeCMap()
+      const cmapId = add(`<< /Length ${cmap.length} >>\nstream\n${cmap}\nendstream`)
+      fontIds.F4 = add(
+        '<< /Type /Font /Subtype /Type0 /BaseFont /PMReportUnicode-Regular ' +
+        `/Encoding /Identity-H /DescendantFonts [${cidFontId} 0 R] /ToUnicode ${cmapId} 0 R >>`
+      )
+    }
+
+    const fontResources =
+      `/F1 ${fontIds.F1} 0 R /F2 ${fontIds.F2} 0 R` +
+      (!this.unicodeFont ? ` /F3 ${fontIds.F3!} 0 R` : '') +
+      (fontIds.F4 ? ` /F4 ${fontIds.F4} 0 R` : '')
 
     const pageIds: number[] = []
     for (const page of this.pages) {
@@ -272,7 +340,7 @@ export class PdfDocument {
       const pageId = add(
         `<< /Type /Page /Parent ${pagesId} 0 R ` +
           `/MediaBox [0 0 ${num(page.size.width)} ${num(page.size.height)}] ` +
-          `/Resources << /Font << /F1 ${fontIds.F1} 0 R /F2 ${fontIds.F2} 0 R /F3 ${fontIds.F3} 0 R >> >> ` +
+          `/Resources << /Font << ${fontResources} >> >> ` +
           `/Contents ${contentId} 0 R >>`
       )
       pageIds.push(pageId)
@@ -281,41 +349,49 @@ export class PdfDocument {
       `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`
 
     const infoParts = [
-      `/Title (${escapeAscii(this.info.title)})`,
-      `/Author (${escapeAscii(this.info.author)})`,
-      `/Subject (${escapeAscii(this.info.subject)})`,
+      `/Title ${pdfTextString(this.info.title)}`,
+      `/Author ${pdfTextString(this.info.author)}`,
+      `/Subject ${pdfTextString(this.info.subject)}`,
       '/Producer (P-M Column Designer)',
       ...(this.info.createdAt ? [`/CreationDate (${pdfDate(this.info.createdAt)})`] : [])
     ]
     const infoId = add(`<< ${infoParts.join(' ')} >>`)
 
-    let body = '%PDF-1.4\n'
+    const chunks: Uint8Array[] = []
+    let length = 0
+    const append = (part: string | Uint8Array) => {
+      const bytes = typeof part === 'string' ? latin1Bytes(part) : part
+      chunks.push(bytes)
+      length += bytes.byteLength
+    }
+    append('%PDF-1.4\n')
     const offsets: number[] = []
     objects.forEach((object, index) => {
-      offsets.push(body.length)
-      body += `${index + 1} 0 obj\n${object}\nendobj\n`
+      offsets.push(length)
+      append(`${index + 1} 0 obj\n`)
+      append(object)
+      append('\nendobj\n')
     })
-    const xrefOffset = body.length
-    body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
-    for (const offset of offsets) body += `${String(offset).padStart(10, '0')} 00000 n \n`
-    body += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R /Info ${infoId} 0 R >>\n`
-    body += `startxref\n${xrefOffset}\n%%EOF\n`
-
-    // Latin-1: every byte written above is < 256 by construction of the escaping above.
-    const bytes = new Uint8Array(body.length)
-    for (let index = 0; index < body.length; index += 1) bytes[index] = body.charCodeAt(index) & 0xff
-    return bytes
+    const xrefOffset = length
+    append(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`)
+    for (const offset of offsets) append(`${String(offset).padStart(10, '0')} 00000 n \n`)
+    append(`trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R /Info ${infoId} 0 R >>\n`)
+    append(`startxref\n${xrefOffset}\n%%EOF\n`)
+    return concatenateBytes(chunks)
   }
 }
 
-const escapeAscii = (value: string) =>
-  [...value]
-    .map((character) => {
-      const code = character.codePointAt(0) ?? 32
-      if (code === 0x28 || code === 0x29 || code === 0x5c) return `\\${character}`
-      return code >= 32 && code <= 126 ? character : ' '
-    })
-    .join('')
+const escapeAscii = (value: string) => value.replace(/[()\\]/g, (character) => `\\${character}`)
+
+const pdfTextString = (value: string) => {
+  if ([...value].every((character) => {
+    const code = character.codePointAt(0) ?? 0
+    return code >= 32 && code <= 126
+  })) return `(${escapeAscii(value)})`
+  let hex = 'FEFF'
+  for (let index = 0; index < value.length; index += 1) hex += hex4(value.charCodeAt(index))
+  return `<${hex}>`
+}
 
 const pdfDate = (date: Date) => {
   const pad = (value: number) => String(value).padStart(2, '0')

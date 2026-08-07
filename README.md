@@ -12,17 +12,19 @@ The project contains two independent numerical pipelines:
 - **equivalent rectangular stress block**: exact polygon clipping of `a = beta1 c`, code-owned
   block stress and strain limits, independent forward/inverse/surface algorithms.
 
-Every calculation profile now uses the same fixed `unified-27-v2` station schedule: two exact poles,
+Fixed sampling uses the same editable `unified-27-v2` station schedule for every profile: two exact poles,
 six `c/D` states (`3, 2, 1.5, 1.2, 1.1, 1`), and nineteen controlling-bar tensile-strain states
 `εₛ/εy = 0, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 7.5, 10, 20`.
 Stress-strain and equivalent-block models resolve these same physical criteria through their own
-forward kernels. Production surfaces use 36 fixed directions; station/direction adaptive refinement
-and automatic transition/event insertion are disabled in this baseline.
+forward kernels. The alternative Adaptive mode starts from 12 fixed criteria plus the two poles and
+12 directions at 30-degree spacing, then refines stations independently on each meridian and refines
+directions to the configured tolerance. Fixed and Adaptive are complete, independent modes.
 
 The Materials workflow now selects `Code -> calculation method -> concrete model`. KDS exposes both
 implemented mechanics, ACI exposes its implemented equivalent block, EN 1992-1-1:2004 exposes a
 design-material stress-strain preview, and AS 3600:2018 Amendments 1 and 2 exposes an equivalent-block
-preview. EN has no selected National Annex and an incomplete strain-domain boundary; AS has explicit
+preview. EN has no selected National Annex; compression domains 3-5 are implemented, while tensile
+domains 1-2 remain an explicitly disclosed preview limitation. AS has explicit
 shape/member-analysis limitations. Legacy `Custom` profile files remain readable, while new user customization is a concrete-model
 choice under a Code and is reported as a modified profile.
 Nominal, Design, and factored ULS Demand are separate result stages. See
@@ -126,8 +128,7 @@ not design-code authority.
   `My = sum(F*(x-xc))`. Stress-strain, equivalent-block, the DTO, plots, reports, and both Excel
   exports use the same signs. Asymmetric-section regression tests cover the concrete and steel
   ledgers so a future sign drift fails visibly.
-- All current persisted calculation contracts are v1: project version 1, design-basis version 1,
-  analysis-options version 1, `strain-domain-surface-v1`, `equivalent-block-surface-v1`, and v1
-  station schedules. There is
-  no migration or backward-compatibility layer. Omitted-field defaults and steel-ID repair are
-  documented as parser behavior within v1.
+- The project schema and analysis options remain version 1; DesignBasis is version 3, and the
+  surface method IDs remain `strain-domain-surface-v1` and `equivalent-block-surface-v1`. The parser
+  has explicit DesignBasis migrations for legacy EN factors and the corrected domain-5 endpoint.
+  Other unsupported versions fail rather than being guessed.

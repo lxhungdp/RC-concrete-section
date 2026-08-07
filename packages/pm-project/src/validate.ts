@@ -955,7 +955,10 @@ const parseAnalysis = (value: unknown): CalculationAnalysisOptions => {
 const parseDesignBasis = (value: unknown | undefined, materials: MaterialStore): DesignBasis => {
   if (value === undefined) return createDefaultDesignBasis(materials)
   assertRecord(value, 'inputs.design must be an object')
-  assert(value.basisVersion === 1 || value.basisVersion === DESIGN_BASIS_VERSION, 'inputs.design.basisVersion is unsupported')
+  assert(
+    value.basisVersion === 1 || value.basisVersion === 2 || value.basisVersion === DESIGN_BASIS_VERSION,
+    'inputs.design.basisVersion is unsupported'
+  )
   assertRecord(value.identity, 'inputs.design.identity must be an object')
   for (const key of ['organization', 'document', 'edition', 'methodId', 'profileVersion'] as const) {
     assert(isString(value.identity[key]), `inputs.design.identity.${key} must be a string`)
@@ -1107,12 +1110,21 @@ const parseDesignBasis = (value: unknown | undefined, materials: MaterialStore):
     const profileDefault = value.profileId === 'kds-142020-2022-appendix-material-factors'
       ? createKdsAppendixDesignBasis()
       : createEn1992DesignBasis()
+    // DesignBasis v1/v2 persisted EN's former (incorrect) eps_cu pure-compression endpoint. That
+    // value was the application default rather than a valid alternative EN domain, so migrate it
+    // to the v3 eps_c2 point-C pivot even when the project also customized material factors.
+    const migrateLegacyEnCompressionEndpoint =
+      value.basisVersion !== DESIGN_BASIS_VERSION &&
+      value.profileId === 'en-1992-1-1-2004-default' &&
+      value.compressionEndpoint === 'ultimate-strain'
     design = {
       ...common,
       format: 'designMaterialReevaluation',
       factors: materialFactors,
       compressionEndpoint:
-        value.compressionEndpoint === 'peak-stress-strain' || value.compressionEndpoint === 'ultimate-strain'
+        migrateLegacyEnCompressionEndpoint
+          ? profileDefault.compressionEndpoint
+          : value.compressionEndpoint === 'peak-stress-strain' || value.compressionEndpoint === 'ultimate-strain'
           ? value.compressionEndpoint
           : profileDefault.compressionEndpoint,
       ...(profileDefault.minimumEccentricity ? { minimumEccentricity: profileDefault.minimumEccentricity } : {})

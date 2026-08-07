@@ -446,7 +446,7 @@ The repository implements two independent mechanics and the common resistance fo
   `epsCu = 0.003` and action/state-dependent capacity factors. It is not verified or releasable; the
   general-prismatic shape assumption and omitted member-level checks are disclosed in UI/reports/docs.
 
-Canonical project schema-v1 exports persist DesignBasis version 2 inside project schema v1 and
+Canonical project schema-v1 exports persist DesignBasis version 3 inside project schema v1 and
 loadcases are explicitly
 factored ULS actions. The parser's remaining omitted-field defaults are listed as pre-release debt
 in `development/02` and `development/06`.

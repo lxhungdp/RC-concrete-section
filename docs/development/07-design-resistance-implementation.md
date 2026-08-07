@@ -18,9 +18,9 @@ resistance used for a factored ULS check. The engineering requirements remain au
 - state-dependent global-strength-reduction evaluation.
 
 `@pm/project` writes `inputs.design` directly in the current project schema version 1. DesignBasis
-version 2 replaces the old EN-only scalar fields with standard-neutral factor expressions. The
-parser migrates legacy EN `alphaCc/gammaC/gammaS` snapshots to those expressions. As a parser-v1
-rule, a missing basis is synthesized;
+version 2 replaced the old EN-only scalar fields with standard-neutral factor expressions; version
+3 corrects the EN domain-5 pure-compression endpoint from `eps_cu2` to the `eps_c2` point-C pivot.
+The parser migrates both legacy forms. As a parser-v1 rule, a missing basis is synthesized;
 canonical exports always contain it. `calculationProfileId`, materials, analysis
 options, and the DesignBasis must be mutually consistent after parsing.
 Every load combination is explicitly tagged `actionBasis: "factoredULS"`.

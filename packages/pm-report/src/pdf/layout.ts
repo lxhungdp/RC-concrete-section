@@ -9,6 +9,7 @@
  * because that is how a report is written and read.
  */
 import { HELVETICA, HELVETICA_BOLD, measureText, wrapText, type PdfFontId } from './font-metrics'
+import type { UnicodeTrueTypeFont } from './unicode-font'
 import {
   A4_PORTRAIT,
   PdfDocument,
@@ -76,13 +77,13 @@ export class ReportDocument {
   private readonly pages: PageState[] = []
   private state: PageState | null = null
 
-  constructor(header: ReportHeader, title: string) {
+  constructor(header: ReportHeader, title: string, unicodeFontBytes?: Uint8Array) {
     this.header = header
     this.doc = new PdfDocument({
       title,
       author: 'P-M Column Designer',
       subject: `${header.project} — ${header.section}`
-    })
+    }, unicodeFontBytes)
   }
 
   get current(): PageState {
@@ -201,7 +202,7 @@ export class ReportDocument {
 
   paragraph(text: string, options: { size?: number; color?: Rgb; font?: PdfFontId } = {}) {
     const size = options.size ?? 8
-    const lines = wrapText(text, options.font ?? HELVETICA, size, this.pageWidth)
+    const lines = wrapText(text, options.font ?? HELVETICA, size, this.pageWidth, this.doc.unicodeFont)
     for (const line of lines) {
       const state = this.ensure(size + 3)
       state.page.text(MARGIN.left, state.cursor - size, line, {
@@ -232,13 +233,13 @@ export class ReportDocument {
         const entry = rows[index + column]
         if (!entry) continue
         const x = MARGIN.left + column * columnWidth
-        state.page.text(x, y, truncate(entry[0], labelWidth - 4, 8), {
+        state.page.text(x, y, truncate(entry[0], labelWidth - 4, 8, this.doc.unicodeFont), {
           size: 8,
           color: REPORT_COLORS.muted
         })
         // A long value has to be clipped, not allowed to run into the next column: two overlapping
         // numbers are worse than one shortened label.
-        state.page.text(x + labelWidth, y, truncate(entry[1], valueWidth, 8), {
+        state.page.text(x + labelWidth, y, truncate(entry[1], valueWidth, 8, this.doc.unicodeFont), {
           size: 8,
           font: HELVETICA_BOLD,
           color: REPORT_COLORS.ink
@@ -308,7 +309,7 @@ export class ReportDocument {
         const columnWidth = column.width * scale
         const anchor =
           column.align === 'right' ? x + columnWidth - 4 : column.align === 'center' ? x + columnWidth / 2 : x + 4
-        state.page.text(anchor, top - rowHeight + 4, truncate(cell, columnWidth - 8, size), {
+        state.page.text(anchor, top - rowHeight + 4, truncate(cell, columnWidth - 8, size, this.doc.unicodeFont), {
           size,
           color,
           align: column.align === 'right' ? 'right' : column.align === 'center' ? 'center' : 'left'
@@ -364,8 +365,8 @@ export class ReportDocument {
      * bottom edge is where axis tick labels live, and the two collided there.
      */
     if (options.caption) {
-      const free = boxWidth - measureText(options.title, HELVETICA_BOLD, 7.5) - 18
-      const caption = truncate(options.caption, free, 6.5)
+      const free = boxWidth - measureText(options.title, HELVETICA_BOLD, 7.5, this.doc.unicodeFont) - 18
+      const caption = truncate(options.caption, free, 6.5, this.doc.unicodeFont)
       if (caption.length > 1) {
         state.page.text(boxLeft + boxWidth - 5, boxTop - 9.5, caption, {
           size: 6.5,
@@ -446,11 +447,11 @@ export class ReportDocument {
   }
 }
 
-const truncate = (text: string, width: number, size: number) => {
+const truncate = (text: string, width: number, size: number, unicodeFont?: UnicodeTrueTypeFont) => {
   if (width <= 0) return ''
-  if (measureText(text, HELVETICA, size) <= width) return text
+  if (measureText(text, HELVETICA, size, unicodeFont) <= width) return text
   let result = text
-  while (result.length > 1 && measureText(`${result}…`, HELVETICA, size) > width) {
+  while (result.length > 1 && measureText(`${result}…`, HELVETICA, size, unicodeFont) > width) {
     result = result.slice(0, -1)
   }
   return `${result}…`

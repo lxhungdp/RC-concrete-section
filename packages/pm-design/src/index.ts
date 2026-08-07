@@ -2,7 +2,7 @@ import type { MaterialStandard, MaterialStore } from '@pm/materials'
 import { AS_3600_2018_PROVENANCE } from '@pm/code-as3600'
 import { EN1992_2004_PROVENANCE } from '@pm/code-en1992'
 
-export const DESIGN_BASIS_VERSION = 2 as const
+export const DESIGN_BASIS_VERSION = 3 as const
 
 export type ResistanceFormat = 'globalResultantFactor' | 'designMaterialReevaluation'
 export type DesignProfileId =
@@ -104,7 +104,11 @@ export type GlobalStrengthReductionBasis = DesignBasisCommon & {
 export type DesignMaterialBasis = DesignBasisCommon & {
   format: 'designMaterialReevaluation'
   factors: DesignMaterialFactors
-  /** Pure compression uses eps_c0 for the KDS Appendix and eps_cu for EN. */
+  /**
+   * Uniform pure compression and the all-compression pivot use the concrete peak-stress strain
+   * when the selected code declares one (KDS Appendix eps_c0; EN 1992 eps_c2). An internal neutral
+   * axis still reaches the concrete ultimate strain eps_cu.
+   */
   compressionEndpoint: 'ultimate-strain' | 'peak-stress-strain'
   minimumEccentricity?: {
     constantMm: number
@@ -289,7 +293,9 @@ export const createEn1992DesignBasis = (): DesignMaterialBasis => ({
       }]
     }
   },
-  compressionEndpoint: 'ultimate-strain',
+  // EN 1992 Figure 6.1, domain 5: pure compression reaches eps_c2 and the compatible strain plane
+  // rotates about point C until the extreme fibre reaches eps_cu2 at c/h = 1.
+  compressionEndpoint: 'peak-stress-strain',
   modified: false,
   overrideReason: ''
 })
