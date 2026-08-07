@@ -206,9 +206,9 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 
 /* Compact model picker on the Concrete Material title row. */
 .pm-side-panel .pm-section-title > .pm-concrete-model-select {
-  flex: 0 1 auto;
-  width: auto;
-  max-width: min(58%, 220px);
+  flex: 0 0 112px;
+  width: 112px;
+  max-width: 112px;
   height: var(--sp-h-2);
   min-width: 0;
   margin-left: auto;
@@ -1021,6 +1021,12 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   white-space: nowrap;
 }
 
+.pm-side-panel .pm-chart-data-table .pm-table-unit {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .pm-side-panel .pm-point-table td,
 .pm-side-panel .pm-loadcase-table td,
 .pm-side-panel .pm-chart-data-table td {
@@ -1111,34 +1117,6 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 /* ---------------------------------------------------------------------------
    Metric and status readouts
    --------------------------------------------------------------------------- */
-
-/* Compact profile header: code + analysis method, optional design-method row. */
-.pm-side-panel .pm-result-profile {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-  color: var(--sp-text-2);
-  font-size: var(--sp-fs-2);
-  line-height: 1.4;
-}
-
-.pm-side-panel .pm-result-profile strong {
-  overflow: hidden;
-  color: var(--sp-text);
-  font-size: var(--sp-fs-2);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pm-side-panel .pm-result-profile span {
-  overflow: hidden;
-  color: var(--sp-text-3);
-  font-size: var(--sp-fs-1);
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .pm-side-panel .pm-result-status-list,
 .pm-side-panel .pm-metrics {
@@ -1312,44 +1290,59 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 }
 
 .pm-side-panel .pm-chart-data-controls {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
-  justify-content: flex-end;
   gap: 6px;
-  width: auto;
+  width: 100%;
   min-width: 0;
   margin: 0;
 }
 
 .pm-side-panel .pm-chart-data-controls .pm-result-radio-group,
 .pm-side-panel .pm-chart-data-controls .pm-result-check-row {
-  display: inline-flex;
-  flex: 0 0 auto;
-  flex-wrap: nowrap;
-  width: auto;
-  max-width: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
   height: var(--sp-h-2);
   margin: 0;
   padding: 2px;
 }
 
 .pm-side-panel .pm-chart-data-controls label {
-  flex: 0 0 auto;
-  justify-content: flex-start;
-  width: auto;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
   height: 20px;
-  padding: 0 7px;
+  padding: 0 4px;
+  overflow: hidden;
   font-size: var(--sp-fs-1);
+  text-overflow: ellipsis;
+}
+
+/* The segmented background already communicates selection. Keeping the native
+   radios accessible but visually hidden lets all four choices fit one row. */
+.pm-side-panel .pm-chart-data-controls .pm-result-radio-group input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pm-side-panel .pm-chart-data-controls label:has(input:focus-visible) {
+  box-shadow: var(--sp-ring);
 }
 
 /* Chart-data table sits close to the panel edges but keeps rounded corners. */
 .pm-side-panel .pm-chart-data-section .pm-chart-data-table-wrap {
+  flex: 1 1 0;
+  min-height: 0;
   margin-right: -8px;
   margin-left: -8px;
   width: calc(100% + 16px);
-  max-height: min(42vh, 360px);
+  max-height: none;
   border: 1px solid var(--sp-line);
   border-radius: var(--sp-r-3);
 }
@@ -1430,14 +1423,20 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   min-height: var(--sp-h-1);
 }
 
-.pm-side-panel .pm-chart-data-toolbar-actions {
+.pm-side-panel .pm-chart-data-heading {
   display: flex;
-  flex: 1 1 auto;
-  align-items: center;
-  justify-content: flex-end;
+  align-items: baseline;
   gap: 6px;
   min-width: 0;
-  margin-left: auto;
+}
+
+.pm-side-panel .pm-chart-data-heading > span {
+  overflow: hidden;
+  color: var(--sp-text-3);
+  font-size: var(--sp-fs-1);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Compact chart-toggle strip at the top of Section Results.
@@ -1472,9 +1471,16 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 
 .pm-side-panel .pm-chart-data-section {
   display: flex;
+  flex: 1 1 0;
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+}
+
+/* Results owns the remaining sidebar height. The summary stays content-sized;
+   the chart-data table stretches to the bottom and becomes the scroll owner. */
+.pm-side-panel-body:has(> .pm-chart-data-section) {
+  overflow: hidden;
 }
 
 /* The report picker is a wrapping list of chips, not a track. */
@@ -2416,18 +2422,18 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   equal leftover share and ratio edits appear to "do nothing".
 
   Fixed: id 30px, action 26px.
-  Flex (plain % of table): Dia 17.5% · Mat 32.5% · X 20% · Y 20%.
+  Flex (plain % of table): Dia 15% · Mat 35% · X 20% · Y 20%.
 */
 .pm-side-panel .pm-rebar-col--id {
   width: 30px;
 }
 
 .pm-side-panel .pm-rebar-col--dia {
-  width: 17.5%;
+  width: 15%;
 }
 
 .pm-side-panel .pm-rebar-col--mat {
-  width: 32.5%;
+  width: 35%;
 }
 
 .pm-side-panel .pm-rebar-col--x,
@@ -2446,6 +2452,32 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-rebar-table th:last-child,
 .pm-side-panel .pm-rebar-table td:last-child {
   width: auto;
+}
+
+/* Keep the compact rebar grid focused on values: numeric steppers consume a
+   meaningful part of the X/Y cells at the narrow sidebar width. */
+.pm-side-panel .pm-rebar-table th {
+  padding-inline: 2px;
+}
+
+.pm-side-panel .pm-rebar-table td {
+  padding-inline: 1px;
+}
+
+.pm-side-panel .pm-rebar-table input,
+.pm-side-panel .pm-rebar-table select {
+  padding-inline: 2px;
+}
+
+.pm-side-panel .pm-rebar-table input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.pm-side-panel .pm-rebar-table input[type='number']::-webkit-inner-spin-button,
+.pm-side-panel .pm-rebar-table input[type='number']::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
 }
 
 .pm-side-panel .pm-rebar-list-footer {

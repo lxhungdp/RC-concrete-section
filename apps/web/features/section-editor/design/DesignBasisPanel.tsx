@@ -109,9 +109,6 @@ export function DesignBasisPanel({ value, onChange }: Props) {
 
   const isUserDefinedProfile = draft.profileId === 'custom-user-defined'
   const isAs3600Profile = draft.profileId === 'as-3600-2018-amd2'
-  const isKdsProfile = draft.profileId === 'kds-2024-current-set' ||
-    draft.profileId === 'kds-basic-2021-2022' ||
-    draft.profileId === 'kds-142020-2022-appendix-material-factors'
   const guidance = useMemo(() => designProfileGuidance(draft.profileId), [draft.profileId])
 
   const update = (mutate: (next: DesignBasis) => void) => {
@@ -153,21 +150,6 @@ export function DesignBasisPanel({ value, onChange }: Props) {
         <span>{draft.identity.document}</span>
         <strong className={`is-${draft.verificationStatus}`}>{draft.verificationStatus}</strong>
       </div>
-
-      {isKdsProfile && (
-        <DesignSelect
-          label="Design Method"
-          value={draft.profileId === 'kds-142020-2022-appendix-material-factors' ? draft.profileId : 'kds-2024-current-set'}
-          onChange={(profileId) => publishIfValid(
-            profileId === 'kds-142020-2022-appendix-material-factors'
-              ? createKdsAppendixDesignBasis()
-              : createKdsBasicDesignBasis()
-          )}
-        >
-          <option value="kds-2024-current-set">Strength Reduction Factor — KDS 14 20 10 / 20</option>
-          <option value="kds-142020-2022-appendix-material-factors">Material Factor — KDS 14 20 20 Appendix</option>
-        </DesignSelect>
-      )}
 
       <div className={`pm-disclosure${showMethodInfo ? ' is-open' : ''}`}>
         <button

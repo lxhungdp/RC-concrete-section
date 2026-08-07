@@ -101,6 +101,13 @@ const SyncedControl = ({
   step,
   unit,
   disabled,
+  inputValue,
+  inputStep,
+  inputDisabled,
+  inputWorking,
+  onInputChange,
+  onInputCommit,
+  onInputBlur,
   onChange
 }: {
   /** Compact visible label (e.g. φ, P). */
@@ -113,6 +120,13 @@ const SyncedControl = ({
   step: number
   unit: string
   disabled?: boolean
+  inputValue?: string
+  inputStep?: number | 'any'
+  inputDisabled?: boolean
+  inputWorking?: boolean
+  onInputChange?: (value: string) => void
+  onInputCommit?: () => void
+  onInputBlur?: () => void
   onChange: (value: number) => void
 }) => (
   <label className={`pm-synced-control${disabled ? ' is-locked' : ''}`} title={title ?? label}>
@@ -132,12 +146,23 @@ const SyncedControl = ({
         type="number"
         min={min}
         max={max}
-        step={step}
-        value={Number.isFinite(value) ? value : 0}
-        disabled={disabled}
-        onChange={(event) => onChange(Number(event.target.value) || 0)}
+        step={inputStep ?? step}
+        value={inputValue ?? (Number.isFinite(value) ? value : 0)}
+        disabled={disabled || inputDisabled}
+        onChange={(event) => {
+          if (onInputChange) onInputChange(event.target.value)
+          else onChange(Number(event.target.value) || 0)
+        }}
+        onBlur={onInputBlur}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && onInputCommit) {
+            event.preventDefault()
+            onInputCommit()
+          }
+        }}
         aria-label={title ?? label}
       />
+      {inputWorking ? <Loader2 size={11} className="pm-spin" aria-hidden="true" /> : null}
       <em>{unit}</em>
     </span>
   </label>
@@ -334,7 +359,7 @@ export function ResultsWorkspace({
   const [exportMessage, setExportMessage] = useState('')
   const [fieldMap, setFieldMap] = useState<SectionFieldMap | null>(null)
   const [fieldMapWorking, setFieldMapWorking] = useState(false)
-  const [exactAngleDraft, setExactAngleDraft] = useState('')
+  const [exactAngleDraft, setExactAngleDraft] = useState(() => String(view.sliceAngle))
   const [exactCurveWorking, setExactCurveWorking] = useState(false)
   const [exactCurveMessage, setExactCurveMessage] = useState('')
   const [demandExactCurve, setDemandExactCurve] = useState<ExactDirectionCurve | null>(null)
@@ -446,6 +471,9 @@ export function ResultsWorkspace({
   const activeAngle = isLoadcaseMode
     ? equilibriumBeta == null ? loadcaseAngleDeg(selectedLoadcase) : equilibriumBeta * 180 / Math.PI
     : exactCurve ? exactCurve.beta * 180 / Math.PI : view.sliceAngle
+  useEffect(() => {
+    setExactAngleDraft(String(Number(activeAngle.toFixed(6))))
+  }, [activeAngle])
   const demandProjection = useMemo(() => {
     if (!isLoadcaseMode || !selectedLoadcase) return null
     const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
@@ -481,22 +509,27 @@ export function ResultsWorkspace({
   const angleSliderStep = directionAngleStepDeg(surfaceDirectionAnglesDeg)
   const angleSliderMax = sliceAngleMax(view, surfaceDirectionAnglesDeg, angleSliderStep)
   const setSliceAngle = (value: number) => {
+    const nextAngle = snapSliceAngleDeg(value, surfaceDirectionAnglesDeg, angleSliderMax, angleSliderStep)
     onExactDirectionCurveChange(null)
     setExactCurveMessage('')
-    onViewChange({
-      sliceAngle: snapSliceAngleDeg(value, surfaceDirectionAnglesDeg, angleSliderMax, angleSliderStep)
-    })
+    setExactAngleDraft(String(Number(nextAngle.toFixed(6))))
+    onViewChange({ sliceAngle: nextAngle })
   }
 
 
   const applyExactAngle = () => {
     if (!surface || exactCurveWorking) return
+    if (exactAngleDraft.trim() === '') {
+      setExactCurveMessage('Enter a finite β angle.')
+      return
+    }
     const value = Number(exactAngleDraft)
     if (!Number.isFinite(value)) {
       setExactCurveMessage('Enter a finite β angle.')
       return
     }
     const normalizedDegrees = normalizeAngleDeg(value)
+    setExactAngleDraft(String(Number(normalizedDegrees.toFixed(6))))
     const fixedAngle = surfaceDirectionAnglesDeg.find((candidate) => {
       const difference = Math.abs(candidate - normalizedDegrees)
       return Math.min(difference, 360 - difference) <= 1e-9
@@ -513,7 +546,7 @@ export function ResultsWorkspace({
     const controller = new AbortController()
     exactController.current = controller
     setExactCurveWorking(true)
-    setExactCurveMessage('')
+    setExactCurveMessage('Calculating exact β…')
     buildExactDirectionCurveAsync({
       calculationProfileId: surface.calculationProfileId ?? 'kds-2024-stress-strain',
       section,
@@ -1738,7 +1771,10 @@ export function ResultsWorkspace({
 
   if (isLoadcaseMode && selectedLoadcase) {
     return (
-      <section className="pm-results-stage pm-results-stage--charts-only">
+      <section
+        className={`pm-results-stage pm-results-stage--charts-only${busy ? ' is-recalculating' : ''}`}
+        aria-busy={busy}
+      >
         {busy ? <StaleBanner /> : null}
         <div className="pm-results-toolbar">
           <div className="pm-results-export" role="toolbar" aria-label="Export results">
@@ -2117,7 +2153,10 @@ export function ResultsWorkspace({
   }
 
   return (
-    <section className="pm-results-stage pm-results-stage--charts-only">
+    <section
+      className={`pm-results-stage pm-results-stage--charts-only${busy ? ' is-recalculating' : ''}`}
+      aria-busy={busy}
+    >
       {busy ? <StaleBanner /> : null}
 
       <div
@@ -2137,41 +2176,25 @@ export function ResultsWorkspace({
             <>
               <SyncedControl
                 label="β"
-                title="Fixed strain-gradient direction"
+                title="Strain-gradient direction; type an exact β and press Enter"
                 value={view.sliceAngle}
                 min={0}
                 max={angleSliderMax}
                 step={angleSliderStep}
                 unit="deg"
+                inputValue={exactAngleDraft}
+                inputStep="any"
+                inputDisabled={exactCurveWorking}
+                inputWorking={exactCurveWorking}
+                onInputChange={setExactAngleDraft}
+                onInputCommit={applyExactAngle}
+                onInputBlur={() => {
+                  if (!exactCurveWorking) {
+                    setExactAngleDraft(String(Number(activeAngle.toFixed(6))))
+                  }
+                }}
                 onChange={setSliceAngle}
               />
-              <label className="pm-synced-control" title="Calculate one exact β without angular interpolation">
-                <span className="pm-synced-control-label">β exact</span>
-                <span className="pm-synced-control-value">
-                  <input
-                    type="number"
-                    min={0}
-                    max={360}
-                    step="any"
-                    value={exactAngleDraft}
-                    placeholder="17.35"
-                    disabled={exactCurveWorking}
-                    onChange={(event) => setExactAngleDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') applyExactAngle()
-                    }}
-                    aria-label="Exact beta angle"
-                  />
-                  <button
-                    type="button"
-                    className="pm-secondary-btn"
-                    disabled={exactCurveWorking || exactAngleDraft.trim() === ''}
-                    onClick={applyExactAngle}
-                  >
-                    {exactCurveWorking ? <Loader2 size={12} className="pm-spin" /> : 'Apply'}
-                  </button>
-                </span>
-              </label>
               <label
                 className={`pm-field-check${view.includeOppositeMoment ? ' is-on' : ''}`}
                 title="Opposite half"

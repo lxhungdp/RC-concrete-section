@@ -258,7 +258,7 @@ export function RebarPanel({
               Root cause of earlier no-ops: browsers discard calc((100% - Npx) * k)
               on <col>, so Dia/Mat/X/Y silently fell back to equal leftover shares.
               Use plain percentages only (no calc). id/action stay px-fixed (30 / 26).
-              Flex band: Dia 17.5% · Mat 32.5% · X 20% · Y 20%.
+              Flex band: Dia 15% · Mat 35% · X 20% · Y 20%.
             */}
             <colgroup>
               <col className="pm-rebar-col pm-rebar-col--id" />

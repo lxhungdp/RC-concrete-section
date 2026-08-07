@@ -190,7 +190,7 @@ body[data-jscad-theme='dark'] textarea {
 }
 
 .pm-shell {
-  grid-template-columns: 420px minmax(0, 1fr);
+  grid-template-columns: 315px minmax(0, 1fr);
   gap: var(--sp-4);
   padding: var(--sp-4);
   background: var(--app-bg);
@@ -198,8 +198,9 @@ body[data-jscad-theme='dark'] textarea {
 
 .pm-app-header {
   display: flex;
+  flex-wrap: nowrap;
   grid-template-columns: none;
-  gap: var(--sp-6);
+  gap: var(--sp-4);
   padding: var(--sp-2) var(--sp-5);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
@@ -209,8 +210,13 @@ body[data-jscad-theme='dark'] textarea {
 }
 
 .pm-brand {
+  flex: 0 0 auto;
   gap: var(--sp-4);
   min-width: 0;
+}
+
+.pm-brand h1 {
+  white-space: nowrap;
 }
 
 .pm-brand-mark {
@@ -242,6 +248,7 @@ body[data-jscad-theme='dark'] textarea {
 }
 
 .pm-module-tabs {
+  flex: 0 0 auto;
   gap: var(--sp-1);
   width: auto;
   max-width: none;
@@ -302,8 +309,8 @@ body[data-jscad-theme='dark'] textarea {
 }
 
 .pm-toolbar button {
-  width: var(--control-h);
-  height: var(--control-h);
+  width: calc(var(--control-h) + 3px);
+  height: calc(var(--control-h) + 3px);
   border-radius: var(--r-md);
   color: var(--foreground-secondary);
 }
@@ -316,6 +323,153 @@ body[data-jscad-theme='dark'] textarea {
 .pm-toolbar-sep {
   margin: 0 var(--sp-2);
   background: var(--border);
+}
+
+/* Keep the active basis visible in one compact summary. The fixed popover only
+   carries edit controls, so it can escape the horizontally scrollable header. */
+.pm-calculation-toolbar {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-width: 0;
+  padding-left: var(--sp-4);
+  border-left: 1px solid var(--border);
+}
+
+.pm-calculation-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 330px;
+  height: calc(var(--control-h) + 3px);
+  min-width: 0;
+  padding: 0 var(--sp-3);
+  overflow: hidden;
+  border: 1px solid var(--input-border);
+  border-radius: var(--r-md);
+  background: var(--input-bg);
+  color: var(--foreground);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+.pm-calculation-summary:hover {
+  border-color: var(--accent);
+  background: var(--background-muted);
+}
+
+.pm-calculation-summary[aria-expanded='true'] {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.pm-calculation-code {
+  flex: 0 0 auto;
+  max-width: 152px;
+  overflow: hidden;
+  color: var(--input-value);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-calculation-options {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  overflow: hidden;
+  color: var(--foreground-secondary);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.pm-calculation-options > span:not([aria-hidden='true']) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pm-calculation-summary > svg {
+  flex: 0 0 auto;
+  color: var(--foreground-muted);
+  transition: transform 120ms ease;
+}
+
+.pm-calculation-summary[aria-expanded='true'] > svg {
+  transform: rotate(180deg);
+}
+
+.pm-calculation-popover {
+  position: fixed;
+  z-index: 1000;
+  display: grid;
+  width: 264px;
+  padding: var(--sp-2);
+  border: 1px solid var(--input-border);
+  border-radius: var(--r-lg);
+  background: var(--menu-surface);
+  box-shadow: 0 12px 28px rgb(15 23 42 / 18%);
+}
+
+body[data-jscad-theme='dark'] .pm-calculation-popover {
+  box-shadow: 0 12px 28px rgb(0 0 0 / 42%);
+}
+
+.pm-calculation-field {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 34px;
+  min-width: 0;
+  padding: 2px;
+}
+
+.pm-calculation-field + .pm-calculation-field {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.pm-calculation-field > span {
+  padding-left: var(--sp-2);
+  color: var(--foreground-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.pm-calculation-field select {
+  width: 100%;
+  height: 28px;
+  min-width: 0;
+  padding: 0 22px 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background-color: var(--input-bg);
+  color: var(--input-value);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.pm-calculation-field.is-fixed {
+  background: transparent;
+}
+
+.pm-calculation-field.is-fixed select:disabled {
+  border-color: var(--border-subtle);
+  background: var(--background-muted);
+  color: var(--foreground-secondary);
+  opacity: 1;
+  -webkit-text-fill-color: var(--foreground-secondary);
+}
+
+.pm-calculation-field select:focus-visible {
+  border-color: var(--accent);
 }
 
 /* Side-panel bridge: use the exact Anchor palette and integer type scale. */
@@ -677,7 +831,8 @@ body[data-jscad-theme='dark'] .pm-side-panel select option {
   box-shadow: none;
 }
 
-.pm-drawing-stage:has(> .pm-results-stage) {
+.pm-drawing-stage:has(> .pm-results-stage),
+.pm-drawing-stage:has(> .pm-workspace-loading) {
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -759,12 +914,18 @@ body[data-jscad-theme='dark'] .pm-cad-surface {
   background: transparent;
 }
 
-.pm-results-plot,
 .pm-analysis-mesh-card,
 .pm-field-metric-card,
 .pm-result-status-card {
   border-color: var(--border);
   border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: none;
+}
+
+.pm-results-plot {
+  border-color: var(--border);
+  border-radius: var(--r-lg);
   background: var(--card);
   box-shadow: none;
 }
@@ -824,16 +985,20 @@ body[data-jscad-theme='dark'] .pm-cad-surface {
 
 @media (max-width: 1100px) {
   .pm-app-header {
-    flex-wrap: wrap;
-  }
-
-  .pm-module-tabs {
-    order: 3;
-    width: 100%;
+    gap: var(--sp-2);
   }
 
   .pm-module-tabs button {
-    flex: 1;
+    padding-inline: var(--sp-2);
+    font-size: var(--fs-sm);
+  }
+
+  .pm-calculation-toolbar {
+    padding-left: var(--sp-3);
+  }
+
+  .pm-calculation-summary {
+    width: 286px;
   }
 }
 
@@ -845,10 +1010,61 @@ body[data-jscad-theme='dark'] .pm-cad-surface {
 
   .pm-app-header {
     align-items: center;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .pm-app-header::-webkit-scrollbar {
+    display: none;
+  }
+
+  .pm-brand > div {
+    display: none;
+  }
+
+  .pm-module-tabs button {
+    width: 30px;
+    gap: 0;
+    padding: 0;
+  }
+
+  .pm-module-tabs button > svg {
+    display: block;
+  }
+
+  .pm-module-tabs button > span {
+    display: none;
+  }
+
+  .pm-calculation-toolbar {
+    padding-left: var(--sp-3);
+  }
+
+  .pm-calculation-summary {
+    width: 286px;
   }
 
   .pm-toolbar {
+    flex: 0 0 auto;
     width: auto;
     margin-left: auto;
+  }
+
+  .pm-toolbar-sep {
+    margin-inline: var(--sp-1);
+  }
+}
+
+@media (max-width: 560px) {
+  .pm-calculation-summary {
+    width: 112px;
+  }
+
+  .pm-calculation-code {
+    max-width: 72px;
+  }
+
+  .pm-calculation-options {
+    display: none;
   }
 }

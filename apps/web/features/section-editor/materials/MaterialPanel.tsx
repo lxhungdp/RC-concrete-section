@@ -1,15 +1,13 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { ChevronDown, ExternalLink, Info, Plus, X } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 import {
-  designProfileGuidance,
   designBasisRequiresOverrideReason,
-  createKdsAppendixDesignBasis,
-  createKdsBasicDesignBasis,
   resolveMaterialFactorExpression,
   setMaterialFactorComponentValue,
   type MaterialFactorComponent,
+  type GlobalStrengthReductionBasis,
   type DesignBasis
 } from '@pm/design'
 import {
@@ -33,14 +31,11 @@ import {
 } from '@pm/materials'
 import {
   CUSTOM_STEEL_MODELS,
-  DESIGN_CODES,
   activeConcreteModelId,
   applyCalculationProfileToMaterials,
   applyConcreteModelToMaterials,
-  calculationProfilesForCode,
   calculationProfile,
   type ConcreteModelId,
-  type DesignCodeId,
   type CalculationProfileId
 } from '@pm/project'
 import { resolveKds142020BlockParameters } from '@pm/code-kds142020'
@@ -50,7 +45,6 @@ type Props = {
   calculationProfileId: CalculationProfileId
   designBasis: DesignBasis
   usedSteelMaterialIds?: Set<number>
-  onCalculationProfileChange: (profileId: CalculationProfileId) => void
   onDesignBasisChange: (basis: DesignBasis) => void
   onChange: (store: MaterialStore) => void
 }
@@ -100,6 +94,24 @@ const modelName = (type: ConcreteMaterial['stressStrain']['type'] | SteelMateria
     'user-curve': 'User-Defined Curve',
     'user-block': 'User-Defined Block'
   })[type]
+
+const concreteModelPickerLabel = (modelId: ConcreteModelId) => {
+  switch (modelId) {
+    case 'kds-parabolic':
+    case 'en1992-parabolic-rectangular':
+      return 'Parabolic'
+    case 'user-stress-strain-curve':
+    case 'user-equivalent-rectangular-block':
+      return 'User-defined'
+    case 'kds-equivalent-rectangular-block':
+    case 'as3600-equivalent-rectangular-block':
+      return 'Eq. block'
+    case 'aci-whitney-equivalent-block':
+      return 'Whitney block'
+    default:
+      return modelId satisfies never
+  }
+}
 
 const formatFormulaNumber = (value: number, digits = 4) =>
   Number(value.toFixed(digits)).toLocaleString('en-US', {
@@ -174,59 +186,6 @@ function StressStrainCurve({ material }: { material: ConcreteMaterial | SteelMat
   )
 }
 
-function DesignMethodDetails({ basis }: { basis: DesignBasis }) {
-  const guidance = designProfileGuidance(basis.profileId)
-  return (
-    <div className="pm-design-method-info">
-      <strong>{guidance.title}</strong>
-      <p>{guidance.summary}</p>
-      <dl>
-        <div><dt>Reference</dt><dd>{guidance.referenceCurve}</dd></div>
-        <div><dt>Design</dt><dd>{guidance.designCurve}</dd></div>
-        <div><dt>Do not combine</dt><dd>{guidance.doNotCombine}</dd></div>
-      </dl>
-      {basis.format === 'designMaterialReevaluation' && (
-        <div className="pm-material-factor-equation">
-          <p>
-            Concrete:{' '}
-            {basis.factors.concrete.designSymbol} = {basis.factors.concrete.characteristicSymbol}
-            {basis.factors.concrete.components.map((component) => (
-              <span key={component.id}>
-                {' '}{component.operation === 'multiply' ? '×' : '÷'} {component.symbol}
-              </span>
-            ))}
-            {' '}({basis.factors.concrete.components.map((c) => `${c.symbol}=${c.value}`).join(', ')})
-          </p>
-          <p>
-            Steel:{' '}
-            {basis.factors.reinforcement.designSymbol} = {basis.factors.reinforcement.characteristicSymbol}
-            {basis.factors.reinforcement.components.map((component) => (
-              <span key={component.id}>
-                {' '}{component.operation === 'multiply' ? '×' : '÷'} {component.symbol}
-              </span>
-            ))}
-            {' '}({basis.factors.reinforcement.components.map((c) => `${c.symbol}=${c.value}`).join(', ')})
-          </p>
-        </div>
-      )}
-      <ul>
-        {guidance.references.map((reference) => (
-          <li key={`${reference.document}-${reference.clause}`}>
-            {reference.url ? (
-              <a href={reference.url} target="_blank" rel="noreferrer">
-                {reference.document}, §{reference.clause} <ExternalLink size={12} aria-hidden="true" />
-              </a>
-            ) : (
-              <span>{reference.document}, §{reference.clause}</span>
-            )}
-            <small>{reference.subject}</small>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
 function ConcreteMaterialFactorFields({
   basis,
   fck,
@@ -279,6 +238,93 @@ function ConcreteMaterialFactorFields({
         </label>
       )}
     </>
+  )
+}
+
+function ConcreteAxialLimitFields({
+  basis,
+  onChange
+}: {
+  basis: DesignBasis
+  onChange: (basis: DesignBasis) => void
+}) {
+  if (basis.format !== 'globalResultantFactor' || basis.profileId === 'as-3600-2018-amd2') {
+    return null
+  }
+
+  const isSpiral = basis.transverseReinforcement === 'qualifying-spiral'
+  const activeFactor = isSpiral ? basis.factors.axialCapSpiral : basis.factors.axialCapOther
+
+  const update = (mutate: (next: GlobalStrengthReductionBasis) => void) => {
+    const next: GlobalStrengthReductionBasis = structuredClone(basis)
+    mutate(next)
+    next.modified = true
+    next.verificationStatus = next.profileId === 'custom-user-defined' ? 'user-defined' : 'draft'
+    onChange(next)
+  }
+
+  return (
+    <div className="pm-material-stress-box pm-material-axial-limit">
+      <div className="pm-material-stress-title">Axial compression limit</div>
+      <div className="pm-material-row-2">
+        <label className="pm-field">
+          <span>Column type</span>
+          <select
+            value={basis.transverseReinforcement}
+            onChange={(event) => update((next) => {
+              next.transverseReinforcement = event.target.value === 'qualifying-spiral'
+                ? 'qualifying-spiral'
+                : 'other'
+            })}
+          >
+            <option value="other">Ties / other</option>
+            <option value="qualifying-spiral">Qualifying spiral</option>
+          </select>
+        </label>
+        <label className="pm-field" title="Maximum design compression as a fraction of the uncapped compression pole.">
+          <span>Pmax factor</span>
+          <input
+            type="number"
+            min={0.1}
+            max={1}
+            step={0.01}
+            value={activeFactor}
+            onChange={(event) => {
+              const factor = Math.min(1, Math.max(0.1, numberValue(event.target.value, activeFactor)))
+              update((next) => {
+                if (isSpiral) next.factors.axialCapSpiral = factor
+                else next.factors.axialCapOther = factor
+              })
+            }}
+          />
+        </label>
+      </div>
+      {basis.profileId === 'custom-user-defined' && (
+        <label className="pm-material-toggle">
+          <input
+            type="checkbox"
+            checked={basis.axialCapEnabled}
+            onChange={(event) => update((next) => {
+              next.axialCapEnabled = event.target.checked
+            })}
+          />
+          <span>Apply Pmax limit</span>
+        </label>
+      )}
+      <p className="pm-field-note">
+        Pmax is limited to this fraction of the design compression pole for the selected column type.
+      </p>
+      {designBasisRequiresOverrideReason(basis) && (
+        <label className="pm-field">
+          <span>Reason for design modification</span>
+          <input
+            value={basis.overrideReason}
+            placeholder="State the approved project basis"
+            onChange={(event) => onChange({ ...basis, overrideReason: event.target.value })}
+          />
+        </label>
+      )}
+    </div>
   )
 }
 
@@ -362,18 +408,15 @@ export function MaterialPanel({
   calculationProfileId,
   designBasis,
   usedSteelMaterialIds = new Set(),
-  onCalculationProfileChange,
   onDesignBasisChange,
   onChange
 }: Props) {
   const profile = calculationProfile(calculationProfileId)
-  const codeProfiles = profile.code ? calculationProfilesForCode(profile.code) : []
   const activeModelId = activeConcreteModelId(calculationProfileId, store.concrete)
   const isBlockMechanics = profile.mechanics === 'equivalent-rectangular-block'
   const isCustomProfile = profile.materialStandard === 'CUSTOM'
   const concreteSupportIssue = isBlockMechanics ? null : concreteModelSupportIssue(store.concrete)
   const [activePage, setActivePage] = useState<MaterialPage>('concrete')
-  const [showDesignMethodInfo, setShowDesignMethodInfo] = useState(false)
   const activeSteel = store.steel.find((material) => material.id === store.defaults.steelMaterialId) ?? store.steel[0]
   const kdsBlockResolution = useMemo(() => {
     if (calculationProfileId !== 'kds-142020-equivalent-block') return { parameters: null, error: '' }
@@ -457,93 +500,6 @@ export function MaterialPanel({
 
   return (
     <>
-      <section className="pm-panel-section">
-        <div className="pm-section-title">
-          <div>
-            <h2>Design code &amp; calculation model</h2>
-          </div>
-        </div>
-        <div className="pm-material-row-2">
-          <label className="pm-field">
-            <span>Design code</span>
-            <select
-              value={profile.code ?? 'legacy-user-defined'}
-              onChange={(event) => {
-                const code = event.target.value as DesignCodeId
-                const next = calculationProfilesForCode(code)[0]
-                if (next) onCalculationProfileChange(next.id)
-              }}
-            >
-              {profile.code === null && <option value="legacy-user-defined">User-defined analysis (legacy)</option>}
-              {DESIGN_CODES.map((code) => (
-                <option
-                  key={code.id}
-                  value={code.id}
-                  disabled={calculationProfilesForCode(code.id).length === 0}
-                >
-                  {code.label}{code.implementationStatus === 'not-implemented' ? ' — not available' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="pm-field">
-            <span>Section Analysis Method</span>
-            <select
-              value={calculationProfileId}
-              disabled={codeProfiles.length <= 1}
-              onChange={(event) => onCalculationProfileChange(event.target.value as CalculationProfileId)}
-            >
-              {(codeProfiles.length > 0 ? codeProfiles : [profile]).map((method) => (
-                <option key={method.id} value={method.id}>{method.methodLabel}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <p className="pm-field-note">{profile.standard}</p>
-        {profile.code === 'KDS' && (
-          <>
-            <label className="pm-field pm-material-field-full">
-              <span>Design Method</span>
-              <select
-                value={designBasis.profileId === 'kds-142020-2022-appendix-material-factors'
-                  ? designBasis.profileId
-                  : 'kds-2024-current-set'}
-                onChange={(event) => onDesignBasisChange(
-                  event.target.value === 'kds-142020-2022-appendix-material-factors'
-                    ? createKdsAppendixDesignBasis()
-                    : createKdsBasicDesignBasis()
-                )}
-              >
-                <option value="kds-2024-current-set">Strength Reduction Factor — KDS 14 20 10 / 20</option>
-                <option value="kds-142020-2022-appendix-material-factors">Material Factor — KDS 14 20 20 Appendix</option>
-              </select>
-            </label>
-            <div className={`pm-disclosure${showDesignMethodInfo ? ' is-open' : ''}`}>
-              <button
-                type="button"
-                className="pm-disclosure-toggle"
-                aria-expanded={showDesignMethodInfo}
-                onClick={() => setShowDesignMethodInfo((current) => !current)}
-                title="Design method summary for concrete and steel"
-              >
-                <Info size={13} aria-hidden="true" />
-                Details
-                <ChevronDown size={13} aria-hidden="true" className={showDesignMethodInfo ? 'is-open' : ''} />
-              </button>
-              {showDesignMethodInfo && <DesignMethodDetails basis={designBasis} />}
-            </div>
-          </>
-        )}
-        {profile.implementationStatus === 'preview' && (
-          <p className="pm-material-blocked" role="status">
-            Preview only — not for production design.
-            {profile.code === 'EN'
-              ? ' No National Annex; EN strain-domain still under verification.'
-              : ' AS clause mapping and verification remain incomplete.'}
-          </p>
-        )}
-      </section>
-
       <div className="pm-page-tabs" role="tablist" aria-label="Material tabs">
         <button
           type="button"
@@ -578,7 +534,7 @@ export function MaterialPanel({
               title="Concrete model"
             >
               {profile.concreteModels.map((model) => (
-                <option key={model.id} value={model.id}>{model.label}</option>
+                <option key={model.id} value={model.id}>{concreteModelPickerLabel(model.id)}</option>
               ))}
             </select>
           </div>
@@ -765,7 +721,7 @@ export function MaterialPanel({
                     </div>
                     <p className="pm-field-note">
                       No code table is applied. β1, α and εcu are the values this project declares; the surface,
-                      the φ transition and the axial cap all follow the Design Basis you edit here.
+                      the φ transition follows the selected code basis, and the Pmax limit is set below.
                     </p>
                   </>
                 ) : store.concrete.stressStrain.type === 'as3600-equivalent-block' ? (
@@ -936,6 +892,11 @@ export function MaterialPanel({
               <StressStrainCurve material={store.concrete} />
             </div>
             )}
+
+            <ConcreteAxialLimitFields
+              basis={designBasis}
+              onChange={onDesignBasisChange}
+            />
           </div>
         </section>
       )}

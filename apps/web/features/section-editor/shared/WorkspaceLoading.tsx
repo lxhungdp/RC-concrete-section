@@ -28,7 +28,10 @@ export function WorkspaceLoading({
           {detail ? <span>{detail}</span> : null}
         </div>
       </div>
-      <div className="pm-workspace-loading-grid" aria-hidden="true">
+      <div
+        className={`pm-workspace-loading-grid${charts === 3 ? ' is-results-layout' : ''}`}
+        aria-hidden="true"
+      >
         {Array.from({ length: charts }, (_, index) => (
           <div key={index} className="pm-workspace-loading-card" />
         ))}

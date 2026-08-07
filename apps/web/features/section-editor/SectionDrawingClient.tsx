@@ -58,7 +58,6 @@ import {
   createDesignBasisForCalculationProfile,
   createDefaultAnalysisOptions,
   createProjectDocument,
-  designCode,
   parseProjectDocument,
   projectDocumentFileName,
   serializeProjectDocument,
@@ -68,7 +67,6 @@ import {
   type LoadingsInput
 } from '@pm/project'
 import {
-  activeDesignSurfaceDataset,
   type ExactDirectionCurve,
   type InversePreviewResult,
   type LoadcaseQuickCheckResult,
@@ -82,6 +80,7 @@ import {
   isAnalysisAbort
 } from '../../application/analysis/client'
 import { LoadingsPanel } from './loadings/LoadingsPanel'
+import { CalculationBasisToolbar } from './CalculationBasisToolbar'
 
 /**
  * The results and mesh stages carry Plotly and the analysis kernels. Loading them on demand keeps
@@ -116,7 +115,6 @@ import {
   type DemandCheckView,
   type SectionResultsView
 } from './results/results-view'
-import { DesignBasisPanel } from './design/DesignBasisPanel'
 import {
   downloadRebarWorkbook,
   downloadSectionWorkbook,
@@ -195,7 +193,7 @@ type WorkspaceModule = 'geometry' | 'materials' | 'analysis' | 'section' | 'dema
 /** Both result menus render the same stage component in different modes. */
 const isResultsModule = (module: WorkspaceModule) => module === 'section' || module === 'demand'
 type GeometrySubTab = 'concrete' | 'rebar'
-type AnalysisSubTab = 'points' | 'mesh' | 'design'
+type AnalysisSubTab = 'points' | 'mesh'
 type BuilderShape = 'rectangle' | 'circle' | 'capsule'
 type BooleanAction = 'union' | 'subtract'
 type BoundarySource =
@@ -660,10 +658,10 @@ export function SectionDrawingClient() {
   const activeSummary = useMemo(() => summarizeSection(activeSection), [activeSection])
 
   useEffect(() => {
-    setResultSurface(null)
     setSurfaceMessage('')
 
     if (!hasAppliedSection) {
+      setResultSurface(null)
       setSurfaceStatus('idle')
       return
     }
@@ -683,7 +681,6 @@ export function SectionDrawingClient() {
         })
         .catch((error) => {
           if (isAnalysisAbort(error)) return
-          setResultSurface(null)
           setSurfaceStatus('error')
           setSurfaceMessage(error instanceof Error ? error.message : String(error))
         })
@@ -709,19 +706,7 @@ export function SectionDrawingClient() {
   }, [resultSurface])
 
   /** Everything the Section Results sidebar reports, assembled once per surface. */
-  const activeCalculationProfile = useMemo(
-    () => calculationProfile(calculationProfileId),
-    [calculationProfileId]
-  )
   const sectionResultsSummary = useMemo<SectionResultsSummary>(() => {
-    const activeDesign = resultSurface ? activeDesignSurfaceDataset(resultSurface) : null
-    const hasDesignMethodChoice =
-      (activeCalculationProfile.allowedDesignProfileIds?.length ?? 1) > 1
-    const designMethodLabel = !hasDesignMethodChoice
-      ? ''
-      : designBasis.profileId === 'kds-142020-2022-appendix-material-factors'
-        ? 'Material Factor — KDS 14 20 20 Appendix'
-        : 'Strength Reduction Factor — KDS 14 20 10 / 20'
     return {
       hasAppliedSection,
       status: surfaceStatus,
@@ -734,12 +719,7 @@ export function SectionDrawingClient() {
       surfacePoints: resultSurface?.points.length ?? 0,
       directionCount: betaCount,
       stationCount,
-      stationCountMin: resultSurface?.stationError.minStations ?? stationCount,
-      stationCountAverage: resultSurface?.stationError.averageStations ?? stationCount,
-      evaluationCount: resultSurface?.stationError.evaluations ?? resultSurface?.points.length ?? 0,
       samplingMode: resultSurface?.analysisOptions.samplingMode ?? 'fixed',
-      fixedDirectionCount: activeDesign?.directions.length ?? 0,
-      fixedStationCount: activeDesign?.stations.length ?? 0,
       refinement: resultSurface && (
         Number.isFinite(resultSurface.directionError.maxRelativeComponent) ||
         Number.isFinite(resultSurface.stationError.maxRelative)
@@ -763,18 +743,11 @@ export function SectionDrawingClient() {
           }
         : null,
       warnings: resultSurface?.warnings ?? [],
-      mechanics: resultSurface?.mechanics ?? null,
-      codeLabel: activeCalculationProfile.code
-        ? designCode(activeCalculationProfile.code).label
-        : 'User-defined',
-      methodLabel: activeCalculationProfile.methodLabel,
-      designMethodLabel
+      mechanics: resultSurface?.mechanics ?? null
     }
   }, [
-    activeCalculationProfile,
     appliedSummary.area,
     betaCount,
-    designBasis.profileId,
     hasAppliedSection,
     rebars.length,
     resultSurface,
@@ -1923,7 +1896,6 @@ export function SectionDrawingClient() {
           <span className="pm-brand-mark">PM</span>
           <div>
             <h1>P-M Column Designer</h1>
-            <p>Column section design workspace</p>
           </div>
         </div>
 
@@ -1943,7 +1915,7 @@ export function SectionDrawingClient() {
             onClick={() => switchModule('section')}
           >
             <BarChart3 size={16} />
-            <span>Section Results</span>
+            <span>Results</span>
           </button>
           <button
             className={activeModule === 'demand' ? 'is-active' : ''}
@@ -1952,20 +1924,29 @@ export function SectionDrawingClient() {
             onClick={() => switchModule('demand')}
           >
             <Gauge size={16} />
-            <span>Demand Check</span>
+            <span>Check</span>
           </button>
+        </nav>
+
+        <CalculationBasisToolbar
+          calculationProfileId={calculationProfileId}
+          designBasis={designBasis}
+          onCalculationProfileChange={changeCalculationProfile}
+          onDesignBasisChange={setDesignBasis}
+        />
+
+        <div className="pm-toolbar" aria-label="Project tools">
           <button
             className={activeModule === 'analysis' ? 'is-active' : ''}
             onMouseEnter={() => preloadModule('analysis')}
             onFocus={() => preloadModule('analysis')}
             onClick={() => switchModule('analysis')}
+            title="Analysis Options"
+            aria-label="Analysis Options"
           >
-            <Settings size={16} />
-            <span>Analysis Options</span>
+            <Settings size={18} />
           </button>
-        </nav>
-
-        <div className="pm-toolbar" aria-label="Project tools">
+          <span className="pm-toolbar-sep" aria-hidden="true" />
           <button onClick={() => importInputRef.current?.click()} title="Import project JSON">
             <Upload size={18} />
           </button>
@@ -1984,6 +1965,7 @@ export function SectionDrawingClient() {
             onChange={handleImportFileChange}
           />
         </div>
+
       </header>
 
       <aside className="pm-side-panel">
@@ -2575,7 +2557,6 @@ export function SectionDrawingClient() {
             calculationProfileId={calculationProfileId}
             designBasis={designBasis}
             usedSteelMaterialIds={new Set(rebars.map((bar) => bar.steelMaterialId ?? materialStore.defaults.steelMaterialId))}
-            onCalculationProfileChange={changeCalculationProfile}
             onDesignBasisChange={setDesignBasis}
             onChange={setMaterialStore}
           />
@@ -2586,8 +2567,7 @@ export function SectionDrawingClient() {
             <div className="pm-analysis-tabs" role="tablist" aria-label="Analysis option groups">
               {([
                 ['points', 'Points'],
-                ['mesh', 'Mesh'],
-                ['design', 'Design Resistance']
+                ['mesh', 'Mesh']
               ] as const).map(([id, label]) => (
                 <button
                   key={id}
@@ -2601,16 +2581,11 @@ export function SectionDrawingClient() {
                 </button>
               ))}
             </div>
-            {analysisSubTab !== 'design' && (
-              <AnalysisOptionsPanel
-                options={analysisOptions}
-                onChange={setAnalysisOptions}
-                view={analysisSubTab}
-              />
-            )}
-            {analysisSubTab === 'design' && (
-              <DesignBasisPanel value={designBasis} onChange={setDesignBasis} />
-            )}
+            <AnalysisOptionsPanel
+              options={analysisOptions}
+              onChange={setAnalysisOptions}
+              view={analysisSubTab}
+            />
           </>
         )}
 

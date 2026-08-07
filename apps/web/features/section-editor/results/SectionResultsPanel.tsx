@@ -32,12 +32,7 @@ export type SectionResultsSummary = {
   surfacePoints: number
   directionCount: number
   stationCount: number
-  stationCountMin: number
-  stationCountAverage: number
-  evaluationCount: number
   samplingMode: 'fixed' | 'adaptive'
-  fixedDirectionCount: number
-  fixedStationCount: number
   /** Adaptive-refinement evidence, or null when the surface has none yet. */
   refinement: {
     tolerance: number
@@ -46,15 +41,6 @@ export type SectionResultsSummary = {
   } | null
   warnings: string[]
   mechanics: 'stress-strain-integration' | 'equivalent-rectangular-block' | null
-  /** Design code family shown at the top of the sidebar (e.g. KDS, ACI). */
-  codeLabel: string
-  /** Calculation method label paired with the code. */
-  methodLabel: string
-  /**
-   * Current design-method label when the code offers a choice (KDS).
-   * Empty when the code has only one resistance route — header stays to one row.
-   */
-  designMethodLabel: string
 }
 
 type Props = {
@@ -192,14 +178,7 @@ export function SectionResultsPanel({
       </section>
 
       <section className="pm-panel-section">
-        <div className="pm-result-profile">
-          <strong>{`${summary.codeLabel} — ${summary.methodLabel}`}</strong>
-          {summary.designMethodLabel ? <span>{summary.designMethodLabel}</span> : null}
-        </div>
-      </section>
-
-      <section className="pm-panel-section">
-        <h2 className="pm-chart-visibility-title">Section</h2>
+        <h2 className="pm-chart-visibility-title">Section Information</h2>
         <div className="pm-result-status-list">
           <span>Ac / As</span>
           <strong>
@@ -211,10 +190,6 @@ export function SectionResultsPanel({
           <strong>{summary.samplingMode === 'adaptive' ? 'Independent adaptive' : 'Fixed grid'}</strong>
           <span>Directions / max stations</span>
           <strong>{`${integer(summary.directionCount)} / ${integer(summary.stationCount)}`}</strong>
-          <span>Station range / average</span>
-          <strong>{`${integer(summary.stationCountMin)}-${integer(summary.stationCount)} / ${summary.stationCountAverage.toFixed(1)}`}</strong>
-          <span>Active surface grid</span>
-          <strong>{`${integer(summary.fixedDirectionCount)} × ${integer(summary.fixedStationCount)}`}</strong>
           {summary.mechanics === 'stress-strain-integration' ? (
             <>
               <span>Mesh cells / points</span>
@@ -223,8 +198,6 @@ export function SectionResultsPanel({
           ) : null}
           <span>Surface points</span>
           <strong>{integer(summary.surfacePoints)}</strong>
-          <span>State evaluations</span>
-          <strong>{integer(summary.evaluationCount)}</strong>
           {summary.refinement ? (
             <>
               <span>Interp. error</span>
@@ -240,71 +213,71 @@ export function SectionResultsPanel({
 
       <section className="pm-panel-section pm-chart-data-section">
         <div className="pm-chart-data-toolbar">
-          <h2 className="pm-chart-visibility-title">Chart data</h2>
-          <div className="pm-chart-data-toolbar-actions">
-            <div className="pm-chart-data-controls">
-              <fieldset className="pm-result-radio-group" aria-label="Chart source">
-                <label className={source === 'vertical' ? 'is-active' : ''}>
-                  <input
-                    type="radio"
-                    name="chart-data-source"
-                    checked={source === 'vertical'}
-                    onChange={() => setSource('vertical')}
-                  />
-                  Vertical
-                </label>
-                <label className={source === 'fixedP' ? 'is-active' : ''}>
-                  <input
-                    type="radio"
-                    name="chart-data-source"
-                    checked={source === 'fixedP'}
-                    onChange={() => setSource('fixedP')}
-                  />
-                  Fixed-P
-                </label>
-              </fieldset>
-              <fieldset className="pm-result-radio-group" aria-label="Table resistance stage">
-                <label className={resistanceStage === 'design' ? 'is-active' : ''}>
-                  <input
-                    type="radio"
-                    name="chart-data-resistance-stage"
-                    checked={resistanceStage === 'design'}
-                    onChange={() => setResistanceStage('design')}
-                  />
-                  Design
-                </label>
-                <label className={resistanceStage === 'nominal' ? 'is-active' : ''}>
-                  <input
-                    type="radio"
-                    name="chart-data-resistance-stage"
-                    checked={resistanceStage === 'nominal'}
-                    onChange={() => setResistanceStage('nominal')}
-                  />
-                  Nominal
-                </label>
-              </fieldset>
-            </div>
-            <button
-              type="button"
-              className="pm-file-btn"
-              disabled={rows.length === 0 || exporting}
-              onClick={() => void exportExcel()}
-              title="Export the visible table to Excel"
-            >
-              {exporting ? <Loader2 size={13} className="pm-spin" /> : <Download size={13} />}
-              Excel
-            </button>
+          <div className="pm-chart-data-heading">
+            <h2 className="pm-chart-visibility-title">Chart data</h2>
+            <span>
+              {source === 'vertical'
+                ? exactDirectionCurve
+                  ? `Exact β = ${fmt(exactDirectionCurve.beta * 180 / Math.PI, 3)}°`
+                  : `Fixed β = ${fmt(view.sliceAngle, 0)}°`
+                : `P = ${fmt(fixedP / 1000, 1)} kN`}
+              {` · ${rows.length} row${rows.length === 1 ? '' : 's'}`}
+            </span>
           </div>
+          <button
+            type="button"
+            className="pm-file-btn"
+            disabled={rows.length === 0 || exporting}
+            onClick={() => void exportExcel()}
+            title="Export the visible table to Excel"
+          >
+            {exporting ? <Loader2 size={13} className="pm-spin" /> : <Download size={13} />}
+            Excel
+          </button>
         </div>
 
-        <p className="pm-field-note">
-          {source === 'vertical'
-            ? exactDirectionCurve
-              ? `Exact β = ${fmt(exactDirectionCurve.beta * 180 / Math.PI, 3)}° · direct calculation · kN / kN·m`
-              : `Fixed β = ${fmt(view.sliceAngle, 0)}° · direct meridian · kN / kN·m`
-            : `P = ${fmt(fixedP / 1000, 1)} kN · fixed β directions · kN·m`}
-          {` · ${rows.length} row${rows.length === 1 ? '' : 's'}`}
-        </p>
+        <div className="pm-chart-data-controls">
+          <fieldset className="pm-result-radio-group" aria-label="Chart source">
+            <label className={source === 'vertical' ? 'is-active' : ''}>
+              <input
+                type="radio"
+                name="chart-data-source"
+                checked={source === 'vertical'}
+                onChange={() => setSource('vertical')}
+              />
+              Vertical
+            </label>
+            <label className={source === 'fixedP' ? 'is-active' : ''}>
+              <input
+                type="radio"
+                name="chart-data-source"
+                checked={source === 'fixedP'}
+                onChange={() => setSource('fixedP')}
+              />
+              Fixed-P
+            </label>
+          </fieldset>
+          <fieldset className="pm-result-radio-group" aria-label="Table resistance stage">
+            <label className={resistanceStage === 'design' ? 'is-active' : ''}>
+              <input
+                type="radio"
+                name="chart-data-resistance-stage"
+                checked={resistanceStage === 'design'}
+                onChange={() => setResistanceStage('design')}
+              />
+              Design
+            </label>
+            <label className={resistanceStage === 'nominal' ? 'is-active' : ''}>
+              <input
+                type="radio"
+                name="chart-data-resistance-stage"
+                checked={resistanceStage === 'nominal'}
+                onChange={() => setResistanceStage('nominal')}
+              />
+              Nominal
+            </label>
+          </fieldset>
+        </div>
 
         <div className="pm-chart-data-table-wrap">
           {!surface ? (
@@ -319,14 +292,14 @@ export function SectionResultsPanel({
                   <th title="Sampled strain-plane direction β">β</th>
                   {includeDesign ? (
                     <>
-                      <th title="Design Mx">Mx</th>
-                      <th title="Design My">My</th>
+                      <th title="Design Mx">Mx <span className="pm-table-unit">(kN·m)</span></th>
+                      <th title="Design My">My <span className="pm-table-unit">(kN·m)</span></th>
                     </>
                   ) : null}
                   {includeNominal ? (
                     <>
-                      <th title="Nominal Mx">Mnx</th>
-                      <th title="Nominal My">Mny</th>
+                      <th title="Nominal Mx">Mnx <span className="pm-table-unit">(kN·m)</span></th>
+                      <th title="Nominal My">Mny <span className="pm-table-unit">(kN·m)</span></th>
                     </>
                   ) : null}
                 </tr>
@@ -352,14 +325,14 @@ export function SectionResultsPanel({
                   <th>Criterion</th>
                   {includeDesign ? (
                     <>
-                      <th title="Design sum P">P</th>
-                      <th title="Design sum M">M</th>
+                      <th title="Design sum P">P <span className="pm-table-unit">(kN)</span></th>
+                      <th title="Design sum M">M <span className="pm-table-unit">(kN·m)</span></th>
                     </>
                   ) : null}
                   {includeNominal ? (
                     <>
-                      <th title="Nominal sum P">Pn</th>
-                      <th title="Nominal sum M">Mn</th>
+                      <th title="Nominal sum P">Pn <span className="pm-table-unit">(kN)</span></th>
+                      <th title="Nominal sum M">Mn <span className="pm-table-unit">(kN·m)</span></th>
                     </>
                   ) : null}
                 </tr>
