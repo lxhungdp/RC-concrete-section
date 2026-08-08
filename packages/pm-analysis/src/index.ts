@@ -1,6 +1,7 @@
 import {
   buildConcreteMesh,
   netConcreteCentroid,
+  rebarCenterInConcrete,
   type ConcreteMesh,
   type ConcreteMeshOptions,
   type ConcreteMeshReport,
@@ -9,6 +10,7 @@ import {
 } from '@pm/geometry'
 import {
   compileMaterialStore,
+  materialStoreIssues,
   concreteModelSupportIssue,
   IMPLEMENTED_STRAIN_DOMAIN,
   strainDomainMismatch,
@@ -19,6 +21,7 @@ import {
 } from '@pm/materials'
 import {
   buildResistanceMaterialSets,
+  designMaterialApplicabilityIssues,
   cloneDesignBasis,
   createDefaultDesignBasis,
   designBasisRequiresOverrideReason,
@@ -41,6 +44,12 @@ import {
   type AnalysisStationCriterion,
   type LoadCombination
 } from '@pm/project'
+import {
+  FIXED_GRID_SCREENING_RELATIVE_UNCERTAINTY,
+  classifyUtilization,
+  type AdequacyStatus,
+  type UtilizationInterval
+} from '@pm/results'
 
 /**
  * Typed fatal input errors (`docs/08` §5 fail-closed). The kernel must never substitute a plausible
@@ -55,6 +64,7 @@ export type AnalysisErrorCode =
   | 'INVALID_ANALYSIS_OPTIONS'
   | 'MESH_NOT_VERIFIED'
   | 'INVALID_MATERIAL'
+  | 'INVALID_REBAR'
 
 export class AnalysisInputError extends Error {
   readonly code: AnalysisErrorCode
@@ -588,6 +598,10 @@ export type LoadcaseQuickCheckResult = {
   proportionalUtilization: number | null
   fixedPUtilization: number | null
   adequate: boolean | null
+  /** Three-state screening verdict; fixed-grid cases near UR=1 are deliberately indeterminate. */
+  adequacy: AdequacyStatus
+  /** Utilization interval implied by the active surface's sampling evidence. */
+  utilizationInterval: UtilizationInterval
   capacityPoint: Resultant | null
   resistance: DesignResistanceTrace | null
   contourPoint: PreviewMomentPlanePoint | null
@@ -929,6 +943,14 @@ const resolveAnalysisMaterials = (
   materialStore: MaterialStore,
   rebars: GeometryInputRebarView[]
 ): AnalysisMaterials => {
+  const materialIssues = materialStoreIssues(materialStore)
+  if (materialIssues.length > 0) {
+    throw new AnalysisInputError(
+      'INVALID_MATERIAL',
+      `Material definitions are not physically admissible: ${materialIssues.map((issue) => `${issue.path} ${issue.message}`).join('; ')}`,
+      { issues: materialIssues }
+    )
+  }
   // Blocking here, not only in the material selector: an imported project can carry a model the
   // selector no longer offers, and it would otherwise reach the evaluator unchallenged.
   const unsupported = concreteModelSupportIssue(materialStore.concrete)
@@ -1047,6 +1069,14 @@ export const prepareAnalysisFromMesh = (
   origin: AnalysisOrigin = originFromMesh(mesh)
 ): PreparedAnalysis => {
   assertUsableMesh(mesh)
+  const invalidRebars = rebars.filter((bar) => !rebarCenterInConcrete(bar, section))
+  if (invalidRebars.length > 0) {
+    throw new AnalysisInputError(
+      'INVALID_REBAR',
+      `Rebar ${invalidRebars.map((bar) => bar.id).join(', ')} has a centre outside the concrete or inside a void.`,
+      { rebarIds: invalidRebars.map((bar) => bar.id) }
+    )
+  }
   const materials = resolveAnalysisMaterials(materialStore, rebars)
   const concreteFibers = concreteFibersFromMesh(mesh, origin)
   const rebarFibers = buildRebarFibers(rebars, origin, materials, materialStore.defaults.steelMaterialId)
@@ -3138,6 +3168,14 @@ export const buildDesignPreviewSurfaceFromPrepared = (
   designBasis: DesignBasis,
   analysisOptions: AnalysisOptions = createDefaultAnalysisOptions()
 ): PreviewSurface => {
+  const applicabilityIssues = designMaterialApplicabilityIssues(sourceMaterials, designBasis)
+  if (applicabilityIssues.length > 0) {
+    throw new AnalysisInputError(
+      'INVALID_MATERIAL',
+      applicabilityIssues.map((issue) => `${issue.message} ${issue.reference}.`).join(' '),
+      { issues: applicabilityIssues }
+    )
+  }
   const materialSets = buildResistanceMaterialSets(sourceMaterials, designBasis)
   const referencePrepared =
     JSON.stringify(materialSets.referenceMaterials) === JSON.stringify(statePrepared.materialStore)
@@ -3802,13 +3840,25 @@ const checkRawLoadcaseUtilizationFromSurface = (
       : proportional.lambda === Number.POSITIVE_INFINITY
         ? 0
         : 1 / proportional.lambda
+  const adaptive = surface.analysisOptions.samplingMode === 'adaptive'
+  const adaptiveConverged = surface.directionError.withinTolerance && surface.stationError.withinTolerance
+  const adaptiveUncertainty = adaptiveConverged
+    ? Math.max(surface.directionError.maxRelativeComponent, surface.stationError.maxRelative)
+    : null
+  const classification = classifyUtilization(
+    proportionalUtilization,
+    adaptive ? adaptiveUncertainty : FIXED_GRID_SCREENING_RELATIVE_UNCERTAINTY,
+    adaptive ? 'adaptive-sampling-estimate' : 'fixed-grid-screening-margin'
+  )
   return {
     loadcaseId: loadcase.id,
     demand: loadcase,
     utilization: proportionalUtilization,
     proportionalUtilization,
     fixedPUtilization: fixedP.utilization,
-    adequate: proportionalUtilization == null ? null : proportionalUtilization <= 1 + 1e-9,
+    adequate: classification.status === 'indeterminate' ? null : classification.status === 'adequate',
+    adequacy: classification.status,
+    utilizationInterval: classification.interval,
     capacityPoint: proportional?.point ?? null,
     resistance: proportional?.resistance ?? null,
     contourPoint: fixedP.point,

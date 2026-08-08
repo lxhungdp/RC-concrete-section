@@ -21,6 +21,8 @@
       "@pm/materials/*": ["./packages/pm-materials/src/*"],
       "@pm/design": ["./packages/pm-design/src"],
       "@pm/design/*": ["./packages/pm-design/src/*"],
+      "@pm/results": ["./packages/pm-results/src"],
+      "@pm/results/*": ["./packages/pm-results/src/*"],
       "@pm/project": ["./packages/pm-project/src"],
       "@pm/project/*": ["./packages/pm-project/src/*"],
       "@pm/stations": ["./packages/pm-stations/src"],

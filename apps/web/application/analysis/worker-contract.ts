@@ -71,10 +71,30 @@ export type CheckLoadcasesPayload = {
   loadcases: LoadCombination[]
 }
 
+/** Worker-only handle. Public callers keep using the strongly typed payloads above. */
+export type WorkerSurfaceReference = {
+  surfaceId?: string
+  /** Sent only when the worker does not own this surface (for example after worker restart). */
+  surface?: PreviewSurface
+}
+
+export type CheckLoadcasesWorkerPayload = WorkerSurfaceReference & {
+  loadcases: LoadCombination[]
+}
+
+export type CheckLoadcaseWorkerPayload = Omit<CheckLoadcasePayload, 'surface'> & WorkerSurfaceReference & {
+  analysisOptions: CalculationAnalysisOptions
+}
+
+export type BuildSurfaceWorkerResult = {
+  surfaceId: string
+  surface: PreviewSurface
+}
+
 export type AnalysisWorkerJob =
   | { type: 'buildSurface'; jobId: string; payload: BuildSurfacePayload }
-  | { type: 'checkLoadcases'; jobId: string; payload: CheckLoadcasesPayload }
-  | { type: 'checkLoadcase'; jobId: string; payload: CheckLoadcasePayload }
+  | { type: 'checkLoadcases'; jobId: string; payload: CheckLoadcasesWorkerPayload }
+  | { type: 'checkLoadcase'; jobId: string; payload: CheckLoadcaseWorkerPayload }
   | { type: 'buildExactDirection'; jobId: string; payload: BuildExactDirectionPayload }
   | { type: 'buildSectionMesh'; jobId: string; payload: BuildSectionMeshPayload }
   | { type: 'exportMeshExcel'; jobId: string; payload: MeshAuditExportPayload }
@@ -87,7 +107,7 @@ export type AnalysisWorkerJob =
 export type AnalysisWorkerRequest = AnalysisWorkerJob
 
 export type AnalysisWorkerResultMap = {
-  buildSurface: PreviewSurface
+  buildSurface: BuildSurfaceWorkerResult
   checkLoadcases: LoadcaseQuickCheckResult[]
   checkLoadcase: InversePreviewResult
   buildExactDirection: ExactDirectionCurve

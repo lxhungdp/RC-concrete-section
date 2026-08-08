@@ -149,6 +149,20 @@ centroid, and deducts displaced concrete for bars inside the active block. Steel
 compatible with `c` and the extreme compression strain; steel stress comes from the registered
 steel law.
 
+For KDS Table 4.1-2, the implementation resolves an intermediate strength `fck` by piecewise linear
+interpolation between its adjacent tabulated strengths. For either parameter `x` (`eta`, `beta1`,
+`eps_cu`, or `eps_c0`):
+
+```text
+q = (fck - f_i) / (f_(i+1) - f_i)
+x(fck) = x_i + q (x_(i+1) - x_i)
+```
+
+At and below 40 MPa the first-row values apply. Values above 90 MPa are rejected unless the
+applicable route provides a documented project-specific override. Piecewise interpolation is an
+explicit project interpretation for non-tabulated strengths; the KDS provenance records the table,
+and tests pin every node plus representative intermediate strengths.
+
 The forward evaluator returns `c`, `a`, `beta1`, block polygon, strain plane, concrete/steel/
 displaced-concrete ledgers, and total resultants. The inverse pipeline brackets the physical depth,
 uses robust scalar root solving for a fixed direction or axial level, and refines the angular

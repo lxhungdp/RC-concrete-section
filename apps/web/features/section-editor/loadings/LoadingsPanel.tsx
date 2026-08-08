@@ -2,14 +2,15 @@
 
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Download, Plus, Upload, X } from 'lucide-react'
+import type { LoadcaseQuickCheckResult } from '@pm/analysis'
 import { createLoadCombination, type LoadCombination, type LoadingsInput } from '@pm/project'
 import { downloadLoadcaseWorkbook, importLoadcaseWorkbook } from './loadcase-xlsx'
 
 type Props = {
   input: LoadingsInput
   selectedLoadcaseId: number | null
-  /** Utilization ratio by loadcase id when a capacity check has been run. */
-  utilizationById?: Record<number, number | null>
+  /** Complete quick-check evidence by loadcase id, including the three-state verdict. */
+  checksById?: Record<number, LoadcaseQuickCheckResult>
   onSelectLoadcase: (id: number | null) => void
   onActivateLoadcase?: (loadcase: LoadCombination) => void
   onChange: (input: LoadingsInput) => void
@@ -73,7 +74,7 @@ const SpreadsheetInput = ({ value, ariaLabel, numeric = false, onCommit }: Sprea
 export function LoadingsPanel({
   input,
   selectedLoadcaseId,
-  utilizationById = {},
+  checksById = {},
   onSelectLoadcase,
   onActivateLoadcase,
   onChange,
@@ -223,10 +224,14 @@ export function LoadingsPanel({
               </tr>
             )}
             {combinations.map((item) => {
-              const ur = utilizationById[item.id]
+              const check = checksById[item.id]
+              const ur = check?.utilization
               const hasUr = typeof ur === 'number' && Number.isFinite(ur)
-              const pass = hasUr && ur <= 1
-              const fail = hasUr && ur > 1
+              const pass = check?.adequacy === 'adequate'
+              const fail = check?.adequacy === 'inadequate'
+              const indeterminate = check?.adequacy === 'indeterminate'
+              const statusLabel = pass ? 'OK' : fail ? 'NG' : indeterminate ? 'CHECK' : ''
+              const interval = check?.utilizationInterval
 
               return (
                 <tr
@@ -268,15 +273,22 @@ export function LoadingsPanel({
                   <td className="pm-col-ur">
                     <span
                       className={`pm-loadcase-ur${pass ? ' is-pass' : ''}${fail ? ' is-fail' : ''}${
-                        !hasUr ? ' is-pending' : ''
+                        indeterminate ? ' is-indeterminate' : ''
+                      }${
+                        !check ? ' is-pending' : ''
                       }`}
                       title={
                         hasUr
-                          ? `UR = ${formatUr(ur)} — ${pass ? 'OK (≤ 1)' : 'NG (> 1)'}`
+                          ? `UR = ${formatUr(ur)} — ${statusLabel}${
+                            interval?.lower != null && interval.upper != null
+                              ? `; screening interval ${formatUr(interval.lower)}–${formatUr(interval.upper)}`
+                              : ''
+                          }${indeterminate ? '; rerun with Adaptive sampling for a decision' : ''}`
                           : 'Run check by selecting this loadcase'
                       }
                     >
-                      {hasUr ? formatUr(ur) : '—'}
+                      <span>{hasUr ? formatUr(ur) : '—'}</span>
+                      {statusLabel && <small>{statusLabel}</small>}
                     </span>
                   </td>
                   <td className="pm-col-action">

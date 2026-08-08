@@ -100,6 +100,52 @@ test('both KDS mechanics round-trip the independently selected Appendix material
   }
 })
 
+test('project parser rejects nonphysical material ordinates and rebar diameter', () => {
+  const base = createProjectDocument({
+    geometry: createEmptyGeometryInput({ id: 1, name: 'Invalid input gate' }),
+    materials: createDefaultMaterialStore()
+  })
+  const negativeStrength = structuredClone(base)
+  negativeStrength.inputs.materials.concrete.fck = -30
+  const strengthResult = parseProjectDocument(negativeStrength)
+  assert.equal(strengthResult.ok, false)
+  if (!strengthResult.ok) assert.match(strengthResult.error, /fck must be positive/)
+
+  const duplicateCurve = structuredClone(base)
+  duplicateCurve.inputs.materials.steel[0].stressStrain = {
+    type: 'user-curve',
+    interpolation: 'linear',
+    points: [{ strain: 0, stress: 0 }, { strain: 0, stress: 100 }]
+  }
+  const curveResult = parseProjectDocument(duplicateCurve)
+  assert.equal(curveResult.ok, false)
+  if (!curveResult.ok) assert.match(curveResult.error, /duplicate strain/)
+
+  const invalidBar = structuredClone(base)
+  invalidBar.inputs.geometry.rebars.push({ id: 1, dia: 0, x: 0, y: 0, steelMaterialId: 1 })
+  const barResult = parseProjectDocument(invalidBar)
+  assert.equal(barResult.ok, false)
+  if (!barResult.ok) assert.match(barResult.error, /dia must be positive/)
+})
+
+test('KDS parser enforces reinforcement and concrete applicability limits', () => {
+  const base = createProjectDocument({
+    geometry: createEmptyGeometryInput({ id: 1, name: 'KDS applicability gate' }),
+    materials: createDefaultMaterialStore()
+  })
+  const highStrengthSteel = structuredClone(base)
+  highStrengthSteel.inputs.materials.steel[0].fy = 601
+  const steelResult = parseProjectDocument(highStrengthSteel)
+  assert.equal(steelResult.ok, false)
+  if (!steelResult.ok) assert.match(steelResult.error, /must not exceed 600 MPa/)
+
+  const highStrengthConcrete = structuredClone(base)
+  highStrengthConcrete.inputs.materials.concrete.fck = 91
+  const concreteResult = parseProjectDocument(highStrengthConcrete)
+  assert.equal(concreteResult.ok, false)
+  if (!concreteResult.ok) assert.match(concreteResult.error, /stop at fck = 90 MPa/)
+})
+
 test('legacy EN scalar partial factors migrate to the generic factor-expression schema', () => {
   const profileId = 'en-1992-1-1-2004-stress-strain' as const
   const document = createProjectDocument({

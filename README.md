@@ -1,5 +1,10 @@
 # P-M Column Designer
 
+> **Stage 1 product boundary: Section Resistance Only.** Results are cross-section `P-Mx-My`
+> resistance/checks. They are not a complete member design and exclude slenderness, second-order
+> effects, stability/buckling, shear, torsion, detailing and serviceability unless a later stage
+> explicitly adds and verifies those capabilities.
+
 Modular TypeScript application for reinforced-concrete column-section P-M-M analysis and design
 preview.
 

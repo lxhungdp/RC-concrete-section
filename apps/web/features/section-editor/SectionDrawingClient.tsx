@@ -2203,6 +2203,7 @@ export function SectionDrawingClient() {
           <span className="pm-brand-mark">PM</span>
           <div>
             <h1>P-M Column Designer</h1>
+            <p>Stage 1 · Section resistance only</p>
           </div>
         </div>
 
@@ -2999,9 +3000,7 @@ export function SectionDrawingClient() {
             <LoadingsPanel
               input={loadingsInput}
               selectedLoadcaseId={selectedLoadcaseId}
-              utilizationById={Object.fromEntries(
-                Object.entries(quickChecksById).map(([id, result]) => [Number(id), result.utilization])
-              )}
+              checksById={quickChecksById}
               onSelectLoadcase={(id) => {
                 if (id == null) {
                   setSelectedLoadcaseId(null)

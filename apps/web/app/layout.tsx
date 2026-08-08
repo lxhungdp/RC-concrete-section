@@ -5,7 +5,7 @@ import './anchor-reference-theme.css'
 
 export const metadata: Metadata = {
   title: 'P-M Column Designer',
-  description: 'Geometry-first P-M-M column section design platform'
+  description: 'Stage 1 P-M-M reinforced-concrete section-resistance analysis; member stability is outside scope.'
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

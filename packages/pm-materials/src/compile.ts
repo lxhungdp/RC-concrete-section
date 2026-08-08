@@ -29,7 +29,7 @@ export const compileConcreteMaterial = (material: ConcreteMaterial): CompiledMat
     case 'user-curve':
       return compileConcreteUserCurve(material)
     default:
-      return compileKdsParabolicConcrete(material)
+      throw new Error(`Unsupported concrete stress-strain model: ${String((material.stressStrain as { type?: unknown }).type)}`)
   }
 }
 
@@ -40,8 +40,9 @@ export const compileSteelMaterial = (material: SteelMaterial): CompiledMaterial 
     case 'user-curve':
       return compileSteelUserCurve(material)
     case 'elastic-perfectly-plastic':
-    default:
       return compileElasticPerfectlyPlasticSteel(material)
+    default:
+      throw new Error(`Unsupported steel stress-strain model: ${String((material.stressStrain as { type?: unknown }).type)}`)
   }
 }
 

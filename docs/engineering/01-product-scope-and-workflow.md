@@ -39,6 +39,14 @@ It must not reuse the production surface interpolation/search logic as its oracl
 
 ## 3. Product target scope
 
+### Current release boundary — Stage 1
+
+The current application is **Stage 1: Section Resistance Only**. It evaluates short-section axial
+force and biaxial bending resistance and checks factored section actions against that resistance.
+It must not be described, labelled, or reported as complete column/member design. The target items
+below remain the governing direction, but only implemented and verified Stage 1 capabilities may be
+claimed by the executable product.
+
 This section is the accepted-product target, not a statement that every item is available in the
 current preview. The implemented boundary is summarized in section 5 and in
 [`../development/06-current-state-and-roadmap.md`](../development/06-current-state-and-roadmap.md).

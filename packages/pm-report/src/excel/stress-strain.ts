@@ -591,7 +591,10 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     ['Loadcase', input.loadcase?.name ?? 'None', '', ''],
     ['3D proportional UR', designCheck?.proportionalUtilization ?? 'n/a', '-', 'Governing reported section utilization'],
     ['Fixed-P UR', designCheck?.fixedPUtilization ?? 'n/a', '-', 'Secondary diagnostic at Pu'],
-    ['Verdict', designCheck?.adequate == null ? 'n/a' : designCheck.adequate ? 'ADEQUATE' : 'NOT ADEQUATE', '', 'ADEQUATE requires 3D UR ≤ 1.0'],
+    ['Verdict', designCheck?.adequacy?.toUpperCase() ?? 'n/a', '', 'Fixed-grid checks use ADEQUATE / INDETERMINATE / INADEQUATE screening; indeterminate requires Adaptive sampling'],
+    ['UR screening interval', designCheck?.utilizationInterval.lower == null || designCheck.utilizationInterval.upper == null
+      ? 'n/a'
+      : `${designCheck.utilizationInterval.lower.toFixed(4)} – ${designCheck.utilizationInterval.upper.toFixed(4)}`, '', designCheck?.utilizationInterval.evidence ?? ''],
     ['Capacity P', designCheck?.capacityPoint ? designCheck.capacityPoint.P / 1e3 : 'n/a', 'kN', 'Demand-ray intersection'],
     ['Capacity Mx', designCheck?.capacityPoint ? designCheck.capacityPoint.Mx / 1e6 : 'n/a', 'kN·m', 'Demand-ray intersection'],
     ['Capacity My', designCheck?.capacityPoint ? designCheck.capacityPoint.My / 1e6 : 'n/a', 'kN·m', 'Demand-ray intersection'],

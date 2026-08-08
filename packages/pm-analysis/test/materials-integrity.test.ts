@@ -55,6 +55,23 @@ test('the surface build rejects a missing steel material too', () => {
   assert.throws(() => buildPreviewSurface(section, orphaned, materials), AnalysisInputError)
 })
 
+test('stress-strain analysis rejects a rebar outside concrete', () => {
+  const outside = rebars.map((bar, index) => index === 0 ? { ...bar, x: 900, y: 0 } : bar)
+  const thrown = captureThrow(() => evaluatePreviewState(section, outside, materials, state))
+
+  assert.ok(thrown instanceof AnalysisInputError, `expected AnalysisInputError, got ${thrown}`)
+  assert.equal(thrown.code, 'INVALID_REBAR')
+  assert.deepEqual(thrown.detail.rebarIds, [rebars[0].id])
+})
+
+test('stress-strain analysis rejects a rebar in a concrete void', () => {
+  const inVoid = rebars.map((bar, index) => index === 0 ? { ...bar, x: -300, y: 0 } : bar)
+  const thrown = captureThrow(() => evaluatePreviewState(section, inVoid, materials, state))
+
+  assert.ok(thrown instanceof AnalysisInputError, `expected AnalysisInputError, got ${thrown}`)
+  assert.equal(thrown.code, 'INVALID_REBAR')
+})
+
 test('an undeclared steelMaterialId still resolves through the store default', () => {
   const unassigned = rebars.map(({ steelMaterialId: _ignored, ...bar }) => bar)
   const ledger = evaluatePreviewState(section, unassigned, materials, state)
@@ -74,4 +91,14 @@ test('the ACI Whitney block is blocked at the kernel, not only in the selector',
   assert.ok(thrown instanceof AnalysisInputError, `expected AnalysisInputError, got ${thrown}`)
   assert.equal(thrown.code, 'UNSUPPORTED_CONCRETE_MODEL')
   assert.match(thrown.message, /β1|beta1/i)
+})
+
+test('the kernel rejects nonphysical material objects even when TypeScript shape is valid', () => {
+  const invalid: MaterialStore = structuredClone(materials)
+  invalid.steel[0].fy = -400
+  const thrown = captureThrow(() => evaluatePreviewState(section, rebars, invalid, state))
+
+  assert.ok(thrown instanceof AnalysisInputError, `expected AnalysisInputError, got ${thrown}`)
+  assert.equal(thrown.code, 'INVALID_MATERIAL')
+  assert.match(thrown.message, /fy must be positive/)
 })

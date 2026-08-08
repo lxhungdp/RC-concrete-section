@@ -76,8 +76,15 @@ Classification uses a numerical uncertainty interval and approved margin:
 ## 4. Accepted-product Results contract
 
 The current Results workspace implements preview plots, load-combination editing/checks, and
-model-specific field views. It does not yet satisfy the immutable accepted-result identity,
-uncertainty interval, result history, or release gates required by this section.
+model-specific field views. Quick checks now expose an uncertainty interval and three-state
+classification. It does not yet satisfy the immutable accepted-result identity, result history, or
+release gates required by this section.
+
+For Fixed 27 x 36 mode, the interval uses a 2% regression screening margin derived from the current
+dense-grid comparison matrix. This is not a formal error bound: any interval crossing `UR = 1` is
+`indeterminate` and the UI instructs the user to rerun with Adaptive sampling. Adaptive mode uses
+its returned station/direction error evidence and is indeterminate if either refinement did not
+converge.
 
 The Results module consumes an immutable result DTO; it does not recalculate material factors or
 capacity. It provides:

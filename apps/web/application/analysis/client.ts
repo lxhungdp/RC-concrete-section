@@ -49,6 +49,7 @@ import type {
   BuildExactDirectionPayload,
   BuildSectionMeshPayload,
   BuildSurfacePayload,
+  BuildSurfaceWorkerResult,
   CheckLoadcasePayload,
   CheckLoadcasesPayload,
   MeshAuditExportPayload
@@ -74,7 +75,9 @@ type PendingJob = {
 let worker: Worker | null = null
 let workerFailed = false
 let sequence = 0
+let workerGeneration = 0
 const pending = new Map<string, PendingJob>()
+const workerSurfaceHandles = new WeakMap<PreviewSurface, { surfaceId: string; generation: number }>()
 let fallbackPreparedCache: { key: string; value: PreparedAnalysis } | null = null
 let fallbackBlockCache: { key: string; value: PreparedBlockAnalysis } | null = null
 let pdfUnicodeFontPromise: Promise<Uint8Array> | null = null
@@ -133,6 +136,7 @@ const getWorker = () => {
 
   try {
     worker = new Worker(new URL('../../workers/pm-analysis.worker.ts', import.meta.url), { type: 'module' })
+    workerGeneration += 1
     worker.onmessage = (event: MessageEvent<AnalysisWorkerResponse>) => {
       const response = event.data
       settle(response.jobId, (job) => {
@@ -212,7 +216,7 @@ const runWorkerOrFallback = async <T>(
 }
 
 export const buildPreviewSurfaceAsync = (payload: BuildSurfacePayload, signal?: AbortSignal): Promise<PreviewSurface> =>
-  runWorkerOrFallback<PreviewSurface>(
+  runWorkerOrFallback<BuildSurfaceWorkerResult>(
     { type: 'buildSurface', payload },
     () => {
       if (isEquivalentBlockAnalysisOptions(payload.analysisOptions)) {
@@ -221,7 +225,7 @@ export const buildPreviewSurfaceAsync = (payload: BuildSurfacePayload, signal?: 
           payload.analysisOptions
         )
         result.calculationProfileId = payload.calculationProfileId
-        return result
+        return { surfaceId: 'main-thread-fallback', surface: result }
       }
       const result = buildDesignPreviewSurfaceFromPrepared(
         fallbackPreparedFor({ ...payload, analysisOptions: payload.analysisOptions }),
@@ -230,10 +234,24 @@ export const buildPreviewSurfaceAsync = (payload: BuildSurfacePayload, signal?: 
         payload.analysisOptions
       )
       result.calculationProfileId = payload.calculationProfileId
-      return result
+      return { surfaceId: 'main-thread-fallback', surface: result }
     },
     signal
-  )
+  ).then((result) => {
+    if (result.surfaceId !== 'main-thread-fallback') {
+      workerSurfaceHandles.set(result.surface, { surfaceId: result.surfaceId, generation: workerGeneration })
+    }
+    return result.surface
+  })
+
+const workerSurfaceReference = (surface: PreviewSurface) => {
+  // Ensure a lazily recreated worker advances the generation before testing the handle.
+  const instance = getWorker()
+  const handle = workerSurfaceHandles.get(surface)
+  return instance && handle?.generation === workerGeneration
+    ? { surfaceId: handle.surfaceId }
+    : { surface }
+}
 
 export const buildExactDirectionCurveAsync = (
   payload: BuildExactDirectionPayload,
@@ -265,7 +283,10 @@ export const checkLoadcasesAsync = (
   signal?: AbortSignal
 ): Promise<LoadcaseQuickCheckResult[]> =>
   runWorkerOrFallback<LoadcaseQuickCheckResult[]>(
-    { type: 'checkLoadcases', payload },
+    {
+      type: 'checkLoadcases',
+      payload: { ...workerSurfaceReference(payload.surface), loadcases: payload.loadcases }
+    },
     () => checkLoadcasesUtilizationFromSurface(payload.surface, payload.loadcases),
     signal
   )
@@ -275,7 +296,15 @@ export const checkLoadcaseAsync = (
   signal?: AbortSignal
 ): Promise<InversePreviewResult> =>
   runWorkerOrFallback<InversePreviewResult>(
-    { type: 'checkLoadcase', payload },
+    {
+      type: 'checkLoadcase',
+      payload: {
+        ...payload,
+        surface: undefined,
+        ...workerSurfaceReference(payload.surface),
+        analysisOptions: payload.surface.analysisOptions
+      }
+    },
     () => {
       if (isEquivalentBlockAnalysisOptions(payload.surface.analysisOptions)) {
         return solveEquivalentBlockDemandFromPrepared(

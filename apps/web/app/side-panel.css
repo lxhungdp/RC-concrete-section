@@ -1148,6 +1148,10 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   color: var(--sp-danger);
 }
 
+.pm-side-panel .pm-loadcase-ur.is-indeterminate {
+  color: var(--sp-warn);
+}
+
 /* ---------------------------------------------------------------------------
    Metric and status readouts
    --------------------------------------------------------------------------- */

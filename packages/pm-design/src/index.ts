@@ -737,6 +737,56 @@ export const assertValidDesignBasis = (basis: DesignBasis) => {
   if (issues.length > 0) throw new Error(issues.join(' '))
 }
 
+export type DesignMaterialApplicabilityIssue = {
+  path: string
+  message: string
+  reference: string
+}
+
+/**
+ * Material limits that belong to the selected design standard rather than to constitutive-law
+ * physics. Keeping this separate from `@pm/materials` lets custom calculations use broader,
+ * explicitly user-owned definitions without presenting them as KDS-compliant.
+ */
+export const designMaterialApplicabilityIssues = (
+  materials: MaterialStore,
+  basis: DesignBasis
+): DesignMaterialApplicabilityIssue[] => {
+  if (!basis.profileId.startsWith('kds-')) return []
+  const issues: DesignMaterialApplicabilityIssue[] = []
+  materials.steel.forEach((steel, index) => {
+    if (steel.fy > 600) {
+      issues.push({
+        path: `materials.steel[${index}].fy`,
+        message: `KDS non-prestressing reinforcement yield strength must not exceed 600 MPa (received ${steel.fy} MPa).`,
+        reference: 'KDS 14 20 20:2022, 4.1.1'
+      })
+    }
+  })
+  if (materials.concrete.fck > 90) {
+    const documentedUserModel =
+      materials.concrete.stressStrain.type === 'user-curve' &&
+      basis.materialModelModified === true &&
+      basis.modified === true &&
+      basis.overrideReason.trim().length > 0
+    if (!documentedUserModel) {
+      issues.push({
+        path: 'materials.concrete.fck',
+        message: `KDS table parameters stop at fck = 90 MPa (received ${materials.concrete.fck} MPa). A documented user-defined stress-strain model and modified-design basis are required above this limit.`,
+        reference: 'KDS 14 20 20:2022, 4.1.1(8), Table 4.1-2'
+      })
+    }
+  }
+  return issues
+}
+
+export const assertDesignMaterialApplicability = (materials: MaterialStore, basis: DesignBasis) => {
+  const issues = designMaterialApplicabilityIssues(materials, basis)
+  if (issues.length > 0) {
+    throw new Error(issues.map((issue) => `${issue.path}: ${issue.message} [${issue.reference}]`).join(' '))
+  }
+}
+
 export const designBasisLabel = (basis: DesignBasis) =>
   `${basis.identity.document} — ${basis.format === 'globalResultantFactor' ? 'Global strength reduction' : 'Design material strengths'}`
 

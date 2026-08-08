@@ -1,6 +1,6 @@
 # Current-State Assessment and Roadmap
 
-Assessment date: **2026-08-04**.
+Assessment date: **2026-08-08**.
 
 This file describes implemented capability, not certification. Exact model formulas and defaults are
 in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-models-defaults-and-workflows.md).
@@ -12,17 +12,17 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 | Project | every persisted calculation contract is v1; canonical exports contain profile, geometry, materials, factored loadings, model-specific options, and DesignBasis; exact canonical round trip; documented parser-v1 defaults | accepted-result artifact and signed release metadata |
 | Profile selection | one Materials selection atomically binds KDS stress-strain, KDS block, ACI block, or either `Custom` mechanics and defaults; the profile table is the single owner of mechanics/material-standard/resistance-profile coherence | add only edition-scoped profiles with independent review evidence |
 | Geometry | multiple solids/holes, rebars, exact properties, clipping, triangle/quadrature mesh | complete production topology/cover acceptance UX |
-| Materials | persisted concrete/steel definitions, compiled stress/tangent laws, material support gates | finish independent curve verification for every declared scope |
+| Materials | persisted concrete/steel definitions, shared physics validator, compiled stress/tangent laws, material support gates | finish independent curve verification for every declared scope |
 | Stress-strain kernel | prepared mesh, shared 27-state default, 36 fixed directions, full fields, inverse Newton | accepted-result numerical-uncertainty gate and larger independent oracle set |
 | Equivalent-block kernel | shared fixed 27-state schedule, standard-independent exact clipping, forward evaluator, exact-refined inverse solvers, rupture/admissibility, block field | independent clause calculations and additional commercial cross-checks |
 | KDS block adapter | KDS 14 20 20 parameter table, `a=beta1 c`, block stress, KDS phi transition and axial cap | named structural-code review and release status above draft |
 | ACI block adapter | ACI 318-19(22) beta1, Whitney stress, phi transition and axial cap | named structural-code review and release status above draft |
 | Custom block adapter | user-declared beta1/block stress/epsCu, either transition rule shape, elastic-perfectly-plastic, bilinear or tabulated steel; unit-tested to reproduce the ACI and KDS adapters exactly when given their parameters | none — it is `user-defined` by construction and is never promoted |
 | Resistance | Nominal/Design separation, global-factor and design-material formats, single ledger scaling, axial cap | accepted-result/profile certification workflow |
-| Demand | explicit `factoredULS`, governing 3D proportional ray, secondary fixed-P diagnostic | immutable accepted check artifact and batch governance |
+| Demand | explicit `factoredULS`, governing 3D proportional ray, secondary fixed-P diagnostic, three-state UR screening | immutable accepted check artifact and batch governance |
 | Results | fixed-grid 3D/fixed-P, direct fixed/exact vertical meridians, model-specific fields/evidence | final accepted-result-only presentation rules |
 | Report/export | stress-strain and equivalent-block formula-audited result workbooks; stress-strain mesh Excel/DXF; a format-neutral `ReportModel` and a deterministic, vector, watermarked preview PDF with per-combination detail selection | immutable accepted result, **released** PDF, and cryptographic result identity |
-| Performance | worker protocol, prepared-analysis and block Design-surface caches, mesh/sampling/pipeline benchmarks | memory budgets, larger batches, cooperative cancellation checkpoints |
+| Performance | production-bundled worker, prepared-analysis/block surface caches, worker-owned surface handles for loadcase checks, mesh/sampling/pipeline benchmarks | compact plotting DTO, memory budgets, larger batches, cooperative cancellation checkpoints |
 
 ## 2. Closed hazards
 
@@ -30,6 +30,11 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
   fail closed, while the ACI calculation profile routes to the implemented equivalent-block adapter.
 - Missing steel references, empty concrete, mesh resource excess, and failed mesh self-checks are
   typed fatal errors.
+- Both mechanics reject nonphysical material definitions. Stress-strain preparation rejects a bar
+  whose centre is outside concrete or inside a void, matching the equivalent-block gate. Full
+  cover/bar-disc containment remains a separate geometry/detailing rule.
+- KDS runtime and project parsing reject nonprestressing `fy > 600 MPa`; KDS table models stop at
+  `fck = 90 MPa` unless a documented modified user stress-strain model is selected.
 - Every mechanics/profile now reads the same `unified-27-v2` station schedule and uses 36 fixed
   directions. Production surface construction performs no station/direction midpoint probes.
 - Automatic design-factor transition/event stations are disabled. Five fixed tensile-strain ratios
@@ -40,6 +45,12 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 - Nominal resistance, Design resistance, and factored Demand are different DTO stages and UI terms.
 - KDS `P0` is now a code reference point; the high-strength flexural surface closes on its
   eta-reduced physical compression limit, eliminating an unsupported interpolation band.
+- Fixed 27 x 36 checks use the `@pm/results` two-percent screening interval and expose adequate,
+  indeterminate, and inadequate states; Adaptive checks fail indeterminate without converged error
+  evidence.
+- Next production/dev builds use the Webpack worker pipeline because the current Turbopack route
+  emitted the worker TypeScript as media. Loadcase checks reuse a worker-owned surface handle rather
+  than cloning the multi-megabyte surface back to the worker.
 - Declared steel rupture strain is enforced in the block surface and inverse result; cap-face states
   are explicitly marked strain-unevaluated.
 - Failed exact block refinement is `mesh-fallback`, never reported as converged, and equilibrium
@@ -75,8 +86,12 @@ all four equivalent-block profiles, workbook export, schema parsing, and surface
    artifact with complete input and implementation hashes.
 2. **Profiles remain draft for release purposes.** Clause-level unit tests exist, but independent
    calculations and named discipline review are not complete.
-3. **Numerical uncertainty is not yet an acceptance gate.** Surfaces expose evidence, but the
-   product does not yet prevent report release after a missed tolerance or unresolved cap.
+3. **Numerical uncertainty is not yet a release gate.** Quick checks now classify uncertainty, but
+   the product does not yet prevent every preview report/export after a missed tolerance.
+4. **KDS Appendix biaxial minimum eccentricity needs clause sign-off.** The preview preserves a
+   nonzero resultant-moment direction and uses projected section depth. Equivalence to applying the
+   minimum independently about both principal axes, including every sign combination, has not been
+   established by independent discipline review.
 5. **Geometry/material verification matrix is incomplete.** More topology, high-strength,
    multi-material, and property-based cases are required.
 6. **Final report release is incomplete.** Both Excel workbooks and the PDF are audit previews. The

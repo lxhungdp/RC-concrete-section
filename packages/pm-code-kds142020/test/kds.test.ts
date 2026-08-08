@@ -231,3 +231,25 @@ test('KDS design surface is closed after the standard axial cap is applied', () 
   close(surface.axialCap!, model.axialCap(section))
   close(Math.max(...surface.points.map((point) => point.resultants.P)), model.axialCap(section))
 })
+
+test('KDS fck 90 design surface uses the lower eta=0.84 compression limit when it is below Pmax', () => {
+  const section = preparedSection()
+  const model = createKds142020Model({
+    concreteStrength: 90,
+    steel: { sd400: { elasticModulus: 200_000, yieldStress: 400 } },
+    transverseReinforcement: 'qualifying-spiral'
+  })
+  const physicalDesignLimit =
+    0.70 * model.physicalCompressionEndpoint(section).resultants.P
+  const pMax = model.axialCap(section)
+  assert.ok(physicalDesignLimit < pMax, `${physicalDesignLimit} should be lower than Pmax ${pMax}`)
+
+  const surface = model.buildDesignSurface(section, {
+    seedDirections: 24,
+    maxRefinementPasses: 0,
+    maxStationRefinementPasses: 0
+  })
+  const plottedMaximum = Math.max(...surface.points.map((point) => point.resultants.P))
+  close(plottedMaximum, Math.min(physicalDesignLimit, pMax))
+  assert.equal(surface.topology.closed, true)
+})

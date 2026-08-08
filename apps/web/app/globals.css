@@ -2588,7 +2588,10 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
 }
 
 .pm-loadcase-ur {
-  display: inline-block;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   min-width: 0;
   padding: 0;
   border: none;
@@ -2601,6 +2604,12 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   user-select: none;
 }
 
+.pm-loadcase-ur small {
+  font-size: 0.5rem;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
 .pm-loadcase-ur.is-pending {
   opacity: 0.45;
 }
@@ -2611,6 +2620,10 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
 
 .pm-loadcase-ur.is-fail {
   color: #b91c1c;
+}
+
+.pm-loadcase-ur.is-indeterminate {
+  color: #a16207;
 }
 
 .pm-result-status-list {

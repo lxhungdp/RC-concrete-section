@@ -67,6 +67,8 @@ let blockSurfaceCache: {
   key: string
   core: EquivalentBlockDesignSurface
 } | null = null
+let publishedSurfaceCache: { id: string; value: PreviewSurface } | null = null
+let publishedSurfaceSequence = 0
 let pdfUnicodeFontPromise: Promise<Uint8Array> | null = null
 
 const pdfUnicodeFont = () => {
@@ -117,6 +119,18 @@ const preparedBlockFor = (payload: Pick<BuildSurfacePayload,
   return value
 }
 
+const publishSurface = (surface: PreviewSurface) => {
+  const surfaceId = `surface-${++publishedSurfaceSequence}`
+  publishedSurfaceCache = { id: surfaceId, value: surface }
+  return { surfaceId, surface }
+}
+
+const referencedSurface = (reference: { surfaceId?: string; surface?: PreviewSurface }) => {
+  if (reference.surfaceId && publishedSurfaceCache?.id === reference.surfaceId) return publishedSurfaceCache.value
+  if (reference.surface) return reference.surface
+  throw new Error('The referenced analysis surface is no longer available in this worker.')
+}
+
 workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
   const request = event.data
 
@@ -135,7 +149,12 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
         )
         result.calculationProfileId = request.payload.calculationProfileId
         blockSurfaceCache = { key: blockSurfaceInputKey(request.payload), core }
-        workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
+        workerSelf.postMessage({
+          type: 'success',
+          jobId: request.jobId,
+          requestType: request.type,
+          result: publishSurface(result)
+        })
         return
       }
       const key = surfaceInputKey(
@@ -155,12 +174,18 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
       // Keep the worker-owned points array. A surface sent to and then back from the UI is cloned,
       // which would otherwise defeat the WeakMap topology cache on every inverse loadcase.
       surfaceCache = { key: designKey, value: result }
-      workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
+      workerSelf.postMessage({
+        type: 'success',
+        jobId: request.jobId,
+        requestType: request.type,
+        result: publishSurface(result)
+      })
       return
     }
 
     if (request.type === 'checkLoadcases') {
-      const { surface, loadcases } = request.payload
+      const surface = referencedSurface(request.payload)
+      const { loadcases } = request.payload
       const result = checkLoadcasesUtilizationFromSurface(surface, loadcases)
       workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
       return
@@ -186,14 +211,15 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
     }
 
     if (request.type === 'checkLoadcase') {
-      const { section, rebars, materialStore, loadcase, surface } = request.payload
-      if (isEquivalentBlockAnalysisOptions(surface.analysisOptions)) {
+      const { section, rebars, materialStore, loadcase, analysisOptions } = request.payload
+      const surface = referencedSurface(request.payload)
+      if (isEquivalentBlockAnalysisOptions(analysisOptions)) {
         const key = blockSurfaceInputKey({
           calculationProfileId: request.payload.calculationProfileId,
           section,
           rebars,
           materialStore,
-          analysisOptions: surface.analysisOptions,
+          analysisOptions,
           designBasis: request.payload.designBasis
         })
         const prepared = preparedBlockFor({
@@ -205,20 +231,20 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
         })
         const core = blockSurfaceCache?.key === key
           ? blockSurfaceCache.core
-          : buildEquivalentBlockDesignSurfaceFromPrepared(prepared, surface.analysisOptions)
+          : buildEquivalentBlockDesignSurfaceFromPrepared(prepared, analysisOptions)
         if (blockSurfaceCache?.key !== key) {
           blockSurfaceCache = { key, core }
         }
         const result = solveEquivalentBlockDemandFromPrepared(
           prepared,
-          surface.analysisOptions,
+          analysisOptions,
           loadcase,
           core
         )
         workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
         return
       }
-      const key = `${surfaceInputKey(section, rebars, materialStore, surface.analysisOptions)}:${JSON.stringify(request.payload.designBasis)}`
+      const key = `${surfaceInputKey(section, rebars, materialStore, analysisOptions)}:${JSON.stringify(request.payload.designBasis)}`
       const activeSurface = surfaceCache?.key === key ? surfaceCache.value : surface
       const contour = sliceActiveDesignPContour(activeSurface, loadcase.P)
       const designCheck = checkLoadcaseUtilizationFromSurface(
@@ -230,7 +256,7 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
           section,
           rebars,
           materialStore,
-          analysisOptions: surface.analysisOptions,
+          analysisOptions,
           designBasis: request.payload.designBasis
         }),
         loadcase,

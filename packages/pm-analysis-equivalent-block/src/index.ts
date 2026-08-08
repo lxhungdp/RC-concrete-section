@@ -28,6 +28,7 @@ import { createKds142020Model } from '@pm/code-kds142020'
 import {
   minimumEccentricityCandidates,
   minimumEccentricityMessage,
+  assertDesignMaterialApplicability,
   resolveMaterialFactorExpression,
   type DesignBasis,
   type GlobalStrengthReductionBasis
@@ -47,7 +48,7 @@ import {
   type PreparedEquivalentBlockSection
 } from '@pm/equivalent-block'
 import { netConcreteCentroid, type GeometryInputRebarView, type SectionGeometry } from '@pm/geometry'
-import { userBlockCompressionStress, type MaterialStore } from '@pm/materials'
+import { assertValidMaterialStore, userBlockCompressionStress, type MaterialStore } from '@pm/materials'
 import {
   cloneCalculationAnalysisOptions,
   isEquivalentBlockProfileId,
@@ -216,6 +217,8 @@ export const prepareBlockAnalysis = (
   if (!isEquivalentBlockProfileId(profileId)) {
     throw new Error(`The ${profileId} profile uses stress-strain integration and cannot be routed to the equivalent-block backend.`)
   }
+  assertValidMaterialStore(materialStore)
+  assertDesignMaterialApplicability(materialStore, designBasis)
   const origin = netConcreteCentroid(section)
   const preparedSection = prepareEquivalentBlockSection({
     solids: section.solids.map((solid) => ({

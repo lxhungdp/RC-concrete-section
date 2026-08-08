@@ -99,6 +99,11 @@ receives it through `codeAdjustedDemandOfCheck` so the reported equilibrium stat
 demand that was checked. Selecting with the inverse's own fixed-P ratio made the two mechanics
 report different principal axes for the same section.
 
+The nonzero-biaxial projected-depth rule is a documented implementation interpretation. It is not
+yet verified as equivalent to applying the Appendix minimum separately about both principal axes,
+including all moment-sign combinations. That clause interpretation is a release blocker for the
+Appendix route; the product must continue to label it `draft` preview.
+
 The maximum axial-compression operation is applied after the state factor. A row crossing is
 interpolated and clipped stations are projected onto radial rings between the axial centre and that
 crossing. This closes the horizontal cap face, including the pure-compression demand ray, while
@@ -112,14 +117,18 @@ The primary section utilization is a ray intersection in normalized `(P, Mx, My)
 ```text
 capacity = lambda * (Pu, Mux, Muy)
 UR_3D = 1 / lambda
-adequate when UR_3D <= 1
+classify the UR interval as adequate / indeterminate / inadequate
 ```
+
+Fixed 27 x 36 mode applies the `@pm/results` 2% screening margin. This value is a regression
+envelope, not a mathematical bound. Adaptive mode uses its station and direction error evidence.
+Only an interval wholly below `UR = 1` is adequate; only one wholly above it is inadequate.
 
 Normalization affects only numerical conditioning; the returned capacity is in physical units.
 The Fixed-P Mx-My intersection is retained as a secondary diagnostic and is reported separately as
 `fixedPUtilization`. It is not the governing value in the loadcase table.
 
-This is a **section-strength** check. It does not include member slenderness, second-order effects,
+This is the **Stage 1: Section Resistance Only** check. It does not include member slenderness, second-order effects,
 stability, load generation, accidental eccentricity, seismic detailing, or serviceability.
 
 ## 4. UI behavior

@@ -291,6 +291,12 @@ The calculation mechanics remains an independent selection. Both the stress-stra
 and the KDS equivalent-block adapter can use this Appendix resistance route; choosing the route does
 not silently switch the concrete model.
 
+For a nonzero biaxial moment, the current preview uses `h` projected along the resultant moment
+direction and preserves that direction while raising the resultant to the minimum. This is an
+explicit implementation interpretation, not a claim that KDS says to replace separate principal-axis
+minimum moments by a resultant-direction rule. Independent principal-axis application and sign
+handling remain a clause-review item before this Appendix route can leave `draft` status.
+
 The UI label shall be `KDS 14 20 20:2022 — Appendix material-factor method`, not merely `KDS`.
 
 ## 7. Other standard families

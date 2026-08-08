@@ -1,5 +1,5 @@
 import type { GeometryInput, GeometryInputOuter, GeometryInputRebar, Point2 } from '@pm/geometry'
-import { CONCRETE_MATERIAL_ID, DEFAULT_CONCRETE_DENSITY } from '@pm/materials'
+import { CONCRETE_MATERIAL_ID, DEFAULT_CONCRETE_DENSITY, assertValidMaterialStore } from '@pm/materials'
 import type { ConcreteMaterial, MaterialStore, SteelMaterial, StressStrainPoint } from '@pm/materials'
 import {
   ADAPTIVE_DEPTH_RATIOS,
@@ -14,6 +14,7 @@ import {
 import {
   DESIGN_BASIS_VERSION,
   assertValidDesignBasis,
+  assertDesignMaterialApplicability,
   createDefaultDesignBasis,
   createEn1992DesignBasis,
   createKdsAppendixDesignBasis,
@@ -99,6 +100,7 @@ const parseRebar = (value: unknown, path: string): GeometryInputRebar => {
   assertRecord(value, `${path} must be an object`)
   assertEntityId(value.id, `${path}.id`)
   assert(isFiniteNumber(value.dia), `${path}.dia must be a finite number`)
+  assert(value.dia > 0, `${path}.dia must be positive`)
   assert(isFiniteNumber(value.x), `${path}.x must be a finite number`)
   assert(isFiniteNumber(value.y), `${path}.y must be a finite number`)
   const rebar: GeometryInputRebar = {
@@ -337,7 +339,7 @@ const parseMaterials = (value: unknown): MaterialStore => {
   const steel = value.steel.map((item, index) => parseSteel(item, `inputs.materials.steel[${index}]`))
   assert(steel.length > 0, 'inputs.materials.steel must contain at least one steel material')
 
-  return {
+  const materials: MaterialStore = {
     strainSign: 'compression-positive',
     concrete: parseConcrete(value.concrete),
     steel,
@@ -345,6 +347,8 @@ const parseMaterials = (value: unknown): MaterialStore => {
       steelMaterialId: value.defaults.steelMaterialId
     }
   }
+  assertValidMaterialStore(materials)
+  return materials
 }
 
 const parseLoadCombination = (value: unknown, path: string): LoadCombination => {
@@ -1175,6 +1179,7 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
   const analysis = parseAnalysis(value.inputs.analysis)
   const profile = calculationProfile(value.inputs.calculationProfileId)
   const design = parseDesignBasis(value.inputs.design, materials)
+  assertDesignMaterialApplicability(materials, design)
   assert(
     (profile.mechanics === 'equivalent-rectangular-block') ===
       (analysis.methodId === EQUIVALENT_BLOCK_SURFACE_METHOD),

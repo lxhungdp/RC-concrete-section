@@ -977,6 +977,10 @@ body[data-jscad-theme='dark'] .pm-cad-surface {
   color: var(--ok);
 }
 
+.pm-loadcase-ur.is-indeterminate {
+  color: var(--warn);
+}
+
 .pm-field-metric-rows strong.is-warn,
 .pm-result-status-list strong.is-warn,
 .pm-result-status-list strong.is-warning {
