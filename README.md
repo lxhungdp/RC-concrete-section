@@ -4,6 +4,8 @@ Browser-based reinforced-concrete cross-section analysis for axial force and bia
 (`P-Mx-My`). The project is organized as reusable TypeScript packages with a Next.js frontend; the
 engineering kernels run locally in the browser through a Web Worker.
 
+**Live demo:** [https://pmcurve.vercel.app/](https://pmcurve.vercel.app/)
+
 > [!IMPORTANT]
 > **Current product boundary: Stage 1 — Section Resistance Only.**
 >
