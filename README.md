@@ -1,139 +1,266 @@
 # P-M Column Designer
 
-> **Stage 1 product boundary: Section Resistance Only.** Results are cross-section `P-Mx-My`
-> resistance/checks. They are not a complete member design and exclude slenderness, second-order
-> effects, stability/buckling, shear, torsion, detailing and serviceability unless a later stage
-> explicitly adds and verifies those capabilities.
+Browser-based reinforced-concrete cross-section analysis for axial force and biaxial bending
+(`P-Mx-My`). The project is organized as reusable TypeScript packages with a Next.js frontend; the
+engineering kernels run locally in the browser through a Web Worker.
 
-Modular TypeScript application for reinforced-concrete column-section P-M-M analysis and design
-preview.
+> [!IMPORTANT]
+> **Current product boundary: Stage 1 — Section Resistance Only.**
+>
+> The application evaluates the resistance of a short reinforced-concrete **cross-section**. It is
+> not a complete column/member design program and must not be presented as one.
 
-## Implemented calculation models
+## 1. Standard and verification status
 
-The project contains two independent numerical pipelines:
+**KDS is the only code family currently exposed as an engineering section-check workflow.** Other
+standard-labelled profiles are calculation previews for development, comparison, and verification;
+they are not released code checks.
 
-- **stress-strain integration**: compatible strain plane, concrete/steel material laws, verified
-  triangle/quadrature mesh, consistent tangent, Newton inverse solve;
-- **equivalent rectangular stress block**: exact polygon clipping of `a = beta1 c`, code-owned
-  block stress and strain limits, independent forward/inverse/surface algorithms.
+| Standard/profile | Mechanics available | Current product status |
+|---|---|---|
+| KDS Main resistance-factor route | Stress-strain integration and equivalent rectangular block | Section check implemented; draft engineering status, not certified member design |
+| KDS 14 20 20:2022 Appendix material-factor route | Stress-strain integration and equivalent rectangular block | Section check implemented; includes Appendix material factors, compression domains and minimum eccentricity; draft engineering status |
+| ACI 318-19(22) | Equivalent rectangular block | **Preview only**; not an accepted/released code check |
+| EN 1992-1-1:2004 | Stress-strain integration | **Preview only**; no National Annex selected and tensile domains remain limited |
+| AS 3600:2018 Amendments 1 and 2 | Equivalent rectangular block | **Preview only**; section-shape and member-analysis limitations remain |
+| Custom/User-defined | User-selected material or block parameters | Not a code check and carries no clause compliance claim |
 
-Fixed sampling uses the same editable `unified-27-v2` station schedule for every profile: two exact poles,
-six `c/D` states (`3, 2, 1.5, 1.2, 1.1, 1`), and nineteen controlling-bar tensile-strain states
-`εₛ/εy = 0, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 7.5, 10, 20`.
-Stress-strain and equivalent-block models resolve these same physical criteria through their own
-forward kernels. The alternative Adaptive mode starts from 12 fixed criteria plus the two poles and
-12 directions at 30-degree spacing, then refines stations independently on each meridian and refines
-directions to the configured tolerance. Fixed and Adaptive are complete, independent modes.
+“Implemented” means that the software route, equations, validation and regression tests exist. It
+does **not** mean that the profile has completed independent professional review, jurisdictional
+approval or commercial certification. The exact standard edition and resistance method are stored
+in each project; the application never treats a family name such as `KDS` as an unspecified latest
+edition.
 
-The Materials workflow now selects `Code -> calculation method -> concrete model`. KDS exposes both
-implemented mechanics, ACI exposes its implemented equivalent block, EN 1992-1-1:2004 exposes a
-design-material stress-strain preview, and AS 3600:2018 Amendments 1 and 2 exposes an equivalent-block
-preview. EN has no selected National Annex; compression domains 3-5 are implemented, while tensile
-domains 1-2 remain an explicitly disclosed preview limitation. AS has explicit
-shape/member-analysis limitations. Legacy `Custom` profile files remain readable, while new user customization is a concrete-model
-choice under a Code and is reported as a modified profile.
-Nominal, Design, and factored ULS Demand are separate result stages. See
-[`docs/12-calculation-models-defaults-and-workflows.md`](docs/12-calculation-models-defaults-and-workflows.md)
-for formulas, workflow, fields, defaults, and benchmark evidence.
+### KDS routes must not be mixed
 
-The current web app has five top-level workspaces: `Geometry`, `Materials`, `Section Results`,
-`Demand Check`, and `Analysis Options`. `Section Results` owns the resistance surface and its
-presentation; `Demand Check` owns the load combinations checked against it. Report generation is not
-a separate workspace: `Demand Check` exports the PDF design report, choosing per combination which
-ones get a full worked calculation. Each mechanics has its own result-calculation Excel workbook — a fibre ledger
-for stress-strain integration and a block ledger for the equivalent block. The Section-mesh
-Excel/DXF audit applies only to stress-strain integration because the block kernel has no concrete
-integration mesh.
+- **KDS Main:** characteristic material response, state-dependent resistance factor, followed by
+  the applicable maximum axial-compression limit.
+- **KDS Appendix:** design material strengths are reevaluated with the Appendix material factors;
+  no Main-body resultant factor or Main-body axial cap is added. For compression demand it applies
+  the demand-side rule
 
-## Project structure
+  ```text
+  e_min = 15 + 0.03h mm
+  M_min = Pu e_min
+  ```
+
+  The original load and the code-adjusted load are retained separately for audit.
+
+Current KDS material applicability gates reject nonphysical definitions, reinforcement with
+`fy > 600 MPa`, and use of default tabulated concrete parameters above `fck = 90 MPa`. A documented
+modified user model is required outside the tabulated concrete range. The Appendix nonzero-biaxial
+minimum-eccentricity direction remains an explicit project interpretation pending independent
+clause sign-off, so the profile remains `draft`.
+
+## 2. Scope of the project
+
+### Included in Stage 1
+
+- arbitrary polygonal concrete regions, multiple solids and holes;
+- discrete reinforcement fibers with material assignments;
+- nonlinear concrete and reinforcement material response;
+- short-section `P-Mx-My` nominal and design resistance surfaces;
+- factored ULS demand checks against a section-resistance surface;
+- forward and inverse section calculations;
+- fixed-grid and adaptive surface sampling with convergence evidence;
+- three-state demand screening: `OK`, `NG`, or `CHECK` when sampling uncertainty crosses `UR = 1`;
+- browser-side project import/export and reusable calculation packages;
+- PDF design-preview reports, calculation Excel workbooks, and stress-strain mesh Excel/DXF audit
+  exports.
+
+### Explicitly outside Stage 1
+
+- column slenderness and effective length;
+- first- or second-order structural/member analysis;
+- sway/non-sway classification, geometric nonlinearity and buckling/stability;
+- frame analysis or generation of load combinations;
+- shear, torsion, fatigue, fire and seismic member checks;
+- serviceability, cracking and long-term deformation;
+- reinforcement detailing, cover, spacing, anchorage and development length;
+- foundation, connection or global structural design;
+- automatic legal selection of the governing jurisdiction, standard edition or National Annex;
+- a signed/certified design result replacing the responsible structural engineer's review.
+
+Input actions are already-factored section resultants. The program does not calculate those actions
+from a structural model.
+
+## 3. Two independent calculation methods
+
+The project deliberately keeps two mechanics pipelines independent. They share geometry,
+materials, design-basis contracts, result conventions and reporting interfaces, but they do not
+share a hidden numerical capacity formula.
+
+| Method | Concrete calculation | Reinforcement calculation | Main purpose |
+|---|---|---|---|
+| **Stress-strain integration** | Integrates the selected material law over a verified triangular/quadrature mesh | Integrates each discrete reinforcement fiber from the compatible strain plane | General nonlinear section response and material-law studies |
+| **Equivalent rectangular stress block** | Clips the compression block exactly against concrete polygons and holes, then integrates the clipped geometry | Evaluates bar strain/stress and subtracts displaced concrete where required | Code-specific rectangular-block calculations and auditable force ledgers |
+
+Both methods use the same project sign convention:
 
 ```text
-apps/web/                         Next.js application and section editor
-packages/pm-geometry/             Geometry, clipping, and integration mesh
-packages/pm-materials/            Persisted material definitions and compiled laws
-packages/pm-project/              Version-locked project schema v1 and analysis/profile DTOs
-packages/pm-stations/             Single owner of the shared 27-station schedule
-packages/pm-design/               Resistance profile identity, factors, and transition rules
-packages/pm-analysis/             Stress-strain forward/inverse/surface kernel
-packages/pm-equivalent-block/     Standard-independent rectangular-block kernel
-packages/pm-code-kds142020/       KDS 14 20 20 block adapter
-packages/pm-code-aci318/          ACI 318 Whitney-block adapter
-packages/pm-code-en1992/          EN 1992 material/design policy adapter
-packages/pm-code-as3600/          AS 3600 equivalent-block/capacity-factor adapter
-packages/pm-code-custom/          User-defined block adapter; derives nothing from a code table
-packages/pm-analysis-equivalent-block/  Project/result bridge for block profiles
-packages/pm-report/               Result workbooks (both mechanics), mesh Excel/DXF, and the PDF report
-docs/engineering/                 Structural-engineering meaning and acceptance rules
-docs/development/                 Package, schema, UI, test, and release instructions
+compression P is positive
+Mx = Σ F (y - yc)
+My = Σ F (x - xc)
 ```
 
-Start documentation at [`docs/00-README.md`](docs/00-README.md). The repository is a development
-preview, not a certified design product; code-profile status and release gates are explicit in the
-reports and documentation.
+The equivalent-block method is not a coarse mesh approximation of the stress-strain method. It is a
+separate mechanics model with its own forward evaluator, surface construction, inverse solver and
+verification fixtures.
 
-## Commands
+## 4. Forward and inverse calculations
+
+### Forward calculation
+
+The forward problem starts from a compatible section state and returns section resultants.
+
+```text
+section + reinforcement + materials + strain/neutral-axis state
+                              ↓
+                         P, Mx, My
+```
+
+- Stress-strain: a strain plane `(ε0, κx, κy)` is evaluated over the concrete quadrature points and
+  reinforcement fibers.
+- Equivalent block: neutral-axis direction/depth and the selected strain domain define the clipped
+  compression block and reinforcement states.
+
+Repeated forward evaluations generate the nominal and design `P-Mx-My` resistance surfaces. This is
+a section calculation only; it does not determine structural actions or member stability.
+
+### Inverse calculation
+
+The inverse problem starts from a factored section demand and searches for the compatible state and
+capacity intersection.
+
+```text
+factored demand Pu, Mux, Muy + design resistance surface
+                              ↓
+       utilization + capacity point + compatible section state
+```
+
+- Stress-strain uses the prepared fibers, surface intersection and Newton equilibrium refinement.
+- Equivalent block uses its proportional-ray surface solver and exact block equilibrium refinement.
+- Code demand rules such as KDS Appendix minimum eccentricity are applied before solving, while the
+  original user-entered demand is preserved.
+- Adequacy, solver convergence and strain admissibility are separate results. A surface fallback or
+  an axial-cap-face intersection is never misreported as a unique converged material state.
+
+Inverse calculation does not perform frame analysis, magnify moments, or create load combinations.
+
+## 5. Sampling and result interpretation
+
+The fixed production schedule uses the shared `unified-27-v2` strain-domain station set and 36
+directions. Adaptive mode starts from a smaller seed and refines stations and directions against the
+configured tolerances.
+
+Fixed-grid utilization uses a documented screening uncertainty. A demand is:
+
+- `OK` only when the complete utilization interval is at or below `1.0`;
+- `NG` only when the complete interval is above `1.0`;
+- `CHECK` when the interval crosses `1.0` or sufficient numerical evidence is unavailable.
+
+`CHECK` is not a pass. Rerun with Adaptive sampling and review the convergence evidence.
+
+## 6. Browser workflow
+
+The web application is organized around these workspaces:
+
+1. **Geometry** — concrete regions, openings and reinforcement;
+2. **Materials** — code/method selection and material definitions;
+3. **Section Results** — nominal/design resistance surface and section slices;
+4. **Demand Check** — factored load combinations, utilization, inverse state and report export;
+5. **Analysis Options** — fixed/adaptive sampling and numerical controls.
+
+Production calculations run in a browser Web Worker. A calculated surface is cached in the worker
+and subsequent loadcase checks reference it by handle rather than repeatedly cloning the complete
+surface from the UI thread.
+
+## 7. Repository structure
+
+```text
+apps/web/                              Next.js browser application and section editor
+packages/pm-geometry/                  Geometry, containment, clipping and integration mesh
+packages/pm-materials/                 Persisted materials, validation and compiled laws
+packages/pm-project/                   Versioned project schema and calculation-profile DTOs
+packages/pm-stations/                  Shared strain-domain station definitions
+packages/pm-design/                    Resistance profiles, factors and code demand rules
+packages/pm-results/                   Shared adequacy and uncertainty classification
+packages/pm-analysis/                  Stress-strain forward/inverse/surface kernel
+packages/pm-equivalent-block/          Standard-independent rectangular-block kernel
+packages/pm-code-kds142020/            KDS equivalent-block adapter
+packages/pm-code-aci318/               ACI preview adapter
+packages/pm-code-en1992/               EN preview adapter
+packages/pm-code-as3600/               AS preview adapter
+packages/pm-code-custom/               User-defined block adapter
+packages/pm-analysis-equivalent-block/ Project/result bridge for block profiles
+packages/pm-report/                    PDF, Excel and DXF audit/report outputs
+docs/engineering/                      Engineering scope, meaning and acceptance rules
+docs/development/                      Architecture, schema, UI, test and release guidance
+```
+
+Documentation starts at [`docs/00-README.md`](docs/00-README.md). Calculation models and defaults
+are described in
+[`docs/12-calculation-models-defaults-and-workflows.md`](docs/12-calculation-models-defaults-and-workflows.md).
+
+## 8. Development and verification
+
+Install the pinned dependencies and start the frontend:
 
 ```bash
+npm ci
 npm run dev
+```
+
+Primary verification commands:
+
+```bash
 npm run typecheck
-npm run test
+npm test
 npm run build
+npm run bench:verify
 npm run bench:strain-sampling
 npm run bench:equivalent-block
 npm run bench:pipelines
-npm run bench:verify
 ```
 
-`npm run test:pdf-report` builds the PDF report for both mechanics and checks its structure, its
-agreement with the kernel, and that the same input produces byte-identical output.
+The automated suite covers material/geometry rejection, station and surface regressions, both
+mechanics, forward/inverse agreement, KDS Main/Appendix separation, minimum eccentricity, project
+round trips, CAD behavior, independently recalculated Excel outputs and deterministic PDF structure.
+Reference workbooks and benchmarks are regression evidence, not design-code authority.
 
-`npm run test:excel-block` recalculates the equivalent-block workbook in an independent formula
-engine and reconciles the shoelace recomputation of the clipped compression polygon, the ledger and
-the sheet's own φ interpolation against the block kernel.
+## 9. Engineering disclaimer
 
-`npm test` runs typecheck, unit/integration suites, CAD tests, canonical schema-v1 round trip, the
-shared-station regression fixture, and formula-recalculated Excel-export verification for both
-the stress-strain and the equivalent-block workbook.
+This repository is under active development. Results must be reviewed by a qualified structural
+engineer against the governing project documents, jurisdiction, standard edition, amendments and
+independent calculations. Preview profiles and preview reports must not be used as certified design
+deliverables.
 
-`bench:equivalent-block` exercises the production KDS/ACI block configuration, exact inverse
-refinement, fixed-axial queries, topology, admissibility, and batch surface reuse.
+## 10. Copyright, attribution and license status
 
-`bench:strain-sampling` compares the fixed 27 × 36 production surface against a 144-direction
-reference. `bench:pipelines` uses that schedule for both mechanics, so its comparison measures
-kernel/direction behaviour rather than changing the station definition. Each run prints its current
-timings, ray differences, and hit rate.
+Copyright © 2026 **Envico Co., Ltd.** All rights reserved.
 
-## Fail-closed analysis gates
+Developed by **Le Xuan Hung**.
 
-- Missing steel material references are typed fatal errors.
-- A fiber/material request for an ACI Whitney law is rejected because the Whitney block belongs to
-  the equivalent-block pipeline; selecting the ACI equivalent-block calculation profile routes to
-  the implemented adapter instead.
-- Mesh resource limits, empty concrete, and failed area/first-moment self-checks cannot produce a
-  stress-strain surface.
-- Inverse convergence and strain admissibility are reported separately; success requires both.
-- A faceted-surface fallback is explicitly approximate and is never promoted to a converged
-  equilibrium state.
-- Adaptive surfaces record effective directions, passes, error estimate, tolerance status, and any
-  cap reached.
-- A global resistance factor is applied once to the complete resultant ledger; factored demand is
-  not reduced again.
-- EN material partial factors have one canonical owner in `DesignBasis`; Materials edits that source
-  and displays derived `fcd/fyd`, while Design Resistance shows the same values read-only.
+No project-wide open-source license is currently granted for this repository. Unless Envico Co.,
+Ltd. provides a separate written license or adds an explicit root `LICENSE` file, no permission is
+granted to copy, modify, distribute, sublicense, publish or use this project commercially. Any copy,
+excerpt, publication or derivative work that is separately authorized must retain the copyright
+notice and identify the source and developer.
 
-Every dependency is pinned and CI uses the lockfile. Reference workbooks are regression oracles,
-not design-code authority.
+Suggested attribution:
 
-## Current v1 conventions
+```text
+P-M Column Designer
+Copyright © 2026 Envico Co., Ltd.
+Developed by Le Xuan Hung
+Source: the original P-M Column Designer repository
+```
 
-- A `Custom` profile is not a code check. It is reported as `user-defined`, never `draft`, and
-  carries no clause traceability; whoever declares `beta1`, the block stress factor, `epsCu`, the
-  `phi` factors and the transition rule owns their justification.
-- The project-wide resultant convention is `Mx = sum(F*(y-yc))` and
-  `My = sum(F*(x-xc))`. Stress-strain, equivalent-block, the DTO, plots, reports, and both Excel
-  exports use the same signs. Asymmetric-section regression tests cover the concrete and steel
-  ledgers so a future sign drift fails visibly.
-- The project schema and analysis options remain version 1; DesignBasis is version 3, and the
-  surface method IDs remain `strain-domain-surface-v1` and `equivalent-block-surface-v1`. The parser
-  has explicit DesignBasis migrations for legacy EN factors and the corrected domain-5 endpoint.
-  Other unsupported versions fail rather than being guessed.
+This project is **not** declared MIT-licensed by this README. The MIT License is permissive: it would
+allow use, modification, redistribution and commercial use provided the copyright and permission
+notice are retained. If Envico Co., Ltd. later chooses that model, a reviewed root `LICENSE` file
+should be added explicitly rather than relying on an informal README statement.
+
+Individual subpackages and third-party packages, fonts and assets may carry their own license
+metadata or notices; those terms remain applicable to those specific components and do not grant a
+license to the rest of this repository.
