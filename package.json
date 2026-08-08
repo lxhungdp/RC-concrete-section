@@ -2,6 +2,7 @@
   "name": "pm-column-designer",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Modular web platform for reinforced concrete column P-M-M section design.",
   "scripts": {
     "dev": "npm run dev -w @pm/web",

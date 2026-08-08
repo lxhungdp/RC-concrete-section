@@ -235,32 +235,23 @@ engineer against the governing project documents, jurisdiction, standard edition
 independent calculations. Preview profiles and preview reports must not be used as certified design
 deliverables.
 
-## 10. Copyright, attribution and license status
+## 10. Open-source license and attribution
 
-Copyright © 2026 **Envico Co., Ltd.** All rights reserved.
+Copyright © 2026 **Envico Co., Ltd.**
 
-Developed by **Le Xuan Hung**.
+Originally developed by **Le Xuan Hung**.
 
-No project-wide open-source license is currently granted for this repository. Unless Envico Co.,
-Ltd. provides a separate written license or adds an explicit root `LICENSE` file, no permission is
-granted to copy, modify, distribute, sublicense, publish or use this project commercially. Any copy,
-excerpt, publication or derivative work that is separately authorized must retain the copyright
-notice and identify the source and developer.
+P-M Column Designer is open-source software released under the
+[MIT License](LICENSE). You may use, copy, modify, merge, publish, distribute, sublicense and sell
+copies of the software, including for commercial use, subject to the MIT License. The copyright and
+permission notice must be included in all copies or substantial portions of the software.
 
-Suggested attribution:
+Community discussion, forks and pull requests are welcome. By submitting a contribution, you agree
+to license it under the same MIT License; see [CONTRIBUTING.md](CONTRIBUTING.md). Attribution to the
+original project and developer is recorded in [NOTICE](NOTICE).
 
-```text
-P-M Column Designer
-Copyright © 2026 Envico Co., Ltd.
-Developed by Le Xuan Hung
-Source: the original P-M Column Designer repository
-```
+The MIT License does not require forks or modifications to be published or contributed back. It
+provides the software without warranty and does not certify any structural-engineering result.
 
-This project is **not** declared MIT-licensed by this README. The MIT License is permissive: it would
-allow use, modification, redistribution and commercial use provided the copyright and permission
-notice are retained. If Envico Co., Ltd. later chooses that model, a reviewed root `LICENSE` file
-should be added explicitly rather than relying on an informal README statement.
-
-Individual subpackages and third-party packages, fonts and assets may carry their own license
-metadata or notices; those terms remain applicable to those specific components and do not grant a
-license to the rest of this repository.
+Individual third-party packages, fonts, assets and normative references remain subject to their own
+licenses and copyright terms.
