@@ -46,7 +46,7 @@ import {
   type NominalBlockEvaluation,
   type PreparedEquivalentBlockSection
 } from '@pm/equivalent-block'
-import { buildConcreteMesh, netConcreteCentroid, type GeometryInputRebarView, type SectionGeometry } from '@pm/geometry'
+import { netConcreteCentroid, type GeometryInputRebarView, type SectionGeometry } from '@pm/geometry'
 import { userBlockCompressionStress, type MaterialStore } from '@pm/materials'
 import {
   cloneCalculationAnalysisOptions,
@@ -915,9 +915,11 @@ const evaluateBlockAdmissibility = (
   let maxConcreteCompression = 0
   for (const solid of prepared.section.solids) {
     for (const point of solid.outer) {
+      const localX = point.x - prepared.section.referencePoint.x
+      const localY = point.y - prepared.section.referencePoint.y
       maxConcreteCompression = Math.max(
         maxConcreteCompression,
-        strain.e0 + strain.kx * point.y + strain.ky * point.x
+        strain.e0 + strain.kx * localY + strain.ky * localX
       )
     }
   }
@@ -1127,42 +1129,11 @@ export const buildEquivalentBlockFieldMapFromPrepared = (
   const nominalEvaluation = prepared.model.bindNominalEvaluator(prepared.section)(state)
   const nominal = nominalEvaluation.source as NominalBlockEvaluation
   const strain = strainState(prepared.section, state, prepared.model.blockLaw)
-  // Visualization tessellation only. It never enters the block force/moment calculation.
-  const displayMesh = buildConcreteMesh(prepared.geometry, { seedDivisions: 48, maxCells: 250_000, maxSubdivision: 4 })
   const at = (x: number, y: number) => {
     const localX = x - prepared.section.referencePoint.x
     const localY = y - prepared.section.referencePoint.y
     return strain.e0 + strain.kx * localY + strain.ky * localX
   }
-  const concreteStressAt = (x: number, y: number) => {
-    const nx = Math.cos(state.neutralAxisAngle)
-    const ny = Math.sin(state.neutralAxisAngle)
-    const edge = projectedOuterExtents(prepared.section, nx, ny).maximum
-    const blockBoundary = edge - prepared.model.blockLaw.depthFactor * state.neutralAxisDepth
-    return nx * x + ny * y >= blockBoundary ? prepared.model.blockLaw.compressionStress : 0
-  }
-  const triangles = displayMesh.triangles.map((triangle) => ({
-    ax: triangle.ax,
-    ay: triangle.ay,
-    bx: triangle.bx,
-    by: triangle.by,
-    cx: triangle.cx,
-    cy: triangle.cy,
-    strainA: at(triangle.ax, triangle.ay),
-    strainB: at(triangle.bx, triangle.by),
-    strainC: at(triangle.cx, triangle.cy),
-    stressA: concreteStressAt(triangle.ax, triangle.ay),
-    stressB: concreteStressAt(triangle.bx, triangle.by),
-    stressC: concreteStressAt(triangle.cx, triangle.cy)
-  }))
-  const samples = displayMesh.points.map((point) => ({
-    x: point.x,
-    y: point.y,
-    area: point.area,
-    strain: at(point.x, point.y),
-    stress: concreteStressAt(point.x, point.y),
-    kind: 'concrete' as const
-  }))
   const rebars = prepared.rebars.map((bar) => {
     const barStrain = at(bar.x, bar.y)
     const steelLawId = String(bar.steelMaterialId ?? prepared.materialStore.defaults.steelMaterialId)
@@ -1173,8 +1144,8 @@ export const buildEquivalentBlockFieldMapFromPrepared = (
   return {
     mechanics: 'equivalent-rectangular-block',
     origin: { ...prepared.section.referencePoint },
-    samples,
-    triangles,
+    samples: [],
+    triangles: [],
     rebars,
     bounds: {
       minX: prepared.section.bounds.minX,
@@ -1183,8 +1154,22 @@ export const buildEquivalentBlockFieldMapFromPrepared = (
       maxY: prepared.section.bounds.maxY
     },
     mesh: {
-      ...displayMesh.report,
-      warnings: [...displayMesh.report.warnings, 'Display tessellation only; capacity uses exact polygon clipping.']
+      cellSize: 0,
+      minCaliperWidth: prepared.section.characteristicLength,
+      gridX: 0,
+      gridY: 0,
+      cells: 0,
+      components: prepared.section.solids.length,
+      triangles: 0,
+      points: 0,
+      exact: { area: prepared.section.grossArea, firstMomentX: 0, firstMomentY: 0 },
+      meshed: { area: prepared.section.grossArea, firstMomentX: 0, firstMomentY: 0 },
+      areaError: 0,
+      firstMomentXError: 0,
+      firstMomentYError: 0,
+      discardedArea: 0,
+      ok: true,
+      warnings: ['No mesh: strain is analytic and concrete compression uses exact block clipping.']
     },
     equivalentBlock: {
       neutralAxisAngle: state.neutralAxisAngle,

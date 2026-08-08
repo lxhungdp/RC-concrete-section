@@ -202,6 +202,13 @@ const pointInBlockGeometry = (
   pointInRing(x, y, solid.outer) && !solid.holes.some((hole) => pointInRing(x, y, hole))
 )
 
+const strainAtWorld = (
+  state: Props['state'],
+  origin: SectionFieldMap['origin'],
+  x: number,
+  y: number
+) => state.e0 + state.kx * (y - origin.y) + state.ky * (x - origin.x)
+
 const buildTriangleIndex = (triangles: SectionFieldTriangle[], cellSize: number) => {
   const size = Math.max(1e-6, cellSize)
   const buckets = new Map<string, number[]>()
@@ -227,8 +234,8 @@ const buildTriangleIndex = (triangles: SectionFieldTriangle[], cellSize: number)
 }
 
 /**
- * Rasterizes clipped-cell triangles with barycentric vertex shading so the section field is both
- * mesh-true and visually continuous. Pointer hover reports interpolated ε/σ at the cursor.
+ * Stress-strain profiles render their integration mesh. Equivalent-block profiles instead render
+ * the analytic strain plane and exact clipped compression polygon: no analysis mesh exists there.
  */
 export function SectionFieldChart({
   fieldMap,
@@ -252,18 +259,29 @@ export function SectionFieldChart({
 
   const fieldRange = useMemo(() => {
     const values: number[] = []
-    if (fieldMode === 'stress' && fieldMap.equivalentBlock) {
-      values.push(0, fieldMap.equivalentBlock.compressionStress)
-    }
-    for (const tri of fieldMap.triangles) {
-      if (fieldMode === 'strain') values.push(tri.strainA, tri.strainB, tri.strainC)
-      else values.push(tri.stressA, tri.stressB, tri.stressC)
+    if (fieldMap.equivalentBlock) {
+      if (fieldMode === 'stress') {
+        values.push(0, fieldMap.equivalentBlock.compressionStress)
+      } else {
+        for (const solid of section.solids) {
+          for (const ring of [solid.outer, ...solid.holes]) {
+            for (const point of ring) {
+              values.push(strainAtWorld(state, fieldMap.origin, point.x, point.y))
+            }
+          }
+        }
+      }
+    } else {
+      for (const tri of fieldMap.triangles) {
+        if (fieldMode === 'strain') values.push(tri.strainA, tri.strainB, tri.strainC)
+        else values.push(tri.stressA, tri.stressB, tri.stressC)
+      }
     }
     if (includeRebar) {
       for (const bar of fieldMap.rebars) values.push(fieldMode === 'strain' ? bar.strain : bar.stress)
     }
     return rangeFromValues(values)
-  }, [fieldMap.rebars, fieldMap.triangles, fieldMode, includeRebar])
+  }, [fieldMap.equivalentBlock, fieldMap.origin, fieldMap.rebars, fieldMap.triangles, fieldMode, includeRebar, section.solids, state])
 
   const triangleIndex = useMemo(
     () => buildTriangleIndex(fieldMap.triangles, fieldMap.mesh.cellSize || 50),
@@ -300,7 +318,7 @@ export function SectionFieldChart({
       ctx.clearRect(0, 0, width, height)
 
       const padL = 48 * dpr
-      const padR = 58 * dpr
+      const padR = 88 * dpr
       const padT = 12 * dpr
       const padB = 36 * dpr
       const plotW = Math.max(1, width - padL - padR)
@@ -341,40 +359,61 @@ export function SectionFieldChart({
       const image = ctx.createImageData(width, height)
       const data = image.data
 
-      for (const tri of fieldMap.triangles) {
-        if (fieldMode === 'stress' && fieldMap.equivalentBlock) continue
-        const x0 = toPixelX(tri.ax)
-        const y0 = toPixelY(tri.ay)
-        const x1 = toPixelX(tri.bx)
-        const y1 = toPixelY(tri.by)
-        const x2 = toPixelX(tri.cx)
-        const y2 = toPixelY(tri.cy)
-        const v0 = norm(fieldMode === 'strain' ? tri.strainA : tri.stressA)
-        const v1 = norm(fieldMode === 'strain' ? tri.strainB : tri.stressB)
-        const v2 = norm(fieldMode === 'strain' ? tri.strainC : tri.stressC)
-
-        const minPx = Math.max(0, Math.floor(Math.min(x0, x1, x2)))
-        const maxPx = Math.min(width - 1, Math.ceil(Math.max(x0, x1, x2)))
-        const minPy = Math.max(0, Math.floor(Math.min(y0, y1, y2)))
-        const maxPy = Math.min(height - 1, Math.ceil(Math.max(y0, y1, y2)))
-
-        const denom = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
-        if (Math.abs(denom) < 1e-12) continue
-        const invDen = 1 / denom
-
+      if (fieldMap.equivalentBlock && fieldMode === 'strain') {
+        // Sample the analytic strain plane only for canvas pixels inside the exact section polygon.
+        // These pixels are a display raster, not an integration mesh and never enter equilibrium.
+        const minPx = Math.max(0, Math.floor(toPixelX(minX)))
+        const maxPx = Math.min(width - 1, Math.ceil(toPixelX(maxX)))
+        const minPy = Math.max(0, Math.floor(toPixelY(maxY)))
+        const maxPy = Math.min(height - 1, Math.ceil(toPixelY(minY)))
         for (let py = minPy; py <= maxPy; py++) {
+          const worldY = worldMaxY - (py - offsetY) / scale
           for (let px = minPx; px <= maxPx; px++) {
-            const w0 = ((y1 - y2) * (px - x2) + (x2 - x1) * (py - y2)) * invDen
-            const w1 = ((y2 - y0) * (px - x2) + (x0 - x2) * (py - y2)) * invDen
-            const w2 = 1 - w0 - w1
-            if (w0 < -1e-5 || w1 < -1e-5 || w2 < -1e-5) continue
-            const t = w0 * v0 + w1 * v1 + w2 * v2
-            const [r, g, b] = valueToRgb(t)
+            const worldX = worldMinX + (px - offsetX) / scale
+            if (!pointInBlockGeometry(worldX, worldY, section.solids)) continue
+            const [r, g, b] = valueToRgb(norm(strainAtWorld(state, fieldMap.origin, worldX, worldY)))
             const idx = (py * width + px) * 4
             data[idx] = r
             data[idx + 1] = g
             data[idx + 2] = b
             data[idx + 3] = 255
+          }
+        }
+      } else if (!fieldMap.equivalentBlock) {
+        for (const tri of fieldMap.triangles) {
+          const x0 = toPixelX(tri.ax)
+          const y0 = toPixelY(tri.ay)
+          const x1 = toPixelX(tri.bx)
+          const y1 = toPixelY(tri.by)
+          const x2 = toPixelX(tri.cx)
+          const y2 = toPixelY(tri.cy)
+          const v0 = norm(fieldMode === 'strain' ? tri.strainA : tri.stressA)
+          const v1 = norm(fieldMode === 'strain' ? tri.strainB : tri.stressB)
+          const v2 = norm(fieldMode === 'strain' ? tri.strainC : tri.stressC)
+
+          const minPx = Math.max(0, Math.floor(Math.min(x0, x1, x2)))
+          const maxPx = Math.min(width - 1, Math.ceil(Math.max(x0, x1, x2)))
+          const minPy = Math.max(0, Math.floor(Math.min(y0, y1, y2)))
+          const maxPy = Math.min(height - 1, Math.ceil(Math.max(y0, y1, y2)))
+
+          const denom = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+          if (Math.abs(denom) < 1e-12) continue
+          const invDen = 1 / denom
+
+          for (let py = minPy; py <= maxPy; py++) {
+            for (let px = minPx; px <= maxPx; px++) {
+              const w0 = ((y1 - y2) * (px - x2) + (x2 - x1) * (py - y2)) * invDen
+              const w1 = ((y2 - y0) * (px - x2) + (x0 - x2) * (py - y2)) * invDen
+              const w2 = 1 - w0 - w1
+              if (w0 < -1e-5 || w1 < -1e-5 || w2 < -1e-5) continue
+              const t = w0 * v0 + w1 * v1 + w2 * v2
+              const [r, g, b] = valueToRgb(t)
+              const idx = (py * width + px) * 4
+              data[idx] = r
+              data[idx + 1] = g
+              data[idx + 2] = b
+              data[idx + 3] = 255
+            }
           }
         }
       }
@@ -421,15 +460,33 @@ export function SectionFieldChart({
         })
       }
 
-      ctx.strokeStyle = 'rgba(15, 23, 42, 0.08)'
-      ctx.lineWidth = 0.6 * dpr
-      for (const tri of fieldMap.triangles) {
-        ctx.beginPath()
-        ctx.moveTo(toPixelX(tri.ax), toPixelY(tri.ay))
-        ctx.lineTo(toPixelX(tri.bx), toPixelY(tri.by))
-        ctx.lineTo(toPixelX(tri.cx), toPixelY(tri.cy))
-        ctx.closePath()
-        ctx.stroke()
+      if (!fieldMap.equivalentBlock) {
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.08)'
+        ctx.lineWidth = 0.6 * dpr
+        for (const tri of fieldMap.triangles) {
+          ctx.beginPath()
+          ctx.moveTo(toPixelX(tri.ax), toPixelY(tri.ay))
+          ctx.lineTo(toPixelX(tri.bx), toPixelY(tri.by))
+          ctx.lineTo(toPixelX(tri.cx), toPixelY(tri.cy))
+          ctx.closePath()
+          ctx.stroke()
+        }
+      } else {
+        // Exact compression-block polygon obtained by half-plane clipping at a = beta1*c.
+        ctx.strokeStyle = '#ea580c'
+        ctx.lineWidth = 2 * dpr
+        ctx.setLineDash([6 * dpr, 4 * dpr])
+        for (const solid of fieldMap.equivalentBlock.geometry) {
+          for (const ring of [solid.outer, ...solid.holes]) {
+            if (ring.length < 2) continue
+            ctx.beginPath()
+            ctx.moveTo(toPixelX(ring[0].x), toPixelY(ring[0].y))
+            for (let i = 1; i < ring.length; i++) ctx.lineTo(toPixelX(ring[i].x), toPixelY(ring[i].y))
+            ctx.closePath()
+            ctx.stroke()
+          }
+        }
+        ctx.setLineDash([])
       }
 
       for (const bar of fieldMap.rebars) {
@@ -589,7 +646,7 @@ export function SectionFieldChart({
       ctx.fillText('y (mm)', 0, 0)
       ctx.restore()
 
-      const barX = width - 34 * dpr
+      const barX = width - 22 * dpr
       const barY = padT + 8 * dpr
       const barH = plotH - 16 * dpr
       const barW = 10 * dpr
@@ -604,12 +661,13 @@ export function SectionFieldChart({
       ctx.lineWidth = 1 * dpr
       ctx.strokeRect(barX, barY, barW, barH)
       ctx.fillStyle = foregroundMuted
-      ctx.textAlign = 'left'
       ctx.font = `${10 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
       const title = fieldMode === 'strain' ? 'ε' : 'σ (MPa)'
-      ctx.fillText(title, barX - 2 * dpr, barY - 4 * dpr)
-      ctx.fillText(fmt(fieldRange.max, digits), barX + barW + 4 * dpr, barY + 8 * dpr)
-      ctx.fillText(fmt(fieldRange.min, digits), barX + barW + 4 * dpr, barY + barH)
+      ctx.textAlign = 'center'
+      ctx.fillText(title, barX + barW / 2, barY - 4 * dpr)
+      ctx.textAlign = 'right'
+      ctx.fillText(fmt(fieldRange.max, digits), barX - 4 * dpr, barY + 8 * dpr)
+      ctx.fillText(fmt(fieldRange.min, digits), barX - 4 * dpr, barY + barH)
     }
 
     const schedule = () => {
@@ -681,6 +739,21 @@ export function SectionFieldChart({
       }
     }
 
+    if (fieldMap.equivalentBlock) {
+      if (!pointInBlockGeometry(worldX, worldY, section.solids)) return null
+      return {
+        xCss,
+        yCss,
+        worldX,
+        worldY,
+        strain: strainAtWorld(state, fieldMap.origin, worldX, worldY),
+        stress: pointInBlockGeometry(worldX, worldY, fieldMap.equivalentBlock.geometry)
+          ? fieldMap.equivalentBlock.compressionStress
+          : 0,
+        kind: 'concrete'
+      }
+    }
+
     const i = Math.floor(worldX / triangleIndex.size)
     const j = Math.floor(worldY / triangleIndex.size)
     const candidates = triangleIndex.buckets.get(`${i}:${j}`)
@@ -697,11 +770,7 @@ export function SectionFieldChart({
         worldX,
         worldY,
         strain: w0 * tri.strainA + w1 * tri.strainB + w2 * tri.strainC,
-        stress: fieldMap.equivalentBlock
-          ? (pointInBlockGeometry(worldX, worldY, fieldMap.equivalentBlock.geometry)
-            ? fieldMap.equivalentBlock.compressionStress
-            : 0)
-          : w0 * tri.stressA + w1 * tri.stressB + w2 * tri.stressC,
+        stress: w0 * tri.stressA + w1 * tri.stressB + w2 * tri.stressC,
         kind: 'concrete'
       }
     }

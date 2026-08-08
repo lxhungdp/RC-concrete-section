@@ -1,7 +1,6 @@
 'use client'
 
 import { Download, Eye, EyeOff, Loader2 } from 'lucide-react'
-import type { InversePreviewResult } from '@pm/analysis'
 import type { LoadCombination } from '@pm/project'
 import {
   DEMAND_CHART_IDS,
@@ -13,12 +12,7 @@ import {
 type Props = {
   view: DemandCheckView
   onViewChange: (patch: Partial<DemandCheckView>) => void
-  /** Result of the selected combination, or null while none is selected or solved. */
-  inverseResult: InversePreviewResult | null
-  working: boolean
   surfaceReady: boolean
-  /** Batch utilization pass over every combination, shown so a partial list is not read as final. */
-  quickCheck: { working: boolean; checked: number; total: number }
   loadcases: readonly LoadCombination[]
   /** Combinations to work through in full in the PDF; may be none, some, or all. */
   reportDetailIds: readonly number[]
@@ -26,43 +20,29 @@ type Props = {
   onExportReport: () => void
   reportState: 'idle' | 'working' | 'error'
   reportMessage: string
+  onExportExcel: () => void
+  excelReady: boolean
+  excelState: 'idle' | 'working' | 'error'
+  excelMessage: string
 }
-
-const fmt = (value: number, digits = 3) =>
-  Number.isFinite(value) ? value.toLocaleString('en-US', { maximumFractionDigits: digits }) : '—'
 
 const shortDemandLabel = (id: (typeof DEMAND_CHART_IDS)[number]) =>
   id === 'heatmap' ? 'Field' : id === 'fixedP' ? 'Fixed-P' : 'Vertical'
 
-/**
- * Governing verdict for the selected combination.
- *
- * `ok` already means converged **and** admissible, so it is the only state allowed to read as a
- * pass; everything else names why it is not one instead of collapsing to "fail".
- */
-const verdict = (result: InversePreviewResult) => {
-  if (!result.converged) return { label: 'No intersection', tone: 'is-bad' as const }
-  if (!result.admissibility.evaluated) return { label: 'Cap face — no unique state', tone: 'is-warn' as const }
-  if (!result.admissibility.ok) return { label: 'Strain inadmissible', tone: 'is-bad' as const }
-  if (result.utilization == null) return { label: 'Not checked', tone: 'is-warn' as const }
-  return result.utilization <= 1
-    ? { label: 'Adequate', tone: 'is-good' as const }
-    : { label: 'Inadequate', tone: 'is-bad' as const }
-}
-
 export function DemandCheckPanel({
   view,
   onViewChange,
-  inverseResult,
-  working,
   surfaceReady,
-  quickCheck,
   loadcases,
   reportDetailIds,
   onReportDetailIdsChange,
   onExportReport,
   reportState,
-  reportMessage
+  reportMessage,
+  onExportExcel,
+  excelReady,
+  excelState,
+  excelMessage
 }: Props) {
   const selected = new Set(reportDetailIds)
   const toggle = (id: number) => {
@@ -74,7 +54,6 @@ export function DemandCheckPanel({
   return (
     <>
       <section className="pm-panel-section">
-        <h2 className="pm-chart-visibility-title">Charts</h2>
         <div className="pm-chart-visibility-row" role="toolbar" aria-label="Chart visibility">
           {DEMAND_CHART_IDS.map((id) => {
             const on = view.visibleCharts[id]
@@ -95,81 +74,54 @@ export function DemandCheckPanel({
         </div>
       </section>
 
-      <section className="pm-panel-section">
-        <div className="pm-section-title">
-          <div>
-            <h2>Governing check</h2>
-            <p>Factored ULS demand against the design surface, by proportional 3D ray.</p>
+      <section className="pm-panel-section pm-report-section">
+        <div className="pm-section-title pm-section-title--with-action">
+          <h2>Report</h2>
+          <div className="pm-panel-actions pm-report-export-actions">
+            <button
+              type="button"
+              className="pm-file-btn"
+              onClick={onExportReport}
+              disabled={reportState === 'working' || !surfaceReady}
+              title={`Export the column design report as PDF · ${reportDetailIds.length} combination(s) detailed`}
+            >
+              {reportState === 'working' ? <Loader2 size={13} className="pm-spin" /> : <Download size={13} />}
+              PDF
+            </button>
+            <button
+              type="button"
+              className="pm-file-btn"
+              onClick={onExportExcel}
+              disabled={excelState === 'working' || !excelReady}
+              title="Export the selected loadcase calculation to Excel, with live formulas"
+            >
+              {excelState === 'working' ? <Loader2 size={13} className="pm-spin" /> : <Download size={13} />}
+              Excel
+            </button>
           </div>
         </div>
-        {!surfaceReady ? (
-          <p className="pm-field-note">Build the section resistance surface first.</p>
-        ) : working ? (
-          <p className="pm-field-note">Solving the selected combination…</p>
-        ) : !inverseResult ? (
-          <p className="pm-field-note">Select a load combination below.</p>
-        ) : (
-          <>
-            <div className="pm-result-status-list">
-              <span>Verdict</span>
-              <strong className={verdict(inverseResult).tone}>{verdict(inverseResult).label}</strong>
-              <span>Utilization</span>
-              <strong>{inverseResult.utilization == null ? '—' : fmt(inverseResult.utilization)}</strong>
-              <span>Fixed-P (diag.)</span>
-              <strong>
-                {inverseResult.fixedPUtilization == null ? '—' : fmt(inverseResult.fixedPUtilization)}
-              </strong>
-              <span>φ</span>
-              <strong>
-                {inverseResult.resistance?.factor == null ? '—' : fmt(inverseResult.resistance.factor, 4)}
-              </strong>
-              <span>Classification</span>
-              <strong>{inverseResult.resistance?.classification ?? '—'}</strong>
-              <span>Axial cap</span>
-              <strong>{inverseResult.resistance?.axialCapApplied ? 'governing' : 'not governing'}</strong>
-            </div>
-            <p className="pm-field-note">{inverseResult.message}</p>
-          </>
-        )}
-        {surfaceReady && quickCheck.total > 0 ? (
-          <p className="pm-field-note">
-            {quickCheck.working
-              ? `Checking utilizations… ${quickCheck.checked}/${quickCheck.total}`
-              : `${quickCheck.checked}/${quickCheck.total} combinations have a utilization.`}
-          </p>
-        ) : null}
-      </section>
-
-      <section className="pm-panel-section">
-        <div className="pm-section-title">
-          <div>
-            <h2>PDF report</h2>
-            <p>Input, capacity curves and the demand table are always included.</p>
+        <div className="pm-report-selection-heading">
+          <span>Include loadcases</span>
+          <div className="pm-report-selection-actions">
+            <button
+              type="button"
+              className="pm-secondary-btn pm-report-pick-action"
+              onClick={() => onReportDetailIdsChange(loadcases.map((item) => item.id))}
+              disabled={loadcases.length === 0}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              className="pm-secondary-btn pm-report-pick-action"
+              onClick={() => onReportDetailIdsChange([])}
+              disabled={reportDetailIds.length === 0}
+            >
+              None
+            </button>
           </div>
         </div>
-        <p className="pm-field-note">
-          Detailed calculation pages — section views, ledger and solver evidence — are produced only
-          for the combinations ticked below.
-        </p>
-        <div className="pm-panel-actions">
-          <button
-            type="button"
-            className="pm-secondary-btn"
-            onClick={() => onReportDetailIdsChange(loadcases.map((item) => item.id))}
-            disabled={loadcases.length === 0}
-          >
-            All
-          </button>
-          <button
-            type="button"
-            className="pm-secondary-btn"
-            onClick={() => onReportDetailIdsChange([])}
-            disabled={reportDetailIds.length === 0}
-          >
-            None
-          </button>
-        </div>
-        <div className="pm-chart-toggle-list">
+        <div className="pm-report-pick-box" aria-label="Loadcases included in report">
           {loadcases.map((loadcase) => (
             <label
               key={loadcase.id}
@@ -183,23 +135,15 @@ export function DemandCheckPanel({
               {loadcase.name}
             </label>
           ))}
-          {loadcases.length === 0 ? <p className="pm-field-note">No combinations yet.</p> : null}
-        </div>
-        <div className="pm-panel-actions">
-          <button
-            type="button"
-            className="pm-file-btn"
-            onClick={onExportReport}
-            disabled={reportState === 'working' || !surfaceReady}
-            title={`Export the column design report as PDF · ${reportDetailIds.length} combination(s) detailed`}
-          >
-            {reportState === 'working' ? <Loader2 size={13} className="pm-spin" /> : <Download size={13} />}
-            PDF
-          </button>
         </div>
         {reportMessage ? (
           <p className={reportState === 'error' ? 'pm-field-error' : 'pm-field-note'} role="status">
             {reportMessage}
+          </p>
+        ) : null}
+        {excelMessage ? (
+          <p className={excelState === 'error' ? 'pm-field-error' : 'pm-field-note'} role="status">
+            {excelMessage}
           </p>
         ) : null}
       </section>

@@ -266,6 +266,44 @@ test('equivalent-block example projects parse and solve with their shipped produ
   }
 })
 
+test('equivalent-block admissibility is reference-point invariant in all moment quadrants', () => {
+  const file = resolve(process.cwd(), 'docs/examples/equivalent-block/KDS-EB-03-l-shape-8-bars.pm-project.json')
+  const parsed = parseProjectDocument(readFileSync(file, 'utf8'))
+  assert.ok(parsed.ok, 'the asymmetric L-shape project must parse')
+  if (!parsed.ok) return
+
+  const { inputs } = parsed.document
+  const options = inputs.analysis as EquivalentBlockAnalysisOptions
+  const prepared = prepareBlockAnalysis(
+    inputs.calculationProfileId,
+    sectionGeometryFromGeometryInput(inputs.geometry),
+    geometryInputRebars(inputs.geometry),
+    inputs.materials,
+    inputs.design
+  )
+  assert.notEqual(prepared.section.referencePoint.x, 0, 'fixture must exercise a translated analysis origin')
+  assert.notEqual(prepared.section.referencePoint.y, 0, 'fixture must exercise a translated analysis origin')
+  const surface = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  const source = inputs.loadings.combinations[0]
+
+  for (const [signX, signY] of [[1, 1], [-1, 1], [-1, -1], [1, -1]] as const) {
+    const result = solveEquivalentBlockDemandFromPrepared(prepared, options, {
+      ...source,
+      id: 100 + signX * 10 + signY,
+      name: `${signX > 0 ? '+' : '-'}Mx ${signY > 0 ? '+' : '-'}My`,
+      Mx: signX * Math.abs(source.Mx),
+      My: signY * Math.abs(source.My)
+    }, surface)
+    assert.equal(result.converged, true, `${result.demand.name}: proportional solve`)
+    assert.equal(result.admissibility.ok, true, `${result.demand.name}: physical strain state`)
+    assert.equal(result.ok, true, `${result.demand.name}: accepted result`)
+    assert.ok(
+      result.admissibility.maxConcreteCompression <= result.admissibility.concreteLimit * (1 + 1e-9),
+      `${result.demand.name}: compression limit`
+    )
+  }
+})
+
 for (const profileId of [
   'kds-142020-equivalent-block',
   'aci-318-19-22-equivalent-block',
@@ -336,7 +374,9 @@ for (const profileId of [
     })
     assert.equal(field.mechanics, 'equivalent-rectangular-block')
     assert.ok(field.equivalentBlock?.geometry.length)
-    assert.ok(field.triangles.length > 0)
+    assert.equal(field.triangles.length, 0, 'equivalent-block field must not imply mesh integration')
+    assert.equal(field.samples.length, 0, 'equivalent-block field is analytic and exactly clipped')
+    assert.equal(field.mesh.triangles, 0)
   })
 }
 

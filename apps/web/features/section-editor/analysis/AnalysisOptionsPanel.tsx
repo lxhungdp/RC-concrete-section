@@ -19,6 +19,7 @@ import {
   type AnalysisOptions,
   type CalculationAnalysisOptions,
   type EquivalentBlockAnalysisOptions,
+  type EquivalentBlockStation,
   type AnalysisStation,
   type AnalysisStationCriterion
 } from '@pm/project'
@@ -35,7 +36,7 @@ const clone = (options: AnalysisOptions): AnalysisOptions => structuredClone(opt
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 const criterionValue = (criterion: AnalysisStationCriterion) => {
-  if (criterion.type === 'steel-strain') return criterion.strain
+  if (criterion.type === 'steel-strain') return Math.abs(criterion.strain)
   if (criterion.type === 'strength-reduction-post-transition') return criterion.strain
   return criterion.ratio
 }
@@ -51,7 +52,7 @@ const criterionWithValue = (criterion: AnalysisStationCriterion, value: number):
   if (criterion.type === 'strength-reduction-post-transition') {
     return { type: 'steel-strain', strain: Math.min(-1e-6, value) }
   }
-  return { type: criterion.type, strain: Math.min(0, value) }
+  return { type: criterion.type, strain: -Math.abs(value) }
 }
 
 const defaultCriterion = (type: AnalysisStationCriterion['type']): AnalysisStationCriterion => {
@@ -62,6 +63,31 @@ const defaultCriterion = (type: AnalysisStationCriterion['type']): AnalysisStati
   if (type === 'strength-reduction-transition-ratio') return { type, ratio: 0.5 }
   if (type === 'strength-reduction-post-transition') return { type: 'steel-strain', strain: -0.0075 }
   return { type, strain: -0.003 }
+}
+
+type EditableCriterionType = 'depth-ratio' | 'bar-tension-yield-ratio' | 'steel-strain'
+
+const blockCriterionType = (station: EquivalentBlockStation): EditableCriterionType =>
+  station.type === 'extreme-tension-strain' ? 'steel-strain' : station.type
+
+const blockCriterionValue = (station: EquivalentBlockStation) =>
+  station.type === 'extreme-tension-strain' ? station.strain : station.ratio
+
+const defaultBlockCriterion = (type: EditableCriterionType): EquivalentBlockStation => {
+  if (type === 'depth-ratio') return { type, ratio: 1 }
+  if (type === 'bar-tension-yield-ratio') return { type, ratio: 0 }
+  return { type: 'extreme-tension-strain', strain: 0.003 }
+}
+
+const blockCriterionWithValue = (
+  station: EquivalentBlockStation,
+  value: number
+): EquivalentBlockStation => {
+  if (station.type === 'depth-ratio') return { type: station.type, ratio: Math.max(1, value) }
+  if (station.type === 'bar-tension-yield-ratio') {
+    return { type: station.type, ratio: Math.max(0, value) }
+  }
+  return { type: station.type, strain: Math.max(0, value) }
 }
 
 const isMandatoryTransitionStation = (criterion: AnalysisStationCriterion) =>
@@ -320,15 +346,12 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
                     disabled={isMandatoryTransitionStation(station.criterion)}
                     onChange={(event) =>
                       updateStation(station.id, {
-                        criterion: defaultCriterion(event.target.value as AnalysisStationCriterion['type'])
+                        criterion: defaultCriterion(event.target.value as EditableCriterionType)
                       })
                     }
                   >
-                    <option value="c-over-c1">c/c₁</option>
                     <option value="depth-ratio">c/D</option>
-                    <option value="steel-stress-ratio">fs/fyd</option>
                     <option value="bar-tension-yield-ratio">εₛ/εy</option>
-                    <option value="strength-reduction-transition-ratio">φᵣ</option>
                     <option value="steel-strain">εₛ</option>
                   </select>
                 </td>
@@ -378,7 +401,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
         </table>
       </div>
       <p className="pm-field-note">
-        D = projected section depth; c₁ = depth to the controlling tension bar
+        D = projected section depth
         <br />
         εₛ/εy = tensile strain magnitude of that bar normalized by its own yield strain
       </p>
@@ -718,24 +741,19 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
   )
 }
 
-const resampleBlockStations = (count: number) => {
-  const epsCuReference = 0.003
-  const minimumRatio = 1 / (1 + 0.1 / epsCuReference)
-  const maximumRatio = 50
-  return Array.from({ length: count }, (_, index) => {
-    const ratio = Math.exp(
-      Math.log(minimumRatio) + (Math.log(maximumRatio) - Math.log(minimumRatio)) * index / (count - 1)
-    )
-    return ratio <= 1
-      ? { type: 'extreme-tension-strain' as const, strain: epsCuReference * (1 / ratio - 1) }
-      : { type: 'depth-ratio' as const, ratio }
-  }).reverse()
-}
-
 function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { options: EquivalentBlockAnalysisOptions }) {
-  const commit = (mutate: (draft: EquivalentBlockAnalysisOptions) => void) => {
+  const commit = (mutate: (draft: EquivalentBlockAnalysisOptions) => void, changesStations = false) => {
     const draft = structuredClone(options)
     mutate(draft)
+    if (changesStations) {
+      draft.neutralAxisStations.basedOn = 'custom'
+      if (draft.neutralAxisStations.refinement.type === 'adaptive') {
+        draft.neutralAxisStations.refinement.maxStations = Math.max(
+          draft.neutralAxisStations.values.length + 2,
+          draft.neutralAxisStations.refinement.maxStations
+        )
+      }
+    }
     onChange(draft)
   }
   const intermediateStationCount = options.neutralAxisStations.values.length
@@ -751,8 +769,12 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
     <section className="pm-panel-section">
       <div className="pm-section-title pm-section-title--with-action">
         <div>
-          <h2>Equivalent-block analysis options</h2>
-          <p>Neutral-axis and angular sampling; independent of the concrete integration mesh.</p>
+          <h2>{view === 'mesh' ? 'Equivalent stress block' : 'Equivalent-block analysis options'}</h2>
+          <p>
+            {view === 'mesh'
+              ? 'Exact compression polygon; no concrete integration mesh.'
+              : 'Neutral-axis and angular sampling; independent of the concrete integration mesh.'}
+          </p>
         </div>
         <button
           type="button"
@@ -795,26 +817,106 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
             <span>Maximum sampled states</span><strong>{stationMaximum * directionMaximum}</strong>
           </div>
 
-          <div className="pm-section-title"><div><h3>Unified station schedule</h3><p>c/D outside the section and εₛ/εy at the controlling bar inside it.</p></div></div>
-          <label className="pm-field">
-            <span>Intermediate count (poles excluded)</span>
-            <NumericInput
-              min={4}
-              max={MAX_INTERMEDIATE_STATIONS}
-              integer
-              value={intermediateStationCount}
-              onCommit={(value) => commit((draft) => {
-                draft.neutralAxisStations.values = resampleBlockStations(value)
-                draft.neutralAxisStations.basedOn = 'custom'
-                if (draft.neutralAxisStations.refinement.type === 'adaptive') {
-                  draft.neutralAxisStations.refinement.maxStations = Math.max(
-                    value + 2,
-                    draft.neutralAxisStations.refinement.maxStations
-                  )
-                }
-              })}
-            />
-          </label>
+          <div className="pm-section-title">
+            <div>
+              <h3>Points &amp; criteria</h3>
+              <p>Shared 27-point baseline; customizable for this calculation</p>
+            </div>
+          </div>
+
+          <div className="pm-table-wrap">
+            <table className="pm-point-table">
+              <thead>
+                <tr>
+                  <th>No.</th>
+                  <th>Criteria</th>
+                  <th>Value</th>
+                  <th>
+                    <button
+                      type="button"
+                      className="pm-table-add-icon-btn"
+                      disabled={intermediateStationCount >= MAX_BLOCK_STATIONS - 2}
+                      onClick={() => commit((draft) => {
+                        draft.neutralAxisStations.values.push({
+                          type: 'extreme-tension-strain',
+                          strain: 0.05
+                        })
+                      }, true)}
+                      title="Add point"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="pm-analysis-fixed-point">
+                  <td><span className="pm-point-index">1</span></td>
+                  <td><span className="pm-analysis-fixed-label">Pure compression</span></td>
+                  <td><span className="pm-analysis-fixed-value">εcu</span></td>
+                  <td />
+                </tr>
+                {options.neutralAxisStations.values.map((station, index) => (
+                  <tr key={`${index}-${station.type}`}>
+                    <td><span className="pm-point-index">{index + 2}</span></td>
+                    <td>
+                      <select
+                        aria-label={`Point ${index + 2} criteria`}
+                        value={blockCriterionType(station)}
+                        onChange={(event) => commit((draft) => {
+                          draft.neutralAxisStations.values[index] = defaultBlockCriterion(
+                            event.target.value as EditableCriterionType
+                          )
+                        }, true)}
+                      >
+                        <option value="depth-ratio">c/D</option>
+                        <option value="bar-tension-yield-ratio">εₛ/εy</option>
+                        <option value="steel-strain">εₛ</option>
+                      </select>
+                    </td>
+                    <td>
+                      <NumericInput
+                        ariaLabel={`Point ${index + 2} value`}
+                        min={station.type === 'depth-ratio' ? 1 : 0}
+                        step="any"
+                        value={blockCriterionValue(station)}
+                        onCommit={(value) => commit((draft) => {
+                          draft.neutralAxisStations.values[index] = blockCriterionWithValue(
+                            draft.neutralAxisStations.values[index],
+                            value
+                          )
+                        }, true)}
+                      />
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="pm-table-icon-btn pm-table-icon-btn--danger"
+                        disabled={intermediateStationCount <= 2}
+                        onClick={() => commit((draft) => {
+                          draft.neutralAxisStations.values.splice(index, 1)
+                        }, true)}
+                        title={`Remove point ${index + 2}`}
+                      >
+                        <X size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                <tr className="pm-analysis-fixed-point">
+                  <td><span className="pm-point-index">{intermediateStationCount + 2}</span></td>
+                  <td><span className="pm-analysis-fixed-label">Pure tension</span></td>
+                  <td><span className="pm-analysis-fixed-value">Material domain</span></td>
+                  <td />
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="pm-field-note">
+            D = projected section depth
+            <br />
+            εₛ/εy = tensile strain magnitude normalized by the controlling bar yield strain
+          </p>
           <div className="pm-result-status-list">
             <span>Station behavior</span>
             <strong>{options.samplingMode === 'adaptive' ? 'Independent per meridian' : 'Fixed points only'}</strong>

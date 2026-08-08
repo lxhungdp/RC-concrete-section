@@ -4107,7 +4107,7 @@ export type SectionFieldMap = {
   origin: AnalysisOrigin
   /** Legacy quadrature samples (debug / hover). */
   samples: SectionFieldSample[]
-  /** Clipped-cell triangles in world coordinates — primary field visualization. */
+  /** Clipped-cell triangles for stress-strain integration; empty for analytic equivalent blocks. */
   triangles: SectionFieldTriangle[]
   rebars: SectionFieldRebar[]
   bounds: { minX: number; maxX: number; minY: number; maxY: number }

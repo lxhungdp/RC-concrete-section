@@ -68,55 +68,77 @@ export function PlotlyChart({ data, layout, config, onClick }: Props) {
   const plotlyRef = useRef<null | PlotlyApi>(null)
   const clickRef = useRef(onClick)
   const attachedClickRef = useRef(false)
+  const mountedRef = useRef(false)
+  const renderRevisionRef = useRef(0)
+  const renderQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const latestRenderRef = useRef({ data, layout, config })
   clickRef.current = onClick
+  latestRenderRef.current = { data, layout, config }
 
   useEffect(() => {
-    let disposed = false
-
-    const render = async () => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      renderRevisionRef.current += 1
       const host = hostRef.current
-      if (!host) return
-      const Plotly = plotlyRef.current ?? (await loadPlotly())
-      if (disposed) return
-      plotlyRef.current = Plotly
+      void renderQueueRef.current.finally(() => {
+        const Plotly = plotlyRef.current
+        if (host && Plotly) Plotly.purge(host)
+      })
+    }
+  }, [])
 
-      await Plotly.react(
-        host,
-        data,
-        {
-          ...layout,
-          autosize: true,
-          // Let Plotly measure the host; do not pin width/height in layout.
-          width: undefined,
-          height: undefined
-        },
-        {
-          responsive: true,
-          displaylogo: false,
-          scrollZoom: true,
-          ...config
-        }
-      )
-      if (disposed) return
-      if (host.clientWidth > 8 && host.clientHeight > 8) Plotly.Plots.resize(host)
+  useEffect(() => {
+    const revision = ++renderRevisionRef.current
+    const render = async () => {
+      try {
+        const Plotly = plotlyRef.current ?? (await loadPlotly())
+        if (!mountedRef.current || revision !== renderRevisionRef.current) return
+        const host = hostRef.current
+        if (!host) return
+        plotlyRef.current = Plotly
+        const next = latestRenderRef.current
 
-      if (!attachedClickRef.current) {
-        // The handler reads through a ref, so a new `onClick` identity never re-attaches it — and,
-        // more importantly, never re-runs this effect and redraws the whole plot.
-        const clickHandler = (event: PlotlyClickPayload) => clickRef.current?.(event)
-        ;(host as unknown as { on: (event: string, handler: typeof clickHandler) => void }).on(
-          'plotly_click',
-          clickHandler
+        await Plotly.react(
+          host,
+          next.data,
+          {
+            ...next.layout,
+            autosize: true,
+            uirevision: next.layout.uirevision ?? 'pm-chart',
+            // Let Plotly measure the host; do not pin width/height in layout.
+            width: undefined,
+            height: undefined
+          },
+          {
+            responsive: true,
+            displaylogo: false,
+            scrollZoom: true,
+            ...next.config
+          }
         )
-        attachedClickRef.current = true
+        if (!mountedRef.current || revision !== renderRevisionRef.current) return
+        if (host.clientWidth > 8 && host.clientHeight > 8) Plotly.Plots.resize(host)
+
+        if (!attachedClickRef.current) {
+          // The handler reads through a ref, so a new `onClick` identity never re-attaches it — and,
+          // more importantly, never re-runs this effect and redraws the whole plot.
+          const clickHandler = (event: PlotlyClickPayload) => clickRef.current?.(event)
+          ;(host as unknown as { on: (event: string, handler: typeof clickHandler) => void }).on(
+            'plotly_click',
+            clickHandler
+          )
+          attachedClickRef.current = true
+        }
+      } catch {
+        if (!plotlyRef.current) plotlyModule = null
       }
     }
 
-    void render()
-
-    return () => {
-      disposed = true
-    }
+    // A loadcase change updates demand, inverse result, exact curve, and field map in sequence.
+    // Serialize Plotly work and let queued stale revisions exit before touching the host, instead
+    // of allowing several Plotly.react calls to clear/redraw the same element concurrently.
+    renderQueueRef.current = renderQueueRef.current.then(render, render)
   }, [config, data, layout])
 
   /**
@@ -142,14 +164,6 @@ export function PlotlyChart({ data, layout, config, onClick }: Props) {
       observer.disconnect()
     }
   }, [])
-
-  useEffect(
-    () => () => {
-      const host = hostRef.current
-      if (host && plotlyRef.current) plotlyRef.current.purge(host)
-    },
-    []
-  )
 
   return <div ref={hostRef} className="pm-plotly-host" />
 }

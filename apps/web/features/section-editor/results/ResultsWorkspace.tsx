@@ -1,21 +1,18 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Download, EyeOff, Loader2, Maximize2, RotateCw } from 'lucide-react'
+import { EyeOff, Loader2, Maximize2, RotateCw } from 'lucide-react'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
 import type { DesignBasis } from '@pm/design'
-import {
-  isEquivalentBlockProfileId,
-  type EquivalentBlockAnalysisOptions,
-  type LoadCombination
-} from '@pm/project'
+import type { LoadCombination } from '@pm/project'
 import {
   activeDesignDirectionPoints,
   activeDesignSurfaceDataset,
   activeNominalDirectionPoints,
   activeNominalSurfaceDataset,
   contourStrainAngleSamples,
+  intersectFixedPContourWithMomentRay,
   sliceFixedPContour,
   strainGradientDirection,
   type ExactDirectionCurve,
@@ -24,12 +21,9 @@ import {
   type PreviewSurfacePoint,
   type SectionFieldMap
 } from '@pm/analysis'
-import { ExcelExportError, equivalentBlockWorkbookFileName, sectionWorkbookFileName } from '@pm/report'
 import {
   buildSectionFieldMapAsync,
   buildExactDirectionCurveAsync,
-  exportEquivalentBlockWorkbookAsync,
-  exportSectionWorkbookAsync,
   isAnalysisAbort
 } from '../../../application/analysis/client'
 import { PlotlyChart, type PlotlyClickPayload } from './PlotlyChart'
@@ -50,7 +44,6 @@ import {
 import { SectionFieldChart } from './SectionFieldChart'
 import {
   lineAngleDifferenceDeg,
-  momentAngleDeg,
   perpendicularBendingAxisAngleDeg,
   sectionFieldAngleComparison,
   strainDirectionToNeutralAxisAngleDeg
@@ -336,15 +329,15 @@ export function ResultsWorkspace({
   ready,
   busy,
   viewMode,
-  surface,
-  section,
-  rebars,
-  materialStore,
-  designBasis,
-  loadcases,
+  surface: requestedSurface,
+  section: requestedSection,
+  rebars: requestedRebars,
+  materialStore: requestedMaterialStore,
+  designBasis: requestedDesignBasis,
+  loadcases: requestedLoadcases,
   projectName,
-  selectedLoadcaseId,
-  inverseResult,
+  selectedLoadcaseId: requestedLoadcaseId,
+  inverseResult: requestedInverseResult,
   exactDirectionCurve,
   onExactDirectionCurveChange,
   fixedP,
@@ -355,14 +348,35 @@ export function ResultsWorkspace({
   onDemandViewChange,
   onSelectLoadcase
 }: Props) {
-  const [exportState, setExportState] = useState<'idle' | 'working' | 'error'>('idle')
-  const [exportMessage, setExportMessage] = useState('')
-  const [fieldMap, setFieldMap] = useState<SectionFieldMap | null>(null)
+  const [fieldSnapshot, setFieldSnapshot] = useState<{
+    map: SectionFieldMap
+    result: InversePreviewResult
+    loadcases: LoadCombination[]
+    selectedLoadcaseId: number
+    surface: PreviewSurface
+    section: SectionGeometry
+    rebars: GeometryInputRebarView[]
+    materialStore: MaterialStore
+    designBasis: DesignBasis
+    exactCurve: ExactDirectionCurve | null
+  } | null>(null)
+  const requestedLoadcasesRef = useRef(requestedLoadcases)
+  requestedLoadcasesRef.current = requestedLoadcases
+  const displayFieldSnapshot = viewMode === 'loadcase' ? fieldSnapshot : null
+  const loadcases = displayFieldSnapshot?.loadcases ?? requestedLoadcases
+  const selectedLoadcaseId = displayFieldSnapshot?.selectedLoadcaseId ?? requestedLoadcaseId
+  const inverseResult = displayFieldSnapshot?.result ?? requestedInverseResult
+  const fieldMap = displayFieldSnapshot?.map ?? null
+  const surface = displayFieldSnapshot?.surface ?? requestedSurface
+  const section = displayFieldSnapshot?.section ?? requestedSection
+  const rebars = displayFieldSnapshot?.rebars ?? requestedRebars
+  const materialStore = displayFieldSnapshot?.materialStore ?? requestedMaterialStore
+  const designBasis = displayFieldSnapshot?.designBasis ?? requestedDesignBasis
+  const demandExactCurve = displayFieldSnapshot?.exactCurve ?? null
   const [fieldMapWorking, setFieldMapWorking] = useState(false)
   const [exactAngleDraft, setExactAngleDraft] = useState(() => String(view.sliceAngle))
   const [exactCurveWorking, setExactCurveWorking] = useState(false)
   const [exactCurveMessage, setExactCurveMessage] = useState('')
-  const [demandExactCurve, setDemandExactCurve] = useState<ExactDirectionCurve | null>(null)
   const exactRequestId = useRef(0)
   const exactController = useRef<AbortController | null>(null)
   const exactCurve = exactDirectionCurve
@@ -382,6 +396,8 @@ export function ResultsWorkspace({
     [plotPalette.text]
   )
 
+  const requestedSelectedLoadcase = requestedLoadcases.find((item) => item.id === requestedLoadcaseId) ?? null
+  const requestedIsLoadcaseMode = viewMode === 'loadcase' && requestedSelectedLoadcase != null
   const selectedLoadcase = loadcases.find((item) => item.id === selectedLoadcaseId) ?? null
   const isLoadcaseMode = viewMode === 'loadcase' && selectedLoadcase != null
   const equilibriumBeta = useMemo(() => {
@@ -390,63 +406,106 @@ export function ResultsWorkspace({
   }, [inverseResult, isLoadcaseMode])
 
   useEffect(() => {
-    setFieldMap(null)
-
-    if (!isLoadcaseMode || !inverseResult?.ok || !surface) {
+    if (!requestedIsLoadcaseMode || !requestedSurface) {
+      setFieldSnapshot(null)
+      setFieldMapWorking(false)
+      return
+    }
+    // Keep the previous completed field visible while the newly selected loadcase is solving.
+    // Clearing here caused an off/on cycle, followed by another cycle when the new map arrived.
+    if (!requestedInverseResult || requestedLoadcaseId == null) return
+    if (!requestedInverseResult.ok) {
+      setFieldSnapshot(null)
       setFieldMapWorking(false)
       return
     }
 
     const controller = new AbortController()
     setFieldMapWorking(true)
-    buildSectionFieldMapAsync(
+    const exactBeta = requestedInverseResult.admissibility.evaluated
+      ? strainGradientDirection(requestedInverseResult.state)
+      : null
+    const fieldPromise = buildSectionFieldMapAsync(
       {
-        calculationProfileId: surface.calculationProfileId ?? 'kds-2024-stress-strain',
-        section,
-        rebars,
-        materialStore,
-        designBasis,
-        analysisOptions: surface.analysisOptions,
-        state: inverseResult.state,
-        blockState: inverseResult.equivalentBlock ? {
-          neutralAxisAngle: inverseResult.equivalentBlock.neutralAxisAngle,
-          neutralAxisDepth: inverseResult.equivalentBlock.neutralAxisDepth
+        calculationProfileId: requestedSurface.calculationProfileId ?? 'kds-2024-stress-strain',
+        section: requestedSection,
+        rebars: requestedRebars,
+        materialStore: requestedMaterialStore,
+        designBasis: requestedDesignBasis,
+        analysisOptions: requestedSurface.analysisOptions,
+        state: requestedInverseResult.state,
+        blockState: requestedInverseResult.equivalentBlock ? {
+          neutralAxisAngle: requestedInverseResult.equivalentBlock.neutralAxisAngle,
+          neutralAxisDepth: requestedInverseResult.equivalentBlock.neutralAxisDepth
         } : undefined
       },
       controller.signal
     )
-      .then((map) => {
-        setFieldMap(map)
+    const exactCurvePromise = exactBeta == null
+      ? Promise.resolve(null)
+      : buildExactDirectionCurveAsync({
+          calculationProfileId: requestedSurface.calculationProfileId ?? 'kds-2024-stress-strain',
+          section: requestedSection,
+          rebars: requestedRebars,
+          materialStore: requestedMaterialStore,
+          designBasis: requestedDesignBasis,
+          analysisOptions: requestedSurface.analysisOptions,
+          beta: exactBeta
+        }, controller.signal)
+
+    // Field, inverse result and exact meridian form one visual frame. Committing them together
+    // prevents a new beta from ever projecting the previous loadcase's exact curve.
+    Promise.all([fieldPromise, exactCurvePromise])
+      .then(([map, exactCurve]) => {
+        setFieldSnapshot({
+          map,
+          result: requestedInverseResult,
+          loadcases: requestedLoadcasesRef.current,
+          selectedLoadcaseId: requestedLoadcaseId,
+          surface: requestedSurface,
+          section: requestedSection,
+          rebars: requestedRebars,
+          materialStore: requestedMaterialStore,
+          designBasis: requestedDesignBasis,
+          exactCurve
+        })
         setFieldMapWorking(false)
       })
       .catch((error) => {
         if (isAnalysisAbort(error)) return
-        setFieldMap(null)
+        setFieldSnapshot(null)
         setFieldMapWorking(false)
       })
 
     return () => controller.abort()
-  }, [designBasis, inverseResult, isLoadcaseMode, materialStore, rebars, section, surface])
+  }, [
+    requestedDesignBasis,
+    requestedInverseResult,
+    requestedIsLoadcaseMode,
+    requestedLoadcaseId,
+    requestedMaterialStore,
+    requestedRebars,
+    requestedSection,
+    requestedSurface
+  ])
 
+  // Non-demand edits (for example a loadcase name) do not need another field-map build. Keep the
+  // committed field frame and refresh only the accompanying loadcase list.
   useEffect(() => {
-    setDemandExactCurve(null)
-    if (!surface || equilibriumBeta == null) return
-    const controller = new AbortController()
-    buildExactDirectionCurveAsync({
-      calculationProfileId: surface.calculationProfileId ?? 'kds-2024-stress-strain',
-      section,
-      rebars,
-      materialStore,
-      designBasis,
-      analysisOptions: surface.analysisOptions,
-      beta: equilibriumBeta
-    }, controller.signal)
-      .then(setDemandExactCurve)
-      .catch((error) => {
-        if (!isAnalysisAbort(error)) setDemandExactCurve(null)
-      })
-    return () => controller.abort()
-  }, [designBasis, equilibriumBeta, materialStore, rebars, section, surface])
+    if (
+      !fieldSnapshot ||
+      fieldSnapshot.result !== requestedInverseResult ||
+      fieldSnapshot.selectedLoadcaseId !== requestedLoadcaseId ||
+      fieldSnapshot.loadcases === requestedLoadcases
+    ) return
+    setFieldSnapshot((current) =>
+      current &&
+      current.result === requestedInverseResult &&
+      current.selectedLoadcaseId === requestedLoadcaseId
+        ? { ...current, loadcases: requestedLoadcases }
+        : current
+    )
+  }, [fieldSnapshot, requestedInverseResult, requestedLoadcaseId, requestedLoadcases])
 
   useEffect(() => {
     exactController.current?.abort()
@@ -618,6 +677,17 @@ export function ResultsWorkspace({
     () => contourStrainAngleSamples(nominalContour),
     [nominalContour]
   )
+  const fixedPCapacityProjection = useMemo(() => {
+    if (!isLoadcaseMode || !selectedLoadcase || strainAngleSamples.length < 2) return null
+    if (Math.hypot(selectedLoadcase.Mx, selectedLoadcase.My) < 1e-9) return null
+    const point = intersectFixedPContourWithMomentRay(
+      strainAngleSamples,
+      Math.atan2(selectedLoadcase.My, selectedLoadcase.Mx)
+    )
+    return point
+      ? { mx: knm(point.Mx), my: knm(point.My), p: kn(point.P) }
+      : null
+  }, [isLoadcaseMode, selectedLoadcase, strainAngleSamples])
   const surfacePoints3d = useMemo(
     () =>
       surface
@@ -1052,29 +1122,29 @@ export function ResultsWorkspace({
             }
           ]
         : []),
-      ...(capacityProjection
+      ...(fixedPCapacityProjection
         ? [{
             type: 'scatter',
-            name: 'Capacity point',
+            name: 'Fixed-P capacity point',
             mode: 'markers',
-            x: [capacityProjection.mx],
-            y: [capacityProjection.my],
+            x: [fixedPCapacityProjection.mx],
+            y: [fixedPCapacityProjection.my],
             marker: {
               size: 10,
               color: '#16a34a',
               symbol: 'diamond',
               line: { color: plotPalette.markerOutline, width: 1 }
             },
-            customdata: [[capacityProjection.p]],
+            customdata: [[fixedPCapacityProjection.p]],
             hovertemplate:
-              'Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<br>P=%{customdata[0]:.1f} kN<extra>Capacity</extra>'
+              'Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<br>P=%{customdata[0]:.1f} kN<extra>Fixed-P capacity</extra>'
           }]
         : [])
     ]
   }, [
     activeFixedPKn,
-    capacityProjection,
     demandProjection,
+    fixedPCapacityProjection,
     nominalStrainAngleSamples,
     plotPalette,
     view.showDesignResistance,
@@ -1539,7 +1609,7 @@ export function ResultsWorkspace({
   )
 
   const fieldExtremes = useMemo(() => {
-    if (!fieldMap) return null
+    if (!fieldMap || !inverseResult) return null
     let epsMin = Number.POSITIVE_INFINITY
     let epsMax = Number.NEGATIVE_INFINITY
     let sigMin = Number.POSITIVE_INFINITY
@@ -1550,15 +1620,29 @@ export function ResultsWorkspace({
       sigMin = Math.min(sigMin, sig)
       sigMax = Math.max(sigMax, sig)
     }
-    for (const tri of fieldMap.triangles) {
-      push(tri.strainA, tri.stressA)
-      push(tri.strainB, tri.stressB)
-      push(tri.strainC, tri.stressC)
+    if (fieldMap.equivalentBlock) {
+      const strainAt = (x: number, y: number) =>
+        inverseResult.state.e0 +
+        inverseResult.state.kx * (y - fieldMap.origin.y) +
+        inverseResult.state.ky * (x - fieldMap.origin.x)
+      for (const solid of section.solids) {
+        for (const ring of [solid.outer, ...solid.holes]) {
+          for (const point of ring) push(strainAt(point.x, point.y), 0)
+        }
+      }
+      sigMin = Math.min(sigMin, 0, fieldMap.equivalentBlock.compressionStress)
+      sigMax = Math.max(sigMax, 0, fieldMap.equivalentBlock.compressionStress)
+    } else {
+      for (const tri of fieldMap.triangles) {
+        push(tri.strainA, tri.stressA)
+        push(tri.strainB, tri.stressB)
+        push(tri.strainC, tri.stressC)
+      }
     }
     for (const bar of fieldMap.rebars) push(bar.strain, bar.stress)
     if (!Number.isFinite(epsMin)) return null
     return { epsMin, epsMax, sigMin, sigMax }
-  }, [fieldMap])
+  }, [fieldMap, inverseResult, section.solids])
 
   const fieldAngleComparison = useMemo(
     () =>
@@ -1571,110 +1655,6 @@ export function ResultsWorkspace({
         : null,
     [inverseResult]
   )
-
-  /**
-   * The block route has its own ledger workbook. It is a separate builder rather than a branch
-   * inside the fibre one because the two mechanics share inputs, not sheets: there is no
-   * integration mesh to audit here, and the concrete resultant comes from a clipped polygon.
-   */
-  const exportBlockWorkbook = async (analysisOptions: EquivalentBlockAnalysisOptions) => {
-    if (!selectedLoadcase || !surface) return
-    const profileId = surface.calculationProfileId
-    if (!profileId || !isEquivalentBlockProfileId(profileId)) {
-      setExportState('error')
-      setExportMessage('The current result was not produced by an equivalent-block profile, so the block workbook cannot describe it.')
-      return
-    }
-    setExportState('working')
-    setExportMessage('')
-    try {
-      // The block ledger audits a block-normal direction. Prefer the solved state's own direction
-      // so the exported stations bracket the governing one.
-      const thetaDeg = inverseResult?.equivalentBlock
-        ? normalizeAngleDeg((inverseResult.equivalentBlock.neutralAxisAngle * 180) / Math.PI)
-        : activeAngle
-      const payload = {
-        projectName,
-        sectionName: section.name,
-        calculationProfileId: profileId,
-        section,
-        rebars,
-        materialStore,
-        designBasis,
-        analysisOptions,
-        thetaDeg,
-        fixedP: activeFixedP,
-        loadcase: selectedLoadcase
-      }
-      const blob = await exportEquivalentBlockWorkbookAsync(payload)
-      const name = equivalentBlockWorkbookFileName(payload)
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = name
-      anchor.click()
-      URL.revokeObjectURL(url)
-      setExportState('idle')
-      setExportMessage(`Saved ${name}`)
-    } catch (error) {
-      setExportState('error')
-      setExportMessage(
-        error instanceof ExcelExportError
-          ? error.message
-          : `Export failed: ${error instanceof Error ? error.message : String(error)}`
-      )
-    }
-  }
-
-  const handleExcelExport = async () => {
-    if (!selectedLoadcase || !surface) return
-    const analysisOptions = surface.analysisOptions
-    if (analysisOptions.methodId === 'equivalent-block-surface-v1') {
-      await exportBlockWorkbook(analysisOptions)
-      return
-    }
-    setExportState('working')
-    setExportMessage('')
-    try {
-      // The detail sheets audit a strain-gradient direction, not an N.A. line angle and not the
-      // demand moment direction. The workbook derives and labels all three independently.
-      const equilibrium = inverseResult?.state
-      const curvature = equilibrium ? Math.hypot(equilibrium.kx, equilibrium.ky) : 0
-      const betaDeg =
-        equilibrium && curvature > 1e-12
-          ? normalizeAngleDeg((Math.atan2(equilibrium.ky, equilibrium.kx) * 180) / Math.PI)
-          : activeAngle
-      const payload = {
-        projectName,
-        sectionName: section.name,
-        section,
-        rebars,
-        materialStore,
-        designBasis,
-        analysisOptions,
-        betaDeg,
-        fixedP: activeFixedP,
-        loadcase: selectedLoadcase,
-        equilibrium: equilibrium ?? null
-      }
-      const blob = await exportSectionWorkbookAsync(payload)
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = sectionWorkbookFileName(payload)
-      anchor.click()
-      URL.revokeObjectURL(url)
-      setExportState('idle')
-      setExportMessage(`Saved ${sectionWorkbookFileName(payload)}`)
-    } catch (error) {
-      setExportState('error')
-      setExportMessage(
-        error instanceof ExcelExportError
-          ? error.message
-          : `Export failed: ${error instanceof Error ? error.message : String(error)}`
-      )
-    }
-  }
 
   const handle3dClick = (event: PlotlyClickPayload) => {
     if (isLoadcaseMode) return
@@ -1776,27 +1756,6 @@ export function ResultsWorkspace({
         aria-busy={busy}
       >
         {busy ? <StaleBanner /> : null}
-        <div className="pm-results-toolbar">
-          <div className="pm-results-export" role="toolbar" aria-label="Export results">
-            <button
-              type="button"
-              className="pm-export-button"
-              onClick={handleExcelExport}
-              disabled={exportState === 'working' || !surface}
-              title="Export the full section calculation to Excel, with live formulas"
-            >
-              {exportState === 'working' ? <Loader2 size={14} className="pm-spin" /> : <Download size={14} />}
-              {exportState === 'working' ? 'Building…' : 'Excel'}
-            </button>
-            {exportMessage ? (
-              <span className={`pm-export-message${exportState === 'error' ? ' is-error' : ''}`} role="status">
-                {exportMessage}
-              </span>
-            ) : null}
-          </div>
-        </div>
-
-
         <div
           className={`pm-results-grid pm-results-grid--dynamic primary-${demandView.primaryChart} count-${
             Object.values(demandView.visibleCharts).filter(Boolean).length
@@ -1896,16 +1855,16 @@ export function ResultsWorkspace({
                       </strong>
                     </div>
                     <div>
-                      <span>Resistance</span>
-                      <strong title={inverseResult.resistance?.classification ?? undefined}>
-                        {inverseResult.resistance?.factor == null
-                          ? 'Material design'
-                          : `φ = ${fmt(inverseResult.resistance.factor, 3)}`}
-                      </strong>
-                    </div>
-                    <div>
                       <span>Residual</span>
                       <strong>{sci(inverseResult.residualNorm, 2)}</strong>
+                    </div>
+                    <div title="Actual epsilon=0 neutral-axis line, measured CCW from section +x modulo 180 degrees.">
+                      <span>N.A. axis αNA</span>
+                      <strong>
+                        {fieldAngleComparison?.neutralAxis == null
+                          ? 'n/a'
+                          : `${fmt(fieldAngleComparison.neutralAxis, 1)}°`}
+                      </strong>
                     </div>
                   </div>
                 </article>
@@ -1913,46 +1872,89 @@ export function ResultsWorkspace({
                 <article className="pm-field-metric-card">
                   <header>Strain</header>
                   <div className="pm-field-metric-rows">
+                    {inverseResult.equivalentBlock ? (
+                      <>
+                        <div title="Neutral-axis depth measured from the extreme compression edge along the block normal.">
+                          <span>N.A. depth c</span>
+                          <strong>{fmt(inverseResult.equivalentBlock.neutralAxisDepth, 2)} mm</strong>
+                        </div>
+                        <div>
+                          <span>Block factor β1</span>
+                          <strong>{fmt(inverseResult.equivalentBlock.beta1, 3)}</strong>
+                        </div>
+                        <div title="Equivalent rectangular compression-block depth.">
+                          <span>a = β1·c</span>
+                          <strong>{fmt(inverseResult.equivalentBlock.blockDepth, 2)} mm</strong>
+                        </div>
+                        <div title="Full section depth projected onto the compression-block normal.">
+                          <span>Depth Dθ</span>
+                          <strong>{fmt(inverseResult.equivalentBlock.projectedSectionDepth, 2)} mm</strong>
+                        </div>
+                        <div>
+                          <span>εt / bar</span>
+                          <strong>
+                            {inverseResult.equivalentBlock.controllingTensileStrain == null
+                              ? 'n/a'
+                              : fmt(inverseResult.equivalentBlock.controllingTensileStrain, 6)}
+                            {' · '}
+                            {inverseResult.equivalentBlock.controllingBarId ?? 'n/a'}
+                          </strong>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <span>ε₀</span>
+                          <strong>{fmt(inverseResult.state.e0, 6)}</strong>
+                        </div>
+                        <div>
+                          <span>kx</span>
+                          <strong>{sci(inverseResult.state.kx, 2)}</strong>
+                        </div>
+                        <div>
+                          <span>ky</span>
+                          <strong>{sci(inverseResult.state.ky, 2)}</strong>
+                        </div>
+                      </>
+                    )}
                     <div>
-                      <span>ε₀</span>
-                      <strong>{fmt(inverseResult.state.e0, 6)}</strong>
-                    </div>
-                    <div>
-                      <span>kx / ky</span>
+                      <span>ε max / min</span>
                       <strong>
-                        {sci(inverseResult.state.kx, 2)} / {sci(inverseResult.state.ky, 2)}
+                        {fieldExtremes
+                          ? `${fmt(fieldExtremes.epsMax, 6)} / ${fmt(fieldExtremes.epsMin, 6)}`
+                          : '—'}
                       </strong>
-                    </div>
-                    <div>
-                      <span>ε max</span>
-                      <strong>{fieldExtremes ? fmt(fieldExtremes.epsMax, 6) : '—'}</strong>
-                    </div>
-                    <div>
-                      <span>ε min</span>
-                      <strong>{fieldExtremes ? fmt(fieldExtremes.epsMin, 6) : '—'}</strong>
                     </div>
                   </div>
                 </article>
 
-                {inverseResult.equivalentBlock && (
-                  <article className="pm-field-metric-card">
-                    <header>Equivalent block</header>
-                    <div className="pm-field-metric-rows">
-                      <div><span>NA normal θn / c</span><strong>{fmt(inverseResult.equivalentBlock.neutralAxisAngle * 180 / Math.PI, 2)}° · {fmt(inverseResult.equivalentBlock.neutralAxisDepth, 2)} mm</strong></div>
-                      <div><span>a = β1·c</span><strong>{fmt(inverseResult.equivalentBlock.blockDepth, 2)} mm</strong></div>
-                      <div><span>β1 / Dθ</span><strong>{fmt(inverseResult.equivalentBlock.beta1, 3)} · {fmt(inverseResult.equivalentBlock.projectedSectionDepth, 2)} mm</strong></div>
-                      <div><span>Concrete block stress</span><strong>{fmt(inverseResult.equivalentBlock.compressionStress, 3)} MPa</strong></div>
-                      <div><span>Ac,block / Cc</span><strong>{inverseResult.equivalentBlock.concreteBlockArea == null ? 'n/a' : `${fmt(inverseResult.equivalentBlock.concreteBlockArea, 1)} mm²`} · {inverseResult.equivalentBlock.concreteForce == null ? 'n/a' : `${fmt(kn(inverseResult.equivalentBlock.concreteForce), 1)} kN`}</strong></div>
-                      <div><span>εt / controlling bar</span><strong>{inverseResult.equivalentBlock.controllingTensileStrain == null ? 'n/a' : fmt(inverseResult.equivalentBlock.controllingTensileStrain, 6)} · {inverseResult.equivalentBlock.controllingBarId ?? 'n/a'}</strong></div>
-                      <div><span>Component assembly residual</span><strong>{inverseResult.equivalentBlock.componentForceResidual == null ? 'n/a' : sci(inverseResult.equivalentBlock.componentForceResidual, 2)}</strong></div>
-                      <div><span>Component Mx / My residual</span><strong>{inverseResult.equivalentBlock.componentMomentXResidual == null ? 'n/a' : sci(inverseResult.equivalentBlock.componentMomentXResidual, 2)} / {inverseResult.equivalentBlock.componentMomentYResidual == null ? 'n/a' : sci(inverseResult.equivalentBlock.componentMomentYResidual, 2)}</strong></div>
-                    </div>
-                  </article>
-                )}
-
                 <article className="pm-field-metric-card">
                   <header>Stress</header>
                   <div className="pm-field-metric-rows">
+                    {inverseResult.equivalentBlock ? (
+                      <>
+                        <div>
+                          <span>Block stress</span>
+                          <strong>{fmt(inverseResult.equivalentBlock.compressionStress, 3)} MPa</strong>
+                        </div>
+                        <div>
+                          <span>Block area Ac</span>
+                          <strong>
+                            {inverseResult.equivalentBlock.concreteBlockArea == null
+                              ? 'n/a'
+                              : `${fmt(inverseResult.equivalentBlock.concreteBlockArea, 1)} mm²`}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>Cc</span>
+                          <strong>
+                            {inverseResult.equivalentBlock.concreteForce == null
+                              ? 'n/a'
+                              : `${fmt(kn(inverseResult.equivalentBlock.concreteForce), 1)} kN`}
+                          </strong>
+                        </div>
+                      </>
+                    ) : null}
                     <div>
                       <span>σ max</span>
                       <strong>{fieldExtremes ? `${fmt(fieldExtremes.sigMax, 2)} MPa` : '—'}</strong>
@@ -1988,66 +1990,33 @@ export function ResultsWorkspace({
                       <strong>{fmt(knm(inverseResult.demand.My), 1)} kN·m</strong>
                     </div>
                     <div>
-                      <span title="θM = atan2(My,Mx) in Mx-My action space; it is not an N.A. line angle.">
-                        |M| / θM (M-space)
-                      </span>
-                      <strong title="The M-space angle is used for P-Mx-My demand queries, not for comparison with N.A.">
-                        {fmt(knm(Math.hypot(inverseResult.demand.Mx, inverseResult.demand.My)), 1)}
-                        {' · '}
-                        {(() => {
-                          const angle = momentAngleDeg(inverseResult.demand.Mx, inverseResult.demand.My)
-                          return angle == null ? 'n/a' : `${fmt(angle, 1)}°`
-                        })()}
-                      </strong>
-                    </div>
-                  </div>
-                </article>
-
-                <article className="pm-field-metric-card pm-field-metric-card--angles">
-                  <header>Section-axis comparison</header>
-                  <div className="pm-field-metric-rows">
-                    <div title="Exact strain-gradient direction recovered from the equilibrium state.">
-                      <span>Strain direction βeq</span>
+                      <span>|M|</span>
                       <strong>
-                        {equilibriumBeta == null ? 'n/a' : `${fmt(equilibriumBeta * 180 / Math.PI, 3)}°`}
+                        {fmt(knm(Math.hypot(inverseResult.demand.Mx, inverseResult.demand.My)), 1)} kN·m
                       </strong>
                     </div>
-                    <div title="Actual epsilon=0 neutral-axis line, measured CCW from section +x modulo 180 degrees.">
-                      <span>N.A. axis αNA</span>
-                      <strong>
-                        {fieldAngleComparison?.neutralAxis == null
-                          ? 'n/a'
-                          : `${fmt(fieldAngleComparison.neutralAxis, 1)}°`}
-                      </strong>
-                    </div>
-                    <div title="Reference line perpendicular to the in-section resultant direction (Muy,Mux).">
-                      <span>Reference ⊥Rₘ α⊥</span>
+                    <div
+                      title="Reference line perpendicular to the in-section resultant direction (Muy,Mux)."
+                    >
+                      <span>Ref. ⊥Rₘ · α⊥</span>
                       <strong>
                         {fieldAngleComparison?.perpendicularBendingAxis == null
                           ? 'n/a'
                           : `${fmt(fieldAngleComparison.perpendicularBendingAxis, 1)}°`}
                       </strong>
                     </div>
-                    <div title="Smallest angle between the actual N.A. and the perpendicular reference line.">
-                      <span>Angular deviation Δα</span>
-                      <strong>
-                        {fieldAngleComparison?.difference == null
-                          ? 'n/a'
-                          : `${fmt(fieldAngleComparison.difference, 1)}°`}
-                      </strong>
-                    </div>
                   </div>
                 </article>
               </div>
             ) : null,
-            children: fieldMap && inverseResult ? (
+            children: fieldSnapshot ? (
               <SectionFieldChart
-                fieldMap={fieldMap}
+                fieldMap={fieldSnapshot.map}
                 section={section}
                 fieldMode={demandView.fieldMode}
-                state={inverseResult.state}
-                Mx={inverseResult.demand.Mx}
-                My={inverseResult.demand.My}
+                state={fieldSnapshot.result.state}
+                Mx={fieldSnapshot.result.demand.Mx}
+                My={fieldSnapshot.result.demand.My}
                 showNeutralAxis={demandView.showNeutralAxis}
                 showMoments={demandView.showMoments}
                 includeRebar={demandView.includeRebar}

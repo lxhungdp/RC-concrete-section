@@ -1,8 +1,9 @@
 'use client'
 
-import { useRef, type ChangeEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Download, Plus, Upload, X } from 'lucide-react'
 import { createLoadCombination, type LoadCombination, type LoadingsInput } from '@pm/project'
+import { downloadLoadcaseWorkbook, importLoadcaseWorkbook } from './loadcase-xlsx'
 
 type Props = {
   input: LoadingsInput
@@ -18,70 +19,55 @@ type Props = {
 
 const toKn = (value: number) => value / 1000
 const toKnM = (value: number) => value / 1_000_000
-const fromNumber = (value: string, fallback: number) => {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : fallback
-}
-
 const formatUr = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 })
 
-const CSV_HEADERS = ['ID', 'Name', 'Pu (kN)', 'Mux (kN.m)', 'Muy (kN.m)']
-
-const escapeCsvCell = (value: string | number) => {
-  const text = String(value)
-  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+type SpreadsheetInputProps = {
+  value: string
+  ariaLabel: string
+  numeric?: boolean
+  onCommit: (value: string) => void
 }
 
-const parseCsvRows = (text: string) => {
-  const rows: string[][] = []
-  let row: string[] = []
-  let cell = ''
-  let quoted = false
+/**
+ * Keep edits local until the user leaves the cell (or presses Enter). This matches spreadsheet
+ * entry and prevents a capacity check from being scheduled once per typed digit.
+ */
+const SpreadsheetInput = ({ value, ariaLabel, numeric = false, onCommit }: SpreadsheetInputProps) => {
+  const [draft, setDraft] = useState(value)
 
-  for (let index = 0; index < text.length; index++) {
-    const character = text[index]
-    if (quoted) {
-      if (character === '"' && text[index + 1] === '"') {
-        cell += '"'
-        index++
-      } else if (character === '"') {
-        quoted = false
-      } else {
-        cell += character
-      }
-    } else if (character === '"') {
-      quoted = true
-    } else if (character === ',') {
-      row.push(cell)
-      cell = ''
-    } else if (character === '\n' || character === '\r') {
-      if (character === '\r' && text[index + 1] === '\n') index++
-      row.push(cell)
-      if (row.some((value) => value.trim() !== '')) rows.push(row)
-      row = []
-      cell = ''
-    } else {
-      cell += character
+  useEffect(() => setDraft(value), [value])
+
+  const commit = () => {
+    const next = draft.trim()
+    if (numeric && (next === '' || !Number.isFinite(Number(next)))) {
+      setDraft(value)
+      return
     }
+    if (next !== value) onCommit(next)
+    else if (draft !== value) setDraft(value)
   }
 
-  if (quoted) throw new Error('An opening quote is not closed.')
-  row.push(cell)
-  if (row.some((value) => value.trim() !== '')) rows.push(row)
-  return rows
-}
-
-const normalizeCsvHeader = (value: string) =>
-  value
-    .replace(/^\uFEFF/, '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
-
-const csvColumnIndex = (headers: string[], aliases: string[], required = true) => {
-  const index = headers.findIndex((header) => aliases.includes(normalizeCsvHeader(header)))
-  if (index < 0 && required) throw new Error(`Missing column "${aliases[0]}".`)
-  return index
+  return (
+    <input
+      type="text"
+      inputMode={numeric ? 'decimal' : undefined}
+      value={draft}
+      aria-label={ariaLabel}
+      onClick={(event) => event.stopPropagation()}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          event.currentTarget.blur()
+        } else if (event.key === 'Escape') {
+          event.preventDefault()
+          setDraft(value)
+          event.currentTarget.blur()
+        }
+      }}
+    />
+  )
 }
 
 export function LoadingsPanel({
@@ -94,7 +80,7 @@ export function LoadingsPanel({
   onDemandChanged
 }: Props) {
   const combinations = input.combinations
-  const csvInputRef = useRef<HTMLInputElement | null>(null)
+  const excelInputRef = useRef<HTMLInputElement | null>(null)
 
   const activateCombination = (combination: LoadCombination) => {
     onSelectLoadcase(combination.id)
@@ -128,125 +114,69 @@ export function LoadingsPanel({
   }
 
   const removeCombination = (id: number) => {
+    const removedIndex = combinations.findIndex((item) => item.id === id)
     const next = combinations.filter((item) => item.id !== id)
     onChange({ ...input, combinations: next })
-    if (selectedLoadcaseId === id) onSelectLoadcase(next[0]?.id ?? null)
+    if (selectedLoadcaseId === id) {
+      onSelectLoadcase(next[Math.min(Math.max(removedIndex, 0), next.length - 1)]?.id ?? null)
+    }
   }
 
-  const exportCsv = () => {
-    const rows = combinations.map((combination) => [
-      combination.id,
-      combination.name,
-      toKn(combination.P),
-      toKnM(combination.Mx),
-      toKnM(combination.My)
-    ])
-    const csv = [CSV_HEADERS, ...rows]
-      .map((row) => row.map(escapeCsvCell).join(','))
-      .join('\r\n')
-    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = 'loadcases.csv'
-    anchor.click()
-    URL.revokeObjectURL(url)
+  const exportExcel = async () => {
+    try {
+      await downloadLoadcaseWorkbook(combinations)
+    } catch (error) {
+      window.alert(`Excel export failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
-  const importCsv = async (event: ChangeEvent<HTMLInputElement>) => {
+  const importExcel = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
 
     try {
-      const rows = parseCsvRows(await file.text())
-      if (rows.length < 2) throw new Error('The CSV must contain a header and at least one loadcase.')
-
-      const headers = rows[0]
-      const idColumn = csvColumnIndex(headers, ['id', 'no', 'number'], false)
-      const nameColumn = csvColumnIndex(headers, ['name', 'loadcase', 'loadcasename'])
-      const puColumn = csvColumnIndex(headers, ['pu', 'pukn'])
-      const muxColumn = csvColumnIndex(headers, ['mux', 'muxknm'])
-      const muyColumn = csvColumnIndex(headers, ['muy', 'muyknm'])
-      const usedIds = new Set<number>()
-      const imported = rows.slice(1).map((row, rowIndex) => {
-        const line = rowIndex + 2
-        const name = (row[nameColumn] ?? '').trim()
-        if (!name) throw new Error(`Line ${line}: Name is required.`)
-
-        const readNumber = (column: number, label: string) => {
-          const value = Number((row[column] ?? '').trim())
-          if (!Number.isFinite(value)) throw new Error(`Line ${line}: ${label} must be a finite number.`)
-          return value
-        }
-
-        const requestedId = idColumn >= 0 && (row[idColumn] ?? '').trim() !== ''
-          ? Number((row[idColumn] ?? '').trim())
-          : undefined
-        if (
-          requestedId !== undefined &&
-          (!Number.isInteger(requestedId) || requestedId <= 0 || usedIds.has(requestedId))
-        ) {
-          throw new Error(`Line ${line}: ID must be a unique positive integer.`)
-        }
-
-        const combination = createLoadCombination(
-          {
-            id: requestedId,
-            name,
-            P: readNumber(puColumn, 'Pu') * 1000,
-            Mx: readNumber(muxColumn, 'Mux') * 1_000_000,
-            My: readNumber(muyColumn, 'Muy') * 1_000_000
-          },
-          usedIds
-        )
-        usedIds.add(combination.id)
-        return combination
-      })
-
+      const imported = await importLoadcaseWorkbook(await file.arrayBuffer())
       onChange({ ...input, combinations: imported })
       onSelectLoadcase(null)
     } catch (error) {
-      window.alert(`CSV import failed: ${error instanceof Error ? error.message : String(error)}`)
+      window.alert(`Excel import failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
   return (
     <section className="pm-panel-section">
       <div className="pm-section-title pm-section-title--with-action">
-        <div>
-          <h2>Loadcases</h2>
-          <p>Factored ULS actions · checked against design resistance</p>
-        </div>
+        <h2>Loadcases</h2>
         <div className="pm-loadcase-header-actions">
           <button
             type="button"
             className="pm-file-btn"
-            onClick={exportCsv}
-            title="Export loadcases to CSV"
+            onClick={() => void exportExcel()}
+            title="Export loadcases to Excel"
           >
             <Download size={13} />
-            CSV
+            Excel
           </button>
           <button
             type="button"
             className="pm-file-btn"
-            onClick={() => csvInputRef.current?.click()}
-            title="Import loadcases from CSV"
+            onClick={() => excelInputRef.current?.click()}
+            title="Import loadcases from Excel"
           >
             <Upload size={13} />
-            CSV
+            Excel
           </button>
           <button type="button" className="pm-table-add-btn" onClick={addCombination}>
             <Plus size={13} />
             Add
           </button>
           <input
-            ref={csvInputRef}
+            ref={excelInputRef}
             type="file"
-            accept=".csv,text/csv"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             hidden
-            onChange={importCsv}
+            onChange={importExcel}
           />
         </div>
       </div>
@@ -271,15 +201,15 @@ export function LoadingsPanel({
               <th>
                 Mux
                 <br />
-                kN.m
+                kNm
               </th>
               <th>
                 Muy
                 <br />
-                kN.m
+                kNm
               </th>
               <th className="pm-col-ur" title="Three-dimensional proportional utilization ratio">
-                3D UR
+                UR
               </th>
               <th className="pm-col-action" aria-label="Remove" />
             </tr>
@@ -305,56 +235,34 @@ export function LoadingsPanel({
                   onClick={() => activateCombination(item)}
                 >
                   <td>
-                    <input
+                    <SpreadsheetInput
                       value={item.name}
-                      aria-label={`Loadcase ${item.id} name`}
-                      onFocus={() => activateCombination(item)}
-                      onChange={(event) => updateCombination(item.id, { name: event.target.value })}
+                      ariaLabel={`Loadcase ${item.id} name`}
+                      onCommit={(value) => updateCombination(item.id, { name: value })}
                     />
                   </td>
                   <td>
-                    <input
-                      type="number"
-                      value={Number(toKn(item.P).toFixed(3))}
-                      aria-label={`Loadcase ${item.id} Pu`}
-                      onFocus={() => activateCombination(item)}
-                      onChange={(event) =>
-                        updateCombination(
-                          item.id,
-                          { P: fromNumber(event.target.value, toKn(item.P)) * 1000 },
-                          true
-                        )
-                      }
+                    <SpreadsheetInput
+                      numeric
+                      value={String(Number(toKn(item.P).toFixed(3)))}
+                      ariaLabel={`Loadcase ${item.id} Pu`}
+                      onCommit={(value) => updateCombination(item.id, { P: Number(value) * 1000 }, true)}
                     />
                   </td>
                   <td>
-                    <input
-                      type="number"
-                      value={Number(toKnM(item.Mx).toFixed(3))}
-                      aria-label={`Loadcase ${item.id} Mux`}
-                      onFocus={() => activateCombination(item)}
-                      onChange={(event) =>
-                        updateCombination(
-                          item.id,
-                          { Mx: fromNumber(event.target.value, toKnM(item.Mx)) * 1_000_000 },
-                          true
-                        )
-                      }
+                    <SpreadsheetInput
+                      numeric
+                      value={String(Number(toKnM(item.Mx).toFixed(3)))}
+                      ariaLabel={`Loadcase ${item.id} Mux`}
+                      onCommit={(value) => updateCombination(item.id, { Mx: Number(value) * 1_000_000 }, true)}
                     />
                   </td>
                   <td>
-                    <input
-                      type="number"
-                      value={Number(toKnM(item.My).toFixed(3))}
-                      aria-label={`Loadcase ${item.id} Muy`}
-                      onFocus={() => activateCombination(item)}
-                      onChange={(event) =>
-                        updateCombination(
-                          item.id,
-                          { My: fromNumber(event.target.value, toKnM(item.My)) * 1_000_000 },
-                          true
-                        )
-                      }
+                    <SpreadsheetInput
+                      numeric
+                      value={String(Number(toKnM(item.My).toFixed(3)))}
+                      ariaLabel={`Loadcase ${item.id} Muy`}
+                      onCommit={(value) => updateCombination(item.id, { My: Number(value) * 1_000_000 }, true)}
                     />
                   </td>
                   <td className="pm-col-ur">

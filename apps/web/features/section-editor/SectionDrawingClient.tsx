@@ -4,11 +4,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import dynamic from 'next/dynamic'
 import {
   BarChart3,
+  BookOpen,
   Circle,
   Download,
   Eye,
   EyeOff,
+  FolderOpen,
   Gauge,
+  History,
   Lock,
   Minus,
   Moon,
@@ -58,6 +61,7 @@ import {
   createDesignBasisForCalculationProfile,
   createDefaultAnalysisOptions,
   createProjectDocument,
+  isEquivalentBlockProfileId,
   parseProjectDocument,
   projectDocumentFileName,
   serializeProjectDocument,
@@ -77,10 +81,19 @@ import {
   checkLoadcaseAsync,
   checkLoadcasesAsync,
   exportColumnReportPdfAsync,
+  exportEquivalentBlockWorkbookAsync,
+  exportSectionWorkbookAsync,
   isAnalysisAbort
 } from '../../application/analysis/client'
+import { ExcelExportError, equivalentBlockWorkbookFileName, sectionWorkbookFileName } from '@pm/report'
 import { LoadingsPanel } from './loadings/LoadingsPanel'
 import { CalculationBasisToolbar } from './CalculationBasisToolbar'
+import { PROJECT_EXAMPLES, type ProjectExample } from './project-examples'
+import {
+  RECENT_PROJECT_STORAGE_KEY,
+  recentProjectFromRaw,
+  type RecentProject
+} from './recent-project'
 
 /**
  * The results and mesh stages carry Plotly and the analysis kernels. Loading them on demand keeps
@@ -100,6 +113,14 @@ const AnalysisMeshWorkspace = dynamic(
   {
     ssr: false,
     loading: () => <WorkspaceLoading title="Loading the section mesh view…" charts={1} />
+  }
+)
+
+const EquivalentBlockGeometryWorkspace = dynamic(
+  () => import('./analysis/EquivalentBlockGeometryWorkspace').then((module) => module.EquivalentBlockGeometryWorkspace),
+  {
+    ssr: false,
+    loading: () => <WorkspaceLoading title="Loading the equivalent block view…" charts={1} />
   }
 )
 import { AnalysisOptionsPanel } from './analysis/AnalysisOptionsPanel'
@@ -239,6 +260,15 @@ const ANALYSIS_DEBOUNCE_MS = 250
 
 const formatNumber = (value: number, digits = 1) =>
   Math.abs(value) < 1e-9 ? '0' : value.toLocaleString('en-US', { maximumFractionDigits: digits })
+
+const normalizeAngleDeg = (degrees: number) => ((degrees % 360) + 360) % 360
+
+const sameLoadcaseDemand = (left: LoadCombination, right: LoadCombination) =>
+  left.id === right.id &&
+  left.P === right.P &&
+  left.Mx === right.Mx &&
+  left.My === right.My &&
+  left.actionBasis === right.actionBasis
 
 const eventPoint = (event: React.PointerEvent<SVGSVGElement> | React.WheelEvent<SVGSVGElement>, svg: SVGSVGElement) => {
   const rect = svg.getBoundingClientRect()
@@ -520,10 +550,12 @@ const fitCameraToPointsWithInsets = (
 export function SectionDrawingClient() {
   const svgRef = useRef<SVGSVGElement | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const projectMenuRef = useRef<HTMLDivElement | null>(null)
   const boundaryExcelInputRef = useRef<HTMLInputElement | null>(null)
   const rotationSessionRef = useRef<BoundaryObject | null>(null)
   const pendingFitAfterImportRef = useRef(false)
   const pendingFitOnGeometryModuleRef = useRef(false)
+  const recentAutosaveStartedRef = useRef(false)
   const analysisRevisionRef = useRef(0)
   const inverseAbortRef = useRef(new Map<number, AbortController>())
   const dragRef = useRef<
@@ -533,6 +565,9 @@ export function SectionDrawingClient() {
     | null
   >(null)
   const [theme, setTheme] = useState<Theme>('light')
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false)
+  const [recentProject, setRecentProject] = useState<RecentProject | null>(null)
+  const [recentStorageReady, setRecentStorageReady] = useState(false)
   const [tool, setTool] = useState<Tool>('select')
   const [activeModule, setActiveModule] = useState<WorkspaceModule>('geometry')
   const [moduleSwitching, startModuleTransition] = useTransition()
@@ -552,6 +587,9 @@ export function SectionDrawingClient() {
   const [materialStore, setMaterialStore] = useState<MaterialStore>(() => createDefaultMaterialStore())
   const [calculationProfileId, setCalculationProfileId] = useState<CalculationProfileId>(DEFAULT_CALCULATION_PROFILE_ID)
   const [loadingsInput, setLoadingsInput] = useState<LoadingsInput>(() => createEmptyLoadingsInput())
+  const loadcaseDemandRevision = loadingsInput.combinations
+    .map((item) => `${item.id}:${item.P}:${item.Mx}:${item.My}:${item.actionBasis}`)
+    .join('|')
   const [analysisOptions, setAnalysisOptions] = useState<CalculationAnalysisOptions>(() => createDefaultAnalysisOptions())
   const [designBasis, setDesignBasis] = useState<DesignBasis>(() =>
     createDefaultDesignBasis(createDefaultMaterialStore())
@@ -560,6 +598,8 @@ export function SectionDrawingClient() {
   const [reportDetailIds, setReportDetailIds] = useState<number[]>([])
   const [reportState, setReportState] = useState<'idle' | 'working' | 'error'>('idle')
   const [reportMessage, setReportMessage] = useState('')
+  const [excelState, setExcelState] = useState<'idle' | 'working' | 'error'>('idle')
+  const [excelMessage, setExcelMessage] = useState('')
   const [sectionResultsView, setSectionResultsView] = useState<SectionResultsView>(createSectionResultsView)
   const [demandCheckView, setDemandCheckView] = useState<DemandCheckView>(createDemandCheckView)
   const updateSectionResultsView = useCallback(
@@ -577,9 +617,18 @@ export function SectionDrawingClient() {
   const [surfaceStatus, setSurfaceStatus] = useState<'idle' | 'working' | 'error'>('idle')
   const [surfaceMessage, setSurfaceMessage] = useState('')
   const [inverseResults, setInverseResults] = useState<Record<number, InversePreviewResult>>({})
-  const [inverseWorkingById, setInverseWorkingById] = useState<Record<number, boolean>>({})
+  const [lastResolvedChartSnapshot, setLastResolvedChartSnapshot] = useState<{
+    loadcase: LoadCombination
+    result: InversePreviewResult
+    surface: PreviewSurface
+    section: SectionGeometry
+    rebars: GeometryInputRebarView[]
+    materialStore: MaterialStore
+    designBasis: DesignBasis
+  } | null>(null)
   const [quickChecksById, setQuickChecksById] = useState<Record<number, LoadcaseQuickCheckResult>>({})
-  const [quickCheckWorking, setQuickCheckWorking] = useState(false)
+  const quickChecksRef = useRef<Record<number, LoadcaseQuickCheckResult>>({})
+  const quickCheckSurfaceRef = useRef<PreviewSurface | null>(null)
   const [projectMeta, setProjectMeta] = useState(() => ({
     id: 1,
     name: 'Column project',
@@ -593,6 +642,123 @@ export function SectionDrawingClient() {
   const [size, setSize] = useState(DEFAULT_DRAWING_SIZE)
   const [isDrawingMeasured, setIsDrawingMeasured] = useState(false)
   const [camera, setCamera] = useState<Camera2d>(() => createDefaultDrawingCamera())
+
+  const buildCurrentProjectDocument = useCallback(
+    () =>
+      createProjectDocument({
+        calculationProfileId,
+        geometry: appliedGeometryInput,
+        materials: materialStore,
+        loadings: loadingsInput,
+        analysis: analysisOptions,
+        design: designBasis,
+        meta: {
+          id: projectMeta.id,
+          name: projectMeta.name || appliedGeometryInput.name || 'Column project',
+          createdAt: projectMeta.createdAt
+        }
+      }),
+    [
+      analysisOptions,
+      appliedGeometryInput,
+      calculationProfileId,
+      designBasis,
+      loadingsInput,
+      materialStore,
+      projectMeta.createdAt,
+      projectMeta.id,
+      projectMeta.name
+    ]
+  )
+
+  const publishRecentProject = useCallback((raw: unknown) => {
+    const recent = recentProjectFromRaw(raw)
+    if (!recent) return
+    try {
+      window.localStorage.setItem(RECENT_PROJECT_STORAGE_KEY, recent.raw)
+    } catch {
+      // Storage can be unavailable in a restricted browser; keep Recent usable for this session.
+    }
+    setRecentProject(recent)
+  }, [])
+
+  const finalSection = useMemo(
+    () => sectionGeometryFromGeometryInput(appliedGeometryInput),
+    [appliedGeometryInput]
+  )
+  const rebars = useMemo(() => geometryInputRebars(appliedGeometryInput), [appliedGeometryInput])
+  const selectedLoadcase = selectedLoadcaseId == null
+    ? null
+    : loadingsInput.combinations.find((item) => item.id === selectedLoadcaseId) ?? null
+  const selectedInverseResult = selectedLoadcaseId == null ? null : inverseResults[selectedLoadcaseId] ?? null
+  const selectedResolvedChartSnapshot = useMemo(
+    () => {
+      if (
+        !selectedLoadcase ||
+        !selectedInverseResult ||
+        !resultSurface ||
+        !sameLoadcaseDemand(selectedInverseResult.demand, selectedLoadcase)
+      ) return null
+
+      // A material/geometry update renders once before its invalidation effect withdraws the old
+      // inverse result. Keep the complete old analysis snapshot for that render instead of pairing
+      // the old result with the new inputs.
+      if (lastResolvedChartSnapshot?.result === selectedInverseResult) {
+        return lastResolvedChartSnapshot.loadcase === selectedLoadcase
+          ? lastResolvedChartSnapshot
+          : { ...lastResolvedChartSnapshot, loadcase: selectedLoadcase }
+      }
+
+      return {
+        loadcase: selectedLoadcase,
+        result: selectedInverseResult,
+        surface: resultSurface,
+        section: finalSection,
+        rebars,
+        materialStore,
+        designBasis
+      }
+    },
+    [
+      designBasis,
+      finalSection,
+      lastResolvedChartSnapshot,
+      materialStore,
+      rebars,
+      resultSurface,
+      selectedInverseResult,
+      selectedLoadcase
+    ]
+  )
+  const fallbackChartSnapshot =
+    lastResolvedChartSnapshot &&
+    loadingsInput.combinations.some((item) => item.id === lastResolvedChartSnapshot.loadcase.id)
+      ? lastResolvedChartSnapshot
+      : null
+  const chartSnapshot = selectedResolvedChartSnapshot ?? fallbackChartSnapshot
+  const chartLoadcaseId = chartSnapshot?.loadcase.id ?? selectedLoadcaseId
+  const chartLoadcases = useMemo(() => {
+    if (!chartSnapshot) return loadingsInput.combinations
+    return loadingsInput.combinations.map((loadcase) =>
+      loadcase.id === chartSnapshot.loadcase.id &&
+      !sameLoadcaseDemand(loadcase, chartSnapshot.loadcase)
+        ? chartSnapshot.loadcase
+        : loadcase
+    )
+  }, [chartSnapshot, loadingsInput.combinations])
+
+  useEffect(() => {
+    if (selectedResolvedChartSnapshot) {
+      if (
+        lastResolvedChartSnapshot?.loadcase !== selectedResolvedChartSnapshot.loadcase ||
+        lastResolvedChartSnapshot.result !== selectedResolvedChartSnapshot.result
+      ) {
+        setLastResolvedChartSnapshot(selectedResolvedChartSnapshot)
+      }
+    } else if (lastResolvedChartSnapshot && !fallbackChartSnapshot) {
+      setLastResolvedChartSnapshot(null)
+    }
+  }, [fallbackChartSnapshot, lastResolvedChartSnapshot, selectedResolvedChartSnapshot])
 
   const changeCalculationProfile = (profileId: CalculationProfileId) => {
     setCalculationProfileId(profileId)
@@ -609,6 +775,46 @@ export function SectionDrawingClient() {
   useEffect(() => {
     document.body.dataset.jscadTheme = theme
   }, [theme])
+
+  useEffect(() => {
+    if (recentStorageReady) return
+    let stored: RecentProject | null = null
+    try {
+      stored = recentProjectFromRaw(window.localStorage.getItem(RECENT_PROJECT_STORAGE_KEY))
+    } catch {
+      // Fall through to the current default project when storage access is restricted.
+    }
+    if (stored) setRecentProject(stored)
+    else publishRecentProject(buildCurrentProjectDocument())
+    setRecentStorageReady(true)
+  }, [buildCurrentProjectDocument, publishRecentProject, recentStorageReady])
+
+  useEffect(() => {
+    if (!recentStorageReady) return
+    if (!recentAutosaveStartedRef.current) {
+      recentAutosaveStartedRef.current = true
+      return
+    }
+    const timer = window.setTimeout(() => publishRecentProject(buildCurrentProjectDocument()), 450)
+    return () => window.clearTimeout(timer)
+  }, [buildCurrentProjectDocument, publishRecentProject, recentStorageReady])
+
+  useEffect(() => {
+    if (!projectMenuOpen) return
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!projectMenuRef.current?.contains(event.target as Node)) setProjectMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setProjectMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutsidePointer)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [projectMenuOpen])
 
   useLayoutEffect(() => {
     if (isResultsModule(activeModule)) return
@@ -640,11 +846,6 @@ export function SectionDrawingClient() {
     if (!showBasicDetailTab && detailTab === 'basic') setDetailTab('points')
   }, [showBasicDetailTab, detailTab])
 
-  const finalSection = useMemo(
-    () => sectionGeometryFromGeometryInput(appliedGeometryInput),
-    [appliedGeometryInput]
-  )
-  const rebars = useMemo(() => geometryInputRebars(appliedGeometryInput), [appliedGeometryInput])
   const activeOuter = activeBoundary?.outers[activeOuterIndex] ?? activeBoundary?.outers[0] ?? []
   const activeRing = activeOuter[activeRingIndex] ?? activeOuter[0] ?? []
   const activeSection = activeBoundary ? boundaryToSectionGeometry(activeBoundary) : finalSection
@@ -827,7 +1028,8 @@ export function SectionDrawingClient() {
     for (const controller of inverseAbortRef.current.values()) controller.abort()
     inverseAbortRef.current.clear()
     setInverseResults({})
-    setInverseWorkingById({})
+    quickChecksRef.current = {}
+    quickCheckSurfaceRef.current = null
     setQuickChecksById({})
   }, [analysisOptions, appliedGeometryInput, designBasis, materialStore])
 
@@ -840,29 +1042,55 @@ export function SectionDrawingClient() {
   }, [])
 
   useEffect(() => {
-    setInverseResults({})
-  }, [loadingsInput])
+    analysisRevisionRef.current += 1
+    for (const controller of inverseAbortRef.current.values()) controller.abort()
+    inverseAbortRef.current.clear()
+    const currentLoadcases = new Map(loadingsInput.combinations.map((loadcase) => [loadcase.id, loadcase]))
+    setInverseResults((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([id, result]) => {
+          const loadcase = currentLoadcases.get(Number(id))
+          return Boolean(loadcase && sameLoadcaseDemand(result.demand, loadcase))
+        })
+      )
+    )
+  }, [loadcaseDemandRevision])
 
   useEffect(() => {
-    setQuickChecksById({})
-
     if (!resultSurface || loadingsInput.combinations.length === 0) {
-      setQuickCheckWorking(false)
+      quickChecksRef.current = {}
+      quickCheckSurfaceRef.current = resultSurface
+      setQuickChecksById({})
       return
     }
 
+    const surfaceChanged = quickCheckSurfaceRef.current !== resultSurface
+    quickCheckSurfaceRef.current = resultSurface
+    const cached = surfaceChanged ? {} : quickChecksRef.current
+    const retained = Object.fromEntries(
+      loadingsInput.combinations.flatMap((loadcase) => {
+        const result = cached[loadcase.id]
+        return result && sameLoadcaseDemand(result.demand, loadcase) ? [[loadcase.id, result]] : []
+      })
+    ) as Record<number, LoadcaseQuickCheckResult>
+    quickChecksRef.current = retained
+    setQuickChecksById(retained)
+
+    const pending = loadingsInput.combinations.filter((loadcase) => !retained[loadcase.id])
+    if (pending.length === 0) return
+
     const controller = new AbortController()
-    setQuickCheckWorking(true)
     const timer = window.setTimeout(() => {
-      checkLoadcasesAsync({ surface: resultSurface, loadcases: loadingsInput.combinations }, controller.signal)
+      checkLoadcasesAsync({ surface: resultSurface, loadcases: pending }, controller.signal)
         .then((results) => {
-          setQuickChecksById(Object.fromEntries(results.map((result) => [result.loadcaseId, result])))
-          setQuickCheckWorking(false)
+          const next = { ...quickChecksRef.current }
+          for (const result of results) next[result.loadcaseId] = result
+          quickChecksRef.current = next
+          setQuickChecksById(next)
         })
         .catch((error) => {
           if (isAnalysisAbort(error)) return
           setSurfaceMessage(error instanceof Error ? error.message : String(error))
-          setQuickCheckWorking(false)
         })
     }, ANALYSIS_DEBOUNCE_MS)
 
@@ -870,7 +1098,7 @@ export function SectionDrawingClient() {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [loadingsInput.combinations, resultSurface])
+  }, [loadcaseDemandRevision, resultSurface])
 
   useEffect(() => {
     if (!resultSurface) {
@@ -887,12 +1115,11 @@ export function SectionDrawingClient() {
     setSelectedLoadcaseId(loadcase.id)
     if (!hasAppliedSection || !resultSurface) return
     if (!force && inverseResults[loadcase.id]) return
-    if (inverseWorkingById[loadcase.id]) return
+    if (inverseAbortRef.current.has(loadcase.id)) return
     const revision = analysisRevisionRef.current
     inverseAbortRef.current.get(loadcase.id)?.abort()
     const controller = new AbortController()
     inverseAbortRef.current.set(loadcase.id, controller)
-    setInverseWorkingById((current) => ({ ...current, [loadcase.id]: true }))
     checkLoadcaseAsync(
       { calculationProfileId, section: finalSection, rebars, materialStore, loadcase, surface: resultSurface, designBasis },
       controller.signal
@@ -907,12 +1134,6 @@ export function SectionDrawingClient() {
       })
       .finally(() => {
         if (inverseAbortRef.current.get(loadcase.id) === controller) inverseAbortRef.current.delete(loadcase.id)
-        if (analysisRevisionRef.current !== revision) return
-        setInverseWorkingById((current) => {
-          const next = { ...current }
-          delete next[loadcase.id]
-          return next
-        })
       })
   }
 
@@ -958,6 +1179,89 @@ export function SectionDrawingClient() {
     }
   }
 
+  const exportExcelReport = async () => {
+    const selectedLoadcase = loadingsInput.combinations.find((item) => item.id === selectedLoadcaseId)
+    if (!resultSurface || !hasAppliedSection || !selectedLoadcase) {
+      setExcelState('error')
+      setExcelMessage('Build the resistance surface and select a loadcase before exporting Excel.')
+      return
+    }
+
+    setExcelState('working')
+    setExcelMessage('')
+    try {
+      const projectName = projectMeta.name || appliedGeometryInput.name || 'Column project'
+      const currentInverse = inverseResults[selectedLoadcase.id] ?? null
+      const currentAnalysisOptions = resultSurface.analysisOptions
+      const fallbackAngle = normalizeAngleDeg((Math.atan2(selectedLoadcase.My, selectedLoadcase.Mx) * 180) / Math.PI)
+      let blob: Blob
+      let fileName: string
+
+      if (currentAnalysisOptions.methodId === 'equivalent-block-surface-v1') {
+        const profileId = resultSurface.calculationProfileId
+        if (!profileId || !isEquivalentBlockProfileId(profileId)) {
+          throw new ExcelExportError(
+            'The current result was not produced by an equivalent-block profile, so the block workbook cannot describe it.'
+          )
+        }
+        const payload = {
+          projectName,
+          sectionName: finalSection.name,
+          calculationProfileId: profileId,
+          section: finalSection,
+          rebars,
+          materialStore,
+          designBasis,
+          analysisOptions: currentAnalysisOptions,
+          thetaDeg: currentInverse?.equivalentBlock
+            ? normalizeAngleDeg((currentInverse.equivalentBlock.neutralAxisAngle * 180) / Math.PI)
+            : fallbackAngle,
+          fixedP: selectedLoadcase.P,
+          loadcase: selectedLoadcase
+        }
+        blob = await exportEquivalentBlockWorkbookAsync(payload)
+        fileName = equivalentBlockWorkbookFileName(payload)
+      } else {
+        const equilibrium = currentInverse?.state ?? null
+        const curvature = equilibrium ? Math.hypot(equilibrium.kx, equilibrium.ky) : 0
+        const payload = {
+          projectName,
+          sectionName: finalSection.name,
+          section: finalSection,
+          rebars,
+          materialStore,
+          designBasis,
+          analysisOptions: currentAnalysisOptions,
+          betaDeg:
+            equilibrium && curvature > 1e-12
+              ? normalizeAngleDeg((Math.atan2(equilibrium.ky, equilibrium.kx) * 180) / Math.PI)
+              : fallbackAngle,
+          fixedP: selectedLoadcase.P,
+          loadcase: selectedLoadcase,
+          equilibrium
+        }
+        blob = await exportSectionWorkbookAsync(payload)
+        fileName = sectionWorkbookFileName(payload)
+      }
+
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = fileName
+      anchor.click()
+      URL.revokeObjectURL(url)
+      setExcelState('idle')
+      setExcelMessage(`Saved ${fileName}`)
+    } catch (error) {
+      setExcelState('error')
+      setExcelMessage(
+        error instanceof ExcelExportError
+          ? error.message
+          : `Export failed: ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
+  }
+
   /**
    * Selecting a combination is a demand-check action wherever it comes from — including a click on
    * a demand marker in the Section Results 3D plot — so it also moves the user to that menu.
@@ -979,7 +1283,7 @@ export function SectionDrawingClient() {
     if (!resultSurface || activeModule !== 'demand' || selectedLoadcaseId == null) return
     const loadcase = loadingsInput.combinations.find((item) => item.id === selectedLoadcaseId)
     if (loadcase) calculateInverseForLoadcase(loadcase, true)
-  }, [activeModule, loadingsInput.combinations, resultSurface, selectedLoadcaseId])
+  }, [activeModule, loadcaseDemandRevision, resultSurface, selectedLoadcaseId])
 
   const draftRing = useMemo(() => {
     if (!drawingDraft) return []
@@ -1604,19 +1908,7 @@ export function SectionDrawingClient() {
       if (!proceed) return
     }
 
-    const document = createProjectDocument({
-      calculationProfileId,
-      geometry: appliedGeometryInput,
-      materials: materialStore,
-      loadings: loadingsInput,
-      analysis: analysisOptions,
-      design: designBasis,
-      meta: {
-        id: projectMeta.id,
-        name: projectMeta.name || appliedGeometryInput.name || 'Column project',
-        createdAt: projectMeta.createdAt
-      }
-    })
+    const document = buildCurrentProjectDocument()
     setProjectMeta({
       id: document.meta.id,
       name: document.meta.name,
@@ -1632,7 +1924,7 @@ export function SectionDrawingClient() {
     URL.revokeObjectURL(url)
   }
 
-  const applyImportedProject = (raw: string) => {
+  const applyImportedProject = (raw: unknown) => {
     const result = parseProjectDocument(raw)
     if (!result.ok) {
       window.alert(`Import failed:\n${result.error}`)
@@ -1640,6 +1932,7 @@ export function SectionDrawingClient() {
     }
 
     const { document, warnings } = result
+    publishRecentProject(document)
     const geometry = document.inputs.geometry
     const hasGeometry = geometry.outers.some((outer) => outer.points.length >= 3)
 
@@ -1650,6 +1943,7 @@ export function SectionDrawingClient() {
     setAnalysisOptions(document.inputs.analysis)
     setDesignBasis(document.inputs.design)
     setSelectedLoadcaseId(document.inputs.loadings.combinations[0]?.id ?? null)
+    setReportDetailIds([])
     setInverseResults({})
     setProjectMeta({
       id: document.meta.id,
@@ -1691,6 +1985,16 @@ export function SectionDrawingClient() {
     } catch {
       window.alert('Import failed: could not read the selected file.')
     }
+  }
+
+  const loadProjectExample = (example: ProjectExample) => {
+    setProjectMenuOpen(false)
+    applyImportedProject(example.document)
+  }
+
+  const loadRecentProject = () => {
+    setProjectMenuOpen(false)
+    applyImportedProject(recentProject?.raw ?? buildCurrentProjectDocument())
   }
 
   const toggleDrawTool = (nextTool: Exclude<Tool, 'select'>) => {
@@ -1873,7 +2177,10 @@ export function SectionDrawingClient() {
       void import('./results/ResultsWorkspace')
       return
     }
-    if (module === 'analysis') void import('./analysis/AnalysisMeshWorkspace')
+    if (module === 'analysis') {
+      void import('./analysis/AnalysisMeshWorkspace')
+      void import('./analysis/EquivalentBlockGeometryWorkspace')
+    }
   }
 
   const switchModule = (nextModule: WorkspaceModule) => {
@@ -1947,12 +2254,83 @@ export function SectionDrawingClient() {
             <Settings size={18} />
           </button>
           <span className="pm-toolbar-sep" aria-hidden="true" />
-          <button onClick={() => importInputRef.current?.click()} title="Import project JSON">
-            <Upload size={18} />
-          </button>
-          <button onClick={exportProjectJson} title="Export project JSON">
-            <Download size={18} />
-          </button>
+          <div className="pm-project-menu" ref={projectMenuRef}>
+            <button
+              className={projectMenuOpen ? 'is-active' : ''}
+              type="button"
+              title="Project import, export and examples"
+              aria-label="Project menu"
+              aria-haspopup="menu"
+              aria-expanded={projectMenuOpen}
+              onClick={() => setProjectMenuOpen((open) => !open)}
+            >
+              <FolderOpen size={18} />
+            </button>
+            {projectMenuOpen && (
+              <div className="pm-project-menu__popover" role="menu" aria-label="Project">
+                <div className="pm-project-menu__heading">Recent</div>
+                <button className="pm-project-menu__item pm-project-menu__recent" type="button" role="menuitem" onClick={loadRecentProject}>
+                  <History size={15} />
+                  <span>
+                    <strong>{recentProject?.name ?? 'Column project'}</strong>
+                    <small>
+                      {recentProject && isEquivalentBlockProfileId(recentProject.calculationProfileId)
+                        ? 'Eq Stress'
+                        : 'Stress–strain'}
+                    </small>
+                  </span>
+                </button>
+                <div className="pm-project-menu__separator" />
+                <div className="pm-project-menu__actions">
+                  <button
+                    className="pm-project-menu__item pm-project-menu__action"
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setProjectMenuOpen(false)
+                      importInputRef.current?.click()
+                    }}
+                  >
+                    <Upload size={15} />
+                    <strong>Import</strong>
+                  </button>
+                  <button
+                    className="pm-project-menu__item pm-project-menu__action"
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setProjectMenuOpen(false)
+                      exportProjectJson()
+                    }}
+                  >
+                    <Download size={15} />
+                    <strong>Export</strong>
+                  </button>
+                </div>
+                <div className="pm-project-menu__separator" />
+                <div className="pm-project-menu__heading">
+                  <BookOpen size={13} />
+                  Examples
+                </div>
+                <div className="pm-project-menu__examples">
+                  {PROJECT_EXAMPLES.map((example) => (
+                    <button
+                      className="pm-project-menu__item pm-project-menu__example"
+                      type="button"
+                      role="menuitem"
+                      key={example.id}
+                      onClick={() => loadProjectExample(example)}
+                    >
+                      <span>
+                        <strong>{example.label}</strong>
+                        <small>{example.description}</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <span className="pm-toolbar-sep" aria-hidden="true" />
           <button onClick={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))} title="Theme">
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
@@ -2567,7 +2945,7 @@ export function SectionDrawingClient() {
             <div className="pm-analysis-tabs" role="tablist" aria-label="Analysis option groups">
               {([
                 ['points', 'Points'],
-                ['mesh', 'Mesh']
+                ['mesh', analysisOptions.methodId === 'equivalent-block-surface-v1' ? 'Block' : 'Mesh']
               ] as const).map(([id, label]) => (
                 <button
                   key={id}
@@ -2606,20 +2984,17 @@ export function SectionDrawingClient() {
             <DemandCheckPanel
               view={demandCheckView}
               onViewChange={updateDemandCheckView}
-              inverseResult={selectedLoadcaseId == null ? null : inverseResults[selectedLoadcaseId] ?? null}
-              working={selectedLoadcaseId != null && Boolean(inverseWorkingById[selectedLoadcaseId])}
               surfaceReady={Boolean(resultSurface)}
-              quickCheck={{
-                working: quickCheckWorking,
-                checked: Object.keys(quickChecksById).length,
-                total: loadingsInput.combinations.length
-              }}
               loadcases={loadingsInput.combinations}
               reportDetailIds={reportDetailIds}
               onReportDetailIdsChange={setReportDetailIds}
               onExportReport={exportPdfReport}
               reportState={reportState}
               reportMessage={reportMessage}
+              onExportExcel={() => void exportExcelReport()}
+              excelReady={Boolean(resultSurface && selectedLoadcaseId != null)}
+              excelState={excelState}
+              excelMessage={excelMessage}
             />
             <LoadingsPanel
               input={loadingsInput}
@@ -2658,7 +3033,9 @@ export function SectionDrawingClient() {
             : activeModule === 'demand'
               ? 'Demand check results'
             : activeModule === 'analysis'
-              ? 'Analysis section mesh'
+              ? analysisOptions.methodId === 'equivalent-block-surface-v1'
+                ? 'Equivalent stress block geometry'
+                : 'Analysis section mesh'
               : 'Section drawing'
         }
       >
@@ -2673,17 +3050,19 @@ export function SectionDrawingClient() {
             theme={theme}
             ready={hasAppliedSection}
             viewMode={activeModule === 'demand' ? 'loadcase' : 'overview'}
-            surface={resultSurface}
+            surface={activeModule === 'demand' ? chartSnapshot?.surface ?? resultSurface : resultSurface}
             exactDirectionCurve={exactDirectionCurve}
             onExactDirectionCurveChange={setExactDirectionCurve}
-            section={finalSection}
-            rebars={rebars}
-            materialStore={materialStore}
-            designBasis={designBasis}
-            loadcases={loadingsInput.combinations}
+            section={activeModule === 'demand' ? chartSnapshot?.section ?? finalSection : finalSection}
+            rebars={activeModule === 'demand' ? chartSnapshot?.rebars ?? rebars : rebars}
+            materialStore={activeModule === 'demand' ? chartSnapshot?.materialStore ?? materialStore : materialStore}
+            designBasis={activeModule === 'demand' ? chartSnapshot?.designBasis ?? designBasis : designBasis}
+            loadcases={activeModule === 'demand' ? chartLoadcases : loadingsInput.combinations}
             projectName={projectMeta.name || appliedGeometryInput.name || 'Column project'}
-            selectedLoadcaseId={selectedLoadcaseId}
-            inverseResult={selectedLoadcaseId == null ? null : inverseResults[selectedLoadcaseId] ?? null}
+            selectedLoadcaseId={activeModule === 'demand' ? chartLoadcaseId : selectedLoadcaseId}
+            inverseResult={activeModule === 'demand'
+              ? chartSnapshot?.result ?? null
+              : chartLoadcaseId == null ? null : inverseResults[chartLoadcaseId] ?? null}
             fixedP={fixedResultP}
             onFixedPChange={setFixedResultP}
             view={sectionResultsView}
@@ -2704,10 +3083,14 @@ export function SectionDrawingClient() {
               analysisOptions={analysisOptions}
             />
           ) : (
-            <div className="pm-empty-stage">
-              <strong>Exact equivalent-block geometry</strong>
-              <span>No concrete integration mesh is used. The compression polygon is clipped exactly at a = β1·c.</span>
-            </div>
+            <EquivalentBlockGeometryWorkspace
+              ready={hasAppliedSection}
+              section={finalSection}
+              rebars={rebars}
+              materialStore={materialStore}
+              designBasis={designBasis}
+              calculationProfileId={calculationProfileId}
+            />
           )
         ) : (
         <>
