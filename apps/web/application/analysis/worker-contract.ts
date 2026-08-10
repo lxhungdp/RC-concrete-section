@@ -9,7 +9,11 @@ import type {
 import type { DesignBasis } from '@pm/design'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
-import type { EquivalentBlockExcelInput, ExcelExportInput } from '@pm/report'
+import type {
+  ChartAuditWorkbookInput,
+  EquivalentBlockExcelInput,
+  ExcelExportInput
+} from '@pm/report'
 import type { ReportInput } from '@pm/report/report-model'
 import type {
   AnalysisOptions,
@@ -78,6 +82,8 @@ export type WorkerSurfaceReference = {
   surface?: PreviewSurface
 }
 
+export type ChartAuditWorkerPayload = Omit<ChartAuditWorkbookInput, 'surface'> & WorkerSurfaceReference
+
 export type CheckLoadcasesWorkerPayload = WorkerSurfaceReference & {
   loadcases: LoadCombination[]
 }
@@ -102,6 +108,7 @@ export type AnalysisWorkerJob =
   | { type: 'buildFieldMap'; jobId: string; payload: BuildFieldMapPayload }
   | { type: 'exportExcel'; jobId: string; payload: ExcelExportInput }
   | { type: 'exportBlockExcel'; jobId: string; payload: EquivalentBlockExcelInput }
+  | { type: 'exportChartAudit'; jobId: string; payload: ChartAuditWorkerPayload }
   | { type: 'exportPdfReport'; jobId: string; payload: ReportInput }
 
 export type AnalysisWorkerRequest = AnalysisWorkerJob
@@ -117,6 +124,7 @@ export type AnalysisWorkerResultMap = {
   buildFieldMap: SectionFieldMap
   exportExcel: ArrayBuffer
   exportBlockExcel: ArrayBuffer
+  exportChartAudit: ArrayBuffer
   exportPdfReport: { bytes: ArrayBuffer; fileName: string }
 }
 

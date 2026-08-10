@@ -67,6 +67,8 @@ clause sign-off, so the profile remains `draft`.
 - fixed-grid and adaptive surface sampling with convergence evidence;
 - three-state demand screening: `OK`, `NG`, or `CHECK` when sampling uncertainty crosses `UR = 1`;
 - browser-side project import/export and reusable calculation packages;
+- compact project information for project name, client, company, designer, checker, address and
+  report date, persisted with the project and reused by PDF reports;
 - PDF design-preview reports, calculation Excel workbooks, and stress-strain mesh Excel/DXF audit
   exports.
 
@@ -212,6 +214,9 @@ Install the pinned dependencies and start the frontend:
 npm ci
 npm run dev
 ```
+
+The local web app uses [http://localhost:3001](http://localhost:3001) by default, leaving port 3000
+available for other projects. `npm start` uses the same port after a production build.
 
 Primary verification commands:
 

@@ -4,6 +4,14 @@
   "meta": {
     "id": 2,
     "name": "ACI-EB 02 - Hollow rectangle 600 x 500 mm, 260 x 180 mm void, 8 bars",
+    "information": {
+      "client": "Reference benchmark",
+      "company": "P-M Column Designer",
+      "designedBy": "Engineering example",
+      "checkedBy": "",
+      "address": "",
+      "date": "2026-08-04"
+    },
     "createdAt": "2026-08-04T00:00:00.000Z",
     "updatedAt": "2026-08-04T00:00:00.000Z"
   },

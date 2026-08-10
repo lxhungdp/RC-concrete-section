@@ -147,7 +147,8 @@ data and shall not apply a new factor, rounding decision, interpolation, or adeq
 
 ### Common report contents
 
-- project/result identity and integrity hash;
+- project identity (project name, client, company, designer, checker, address and report date),
+  result identity and integrity hash;
 - input section drawing, dimensions, bar schedule, material definitions, and loading table;
 - design basis, exact method/profile, applicability, and scope exclusions;
 - calculation assumptions and conventions;

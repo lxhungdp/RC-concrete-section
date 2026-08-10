@@ -49,6 +49,8 @@
   --surface: #ffffff;
   --canvas-bg: #f6f8fa;
   --mesh-canvas-bg: #f6f8fa;
+  --drawing-grid-minor: color-mix(in srgb, var(--canvas-bg) 20%, var(--border-subtle) 80%);
+  --drawing-grid-major: color-mix(in srgb, var(--border) 72%, var(--foreground-muted) 28%);
   --input-bg: #ffffff;
   --input-border: #7f8f9c;
   --input-value: #197381;
@@ -109,6 +111,8 @@ body[data-jscad-theme='dark'] {
   --surface: #24272e;
   --canvas-bg: #1e2126;
   --mesh-canvas-bg: #1e2126;
+  --drawing-grid-minor: color-mix(in srgb, var(--canvas-bg) 50%, var(--border-subtle) 50%);
+  --drawing-grid-major: color-mix(in srgb, var(--canvas-bg) 32%, var(--border) 68%);
   --input-bg: #171a1f;
   --input-border: #68727f;
   --input-value: #7dd3fc;

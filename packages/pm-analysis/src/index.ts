@@ -3140,17 +3140,24 @@ const applyAxialCap = (
         ? Math.min(1, Math.max(0, point.station / crossingStation))
         : 0
       const ledger = projectLedgerToAxialCap(crossing.ledger, radialRatio)
+      const resistance = point.resistance ?? crossing.resistance
       replacement.set(point.id, {
-        ...crossing,
-        id: point.id,
-        station: point.station,
-        stationId: null,
+        ...point,
         surfaceRole: 'axial-cap',
         onSampledDirection: true,
         P: cap,
         Mx: crossing.Mx * radialRatio,
         My: crossing.My * radialRatio,
-        ledger
+        ledger,
+        resistance: resistance
+          ? {
+              ...resistance,
+              axialCapApplied: true,
+              stages: resistance.stages.includes('maximum-axial-resistance-cap')
+                ? resistance.stages
+                : [...resistance.stages, 'maximum-axial-resistance-cap']
+            }
+          : undefined
       })
     }
   }

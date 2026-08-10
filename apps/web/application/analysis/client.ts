@@ -31,12 +31,14 @@ import {
   type DesignBasis
 } from '@pm/design'
 import {
+  buildChartAuditWorkbookBytes,
   exportEquivalentBlockWorkbook,
   exportMeshAuditDxf,
   exportMeshAuditWorkbook,
   exportSectionWorkbook,
   type EquivalentBlockExcelInput,
-  type ExcelExportInput
+  type ExcelExportInput,
+  type ChartAuditWorkbookInput
 } from '@pm/report'
 import type { ReportInput } from '@pm/report/report-model'
 import { analysisMeshKernelOptions, isEquivalentBlockAnalysisOptions, type AnalysisOptions } from '@pm/project'
@@ -427,6 +429,27 @@ export const exportEquivalentBlockWorkbookAsync = async (
     async () => {
       const blob = await exportEquivalentBlockWorkbook(payload)
       return blob.arrayBuffer()
+    },
+    signal
+  )
+  return new Blob([result], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  })
+}
+
+export const exportChartAuditWorkbookAsync = async (
+  payload: ChartAuditWorkbookInput,
+  signal?: AbortSignal
+): Promise<Blob> => {
+  const { surface, ...rest } = payload
+  const result = await runWorkerOrFallback<ArrayBuffer>(
+    {
+      type: 'exportChartAudit',
+      payload: { ...rest, ...workerSurfaceReference(surface) }
+    },
+    async () => {
+      const bytes = await buildChartAuditWorkbookBytes(payload)
+      return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
     },
     signal
   )

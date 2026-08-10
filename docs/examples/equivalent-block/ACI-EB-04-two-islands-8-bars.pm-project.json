@@ -4,6 +4,14 @@
   "meta": {
     "id": 4,
     "name": "ACI-EB 04 - Two disconnected concrete regions, 8 bars",
+    "information": {
+      "client": "Reference benchmark",
+      "company": "P-M Column Designer",
+      "designedBy": "Engineering example",
+      "checkedBy": "",
+      "address": "",
+      "date": "2026-08-04"
+    },
     "createdAt": "2026-08-04T00:00:00.000Z",
     "updatedAt": "2026-08-04T00:00:00.000Z"
   },

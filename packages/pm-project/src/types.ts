@@ -35,6 +35,22 @@ export type LoadingsInput = {
 }
 
 /**
+ * Project-level identity copied into presentation artifacts.
+ *
+ * This information is deliberately outside `inputs`: changing a client, company or responsible
+ * person must not invalidate an engineering result or rebuild a resistance surface.
+ */
+export type ProjectInformation = {
+  client: string
+  company: string
+  designedBy: string
+  checkedBy: string
+  address: string
+  /** User-selected report date in YYYY-MM-DD form; an empty value is also valid. */
+  date: string
+}
+
+/**
  * Canonical project document for export / import.
  * Implicit units: length mm, force N, stress MPa (N/mm²), moment N·mm.
  * Entity ids are positive integers matching the UI.
@@ -45,6 +61,7 @@ export type PmProjectDocument = {
   meta: {
     id: number
     name: string
+    information: ProjectInformation
     createdAt: string
     updatedAt: string
   }

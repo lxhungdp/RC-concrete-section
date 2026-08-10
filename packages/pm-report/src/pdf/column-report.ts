@@ -414,24 +414,42 @@ export const renderColumnReport = (
   model: ColumnReportModel,
   options: ColumnReportRenderOptions = {}
 ): Uint8Array => {
-  const identity = Object.fromEntries(model.identity) as Record<string, string>
+  const project = model.project
+  const organization = project.information.company
   const doc = new ReportDocument(
     {
       title: 'COLUMN SECTION P-M-M DESIGN REPORT',
-      project: identity.Project ?? '',
-      section: identity.Section ?? '',
+      project: project.name,
+      section: project.sectionName,
+      organization,
+      client: project.information.client,
+      author: organization || project.information.designedBy || 'P-M Column Designer',
       status: model.status,
       watermark: model.watermark,
       generated: model.generated
     },
-    `${identity.Project ?? 'Column'} — P-M-M report`,
+    `${project.name || 'Column'} - P-M-M report`,
     options.unicodeFontBytes
   )
 
   // ---- 1. Input -----------------------------------------------------------
   doc.newPage(A4_PORTRAIT)
   doc.title('1. Input', 'Section, materials and resistance basis exactly as analysed.')
-  doc.heading('Identity')
+  doc.heading('Project information')
+  const projectValues = Object.fromEntries(model.projectInformation) as Record<string, string>
+  doc.keyValues([['Project Name', projectValues['Project Name'] ?? '-']], 1)
+  doc.keyValues([['Client', projectValues.Client ?? '-']], 1)
+  doc.keyValues([['Company', projectValues.Company ?? '-']], 1)
+  doc.keyValues([
+    ['Designed by', projectValues['Designed by'] ?? '-'],
+    ['Checked by', projectValues['Checked by'] ?? '-']
+  ], 2)
+  doc.keyValues([
+    ['Address', projectValues.Address ?? '-'],
+    ['Date', projectValues.Date ?? '-']
+  ], 2)
+
+  doc.heading('Calculation identity')
   doc.keyValues(model.identity, 2)
 
   doc.heading('Section')
@@ -692,8 +710,7 @@ export const renderColumnReport = (
 }
 
 export const columnReportFileName = (model: ColumnReportModel) => {
-  const identity = Object.fromEntries(model.identity) as Record<string, string>
-  const stem = (identity.Project || 'column')
+  const stem = (model.project.name || 'column')
     .trim()
     .replace(/[^\w]+/g, '-')
     .replace(/^-+|-+$/g, '')

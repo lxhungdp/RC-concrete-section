@@ -14,11 +14,17 @@ import {
   PM_PROJECT_VERSION,
   type ParseProjectResult,
   type PmProjectDocument,
+  type ProjectInformation,
   type ProjectInputSnapshot
 } from './types'
 import { collectProjectWarnings, parseProjectDocumentValue } from './validate'
 
 const nowIso = () => new Date().toISOString()
+
+const localIsoDate = (date = new Date()) => {
+  const localTime = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return localTime.toISOString().slice(0, 10)
+}
 
 export const makeProjectId = (used: Iterable<number> = []) => nextAvailableId(used)
 
@@ -50,6 +56,19 @@ const sanitizeFileStem = (name: string) =>
     .replace(/^-|-$/g, '')
     .slice(0, 80) || 'pm-project'
 
+export const createDefaultProjectInformation = (): ProjectInformation => ({
+  client: 'Client name',
+  company: 'Company name',
+  designedBy: 'Designer',
+  checkedBy: 'Checker',
+  address: 'Company address',
+  date: localIsoDate()
+})
+
+export const cloneProjectInformation = (information: ProjectInformation): ProjectInformation => ({
+  ...information
+})
+
 /**
  * Build a project document from current engineering inputs.
  * Pass existing meta.id / createdAt when updating an open project.
@@ -73,6 +92,9 @@ export const createProjectDocument = (snapshot: ProjectInputSnapshot): PmProject
     meta: {
       id: snapshot.meta?.id ?? makeProjectId([]),
       name: snapshot.meta?.name ?? geometry.name ?? 'Column project',
+      information: cloneProjectInformation(
+        snapshot.meta?.information ?? createDefaultProjectInformation()
+      ),
       createdAt: snapshot.meta?.createdAt ?? stamp,
       updatedAt: stamp
     },

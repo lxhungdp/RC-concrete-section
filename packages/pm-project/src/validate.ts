@@ -57,7 +57,8 @@ import {
   PM_PROJECT_VERSION,
   type LoadCombination,
   type LoadingsInput,
-  type PmProjectDocument
+  type PmProjectDocument,
+  type ProjectInformation
 } from './types'
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -66,6 +67,24 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 
 const isString = (value: unknown): value is string => typeof value === 'string'
+
+const parseProjectText = (value: unknown, path: string, maximumLength: number): string => {
+  assert(isString(value), `${path} must be a string`)
+  assert(value.length <= maximumLength, `${path} must not exceed ${maximumLength} characters`)
+  return value
+}
+
+const parseProjectInformation = (value: unknown): ProjectInformation => {
+  assertRecord(value, 'meta.information must be an object')
+  return {
+    client: parseProjectText(value.client, 'meta.information.client', 160),
+    company: parseProjectText(value.company, 'meta.information.company', 160),
+    designedBy: parseProjectText(value.designedBy, 'meta.information.designedBy', 120),
+    checkedBy: parseProjectText(value.checkedBy, 'meta.information.checkedBy', 120),
+    address: parseProjectText(value.address, 'meta.information.address', 240),
+    date: parseProjectText(value.date, 'meta.information.date', 10)
+  }
+}
 
 function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message)
@@ -1170,6 +1189,7 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
   assertRecord(value.meta, 'meta must be an object')
   assertEntityId(value.meta.id, 'meta.id')
   assert(isString(value.meta.name), 'meta.name must be a string')
+  assert(value.meta.name.length <= 160, 'meta.name must not exceed 160 characters')
   assert(isString(value.meta.createdAt), 'meta.createdAt must be a string')
   assert(isString(value.meta.updatedAt), 'meta.updatedAt must be a string')
   assertRecord(value.inputs, 'inputs must be an object')
@@ -1227,6 +1247,7 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
     meta: {
       id: value.meta.id,
       name: value.meta.name,
+      information: parseProjectInformation(value.meta.information),
       createdAt: value.meta.createdAt,
       updatedAt: value.meta.updatedAt
     },

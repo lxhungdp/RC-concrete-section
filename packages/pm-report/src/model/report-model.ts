@@ -72,12 +72,14 @@ import {
   type CalculationAnalysisOptions,
   type CalculationProfileId,
   type EquivalentBlockAnalysisOptions,
-  type LoadCombination
+  type LoadCombination,
+  type ProjectInformation
 } from '@pm/project'
 import { ExcelExportError } from '../excel/workbook-common'
 
 export type ReportInput = {
   projectName: string
+  projectInformation: ProjectInformation
   sectionName: string
   calculationProfileId: CalculationProfileId
   section: SectionGeometry
@@ -193,6 +195,12 @@ export type CombinationDetail = {
 }
 
 export type ColumnReportModel = {
+  project: {
+    name: string
+    sectionName: string
+    information: ProjectInformation
+  }
+  projectInformation: LabelledValue[]
   identity: LabelledValue[]
   status: string
   watermark?: string
@@ -555,6 +563,20 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       : null
 
   return {
+    project: {
+      name: input.projectName,
+      sectionName: input.sectionName,
+      information: { ...input.projectInformation }
+    },
+    projectInformation: [
+      ['Project Name', input.projectName || '-'],
+      ['Client', input.projectInformation.client || '-'],
+      ['Company', input.projectInformation.company || '-'],
+      ['Designed by', input.projectInformation.designedBy || '-'],
+      ['Checked by', input.projectInformation.checkedBy || '-'],
+      ['Address', input.projectInformation.address || '-'],
+      ['Date', input.projectInformation.date || '-']
+    ],
     status:
       basis.verificationStatus === 'user-defined'
         ? 'PREVIEW — user-defined profile, not a code check'
@@ -564,7 +586,6 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       ? input.generatedAt.toISOString().slice(0, 19).replace('T', ' ')
       : 'not stamped (deterministic output)',
     identity: [
-      ['Project', input.projectName],
       ['Section', input.sectionName],
       ['Calculation profile', profile.label],
       ['Mechanics', profile.mechanics === 'equivalent-rectangular-block' ? 'Equivalent rectangular stress block' : 'Stress-strain integration'],

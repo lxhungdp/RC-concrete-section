@@ -4,12 +4,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import dynamic from 'next/dynamic'
 import {
   BarChart3,
-  BookOpen,
+  BriefcaseBusiness,
+  ChevronRight,
   Circle,
   Download,
   Eye,
   EyeOff,
-  FolderOpen,
+  FolderCog,
   Gauge,
   History,
   Lock,
@@ -19,6 +20,7 @@ import {
   RectangleHorizontal,
   RotateCw,
   Settings,
+  Share2,
   Sun,
   Unlock,
   Upload,
@@ -60,6 +62,7 @@ import {
   createAnalysisOptionsForProfile,
   createDesignBasisForCalculationProfile,
   createDefaultAnalysisOptions,
+  createDefaultProjectInformation,
   createProjectDocument,
   isEquivalentBlockProfileId,
   parseProjectDocument,
@@ -68,7 +71,8 @@ import {
   type LoadCombination,
   type CalculationAnalysisOptions,
   type CalculationProfileId,
-  type LoadingsInput
+  type LoadingsInput,
+  type ProjectInformation
 } from '@pm/project'
 import {
   type ExactDirectionCurve,
@@ -129,6 +133,12 @@ import { RebarPanel } from './geometry/RebarPanel'
 import { DemandCheckPanel } from './results/DemandCheckPanel'
 import { preloadPlotly } from './results/PlotlyChart'
 import { WorkspaceLoading } from './shared/WorkspaceLoading'
+import { ProjectInformationDialog } from './project/ProjectInformationDialog'
+import {
+  createProjectShareUrl,
+  decodeProjectSharePayload,
+  projectSharePayloadFromHash
+} from './project/project-share'
 import { SectionResultsPanel, type SectionResultsSummary } from './results/SectionResultsPanel'
 import {
   createDemandCheckView,
@@ -204,6 +214,7 @@ type ScreenPoint = {
 
 type Tool = 'select' | 'draw-rectangle' | 'draw-circle' | 'draw-polygon'
 type Theme = 'light' | 'dark'
+type ProjectShareNotice = { kind: 'success' | 'error'; message: string }
 /**
  * Section Results and Demand Check are separate menus because they answer different questions and
  * need different sidebars: one owns the capacity surface and its presentation, the other owns the
@@ -269,6 +280,29 @@ const sameLoadcaseDemand = (left: LoadCombination, right: LoadCombination) =>
   left.Mx === right.Mx &&
   left.My === right.My &&
   left.actionBasis === right.actionBasis
+
+const copyTextToClipboard = async (value: string): Promise<void> => {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value)
+      return
+    } catch {
+      // Fall back to a temporary text field for browsers that reject async clipboard access.
+    }
+  }
+
+  const textArea = window.document.createElement('textarea')
+  textArea.value = value
+  textArea.setAttribute('readonly', '')
+  textArea.style.position = 'fixed'
+  textArea.style.opacity = '0'
+  textArea.style.pointerEvents = 'none'
+  window.document.body.appendChild(textArea)
+  textArea.select()
+  const copied = window.document.execCommand('copy')
+  textArea.remove()
+  if (!copied) throw new Error('The project link could not be copied to the clipboard.')
+}
 
 const eventPoint = (event: React.PointerEvent<SVGSVGElement> | React.WheelEvent<SVGSVGElement>, svg: SVGSVGElement) => {
   const rect = svg.getBoundingClientRect()
@@ -462,6 +496,12 @@ const createCircleRingFromRadiusPoint = (
     segments
   })
 
+/** Keep every 1px grid stroke on the same pixel boundary so minor lines rasterize uniformly. */
+const alignOnePixelStroke = (coordinate: number) => Math.round(coordinate) + 0.5
+
+/** Even-width geometry strokes stay crisp when their centerline lands on a whole pixel. */
+const alignTwoPixelStroke = (coordinate: number) => Math.round(coordinate)
+
 const buildGridLines = (camera: Camera2d, size: { width: number; height: number }) => {
   const min = screenToWorld(camera, { x: 0, y: size.height }, size)
   const max = screenToWorld(camera, { x: size.width, y: 0 }, size)
@@ -473,20 +513,22 @@ const buildGridLines = (camera: Camera2d, size: { width: number; height: number 
   const endY = Math.ceil(max.y / spacing) * spacing
 
   for (let x = startX; x <= endX; x += spacing) {
+    const screenX = alignOnePixelStroke(worldToScreen(camera, { x, y: 0 }, size).x)
     lines.push({
       key: `x-${x}`,
       major: Math.abs(x % (spacing * MAJOR_GRID_INTERVAL)) < 1e-9,
-      a: worldToScreen(camera, { x, y: min.y }, size),
-      b: worldToScreen(camera, { x, y: max.y }, size)
+      a: { x: screenX, y: 0 },
+      b: { x: screenX, y: size.height }
     })
   }
 
   for (let y = startY; y <= endY; y += spacing) {
+    const screenY = alignOnePixelStroke(worldToScreen(camera, { x: 0, y }, size).y)
     lines.push({
       key: `y-${y}`,
       major: Math.abs(y % (spacing * MAJOR_GRID_INTERVAL)) < 1e-9,
-      a: worldToScreen(camera, { x: min.x, y }, size),
-      b: worldToScreen(camera, { x: max.x, y }, size)
+      a: { x: 0, y: screenY },
+      b: { x: size.width, y: screenY }
     })
   }
 
@@ -556,6 +598,7 @@ export function SectionDrawingClient() {
   const pendingFitAfterImportRef = useRef(false)
   const pendingFitOnGeometryModuleRef = useRef(false)
   const recentAutosaveStartedRef = useRef(false)
+  const projectBootstrapStartedRef = useRef(false)
   const analysisRevisionRef = useRef(0)
   const inverseAbortRef = useRef(new Map<number, AbortController>())
   const dragRef = useRef<
@@ -566,6 +609,9 @@ export function SectionDrawingClient() {
   >(null)
   const [theme, setTheme] = useState<Theme>('light')
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
+  const [projectInformationOpen, setProjectInformationOpen] = useState(false)
+  const [sharingProject, setSharingProject] = useState(false)
+  const [projectShareNotice, setProjectShareNotice] = useState<ProjectShareNotice | null>(null)
   const [recentProject, setRecentProject] = useState<RecentProject | null>(null)
   const [recentStorageReady, setRecentStorageReady] = useState(false)
   const [tool, setTool] = useState<Tool>('select')
@@ -632,6 +678,7 @@ export function SectionDrawingClient() {
   const [projectMeta, setProjectMeta] = useState(() => ({
     id: 1,
     name: 'Column project',
+    information: createDefaultProjectInformation(),
     createdAt: new Date().toISOString()
   }))
   const [lastBooleanWarning, setLastBooleanWarning] = useState<string>('')
@@ -655,6 +702,7 @@ export function SectionDrawingClient() {
         meta: {
           id: projectMeta.id,
           name: projectMeta.name || appliedGeometryInput.name || 'Column project',
+          information: projectMeta.information,
           createdAt: projectMeta.createdAt
         }
       }),
@@ -667,6 +715,7 @@ export function SectionDrawingClient() {
       materialStore,
       projectMeta.createdAt,
       projectMeta.id,
+      projectMeta.information,
       projectMeta.name
     ]
   )
@@ -775,29 +824,6 @@ export function SectionDrawingClient() {
   useEffect(() => {
     document.body.dataset.jscadTheme = theme
   }, [theme])
-
-  useEffect(() => {
-    if (recentStorageReady) return
-    let stored: RecentProject | null = null
-    try {
-      stored = recentProjectFromRaw(window.localStorage.getItem(RECENT_PROJECT_STORAGE_KEY))
-    } catch {
-      // Fall through to the current default project when storage access is restricted.
-    }
-    if (stored) setRecentProject(stored)
-    else publishRecentProject(buildCurrentProjectDocument())
-    setRecentStorageReady(true)
-  }, [buildCurrentProjectDocument, publishRecentProject, recentStorageReady])
-
-  useEffect(() => {
-    if (!recentStorageReady) return
-    if (!recentAutosaveStartedRef.current) {
-      recentAutosaveStartedRef.current = true
-      return
-    }
-    const timer = window.setTimeout(() => publishRecentProject(buildCurrentProjectDocument()), 450)
-    return () => window.clearTimeout(timer)
-  }, [buildCurrentProjectDocument, publishRecentProject, recentStorageReady])
 
   useEffect(() => {
     if (!projectMenuOpen) return
@@ -983,7 +1009,12 @@ export function SectionDrawingClient() {
   const appliedSectionPath = useMemo(() => {
     if (!hasAppliedSection) return ''
     const screenRings = finalSection.solids.flatMap((solid) =>
-      [solid.outer, ...solid.holes].map((ring) => ring.map((point) => worldToScreen(camera, point, size)))
+      [solid.outer, ...solid.holes].map((ring) =>
+        ring.map((point) => {
+          const screen = worldToScreen(camera, point, size)
+          return { x: alignTwoPixelStroke(screen.x), y: alignTwoPixelStroke(screen.y) }
+        })
+      )
     )
     return compoundPolygonPath(screenRings)
   }, [camera, finalSection, hasAppliedSection, size])
@@ -1001,12 +1032,16 @@ export function SectionDrawingClient() {
         .map((boundary) => {
           const outers = boundary.outers.map((outer) =>
             outer.map((ring) =>
-              ring.map((point) => ({
-                id: point.id,
-                wx: point.x,
-                wy: point.y,
-                ...worldToScreen(camera, point, size)
-              }))
+              ring.map((point) => {
+                const screen = worldToScreen(camera, point, size)
+                return {
+                  id: point.id,
+                  wx: point.x,
+                  wy: point.y,
+                  x: alignTwoPixelStroke(screen.x),
+                  y: alignTwoPixelStroke(screen.y)
+                }
+              })
             )
           )
           return {
@@ -1154,6 +1189,7 @@ export function SectionDrawingClient() {
     try {
       const { blob, fileName } = await exportColumnReportPdfAsync({
         projectName: projectMeta.name || appliedGeometryInput.name || 'Column project',
+        projectInformation: projectMeta.information,
         sectionName: appliedGeometryInput.name || 'Section',
         calculationProfileId,
         section: finalSection,
@@ -1300,7 +1336,11 @@ export function SectionDrawingClient() {
   }, [drawingDraft])
 
   const draftScreenRing = useMemo(
-    () => draftRing.map((point) => worldToScreen(camera, point, size)),
+    () =>
+      draftRing.map((point) => {
+        const screen = worldToScreen(camera, point, size)
+        return { x: alignTwoPixelStroke(screen.x), y: alignTwoPixelStroke(screen.y) }
+      }),
     [camera, draftRing, size]
   )
   const draftPath = useMemo(() => {
@@ -1912,6 +1952,7 @@ export function SectionDrawingClient() {
     setProjectMeta({
       id: document.meta.id,
       name: document.meta.name,
+      information: document.meta.information,
       createdAt: document.meta.createdAt
     })
 
@@ -1922,6 +1963,27 @@ export function SectionDrawingClient() {
     anchor.download = projectDocumentFileName(document)
     anchor.click()
     URL.revokeObjectURL(url)
+  }
+
+  const shareCurrentProject = async () => {
+    setProjectMenuOpen(false)
+    setSharingProject(true)
+    setProjectShareNotice(null)
+    try {
+      const shareUrl = await createProjectShareUrl(buildCurrentProjectDocument(), window.location.href)
+      await copyTextToClipboard(shareUrl)
+      setProjectShareNotice({
+        kind: 'success',
+        message: 'Project link copied. Project Information is excluded; anyone with the link can view calculation data.'
+      })
+    } catch (error) {
+      setProjectShareNotice({
+        kind: 'error',
+        message: error instanceof Error ? error.message : 'The project link could not be created.'
+      })
+    } finally {
+      setSharingProject(false)
+    }
   }
 
   const applyImportedProject = (raw: unknown) => {
@@ -1948,6 +2010,7 @@ export function SectionDrawingClient() {
     setProjectMeta({
       id: document.meta.id,
       name: document.meta.name,
+      information: document.meta.information,
       createdAt: document.meta.createdAt
     })
     setSelectedRebarId(null)
@@ -1996,6 +2059,65 @@ export function SectionDrawingClient() {
     setProjectMenuOpen(false)
     applyImportedProject(recentProject?.raw ?? buildCurrentProjectDocument())
   }
+
+  const saveProjectInformation = (name: string, information: ProjectInformation) => {
+    setProjectMeta((current) => ({ ...current, name, information }))
+    setProjectInformationOpen(false)
+  }
+
+  useEffect(() => {
+    if (projectBootstrapStartedRef.current) return
+    projectBootstrapStartedRef.current = true
+
+    const bootstrapProject = async () => {
+      const sharedPayload = projectSharePayloadFromHash(window.location.hash)
+      if (sharedPayload) {
+        try {
+          const raw = await decodeProjectSharePayload(sharedPayload)
+          const parsed = parseProjectDocument(raw)
+          if (!parsed.ok) throw new Error(parsed.error)
+          applyImportedProject(raw)
+          window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+          setProjectShareNotice({ kind: 'success', message: 'Shared project loaded.' })
+          setRecentStorageReady(true)
+          return
+        } catch (error) {
+          setProjectShareNotice({
+            kind: 'error',
+            message: `Shared project could not be opened: ${error instanceof Error ? error.message : String(error)}`
+          })
+        }
+      }
+
+      let stored: RecentProject | null = null
+      try {
+        stored = recentProjectFromRaw(window.localStorage.getItem(RECENT_PROJECT_STORAGE_KEY))
+      } catch {
+        // Fall through to the current default project when storage access is restricted.
+      }
+      if (stored) setRecentProject(stored)
+      else publishRecentProject(buildCurrentProjectDocument())
+      setRecentStorageReady(true)
+    }
+
+    void bootstrapProject()
+  }, [buildCurrentProjectDocument, publishRecentProject])
+
+  useEffect(() => {
+    if (!recentStorageReady) return
+    if (!recentAutosaveStartedRef.current) {
+      recentAutosaveStartedRef.current = true
+      return
+    }
+    const timer = window.setTimeout(() => publishRecentProject(buildCurrentProjectDocument()), 450)
+    return () => window.clearTimeout(timer)
+  }, [buildCurrentProjectDocument, publishRecentProject, recentStorageReady])
+
+  useEffect(() => {
+    if (!projectShareNotice) return
+    const timer = window.setTimeout(() => setProjectShareNotice(null), 4_500)
+    return () => window.clearTimeout(timer)
+  }, [projectShareNotice])
 
   const toggleDrawTool = (nextTool: Exclude<Tool, 'select'>) => {
     setTool((current) => (current === nextTool ? 'select' : nextTool))
@@ -2257,78 +2379,106 @@ export function SectionDrawingClient() {
           <span className="pm-toolbar-sep" aria-hidden="true" />
           <div className="pm-project-menu" ref={projectMenuRef}>
             <button
-              className={projectMenuOpen ? 'is-active' : ''}
+              className={`pm-project-menu__trigger${projectMenuOpen ? ' is-active' : ''}`}
               type="button"
-              title="Project import, export and examples"
-              aria-label="Project menu"
-              aria-haspopup="menu"
+              title="Project information and files"
+              aria-label="Open project information and files"
+              aria-haspopup="dialog"
               aria-expanded={projectMenuOpen}
               onClick={() => setProjectMenuOpen((open) => !open)}
             >
-              <FolderOpen size={18} />
+              <FolderCog size={18} />
             </button>
             {projectMenuOpen && (
-              <div className="pm-project-menu__popover" role="menu" aria-label="Project">
-                <div className="pm-project-menu__heading">Recent</div>
-                <button className="pm-project-menu__item pm-project-menu__recent" type="button" role="menuitem" onClick={loadRecentProject}>
-                  <History size={15} />
-                  <span>
-                    <strong>{recentProject?.name ?? 'Column project'}</strong>
-                    <small>
-                      {recentProject && isEquivalentBlockProfileId(recentProject.calculationProfileId)
-                        ? 'Eq Stress'
-                        : 'Stress–strain'}
-                    </small>
-                  </span>
-                </button>
-                <div className="pm-project-menu__separator" />
-                <div className="pm-project-menu__actions">
+              <div className="pm-project-menu__popover" role="dialog" aria-label="Project information and files">
+                <section className="pm-project-menu__section pm-project-menu__section--information">
                   <button
-                    className="pm-project-menu__item pm-project-menu__action"
+                    className="pm-project-menu__item pm-project-menu__information-row"
                     type="button"
-                    role="menuitem"
                     onClick={() => {
                       setProjectMenuOpen(false)
-                      importInputRef.current?.click()
+                      setProjectInformationOpen(true)
                     }}
                   >
-                    <Upload size={15} />
-                    <strong>Import</strong>
+                    <BriefcaseBusiness size={16} />
+                    <strong>Project Information</strong>
+                    <ChevronRight className="pm-project-menu__row-chevron" size={15} />
                   </button>
-                  <button
-                    className="pm-project-menu__item pm-project-menu__action"
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setProjectMenuOpen(false)
-                      exportProjectJson()
-                    }}
-                  >
-                    <Download size={15} />
-                    <strong>Export</strong>
-                  </button>
-                </div>
-                <div className="pm-project-menu__separator" />
-                <div className="pm-project-menu__heading">
-                  <BookOpen size={13} />
-                  Examples
-                </div>
-                <div className="pm-project-menu__examples">
-                  {PROJECT_EXAMPLES.map((example) => (
+                </section>
+
+                <section className="pm-project-menu__section">
+                  <div className="pm-project-menu__section-head"><span>Import Export</span></div>
+                  <div className="pm-project-menu__actions">
                     <button
-                      className="pm-project-menu__item pm-project-menu__example"
+                      className="pm-project-menu__icon-action pm-project-menu__file-action"
                       type="button"
-                      role="menuitem"
-                      key={example.id}
-                      onClick={() => loadProjectExample(example)}
+                      title="Import project"
+                      aria-label="Import project"
+                      onClick={() => {
+                        setProjectMenuOpen(false)
+                        importInputRef.current?.click()
+                      }}
                     >
-                      <span>
-                        <strong>{example.label}</strong>
-                        <small>{example.description}</small>
-                      </span>
+                      <Upload size={18} />
                     </button>
-                  ))}
-                </div>
+                    <button
+                      className="pm-project-menu__icon-action pm-project-menu__file-action"
+                      type="button"
+                      title="Export project"
+                      aria-label="Export project"
+                      onClick={() => {
+                        setProjectMenuOpen(false)
+                        exportProjectJson()
+                      }}
+                    >
+                      <Download size={18} />
+                    </button>
+                    <button
+                      className="pm-project-menu__icon-action pm-project-menu__file-action"
+                      type="button"
+                      title="Copy project share link"
+                      aria-label="Copy project share link"
+                      disabled={sharingProject}
+                      onClick={() => void shareCurrentProject()}
+                    >
+                      <Share2 size={18} />
+                    </button>
+                  </div>
+                </section>
+
+                <section className="pm-project-menu__section">
+                  <div className="pm-project-menu__section-head"><span>Recent file</span></div>
+                  <button className="pm-project-menu__item pm-project-menu__recent" type="button" onClick={loadRecentProject}>
+                    <History size={15} />
+                    <span>
+                      <strong>{recentProject?.name ?? projectMeta.name ?? 'Column project'}</strong>
+                      <small>
+                        {recentProject && isEquivalentBlockProfileId(recentProject.calculationProfileId)
+                          ? 'Equivalent stress block'
+                          : 'Stress–strain'}
+                      </small>
+                    </span>
+                  </button>
+                </section>
+
+                <section className="pm-project-menu__section">
+                  <div className="pm-project-menu__section-head"><span>Example files</span></div>
+                  <div className="pm-project-menu__examples">
+                    {PROJECT_EXAMPLES.map((example) => (
+                      <button
+                        className="pm-project-menu__item pm-project-menu__example"
+                        type="button"
+                        key={example.id}
+                        onClick={() => loadProjectExample(example)}
+                      >
+                        <span>
+                          <strong>{example.label}</strong>
+                          <small>{example.description}</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
               </div>
             )}
           </div>
@@ -2346,6 +2496,24 @@ export function SectionDrawingClient() {
         </div>
 
       </header>
+
+      {projectShareNotice ? (
+        <div
+          className={`pm-project-share-notice is-${projectShareNotice.kind}`}
+          role={projectShareNotice.kind === 'error' ? 'alert' : 'status'}
+        >
+          {projectShareNotice.message}
+        </div>
+      ) : null}
+
+      {projectInformationOpen ? (
+        <ProjectInformationDialog
+          projectName={projectMeta.name}
+          information={projectMeta.information}
+          onClose={() => setProjectInformationOpen(false)}
+          onSave={saveProjectInformation}
+        />
+      ) : null}
 
       <aside className="pm-side-panel">
         <div className="pm-side-panel-body">
@@ -2977,6 +3145,12 @@ export function SectionDrawingClient() {
             exactDirectionCurve={exactDirectionCurve}
             fixedP={fixedResultP}
             projectName={projectMeta.name || appliedGeometryInput.name || 'Column project'}
+            projectInformation={projectMeta.information}
+            section={finalSection}
+            rebars={rebars}
+            materialStore={materialStore}
+            designBasis={designBasis}
+            loadcases={loadingsInput.combinations}
           />
         )}
 
@@ -3142,10 +3316,6 @@ export function SectionDrawingClient() {
                     y2={line.b.y}
                   />
                 ))}
-              </g>
-              <g className="pm-axes">
-                <line x1={worldToScreen(camera, { x: -100000, y: 0 }, size).x} y1={worldToScreen(camera, { x: 0, y: 0 }, size).y} x2={worldToScreen(camera, { x: 100000, y: 0 }, size).x} y2={worldToScreen(camera, { x: 0, y: 0 }, size).y} />
-                <line x1={worldToScreen(camera, { x: 0, y: 0 }, size).x} y1={worldToScreen(camera, { x: 0, y: -100000 }, size).y} x2={worldToScreen(camera, { x: 0, y: 0 }, size).x} y2={worldToScreen(camera, { x: 0, y: 100000 }, size).y} />
               </g>
               <g className="pm-boundary-layer">
                 {showAppliedGhost && (

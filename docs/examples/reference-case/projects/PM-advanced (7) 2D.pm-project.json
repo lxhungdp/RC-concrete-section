@@ -4,6 +4,14 @@
   "meta": {
     "id": 1,
     "name": "PM-advanced (7) 2D reference case",
+    "information": {
+      "client": "Reference verification",
+      "company": "P-M Column Designer",
+      "designedBy": "Engineering example",
+      "checkedBy": "Independent review",
+      "address": "Seoul, Korea",
+      "date": "2026-07-23"
+    },
     "createdAt": "2026-07-23T00:00:00.000Z",
     "updatedAt": "2026-07-23T00:00:00.000Z"
   },

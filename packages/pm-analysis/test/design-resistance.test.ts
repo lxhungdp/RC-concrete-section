@@ -158,8 +158,12 @@ test('design surface preserves IDs and pairs every uncapped design state with it
   const capped = surface.points.filter((point) => point.resistance?.axialCapApplied)
   assert.ok(capped.length > 0)
   assert.ok(capped.every((point) => point.surfaceRole === 'axial-cap'))
-  assert.ok(capped.every((point) => point.stationId === null))
+  assert.ok(capped.every((point) => point.stationId !== null))
   assert.ok(capped.every((point) => point.onSampledDirection === true))
+  for (const point of capped) {
+    const nominalAtState = surface.nominalPoints.find((item) => item.id === point.id)
+    assert.deepEqual(point.state, nominalAtState?.state)
+  }
   const capCentres = surface.points.filter((point) => point.station === 0)
   assert.ok(capCentres.every((point) => Math.abs(point.Mx) < 1e-8 && Math.abs(point.My) < 1e-8))
   assert.ok(capCentres.every((point) => Math.abs(point.P - capCentres[0].P) < 1e-8))

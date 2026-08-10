@@ -131,6 +131,7 @@ const runCase = async (
 
   const input = {
     projectName: document.meta.name,
+    projectInformation: document.meta.information,
     sectionName: geometry.name,
     calculationProfileId: profileId,
     section,
@@ -148,6 +149,9 @@ const runCase = async (
   const model = buildColumnReportModel(input)
   pass('identity, materials and resistance basis are populated',
     model.identity.length > 6 && model.concreteMaterial.length > 4 && model.resistanceBasis.length > 3)
+  pass('project identity is available to every renderer',
+    model.project.name === document.meta.name &&
+      model.projectInformation.some(([label]) => label === 'Designed by'))
   pass('report declares the shared My convention without a cross-model caveat',
     model.identity.some(([label, value]) =>
       label === 'Sign convention' && value.includes('My = ΣF·(x−xc)')
@@ -262,6 +266,14 @@ const runCase = async (
   const unicodeModel = buildColumnReportModel({
     ...input,
     projectName: '기둥 C1 설계',
+    projectInformation: {
+      client: 'Công ty Xây dựng Á Châu',
+      company: '구조 설계 주식회사',
+      designedBy: 'Nguyễn Văn An',
+      checkedBy: 'Jürgen Weiß',
+      address: '서울특별시 중구',
+      date: '2026-08-10'
+    },
     sectionName: 'Cột trục A — tầng 3 · Säule Nr. 5'
   })
   const unicodeBytes = renderColumnReport(unicodeModel, { unicodeFontBytes: UNICODE_FONT })

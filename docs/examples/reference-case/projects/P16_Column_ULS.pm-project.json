@@ -4,6 +4,14 @@
   "meta": {
     "id": 1,
     "name": "P16 Column ULS — UMD verification case",
+    "information": {
+      "client": "Reference verification",
+      "company": "P-M Column Designer",
+      "designedBy": "Engineering example",
+      "checkedBy": "Independent review",
+      "address": "",
+      "date": "2026-07-30"
+    },
     "createdAt": "2026-07-30T00:00:00.000Z",
     "updatedAt": "2026-08-06T11:03:14.317Z"
   },

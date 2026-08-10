@@ -46,6 +46,9 @@ export type ReportHeader = {
   title: string
   project: string
   section: string
+  organization?: string
+  client?: string
+  author?: string
   /** Shown top-right on every page; also drives the watermark. */
   status: string
   /** Rendered diagonally across every page when set. */
@@ -81,8 +84,8 @@ export class ReportDocument {
     this.header = header
     this.doc = new PdfDocument({
       title,
-      author: 'P-M Column Designer',
-      subject: `${header.project} — ${header.section}`
+      author: header.author || 'P-M Column Designer',
+      subject: `${header.project} - ${header.section}`
     }, unicodeFontBytes)
   }
 
@@ -155,7 +158,14 @@ export class ReportDocument {
       color: hex('#ffffff'),
       align: 'right'
     })
-    page.text(MARGIN.left, top - 12, `${this.header.project}  ·  ${this.header.section}`, {
+    const context = [
+      this.header.organization,
+      this.header.project,
+      this.header.client,
+      this.header.section
+    ].filter((value): value is string => Boolean(value))
+      .join('  |  ')
+    page.text(MARGIN.left, top - 12, truncate(context, size.width - MARGIN.left - MARGIN.right - 150, 7.5, this.doc.unicodeFont), {
       size: 7.5,
       color: REPORT_COLORS.muted
     })

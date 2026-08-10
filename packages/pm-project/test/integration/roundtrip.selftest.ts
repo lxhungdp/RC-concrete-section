@@ -56,7 +56,18 @@ const run = () => {
     geometry,
     materials,
     loadings,
-    meta: { id: 1, name: 'Roundtrip project' }
+    meta: {
+      id: 1,
+      name: 'Roundtrip project',
+      information: {
+        client: 'Công ty Xây dựng Á Châu',
+        company: '구조 설계 주식회사',
+        designedBy: 'Nguyễn Văn An',
+        checkedBy: 'Jürgen Weiß',
+        address: 'Đà Nẵng, Việt Nam',
+        date: '2026-08-10'
+      }
+    }
   })
 
   const raw = serializeProjectDocument(original)
@@ -71,6 +82,10 @@ const run = () => {
   if (!parsed.ok) return
 
   assert.equal(parsed.document.meta.id, 1)
+  assert.equal(parsed.document.meta.information.client, 'Công ty Xây dựng Á Châu')
+  assert.equal(parsed.document.meta.information.company, '구조 설계 주식회사')
+  assert.equal(parsed.document.meta.information.designedBy, 'Nguyễn Văn An')
+  assert.equal(parsed.document.meta.information.date, '2026-08-10')
   assert.equal(parsed.document.inputs.geometry.outers[0]?.points[0]?.id, 1)
   assert.equal(parsed.document.inputs.materials.concrete.id, 1)
   assert.equal(parsed.document.inputs.materials.concrete.mc, 2350)
@@ -103,9 +118,31 @@ const run = () => {
   })
   assert.deepEqual(parsedAnalysis.directions.refinement, { type: 'fixed', probe: 'all' })
 
+  const missingInformation = structuredClone(original) as unknown as {
+    meta: { information?: unknown }
+  }
+  delete missingInformation.meta.information
+  const missingInformationParsed = parseProjectDocument(missingInformation)
+  assert.equal(missingInformationParsed.ok, false, 'project v1 requires its canonical information object')
+
   const empty = createEmptyProjectDocument({ id: 1, name: 'Empty' })
+  assert.equal(empty.meta.information.client, 'Client name')
+  assert.equal(empty.meta.information.company, 'Company name')
+  assert.match(empty.meta.information.date, /^\d{4}-\d{2}-\d{2}$/)
   const emptyParsed = parseProjectDocument(serializeProjectDocument(empty))
   assert.equal(emptyParsed.ok, true)
+
+  const optionalPresentation = structuredClone(empty)
+  optionalPresentation.meta.name = ''
+  optionalPresentation.meta.information = {
+    client: '',
+    company: '',
+    designedBy: '',
+    checkedBy: '',
+    address: '',
+    date: ''
+  }
+  assert.equal(parseProjectDocument(optionalPresentation).ok, true, 'all project-information fields are optional')
 
   /**
    * Both custom profiles must survive a canonical round trip, and the profile/material/design

@@ -31,6 +31,7 @@ import {
   type DesignBasis
 } from '@pm/design'
 import {
+  buildChartAuditWorkbookBytes,
   exportEquivalentBlockWorkbook,
   exportMeshAuditDxf,
   exportMeshAuditWorkbook,
@@ -346,6 +347,22 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
       workerSelf.postMessage(
         { type: 'success', jobId: request.jobId, requestType: request.type, result: blockResult },
         [blockResult]
+      )
+      return
+    }
+
+    if (request.type === 'exportChartAudit') {
+      const bytes = await buildChartAuditWorkbookBytes({
+        ...request.payload,
+        surface: referencedSurface(request.payload)
+      })
+      const result = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength
+      ) as ArrayBuffer
+      workerSelf.postMessage(
+        { type: 'success', jobId: request.jobId, requestType: request.type, result },
+        [result]
       )
       return
     }

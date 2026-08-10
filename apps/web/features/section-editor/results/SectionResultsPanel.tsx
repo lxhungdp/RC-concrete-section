@@ -3,6 +3,10 @@
 import { useMemo, useState } from 'react'
 import { Download, Eye, EyeOff, Loader2 } from 'lucide-react'
 import type { ExactDirectionCurve, PreviewSurface } from '@pm/analysis'
+import type { DesignBasis } from '@pm/design'
+import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
+import type { MaterialStore } from '@pm/materials'
+import type { LoadCombination, ProjectInformation } from '@pm/project'
 import {
   SECTION_CHART_IDS,
   sectionChartLabel,
@@ -12,7 +16,7 @@ import {
 } from './results-view'
 import {
   buildChartTableRows,
-  downloadChartTableExcel,
+  downloadChartAuditExcel,
   formatChartTableForce,
   formatChartTableMoment,
   type ChartTableMoments,
@@ -51,6 +55,12 @@ type Props = {
   exactDirectionCurve: ExactDirectionCurve | null
   fixedP: number
   projectName: string
+  projectInformation: ProjectInformation
+  section: SectionGeometry
+  rebars: GeometryInputRebarView[]
+  materialStore: MaterialStore
+  designBasis: DesignBasis
+  loadcases: readonly LoadCombination[]
 }
 
 const integer = (value: number) => Math.round(value).toLocaleString('en-US')
@@ -105,7 +115,13 @@ export function SectionResultsPanel({
   surface,
   exactDirectionCurve,
   fixedP,
-  projectName
+  projectName,
+  projectInformation,
+  section,
+  rebars,
+  materialStore,
+  designBasis,
+  loadcases
 }: Props) {
   const [source, setSource] = useState<ChartTableSource>('vertical')
   const [resistanceStage, setResistanceStage] = useState<'design' | 'nominal'>('design')
@@ -137,17 +153,22 @@ export function SectionResultsPanel({
     if (rows.length === 0 || exporting) return
     setExporting(true)
     try {
-      const stem =
-        (projectName || 'section-results')
-          .trim()
-          .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
-          .replace(/\s+/g, '-') || 'section-results'
-      await downloadChartTableExcel({
-        rows,
+      if (!surface) return
+      await downloadChartAuditExcel({
+        projectName,
+        projectInformation,
+        sectionName: section.name,
+        section,
+        rebars,
+        materialStore,
+        designBasis,
+        surface,
+        exactDirectionCurve,
         source,
-        includeDesign,
-        includeNominal,
-        fileName: `${stem}-chart-data.xlsx`
+        resistanceStage,
+        sliceAngleDeg: view.sliceAngle,
+        fixedP,
+        loadcases
       })
     } finally {
       setExporting(false)
@@ -229,7 +250,7 @@ export function SectionResultsPanel({
             className="pm-file-btn"
             disabled={rows.length === 0 || exporting}
             onClick={() => void exportExcel()}
-            title="Export the visible table to Excel"
+            title="Export a formula-driven project audit workbook"
           >
             {exporting ? <Loader2 size={13} className="pm-spin" /> : <Download size={13} />}
             Excel

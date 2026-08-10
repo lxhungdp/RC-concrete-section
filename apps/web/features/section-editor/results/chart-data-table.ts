@@ -14,6 +14,8 @@ import {
   type ResultantLedger,
   type SurfaceStation
 } from '@pm/analysis'
+import type { ChartAuditWorkbookInput } from '@pm/report'
+import { exportChartAuditWorkbookAsync } from '../../../application/analysis/client'
 
 export type ChartTableSource = 'vertical' | 'fixedP'
 
@@ -355,6 +357,19 @@ export const downloadChartTableExcel = async (input: {
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = input.fileName
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+export const downloadChartAuditExcel = async (
+  input: ChartAuditWorkbookInput & { fileName?: string }
+) => {
+  const blob = await exportChartAuditWorkbookAsync(input)
+  const { chartAuditWorkbookFileName } = await import('@pm/report')
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = input.fileName ?? chartAuditWorkbookFileName(input)
   anchor.click()
   URL.revokeObjectURL(url)
 }

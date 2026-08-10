@@ -41,6 +41,14 @@ type PmProjectDocument = {
   meta: {
     id: number
     name: string
+    information: {
+      client: string
+      company: string
+      designedBy: string
+      checkedBy: string
+      address: string
+      date: string // YYYY-MM-DD or empty
+    }
     createdAt: string
     updatedAt: string
   }
@@ -60,6 +68,12 @@ type PmProjectDocument = {
   }
 }
 ```
+
+`meta.information` is the canonical project/report identity. It is part of the initial schema-v1
+contract, while every individual text field - including `meta.name` - may be empty. New projects
+start with editable default values and the current local date. This metadata is not an engineering
+input: changing it invalidates only report presentation and project serialization, never the
+resistance surface or demand result.
 
 Canonical internal units are millimetres, newtons, megapascals, and newton-millimetres. Axial force
 and strain are compression positive. Entity IDs are positive integers and references are by ID, not
