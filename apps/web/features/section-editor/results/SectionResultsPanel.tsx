@@ -310,6 +310,7 @@ export function SectionResultsPanel({
               <thead>
                 <tr>
                   <th>#</th>
+                  <th title="Distinct contour branch at the same β">Branch</th>
                   <th title="Sampled strain-plane direction β">β</th>
                   {includeDesign ? (
                     <>
@@ -330,6 +331,7 @@ export function SectionResultsPanel({
                   row.kind === 'fixedP' ? (
                     <tr key={row.key}>
                       <td>{row.index}</td>
+                      <td>{row.branch}</td>
                       <td>{fmt(row.angleDeg, 3)}°</td>
                       {includeDesign ? <MomentCells stage={row.design} /> : null}
                       {includeNominal ? <MomentCells stage={row.nominal} /> : null}

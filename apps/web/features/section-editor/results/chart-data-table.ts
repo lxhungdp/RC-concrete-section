@@ -52,6 +52,8 @@ export type ChartTableFixedPRow = {
   kind: 'fixedP'
   key: string
   index: number
+  directionId: string
+  branch: number
   /** Sampled strain-plane direction β, degrees [0, 360) — same markers as the Fixed-P chart. */
   angleDeg: number
   design: ChartTableMoments | null
@@ -92,6 +94,8 @@ type FixedPDraft = {
   kind: 'fixedP'
   key: string
   sort: number
+  directionId: string
+  branch: number
   angleDeg: number
   design: ChartTableMoments | null
   nominal: ChartTableMoments | null
@@ -146,20 +150,21 @@ const collectFixedP = (
   drafts: Map<string, FixedPDraft>
 ) => {
   const samples = contourStrainAngleSamples(sliceFixedPContour(points, fixedP, triangles))
+  const branchesByAngle = new Map<string, number>()
   for (const [offset, point] of samples.entries()) {
     const angleDeg = normalizeAngleDeg((point.beta * 180) / Math.PI)
-    const key = betaKey(angleDeg)
+    const angleKey = angleDeg.toFixed(6)
+    const branch = (branchesByAngle.get(angleKey) ?? 0) + 1
+    branchesByAngle.set(angleKey, branch)
+    const directionId = `${betaKey(angleDeg)}-branch${branch}`
+    const key = `${stage}-${directionId}`
     const moments: ChartTableMoments = { Mx: point.Mx, My: point.My }
-    const existing = drafts.get(key)
-    if (existing) {
-      if (stage === 'design') existing.design = moments
-      else existing.nominal = moments
-      continue
-    }
     drafts.set(key, {
       kind: 'fixedP',
       key,
       sort: offset,
+      directionId,
+      branch,
       angleDeg,
       design: stage === 'design' ? moments : null,
       nominal: stage === 'nominal' ? moments : null
@@ -265,11 +270,13 @@ export const buildChartTableRows = (input: {
     )
   }
   return [...drafts.values()]
-    .sort((a, b) => a.angleDeg - b.angleDeg)
+    .sort((a, b) => a.sort - b.sort)
     .map((row, index) => ({
       kind: 'fixedP' as const,
       key: row.key,
       index: index + 1,
+      directionId: row.directionId,
+      branch: row.branch,
       angleDeg: row.angleDeg,
       design: includeDesign ? row.design : null,
       nominal: includeNominal ? row.nominal : null
@@ -295,14 +302,19 @@ export const downloadChartTableExcel = async (input: {
   const sheet = workbook.addWorksheet(input.source === 'vertical' ? 'Vertical meridian' : 'Fixed-P')
 
   if (input.source === 'fixedP') {
-    const headers = ['#', 'β (°)' ]
+    const headers = ['#', 'Direction ID', 'Branch', 'β (°)' ]
     if (input.includeDesign) headers.push('Mx', 'My')
     if (input.includeNominal) headers.push('Mnx', 'Mny')
     sheet.addRow(headers)
 
     for (const row of input.rows) {
       if (row.kind !== 'fixedP') continue
-      const values: Array<string | number> = [row.index, Number(row.angleDeg.toFixed(3))]
+      const values: Array<string | number> = [
+        row.index,
+        row.directionId,
+        row.branch,
+        Number(row.angleDeg.toFixed(3))
+      ]
       const pushMoments = (stage: ChartTableMoments | null) => {
         if (!stage) {
           values.push('', '')

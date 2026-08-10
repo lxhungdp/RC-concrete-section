@@ -74,8 +74,11 @@ type SourcePoint = {
   betaDeg: number
   point: PreviewSurfacePoint
   baseLedger: ResultantLedger
-  pScale: number
-  mScale: number
+  pFactor: number
+  mxFactor: number
+  myFactor: number
+  usesLedgerAnchor: boolean
+  calculationMode: string
   criterion: ResolvedStrainCriterion
   definition: StationDefinition | null
   row: number
@@ -124,14 +127,11 @@ const angleDistanceDeg = (left: number, right: number) => {
 }
 const kn = (value: number) => value / 1_000
 const knm = (value: number) => value / 1_000_000
-const finiteScale = (target: number, base: number) => {
+const componentFactor = (target: number, base: number, preferred: number) => {
+  const tolerance = Math.max(1e-7, Math.abs(target) * 1e-11)
+  if (Math.abs(base * preferred - target) <= tolerance) return preferred
   if (Math.abs(base) > 1e-9) return target / base
-  return Math.abs(target) <= 1e-9 ? 1 : 0
-}
-const momentScale = (target: PreviewSurfacePoint, base: ResultantLedger) => {
-  const denominator = base.total.Mx ** 2 + base.total.My ** 2
-  if (denominator <= 1e-12) return Math.hypot(target.Mx, target.My) <= 1e-9 ? 1 : 0
-  return (target.Mx * base.total.Mx + target.My * base.total.My) / denominator
+  return Math.abs(target) <= tolerance ? preferred : null
 }
 
 const safeStem = (value: string) =>
@@ -442,19 +442,19 @@ export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) =>
   const workbook = await createWorkbook()
   const defineName = createDefineName(workbook)
   const origin = netConcreteCentroid(input.section)
+  const mechanicsSupportsMeshFormula = input.surface.mechanics !== 'equivalent-rectangular-block'
   const meshOptions = isEquivalentBlockAnalysisOptions(input.surface.analysisOptions)
     ? {}
     : analysisMeshKernelOptions(input.surface.analysisOptions)
-  const mesh = buildConcreteMesh(input.section, meshOptions)
+  const mesh = mechanicsSupportsMeshFormula ? buildConcreteMesh(input.section, meshOptions) : null
   const materialSets = buildResistanceMaterialSets(input.materialStore, input.designBasis)
   const calculationMaterials = input.resistanceStage === 'nominal'
     ? materialSets.referenceMaterials
     : input.designBasis.format === 'globalResultantFactor'
       ? materialSets.referenceMaterials
       : materialSets.designMaterials
-  const mechanicsSupportsMeshFormula = input.surface.mechanics !== 'equivalent-rectangular-block'
   const prepared = mechanicsSupportsMeshFormula
-    ? prepareAnalysisFromMesh(input.section, input.rebars, calculationMaterials, mesh, origin)
+    ? prepareAnalysisFromMesh(input.section, input.rebars, calculationMaterials, mesh!, origin)
     : null
   const concrete = calculationMaterials.concrete
   const cLaw = concreteLaw(concrete)
@@ -463,7 +463,9 @@ export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) =>
 
   const geometry = workbook.addWorksheet('Geometry', { views: [{ state: 'frozen', ySplit: 8 }], properties: { tabColor: { argb: 'FF2563EB' } } })
   const materials = workbook.addWorksheet('Materials', { views: [{ state: 'frozen', ySplit: 4 }], properties: { tabColor: { argb: 'FF7C3AED' } } })
-  const meshSheet = workbook.addWorksheet('Mesh', { views: [{ state: 'frozen', ySplit: 6 }], properties: { tabColor: { argb: 'FF0F766E' } } })
+  const meshSheet = mechanicsSupportsMeshFormula
+    ? workbook.addWorksheet('Mesh', { views: [{ state: 'frozen', ySplit: 6 }], properties: { tabColor: { argb: 'FF0F766E' } } })
+    : null
   const fixedPLower = input.source === 'fixedP'
     ? workbook.addWorksheet('FixedP_Lower', { views: [{ state: 'frozen', xSplit: 3, ySplit: 7 }], properties: { tabColor: { argb: 'FF2563EB' } } })
     : null
@@ -486,6 +488,9 @@ export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) =>
   geometry.getCell('C4').value = input.sectionName
   geometry.getCell('B5').value = 'Calculation profile'
   geometry.getCell('C5').value = input.surface.calculationProfileId ?? input.surface.analysisOptions.methodId
+  for (const row of [3, 4, 5]) geometry.mergeCells(row, 3, row, 5)
+  geometry.getCell('C4').alignment = { wrapText: true, vertical: 'middle' }
+  geometry.getRow(4).height = 30
   geometry.getCell('B6').value = 'Analysis origin X'
   geometry.getCell('C6').value = origin.x
   geometry.getCell('D6').value = 'mm'
@@ -743,39 +748,41 @@ export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) =>
   // -----------------------------------------------------------------------
   // Mesh
   // -----------------------------------------------------------------------
-  reportTitle(meshSheet, 'CONCRETE INTEGRATION MESH', 7)
-  meshSheet.getCell('B2').value =
-    'X and Y are measured from the analysis origin. Area is the quadrature weight used directly by Result SUMPRODUCT formulas.'
-  meshSheet.getCell('B2').font = { italic: true, color: { argb: NOTE_COLOR } }
-  meshSheet.mergeCells('B2:G2')
-  meshSheet.getCell('B3').value = 'Cell size (mm)'
-  meshSheet.getCell('C3').value = mesh.report.cellSize
-  meshSheet.getCell('D3').value = 'Points'
-  meshSheet.getCell('E3').value = mesh.points.length
-  meshSheet.getCell('F3').value = 'Area error'
-  meshSheet.getCell('G3').value = mesh.report.areaError
-  styleRegenerate(meshSheet.getCell('C3'))
-  styleGenerated(meshSheet.getCell('E3'))
-  styleGenerated(meshSheet.getCell('G3'))
-  addLegend(meshSheet, 4)
-  styleHeader(meshSheet, 5, ['No.', 'X local (mm)', 'Y local (mm)', 'Area (mm²)', 'Component', 'X world (mm)', 'Y world (mm)'], 1)
-  const meshFirst = 6
-  mesh.points.forEach((point, index) => {
-    const row = meshFirst + index
-    meshSheet.getCell(row, 1).value = index + 1
-    meshSheet.getCell(row, 2).value = point.x - origin.x
-    meshSheet.getCell(row, 3).value = point.y - origin.y
-    meshSheet.getCell(row, 4).value = point.area
-    meshSheet.getCell(row, 5).value = point.component
-    for (let column = 1; column <= 5; column++) styleGenerated(meshSheet.getCell(row, column))
-    setFormula(meshSheet.getCell(row, 6), `=B${row}+Origin_X`, point.x)
-    setFormula(meshSheet.getCell(row, 7), `=C${row}+Origin_Y`, point.y)
-  })
-  const meshLast = meshFirst + mesh.points.length - 1
-  defineName(`'Mesh'!$B$${meshFirst}:$B$${meshLast}`, 'Mesh_X')
-  defineName(`'Mesh'!$C$${meshFirst}:$C$${meshLast}`, 'Mesh_Y')
-  defineName(`'Mesh'!$D$${meshFirst}:$D$${meshLast}`, 'Mesh_A')
-  meshSheet.columns = [10, 16, 16, 16, 14, 16, 16].map((width) => ({ width }))
+  if (meshSheet && mesh) {
+    reportTitle(meshSheet, 'CONCRETE INTEGRATION MESH', 7)
+    meshSheet.getCell('B2').value =
+      'X and Y are measured from the analysis origin. Area is the quadrature weight used directly by Result SUMPRODUCT formulas.'
+    meshSheet.getCell('B2').font = { italic: true, color: { argb: NOTE_COLOR } }
+    meshSheet.mergeCells('B2:G2')
+    meshSheet.getCell('B3').value = 'Cell size (mm)'
+    meshSheet.getCell('C3').value = mesh.report.cellSize
+    meshSheet.getCell('D3').value = 'Points'
+    meshSheet.getCell('E3').value = mesh.points.length
+    meshSheet.getCell('F3').value = 'Area error'
+    meshSheet.getCell('G3').value = mesh.report.areaError
+    styleRegenerate(meshSheet.getCell('C3'))
+    styleGenerated(meshSheet.getCell('E3'))
+    styleGenerated(meshSheet.getCell('G3'))
+    addLegend(meshSheet, 4)
+    styleHeader(meshSheet, 5, ['No.', 'X local (mm)', 'Y local (mm)', 'Area (mm²)', 'Component', 'X world (mm)', 'Y world (mm)'], 1)
+    const meshFirst = 6
+    mesh.points.forEach((point, index) => {
+      const row = meshFirst + index
+      meshSheet.getCell(row, 1).value = index + 1
+      meshSheet.getCell(row, 2).value = point.x - origin.x
+      meshSheet.getCell(row, 3).value = point.y - origin.y
+      meshSheet.getCell(row, 4).value = point.area
+      meshSheet.getCell(row, 5).value = point.component
+      for (let column = 1; column <= 5; column++) styleGenerated(meshSheet.getCell(row, column))
+      setFormula(meshSheet.getCell(row, 6), `=B${row}+Origin_X`, point.x)
+      setFormula(meshSheet.getCell(row, 7), `=C${row}+Origin_Y`, point.y)
+    })
+    const meshLast = meshFirst + mesh.points.length - 1
+    defineName(`'Mesh'!$B$${meshFirst}:$B$${meshLast}`, 'Mesh_X')
+    defineName(`'Mesh'!$C$${meshFirst}:$C$${meshLast}`, 'Mesh_Y')
+    defineName(`'Mesh'!$D$${meshFirst}:$D$${meshLast}`, 'Mesh_A')
+    meshSheet.columns = [10, 16, 16, 16, 14, 16, 16].map((width) => ({ width }))
+  }
 
   // -----------------------------------------------------------------------
   // Collect source points and displayed rows
@@ -790,28 +797,60 @@ export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) =>
     const key = sourceKey(point)
     const existing = sources.get(key)
     if (existing) return existing
-    const baseLedger = prepared ? evaluatePreparedState(prepared, point.state) : point.ledger
+    const isAxialCap = point.surfaceRole === 'axial-cap'
+    let usesLedgerAnchor = isAxialCap || !prepared
+    let baseLedger = usesLedgerAnchor ? point.ledger : evaluatePreparedState(prepared!, point.state)
+    const preferredFactor = point.resistance?.factor ?? 1
+    let pFactor = usesLedgerAnchor
+      ? 1
+      : componentFactor(point.P, baseLedger.total.P, preferredFactor)
+    let mxFactor = usesLedgerAnchor
+      ? 1
+      : componentFactor(point.Mx, baseLedger.total.Mx, preferredFactor)
+    let myFactor = usesLedgerAnchor
+      ? 1
+      : componentFactor(point.My, baseLedger.total.My, preferredFactor)
+    if (pFactor === null || mxFactor === null || myFactor === null) {
+      usesLedgerAnchor = true
+      baseLedger = point.ledger
+      pFactor = 1
+      mxFactor = 1
+      myFactor = 1
+    }
     const curvature = Math.hypot(point.state.kx, point.state.ky)
     const strainBetaDeg = curvature > 1e-14
       ? normalizeAngleDeg(Math.atan2(point.state.ky, point.state.kx) * 180 / Math.PI)
       : normalizeAngleDeg(betaDeg)
+    const resolvedCriterion = resolvedStrainCriterion(
+      input.section,
+      origin,
+      input.rebars,
+      calculationMaterials,
+      strainBetaDeg,
+      point,
+      definition
+    )
+    const calculationMode = isAxialCap
+      ? 'axial-cap projected-ledger anchor (geometric Pmax face)'
+      : !prepared
+        ? 'equivalent-block total-ledger anchor (no integration mesh)'
+        : usesLedgerAnchor
+          ? 'engine total-ledger anchor (strain state cannot reproduce point)'
+          : 'strain-state Mesh/Material formula'
     const source: SourcePoint = {
       key,
-      label,
+      label: isAxialCap ? `${label} (geometric axial-cap point)` : label,
       betaDeg: strainBetaDeg,
       point,
       baseLedger,
-      pScale: finiteScale(point.P, baseLedger.total.P),
-      mScale: momentScale(point, baseLedger),
-      criterion: resolvedStrainCriterion(
-        input.section,
-        origin,
-        input.rebars,
-        calculationMaterials,
-        strainBetaDeg,
-        point,
-        definition
-      ),
+      pFactor,
+      mxFactor,
+      myFactor,
+      usesLedgerAnchor,
+      calculationMode,
+      criterion: isAxialCap
+        ? { ...resolvedCriterion, basisLabel: `retained ${resolvedCriterion.basisLabel} (not the cap rule)` }
+        : resolvedCriterion,
       definition,
       row: 0
     }
@@ -888,7 +927,7 @@ export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) =>
     'zc (mm)', 'z control (mm)', 'D (mm)', 'εc', 'ε control',
     'κ (1/mm)', 'ε₀', 'κx (1/mm)', 'κy (1/mm)',
     'Concrete P', 'Concrete Mx', 'Concrete My', 'Steel P', 'Steel Mx', 'Steel My',
-    'Base P', 'Base Mx', 'Base My', 'P scale', 'M scale', 'Final P', 'Final Mx', 'Final My',
+    'Base P', 'Base Mx', 'Base My', 'P factor', 'Mx factor', 'My factor', 'Final P', 'Final Mx', 'Final My',
     'Engine P', 'Engine Mx', 'Engine My', 'ΔP', 'ΔM', 'Calculation mode',
     'Base engine P', 'Base engine Mx', 'Base engine My',
     'Concrete engine P', 'Concrete engine Mx', 'Concrete engine My',
@@ -902,18 +941,18 @@ export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) =>
     cP: start + 14, cMx: start + 15, cMy: start + 16,
     sP: start + 17, sMx: start + 18, sMy: start + 19,
     bP: start + 20, bMx: start + 21, bMy: start + 22,
-    pScale: start + 23, mScale: start + 24,
-    fP: start + 25, fMx: start + 26, fMy: start + 27,
-    eP: start + 28, eMx: start + 29, eMy: start + 30,
-    dP: start + 31, dM: start + 32, mode: start + 33,
-    baseEP: start + 34, baseEMx: start + 35, baseEMy: start + 36,
-    concEP: start + 37, concEMx: start + 38, concEMy: start + 39,
-    steelEP: start + 40, steelEMx: start + 41, steelEMy: start + 42
+    pFactor: start + 23, mxFactor: start + 24, myFactor: start + 25,
+    fP: start + 26, fMx: start + 27, fMy: start + 28,
+    eP: start + 29, eMx: start + 30, eMy: start + 31,
+    dP: start + 32, dM: start + 33, mode: start + 34,
+    baseEP: start + 35, baseEMx: start + 36, baseEMy: start + 37,
+    concEP: start + 38, concEMx: start + 39, concEMy: start + 40,
+    steelEP: start + 41, steelEMx: start + 42, steelEMy: start + 43
   })
   type SourceCells = ReturnType<typeof sourceCells>
   const sourceWidths = [
-    24, 30, 12, 18, 16, 14, 15, 14, 14, 14, 14, 14, 15, 15,
-    14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
+    24, 30, 12, 30, 16, 14, 15, 14, 14, 14, 14, 14, 15, 15,
+    14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
     ...Array(15).fill(16)
   ]
 
@@ -1081,10 +1120,19 @@ export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) =>
     }
     setFormula(sheet.getCell(row, cells.kx), `=${curvatureRef}*COS(RADIANS(${betaRef}))`, point.state.kx, '0.000000000')
     setFormula(sheet.getCell(row, cells.ky), `=${curvatureRef}*SIN(RADIANS(${betaRef}))`, point.state.ky, '0.000000000')
-    sheet.getCell(row, cells.pScale).value = source.pScale
-    sheet.getCell(row, cells.mScale).value = source.mScale
-    sheet.getCell(row, cells.mode).value = meshFormulaReady ? 'mesh formula' : 'engine anchor fallback'
-    for (const column of [cells.key, cells.label, cells.criterionBasis, cells.pScale, cells.mScale, cells.mode]) {
+    sheet.getCell(row, cells.pFactor).value = source.pFactor
+    sheet.getCell(row, cells.mxFactor).value = source.mxFactor
+    sheet.getCell(row, cells.myFactor).value = source.myFactor
+    sheet.getCell(row, cells.mode).value = source.calculationMode
+    for (const column of [
+      cells.key,
+      cells.label,
+      cells.criterionBasis,
+      cells.pFactor,
+      cells.mxFactor,
+      cells.myFactor,
+      cells.mode
+    ]) {
       styleGenerated(sheet.getCell(row, column))
     }
     styleInput(sheet.getCell(row, cells.beta))
@@ -1092,7 +1140,7 @@ export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) =>
 
     const eps = `(${e0Ref}+${kxRef}*Mesh_Y+${kyRef}*Mesh_X)`
     const fc = concreteArray(eps)
-    if (meshFormulaReady && fc) {
+    if (!source.usesLedgerAnchor && meshFormulaReady && fc) {
       setFormula(sheet.getCell(row, cells.cP), `=SUMPRODUCT(${fc},Mesh_A)/1000`, kn(base.concrete.P))
       setFormula(sheet.getCell(row, cells.cMx), `=SUMPRODUCT(${fc},Mesh_A,Mesh_Y)/1000000`, knm(base.concrete.Mx))
       setFormula(sheet.getCell(row, cells.cMy), `=SUMPRODUCT(${fc},Mesh_A,Mesh_X)/1000000`, knm(base.concrete.My))
@@ -1101,7 +1149,7 @@ export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) =>
       setFormula(sheet.getCell(row, cells.cMx), `=${ref(cells.concEMx)}`, knm(base.concrete.Mx))
       setFormula(sheet.getCell(row, cells.cMy), `=${ref(cells.concEMy)}`, knm(base.concrete.My))
     }
-    if (mechanicsSupportsMeshFormula) {
+    if (!source.usesLedgerAnchor && mechanicsSupportsMeshFormula) {
       setFormula(sheet.getCell(row, cells.sP), steelContributionFormula(row, cells, 'P'), kn(base.steel.P))
       setFormula(sheet.getCell(row, cells.sMx), steelContributionFormula(row, cells, 'Mx'), knm(base.steel.Mx))
       setFormula(sheet.getCell(row, cells.sMy), steelContributionFormula(row, cells, 'My'), knm(base.steel.My))
@@ -1110,20 +1158,40 @@ export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) =>
       setFormula(sheet.getCell(row, cells.sMx), `=${ref(cells.steelEMx)}`, knm(base.steel.Mx))
       setFormula(sheet.getCell(row, cells.sMy), `=${ref(cells.steelEMy)}`, knm(base.steel.My))
     }
-    setFormula(sheet.getCell(row, cells.bP), `=${ref(cells.cP)}+${ref(cells.sP)}`, kn(base.total.P))
-    setFormula(sheet.getCell(row, cells.bMx), `=${ref(cells.cMx)}+${ref(cells.sMx)}`, knm(base.total.Mx))
-    setFormula(sheet.getCell(row, cells.bMy), `=${ref(cells.cMy)}+${ref(cells.sMy)}`, knm(base.total.My))
-    setFormula(sheet.getCell(row, cells.fP), `=${ref(cells.bP)}*${ref(cells.pScale)}`, kn(point.P))
-    setFormula(sheet.getCell(row, cells.fMx), `=${ref(cells.bMx)}*${ref(cells.mScale)}`, knm(point.Mx))
-    setFormula(sheet.getCell(row, cells.fMy), `=${ref(cells.bMy)}*${ref(cells.mScale)}`, knm(point.My))
+    setFormula(
+      sheet.getCell(row, cells.bP),
+      source.usesLedgerAnchor ? `=${ref(cells.baseEP)}` : `=${ref(cells.cP)}+${ref(cells.sP)}`,
+      kn(base.total.P)
+    )
+    setFormula(
+      sheet.getCell(row, cells.bMx),
+      source.usesLedgerAnchor ? `=${ref(cells.baseEMx)}` : `=${ref(cells.cMx)}+${ref(cells.sMx)}`,
+      knm(base.total.Mx)
+    )
+    setFormula(
+      sheet.getCell(row, cells.bMy),
+      source.usesLedgerAnchor ? `=${ref(cells.baseEMy)}` : `=${ref(cells.cMy)}+${ref(cells.sMy)}`,
+      knm(base.total.My)
+    )
+    const finalP = kn(base.total.P) * source.pFactor
+    const finalMx = knm(base.total.Mx) * source.mxFactor
+    const finalMy = knm(base.total.My) * source.myFactor
+    setFormula(sheet.getCell(row, cells.fP), `=${ref(cells.bP)}*${ref(cells.pFactor)}`, finalP)
+    setFormula(sheet.getCell(row, cells.fMx), `=${ref(cells.bMx)}*${ref(cells.mxFactor)}`, finalMx)
+    setFormula(sheet.getCell(row, cells.fMy), `=${ref(cells.bMy)}*${ref(cells.myFactor)}`, finalMy)
     sheet.getCell(row, cells.eP).value = kn(point.P)
     sheet.getCell(row, cells.eMx).value = knm(point.Mx)
     sheet.getCell(row, cells.eMy).value = knm(point.My)
-    setFormula(sheet.getCell(row, cells.dP), `=${ref(cells.fP)}-${ref(cells.eP)}`, 0, '0.000000')
+    setFormula(
+      sheet.getCell(row, cells.dP),
+      `=${ref(cells.fP)}-${ref(cells.eP)}`,
+      finalP - kn(point.P),
+      '0.000000'
+    )
     setFormula(
       sheet.getCell(row, cells.dM),
       `=SQRT((${ref(cells.fMx)}-${ref(cells.eMx)})^2+(${ref(cells.fMy)}-${ref(cells.eMy)})^2)`,
-      0,
+      Math.hypot(finalMx - knm(point.Mx), finalMy - knm(point.My)),
       '0.000000'
     )
     sheet.getCell(row, cells.baseEP).value = kn(base.total.P)
@@ -1149,8 +1217,10 @@ export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) =>
   const resultSpan = input.source === 'vertical' ? 34 : 18
   reportTitle(result, 'FORMULA-DRIVEN CHART AUDIT', resultSpan)
   result.getCell('B2').value = input.source === 'vertical'
-    ? 'Displayed values are formulas. Each station criterion determines ε₀, κx and κy; resistance is integrated from Materials and Mesh.'
-    : 'One result row is interpolated from the matching P-below and P-above station rows. Direction ID and Branch preserve distinct Pmax points.'
+    ? mechanicsSupportsMeshFormula
+      ? 'Displayed values are formulas. Each physical station criterion determines ε₀, κx and κy; resistance is integrated from Materials and Mesh. Geometric axial-cap rows are explicitly anchored to their projected engine ledger.'
+      : 'Equivalent-block resultants use the engine total-ledger anchor because this mechanics has no concrete integration mesh. Use the calculation-mode column to identify the provenance.'
+    : 'One result row is interpolated from the matching P-below and P-above rows. Direction ID and Branch preserve every distinct Pmax point; calculation mode distinguishes strain formulas from geometric or block ledger anchors.'
   result.getCell('B2').font = { italic: true, color: { argb: NOTE_COLOR } }
   result.mergeCells(input.source === 'vertical' ? 'B2:AH2' : 'B2:R2')
   result.getRow(2).height = 24
@@ -1207,7 +1277,7 @@ export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) =>
     ) => {
       reportTitle(sheet, title, cells.steelEMy)
       sheet.getCell('B2').value =
-        'Each row is one full strain-plane calculation for the station that brackets Selected_P. Criterion basis and value are direction-specific.'
+        'Each row is one direction-specific bracket station. Physical stress-strain rows use Materials/Mesh formulas; geometric axial-cap and equivalent-block rows are explicitly labelled ledger anchors.'
       sheet.getCell('B2').font = { italic: true, color: { argb: NOTE_COLOR } }
       sheet.mergeCells(`B2:${col(cells.steelEMy)}2`)
       sheet.getCell('B3').value = 'Selected P (kN)'
@@ -1311,7 +1381,7 @@ export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) =>
         '0.000000'
       )
     })
-    result.columns = [8, 28, 10, 12, 18, 14, 16, 18, 14, 16, 16, 13, 18, 16, 16, 16, 16, 14]
+    result.columns = [8, 28, 10, 12, 30, 14, 16, 30, 14, 16, 16, 13, 18, 16, 16, 16, 16, 14]
       .map((width) => ({ width }))
     for (let column = 16; column <= 18; column++) result.getColumn(column).hidden = true
     result.autoFilter = `A${mainHeader}:O${mainHeader + mainRows.length}`

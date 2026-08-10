@@ -1,12 +1,30 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import test from 'node:test'
-import type {
-  ExactDirectionCurve,
-  PreviewSurface,
-  PreviewSurfacePoint,
-  SurfaceStation
+import {
+  activeDesignSurfaceDataset,
+  buildDesignPreviewSurface,
+  contourStrainAngleSamples,
+  sliceFixedPContour,
+  type ExactDirectionCurve,
+  type PreviewSurface,
+  type PreviewSurfacePoint,
+  type SurfaceStation
 } from '@pm/analysis'
+import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
+import {
+  analysisMeshKernelOptions,
+  createDefaultAnalysisOptions,
+  parseProjectDocument
+} from '@pm/project'
+/*
+ * Keep the light synthetic fixtures above for table semantics, then use one real capped surface
+ * below to guard the many-points-at-one-beta identity that originally regressed.
+ */
 import { buildChartTableRows } from '../../features/section-editor/results/chart-data-table'
+
+const normalizeAngleDeg = (degrees: number) => ((degrees % 360) + 360) % 360
 
 const ledger = (P: number, Mx: number, My: number) => ({
   concrete: { P, Mx, My },
@@ -289,4 +307,53 @@ test('synthetic cap vertices are chart topology, not station-table rows', () => 
 
   assert.equal(table.length, 2)
   assert.ok(table.every((row) => row.kind === 'vertical' && row.criterion !== '—'))
+})
+
+test('fixed-P table preserves every Pmax contour branch instead of overwriting equal-beta rows', () => {
+  const parsed = parseProjectDocument(readFileSync(
+    resolve(process.cwd(), 'docs/examples/reference-case/projects/PM-advanced (7) 2D.pm-project.json'),
+    'utf8'
+  ))
+  assert.ok(parsed.ok)
+  if (!parsed.ok) return
+  const document = parsed.document
+  const cappedSection = sectionGeometryFromGeometryInput(document.inputs.geometry)
+  const cappedRebars = geometryInputRebars(document.inputs.geometry)
+  const options = createDefaultAnalysisOptions()
+  options.mesh.sizing = { type: 'automatic', seedDivisions: 8 }
+  options.stations.refinement = { type: 'fixed' }
+  options.directions.refinement = { type: 'fixed', probe: 'all' }
+  const cappedSurface = buildDesignPreviewSurface(
+    cappedSection,
+    cappedRebars,
+    document.inputs.materials,
+    document.inputs.design,
+    analysisMeshKernelOptions(options),
+    options
+  )
+  const dataset = activeDesignSurfaceDataset(cappedSurface)
+  const pmax = Math.max(...dataset.points.map((candidate) => candidate.P))
+  const expected = contourStrainAngleSamples(sliceFixedPContour(dataset.points, pmax, dataset.triangles))
+  const table = buildChartTableRows({
+    surface: cappedSurface,
+    source: 'fixedP',
+    resistanceStage: 'design',
+    sliceAngleDeg: 0,
+    fixedP: pmax
+  })
+  const fixedRows = table.filter((row) => row.kind === 'fixedP')
+  assert.equal(fixedRows.length, expected.length)
+  assert.equal(new Set(fixedRows.map((row) => row.key)).size, expected.length)
+  const repeatedBeta = fixedRows.find((row, index) =>
+    fixedRows.some((candidate, candidateIndex) =>
+      candidateIndex !== index && Math.abs(candidate.angleDeg - row.angleDeg) < 1e-8
+    )
+  )
+  assert.ok(repeatedBeta)
+  const branchRows = fixedRows.filter((row) => Math.abs(row.angleDeg - repeatedBeta.angleDeg) < 1e-8)
+  assert.deepEqual(branchRows.map((row) => row.branch), branchRows.map((_, index) => index + 1))
+  assert.deepEqual(
+    fixedRows.map((row) => [row.angleDeg, row.design?.Mx, row.design?.My]),
+    expected.map((sample) => [normalizeAngleDeg((sample.beta * 180) / Math.PI), sample.Mx, sample.My])
+  )
 })
