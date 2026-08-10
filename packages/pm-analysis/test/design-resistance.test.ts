@@ -3,6 +3,8 @@ import test from 'node:test'
 import { geometryInputRebars, netConcreteCentroid, sectionGeometryFromGeometryInput } from '@pm/geometry'
 import {
   buildResistanceMaterialSets,
+  createAci318DesignBasis,
+  createCustomDesignBasis,
   createEn1992DesignBasis,
   createKdsAppendixDesignBasis,
   createKdsBasicDesignBasis,
@@ -52,6 +54,16 @@ test('KDS current profile identifies the 2024 code set without misdating its res
   assert.match(basis.identity.amendment ?? '', /2024-879/)
 })
 
+test('profiles that expose the optional axial compression limit enable it by default', () => {
+  for (const basis of [
+    createKdsBasicDesignBasis(),
+    createAci318DesignBasis(),
+    createCustomDesignBasis()
+  ]) {
+    assert.equal(basis.axialCapEnabled, true, basis.profileId)
+  }
+})
+
 test('disabling only the optional axial limit does not require an override reason', () => {
   const basis = createKdsBasicDesignBasis()
   basis.axialCapEnabled = false
@@ -67,6 +79,18 @@ test('disabling only the optional axial limit does not require an override reaso
   assert.equal(
     designBasisIssues(basis).some((issue) => issue.includes('reason')),
     true
+  )
+})
+
+test('selecting qualifying spiral reinforcement does not require an override reason', () => {
+  const basis = createKdsBasicDesignBasis()
+  basis.transverseReinforcement = 'qualifying-spiral'
+  basis.modified = true
+
+  assert.equal(designBasisRequiresOverrideReason(basis), false)
+  assert.equal(
+    designBasisIssues(basis).some((issue) => issue.includes('reason')),
+    false
   )
 })
 

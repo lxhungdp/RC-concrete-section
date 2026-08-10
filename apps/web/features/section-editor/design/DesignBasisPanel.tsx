@@ -398,29 +398,23 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                 }
               />
             </div>
-            {isUserDefinedProfile ? (
-              <label className={`pm-field-check pm-design-cap-check${draft.axialCapEnabled ? ' is-on' : ''}`}>
-                <input
-                  type="checkbox"
-                  checked={draft.axialCapEnabled}
-                  onChange={(event) =>
-                    update((next) => {
-                      if (next.format === 'globalResultantFactor') next.axialCapEnabled = event.target.checked
-                    })
-                  }
-                />
-                Apply maximum axial-compression limit
-              </label>
-            ) : (
-              <p className="pm-design-help">
-                This limit is mandatory for the selected code profile. An uncapped curve may be
-                shown only as a diagnostic and is never used for the Design check.
-              </p>
-            )}
+            <label className={`pm-field-check pm-design-cap-check${draft.axialCapEnabled ? ' is-on' : ''}`}>
+              <input
+                type="checkbox"
+                checked={draft.axialCapEnabled}
+                onChange={(event) =>
+                  update((next) => {
+                    if (next.format === 'globalResultantFactor') next.axialCapEnabled = event.target.checked
+                  })
+                }
+              />
+              Apply maximum axial-compression limit
+            </label>
             <p className="pm-design-help">
               Limits the usable design compression to the selected fraction of the factored
-              compression pole. The defaults are 0.80 for ties/other and 0.85 for a qualifying
-              spiral; this produces the horizontal cap on a P-M slice.
+              compression pole. This option is enabled by default; clearing it removes the cap
+              from charts and design checks. The default factors are 0.80 for ties/other and 0.85
+              for a qualifying spiral.
             </p>
           </div>}
         </>

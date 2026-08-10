@@ -1002,6 +1002,11 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   font-variant-numeric: tabular-nums;
 }
 
+/* Loadcases use compact cells while keeping the header comfortably legible. */
+.pm-side-panel .pm-loadcase-table {
+  font-size: 11px;
+}
+
 .pm-side-panel .pm-point-table th,
 .pm-side-panel .pm-loadcase-table th,
 .pm-side-panel .pm-chart-data-table th {
@@ -1030,6 +1035,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 /* Load symbols and units are case-sensitive: Pu, Mux, Muy, kN and kNm. */
 .pm-side-panel .pm-loadcase-table th {
   font-family: var(--font-sans);
+  font-size: 12px;
   letter-spacing: 0;
   text-transform: none;
 }
@@ -1101,6 +1107,10 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   font-size: var(--sp-fs-2);
 }
 
+.pm-side-panel .pm-loadcase-table input[type='text'] {
+  font-size: 11px;
+}
+
 .pm-side-panel .pm-point-table input:hover:not(:disabled):not(:focus),
 .pm-side-panel .pm-point-table select:hover:not(:disabled):not(:focus),
 .pm-side-panel .pm-loadcase-table input:hover:not(:disabled):not(:focus) {
@@ -1136,8 +1146,13 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 }
 
 .pm-side-panel .pm-loadcase-ur {
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+
+.pm-side-panel .pm-loadcase-ur small {
+  font-size: 9px;
 }
 
 .pm-side-panel .pm-loadcase-ur.is-pass {

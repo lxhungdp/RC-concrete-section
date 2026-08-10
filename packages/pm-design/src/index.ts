@@ -630,8 +630,9 @@ const sameNumbers = <T extends Record<string, number>>(left: T, right: T) =>
 
 /**
  * Disabling the optional maximum-axial-resistance cap is an explicit analysis choice, not a
- * coefficient override. It remains serialized through `modified`, but does not need a narrative
- * justification. Changes to factors or reinforcement classification still require one.
+ * coefficient override. The transverse-reinforcement classification is likewise a section-design
+ * choice, not a modified coefficient. Both remain serialized through `modified`, but neither needs
+ * a narrative justification; changes to resistance factors or transition rules still do.
  */
 export const designBasisRequiresOverrideReason = (basis: DesignBasis): boolean => {
   if (!basis.modified) return false
@@ -652,7 +653,6 @@ export const designBasisRequiresOverrideReason = (basis: DesignBasis): boolean =
   if (basis.format !== defaults.format) return true
   if (basis.format === 'globalResultantFactor' && defaults.format === 'globalResultantFactor') {
     return (
-      basis.transverseReinforcement !== defaults.transverseReinforcement ||
       !sameNumbers(basis.factors, defaults.factors) ||
       JSON.stringify(basis.transition) !== JSON.stringify(defaults.transition)
     )

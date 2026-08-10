@@ -299,20 +299,19 @@ function ConcreteAxialLimitFields({
           />
         </label>
       </div>
-      {basis.profileId === 'custom-user-defined' && (
-        <label className="pm-material-toggle">
-          <input
-            type="checkbox"
-            checked={basis.axialCapEnabled}
-            onChange={(event) => update((next) => {
-              next.axialCapEnabled = event.target.checked
-            })}
-          />
-          <span>Apply Pmax limit</span>
-        </label>
-      )}
+      <label className="pm-material-toggle">
+        <input
+          type="checkbox"
+          checked={basis.axialCapEnabled}
+          onChange={(event) => update((next) => {
+            next.axialCapEnabled = event.target.checked
+          })}
+        />
+        <span>Apply Pmax limit</span>
+      </label>
       <p className="pm-field-note">
-        Pmax is limited to this fraction of the design compression pole for the selected column type.
+        Enabled by default. Clear this option to use the uncapped design compression pole in all
+        charts and design checks.
       </p>
       {designBasisRequiresOverrideReason(basis) && (
         <label className="pm-field">

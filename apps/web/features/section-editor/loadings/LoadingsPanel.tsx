@@ -54,7 +54,6 @@ const SpreadsheetInput = ({ value, ariaLabel, numeric = false, onCommit }: Sprea
       inputMode={numeric ? 'decimal' : undefined}
       value={draft}
       aria-label={ariaLabel}
-      onClick={(event) => event.stopPropagation()}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
