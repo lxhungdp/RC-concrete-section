@@ -37,9 +37,11 @@ Current UI note:
   results menu — the results sidebars carry presentation state only, never a value that changes a
   resultant.
 - There is no top-level `Report` menu. Export commands are actions in the relevant preview
-  workspace: `Demand Check` exports the PDF design report and the selected-result workbook. An
-  accepted-result report workflow has not been implemented, so every PDF carries a `PREVIEW`
-  watermark and states on every page that it is not an accepted design result.
+  workspace: `Demand Check` exports the PDF design report and the demand-check calculation
+  workbook. One loadcase selection drives both — every combination is checked and plotted, and the
+  selected ones are worked through in full. An accepted-result report workflow has not been
+  implemented, so every PDF carries a `PREVIEW` watermark and states on every page that it is not an
+  accepted design result.
 - For stress-strain integration, the `Section mesh` toolbar exports the exact prepared analysis mesh as either an Excel audit
   workbook or a DXF drawing. Excel includes Summary, Triangles, Quadrature, Boundaries, and Rebars
   sheets; DXF uses broadly compatible R12 ASCII records and separates the same geometry into named

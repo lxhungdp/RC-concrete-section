@@ -85,11 +85,10 @@ import {
   checkLoadcaseAsync,
   checkLoadcasesAsync,
   exportColumnReportPdfAsync,
-  exportEquivalentBlockWorkbookAsync,
-  exportSectionWorkbookAsync,
+  exportDemandCheckWorkbookAsync,
   isAnalysisAbort
 } from '../../application/analysis/client'
-import { ExcelExportError, equivalentBlockWorkbookFileName, sectionWorkbookFileName } from '@pm/report'
+import { ExcelExportError, demandCheckWorkbookFileName } from '@pm/report'
 import { LoadingsPanel } from './loadings/LoadingsPanel'
 import { CalculationBasisToolbar } from './CalculationBasisToolbar'
 import { PROJECT_EXAMPLES, type ProjectExample } from './project-examples'
@@ -1215,70 +1214,39 @@ export function SectionDrawingClient() {
     }
   }
 
+  /**
+   * Build the demand-check workbook from the surface already on screen.
+   *
+   * Like the PDF, it re-solves the selected combinations rather than reading the UI's cache, and it
+   * covers the same selection, so the two documents are two views of one check.
+   */
   const exportExcelReport = async () => {
-    const selectedLoadcase = loadingsInput.combinations.find((item) => item.id === selectedLoadcaseId)
-    if (!resultSurface || !hasAppliedSection || !selectedLoadcase) {
+    if (!resultSurface || !hasAppliedSection) {
       setExcelState('error')
-      setExcelMessage('Build the resistance surface and select a loadcase before exporting Excel.')
+      setExcelMessage('Build the section resistance surface before exporting Excel.')
       return
     }
+    const profileId = resultSurface.calculationProfileId ?? calculationProfileId
 
     setExcelState('working')
     setExcelMessage('')
     try {
-      const projectName = projectMeta.name || appliedGeometryInput.name || 'Column project'
-      const currentInverse = inverseResults[selectedLoadcase.id] ?? null
-      const currentAnalysisOptions = resultSurface.analysisOptions
-      const fallbackAngle = normalizeAngleDeg((Math.atan2(selectedLoadcase.My, selectedLoadcase.Mx) * 180) / Math.PI)
-      let blob: Blob
-      let fileName: string
-
-      if (currentAnalysisOptions.methodId === 'equivalent-block-surface-v1') {
-        const profileId = resultSurface.calculationProfileId
-        if (!profileId || !isEquivalentBlockProfileId(profileId)) {
-          throw new ExcelExportError(
-            'The current result was not produced by an equivalent-block profile, so the block workbook cannot describe it.'
-          )
-        }
-        const payload = {
-          projectName,
-          sectionName: finalSection.name,
-          calculationProfileId: profileId,
-          section: finalSection,
-          rebars,
-          materialStore,
-          designBasis,
-          analysisOptions: currentAnalysisOptions,
-          thetaDeg: currentInverse?.equivalentBlock
-            ? normalizeAngleDeg((currentInverse.equivalentBlock.neutralAxisAngle * 180) / Math.PI)
-            : fallbackAngle,
-          fixedP: selectedLoadcase.P,
-          loadcase: selectedLoadcase
-        }
-        blob = await exportEquivalentBlockWorkbookAsync(payload)
-        fileName = equivalentBlockWorkbookFileName(payload)
-      } else {
-        const equilibrium = currentInverse?.state ?? null
-        const curvature = equilibrium ? Math.hypot(equilibrium.kx, equilibrium.ky) : 0
-        const payload = {
-          projectName,
-          sectionName: finalSection.name,
-          section: finalSection,
-          rebars,
-          materialStore,
-          designBasis,
-          analysisOptions: currentAnalysisOptions,
-          betaDeg:
-            equilibrium && curvature > 1e-12
-              ? normalizeAngleDeg((Math.atan2(equilibrium.ky, equilibrium.kx) * 180) / Math.PI)
-              : fallbackAngle,
-          fixedP: selectedLoadcase.P,
-          loadcase: selectedLoadcase,
-          equilibrium
-        }
-        blob = await exportSectionWorkbookAsync(payload)
-        fileName = sectionWorkbookFileName(payload)
+      const payload = {
+        projectName: projectMeta.name || appliedGeometryInput.name || 'Column project',
+        projectInformation: projectMeta.information,
+        sectionName: finalSection.name,
+        calculationProfileId: profileId,
+        section: finalSection,
+        rebars,
+        materialStore,
+        designBasis,
+        analysisOptions: resultSurface.analysisOptions,
+        surface: resultSurface,
+        loadcases: loadingsInput.combinations,
+        detailLoadcaseIds: reportDetailIds
       }
+      const blob = await exportDemandCheckWorkbookAsync(payload)
+      const fileName = demandCheckWorkbookFileName(payload)
 
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
@@ -3167,7 +3135,7 @@ export function SectionDrawingClient() {
               reportState={reportState}
               reportMessage={reportMessage}
               onExportExcel={() => void exportExcelReport()}
-              excelReady={Boolean(resultSurface && selectedLoadcaseId != null)}
+              excelReady={Boolean(resultSurface)}
               excelState={excelState}
               excelMessage={excelMessage}
             />

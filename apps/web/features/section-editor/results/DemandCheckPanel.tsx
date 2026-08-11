@@ -83,7 +83,7 @@ export function DemandCheckPanel({
               className="pm-file-btn"
               onClick={onExportReport}
               disabled={reportState === 'working' || !surfaceReady}
-              title={`Export the column design report as PDF · ${reportDetailIds.length} combination(s) detailed`}
+              title={`Export the column design report as PDF · every combination gets its two curves, ${reportDetailIds.length} worked through`}
             >
               {reportState === 'working' ? <Loader2 size={13} className="pm-spin" /> : <Download size={13} />}
               PDF
@@ -93,7 +93,7 @@ export function DemandCheckPanel({
               className="pm-file-btn"
               onClick={onExportExcel}
               disabled={excelState === 'working' || !excelReady}
-              title="Export the selected loadcase calculation to Excel, with live formulas"
+              title={`Export the demand check to Excel with live formulas · inverse, vertical and fixed-P sheets for ${reportDetailIds.length} combination(s)`}
             >
               {excelState === 'working' ? <Loader2 size={13} className="pm-spin" /> : <Download size={13} />}
               Excel

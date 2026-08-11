@@ -72,6 +72,12 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
   ledger — clipped polygon with a shoelace reconciliation, `c`, `a`, `beta1`, block area/centroid,
   the bar ledger, the resistance stage and the solver evidence — and `npm run test:excel-block`
   recalculates it in an independent formula engine against the kernel.
+- **One solve behind two demand-check formats:** closed. `@pm/report/model/loadcase-solutions.ts`
+  owns the per-loadcase inverse, and both the PDF report model and `excel/demand-check.ts` read it,
+  so the report and the workbook cannot publish two utilizations for one combination.
+  `npm run test:demand-check` recalculates the exported workbook in an independent formula engine,
+  checks that each inverse sheet's formula ledger reproduces the kernel's own response, and compares
+  the workbook combination table with the PDF model row for row.
 
 ## 4. Numerical evidence for the unified station default
 

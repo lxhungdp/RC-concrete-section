@@ -11,6 +11,7 @@ import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
 import type {
   ChartAuditWorkbookInput,
+  DemandCheckExcelInput,
   EquivalentBlockExcelInput,
   ExcelExportInput
 } from '@pm/report'
@@ -84,6 +85,8 @@ export type WorkerSurfaceReference = {
 
 export type ChartAuditWorkerPayload = Omit<ChartAuditWorkbookInput, 'surface'> & WorkerSurfaceReference
 
+export type DemandCheckWorkerPayload = Omit<DemandCheckExcelInput, 'surface'> & WorkerSurfaceReference
+
 export type CheckLoadcasesWorkerPayload = WorkerSurfaceReference & {
   loadcases: LoadCombination[]
 }
@@ -109,6 +112,7 @@ export type AnalysisWorkerJob =
   | { type: 'exportExcel'; jobId: string; payload: ExcelExportInput }
   | { type: 'exportBlockExcel'; jobId: string; payload: EquivalentBlockExcelInput }
   | { type: 'exportChartAudit'; jobId: string; payload: ChartAuditWorkerPayload }
+  | { type: 'exportDemandCheck'; jobId: string; payload: DemandCheckWorkerPayload }
   | { type: 'exportPdfReport'; jobId: string; payload: ReportInput }
 
 export type AnalysisWorkerRequest = AnalysisWorkerJob
@@ -125,6 +129,7 @@ export type AnalysisWorkerResultMap = {
   exportExcel: ArrayBuffer
   exportBlockExcel: ArrayBuffer
   exportChartAudit: ArrayBuffer
+  exportDemandCheck: ArrayBuffer
   exportPdfReport: { bytes: ArrayBuffer; fileName: string }
 }
 

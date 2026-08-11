@@ -32,10 +32,12 @@ import {
 } from '@pm/design'
 import {
   buildChartAuditWorkbookBytes,
+  buildDemandCheckWorkbookBytes,
   exportEquivalentBlockWorkbook,
   exportMeshAuditDxf,
   exportMeshAuditWorkbook,
   exportSectionWorkbook,
+  type DemandCheckExcelInput,
   type EquivalentBlockExcelInput,
   type ExcelExportInput,
   type ChartAuditWorkbookInput
@@ -449,6 +451,27 @@ export const exportChartAuditWorkbookAsync = async (
     },
     async () => {
       const bytes = await buildChartAuditWorkbookBytes(payload)
+      return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+    },
+    signal
+  )
+  return new Blob([result], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  })
+}
+
+export const exportDemandCheckWorkbookAsync = async (
+  payload: DemandCheckExcelInput,
+  signal?: AbortSignal
+): Promise<Blob> => {
+  const { surface, ...rest } = payload
+  const result = await runWorkerOrFallback<ArrayBuffer>(
+    {
+      type: 'exportDemandCheck',
+      payload: { ...rest, ...workerSurfaceReference(surface) }
+    },
+    async () => {
+      const bytes = await buildDemandCheckWorkbookBytes(payload)
       return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
     },
     signal

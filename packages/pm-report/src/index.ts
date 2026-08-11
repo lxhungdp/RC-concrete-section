@@ -8,3 +8,10 @@ export {
   exportEquivalentBlockWorkbook,
   type EquivalentBlockExcelInput
 } from './excel/equivalent-block'
+export {
+  buildDemandCheckWorkbook,
+  buildDemandCheckWorkbookBytes,
+  demandCheckWorkbookFileName,
+  exportDemandCheckWorkbook,
+  type DemandCheckExcelInput
+} from './excel/demand-check'

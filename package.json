@@ -12,7 +12,7 @@
     "lint": "npm run typecheck",
     "check:structure": "tsx tools/architecture/check-repository-layout.ts",
     "typecheck": "tsc --noEmit",
-    "test": "npm run check:structure && npm run typecheck && npm run test:unit && npm run test:cad && npm run test:roundtrip && npm run test:pm-stations && npm run test:excel-export && npm run test:excel-block && npm run test:pdf-report",
+    "test": "npm run check:structure && npm run typecheck && npm run test:unit && npm run test:cad && npm run test:roundtrip && npm run test:pm-stations && npm run test:excel-export && npm run test:excel-block && npm run test:demand-check && npm run test:pdf-report",
     "test:unit": "node --import tsx --test packages/pm-results/test/*.test.ts packages/pm-equivalent-block/test/*.test.ts packages/pm-code-kds142020/test/*.test.ts packages/pm-code-aci318/test/*.test.ts packages/pm-code-en1992/test/*.test.ts packages/pm-code-as3600/test/*.test.ts packages/pm-code-custom/test/*.test.ts packages/pm-project/test/*.test.ts packages/pm-analysis-equivalent-block/test/*.test.ts packages/pm-analysis/test/*.test.ts packages/pm-report/test/*.test.ts apps/web/test/*.test.ts apps/web/test/analysis/*.test.ts apps/web/test/geometry/*.test.ts apps/web/test/results/*.test.ts",
     "test:cad": "npm run test -w @structures/cad-drawing",
     "test:roundtrip": "tsx packages/pm-project/test/integration/roundtrip.selftest.ts",
@@ -29,6 +29,7 @@
     "bench:record": "tsx packages/pm-analysis/bench/run.ts --repeats 1 --fingerprint-out packages/pm-analysis/bench/baselines/capacity-baseline.json",
     "bench:verify": "tsx packages/pm-analysis/bench/run.ts --repeats 1 --baseline packages/pm-analysis/bench/baselines/capacity-baseline.json",
     "test:excel-block": "tsx packages/pm-report/test/integration/equivalent-block.selftest.ts",
+    "test:demand-check": "tsx packages/pm-report/test/integration/demand-check.selftest.ts",
     "test:pdf-report": "tsx packages/pm-report/test/integration/pdf-report.selftest.ts"
   },
   "workspaces": [

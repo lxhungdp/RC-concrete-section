@@ -161,6 +161,16 @@ const runCase = async (
   pass('a detail block exists per combination', model.details.length === loadcases.length,
     `${model.details.length}/${loadcases.length}`)
   pass('every combination has a row', model.combinations.length === loadcases.length)
+  pass('every combination carries both published curves and its parameter block',
+    model.details.every((detail) =>
+      detail.fixedP.pKn === detail.row.pKn &&
+      detail.basics.length > 8 &&
+      (detail.interaction.design.length > 0 || detail.interaction.nominal.length > 0)
+    ))
+  pass('the fixed-P cut is taken at the combination\'s own axial force',
+    model.details.every((detail) =>
+      detail.fixedP.design.every((point) => Number.isFinite(point.mx) && Number.isFinite(point.my))
+    ))
   pass('the report is marked as preview, never released',
     model.status.startsWith('PREVIEW') && model.watermark === 'PREVIEW')
 
@@ -186,6 +196,30 @@ const runCase = async (
         detail.bars.every((bar) => bar.depth >= -1e-6 && bar.depth <= profile.projectedDepth + 1e-6))
     }
   }
+
+  console.log('== 2b. Selection controls the worked pages, not the check pages ==')
+  const noneSelected = buildColumnReportModel({ ...input, detailLoadcaseIds: [] })
+  pass('an empty selection still checks and plots every combination',
+    noneSelected.details.length === loadcases.length &&
+      noneSelected.details.every((detail) => !detail.detailed && detail.curveTables.length === 0),
+    `${noneSelected.details.length} check pages, 0 worked`)
+  if (loadcases.length > 1) {
+    const oneSelected = buildColumnReportModel({ ...input, detailLoadcaseIds: [loadcases[0].id] })
+    const worked = oneSelected.details.filter((detail) => detail.detailed)
+    pass('selecting one combination works exactly that one through',
+      worked.length === 1 && worked[0].row.id === loadcases[0].id)
+    pass('a worked combination publishes the points behind both curves',
+      worked.length === 1 &&
+        worked[0].curveTables.length === 2 &&
+        worked[0].curveTables.every((table) => table.columns.length > 0),
+      worked[0]?.curveTables.map((table) => `${table.title} (${table.rows.length} rows)`).join(' | '))
+  }
+  pass('every selected combination publishes a vertical and a fixed-P point table',
+    model.details.every((detail) =>
+      detail.curveTables.length === 2 &&
+      detail.curveTables[0].title.startsWith('Vertical curve points') &&
+      detail.curveTables[1].title.startsWith('Fixed-P curve points')
+    ))
 
   console.log('== 3. Translation invariance of report drawings ==')
   const dx = 1_234.5

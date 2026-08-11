@@ -14,31 +14,25 @@
  * produced it.
  */
 import {
-  applyDesignCheckToInverse,
   activeDesignDirectionPoints,
   activeDesignSurfaceDataset,
   activeNominalDirectionPoints,
   activeNominalSurfaceDataset,
-  buildExactDirectionCurveFromPrepared,
-  checkLoadcaseUtilizationFromSurface,
-  codeAdjustedDemandOfCheck,
+  contourStrainAngleSamples,
   evaluatePreparedState,
+  intersectFixedPContourWithMomentRay,
   intersectSurfaceWithDemandRay,
   prepareAnalysis,
+  sliceFixedPContour,
   sliceMomentPlane,
-  solveInversePreviewFromPrepared,
-  sliceActiveDesignPContour,
-  strainGradientDirection,
+  stationDefinitionLabel,
   type ExactDirectionCurve,
   type InversePreviewResult,
   type PreviewSurface,
+  type PreviewSurfacePoint,
   type StrainState
 } from '@pm/analysis'
-import {
-  buildEquivalentBlockExactDirectionCurveFromPrepared,
-  prepareBlockAnalysis,
-  solveEquivalentBlockDemandsFromPrepared
-} from '@pm/analysis-equivalent-block'
+import { prepareBlockAnalysis } from '@pm/analysis-equivalent-block'
 import {
   clipPreparedSectionToHalfPlane,
   prepareEquivalentBlockSection,
@@ -65,17 +59,15 @@ import {
   type MaterialStore
 } from '@pm/materials'
 import {
-  analysisMeshKernelOptions,
   calculationProfile,
   isEquivalentBlockProfileId,
-  type AnalysisOptions,
   type CalculationAnalysisOptions,
   type CalculationProfileId,
-  type EquivalentBlockAnalysisOptions,
   type LoadCombination,
   type ProjectInformation
 } from '@pm/project'
 import { ExcelExportError } from '../excel/workbook-common'
+import { solveLoadcases } from './loadcase-solutions'
 
 export type ReportInput = {
   projectName: string
@@ -122,6 +114,31 @@ export type InteractionCurve = {
   /** Signed moment about the θ direction, kN·m, against axial force in kN. */
   nominal: ReadonlyArray<{ m: number; p: number }>
   design: ReadonlyArray<{ m: number; p: number }>
+}
+
+/**
+ * The horizontal companion of the vertical meridian: the Mx-My contour cut at the combination's own
+ * axial force. Together the two views bracket a biaxial check — the meridian shows how much axial
+ * force the section still has in hand, the contour shows how much moment it has in every direction
+ * at exactly this one.
+ */
+export type FixedPCurve = {
+  /** Axial level of the cut, kN. Always the combination's own Pu. */
+  pKn: number
+  /** Closed contour in (Mx, My), kN·m. Empty when the cut misses the surface. */
+  nominal: ReadonlyArray<{ mx: number; my: number }>
+  design: ReadonlyArray<{ mx: number; my: number }>
+  demand: { mx: number; my: number }
+  /** Where the demand moment direction meets the Design contour at this P. */
+  capacity: { mx: number; my: number } | null
+}
+
+/** A table the renderer prints as-is; the model owns the columns and the formatting. */
+export type CurveTable = {
+  title: string
+  note: string
+  columns: ReadonlyArray<{ title: string; width: number; align?: 'left' | 'right' }>
+  rows: ReadonlyArray<ReadonlyArray<string>>
 }
 
 export type CombinationRow = {
@@ -175,9 +192,19 @@ export type DepthProfile = {
 
 export type CombinationDetail = {
   row: CombinationRow
+  /**
+   * True when the user selected this combination to be worked through. Every combination gets its
+   * two curves and its solved state; only a selected one also gets the section/elevation spread,
+   * the bar ledger and the point tables behind the curves.
+   */
+  detailed: boolean
   converged: boolean
   admissible: boolean
   message: string
+  /** Converged strain plane; null when the solver produced none worth publishing. */
+  state: { e0: number; kx: number; ky: number } | null
+  /** Compact parameter block for the per-combination check page. */
+  basics: LabelledValue[]
   /** Neutral-axis line direction in section coordinates, degrees CCW from +x. */
   neutralAxisAngleDeg: number
   neutralAxisLine: readonly [XY, XY] | null
@@ -192,6 +219,10 @@ export type CombinationDetail = {
     demand: { m: number; p: number }
     capacity: { m: number; p: number } | null
   }
+  /** Mx-My contour at this combination's own axial force, with the load point on it. */
+  fixedP: FixedPCurve
+  /** Points behind the two curves above; empty unless this combination was selected. */
+  curveTables: readonly CurveTable[]
 }
 
 export type ColumnReportModel = {
@@ -436,6 +467,180 @@ const interactionFor = (
   }
 }
 
+/**
+ * Mx-My contour at the combination's own axial force.
+ *
+ * The polyline is the kernel's own cut of the triangulated Design and Nominal surfaces, in the
+ * order the kernel returns it. The report closes the ring for drawing and does nothing else to it:
+ * where the contour opens or doubles back is result evidence, not a drawing defect to smooth away.
+ */
+const fixedPCurveFor = (surface: PreviewSurface, loadcase: LoadCombination): FixedPCurve => {
+  const design = activeDesignSurfaceDataset(surface)
+  const nominal = activeNominalSurfaceDataset(surface)
+  const designContour = sliceFixedPContour(design.points, loadcase.P, design.triangles)
+  const nominalContour = sliceFixedPContour(nominal.points, loadcase.P, nominal.triangles)
+  const ring = (contour: typeof designContour) => {
+    const points = contour.map((point) => ({ mx: point.Mx / KNM, my: point.My / KNM }))
+    return points.length > 2 ? [...points, points[0]] : points
+  }
+  // The ray query uses the sampled-direction subset, exactly as the Demand Check chart does.
+  const samples = contourStrainAngleSamples(designContour)
+  const capacity =
+    Math.hypot(loadcase.Mx, loadcase.My) < 1e-9 || samples.length < 2
+      ? null
+      : intersectFixedPContourWithMomentRay(samples, Math.atan2(loadcase.My, loadcase.Mx))
+  return {
+    pKn: loadcase.P / KN,
+    design: ring(designContour),
+    nominal: ring(nominalContour),
+    demand: { mx: loadcase.Mx / KNM, my: loadcase.My / KNM },
+    capacity: capacity ? { mx: capacity.Mx / KNM, my: capacity.My / KNM } : null
+  }
+}
+
+/**
+ * Every point behind the two published curves.
+ *
+ * A drawn curve is a picture of a calculation; these tables are the calculation. When the meridian
+ * is the exact direct-β one, each row carries the station identity and the strain plane that
+ * produced it, so a reader can re-derive the point rather than measure it off the diagram.
+ */
+const curveTablesFor = (
+  interaction: CombinationDetail['interaction'],
+  fixedP: FixedPCurve,
+  exactCurve: ExactDirectionCurve | null,
+  surface: PreviewSurface,
+  loadcase: LoadCombination
+): CurveTable[] => {
+  const tables: CurveTable[] = []
+
+  const verticalColumns = [
+    { title: '#', width: 5, align: 'right' as const },
+    { title: 'Stage', width: 10 },
+    { title: 'Station', width: 20 },
+    { title: 'Criterion', width: 24 },
+    { title: 'ε0', width: 14, align: 'right' as const },
+    { title: 'κx (1/mm)', width: 14, align: 'right' as const },
+    { title: 'κy (1/mm)', width: 14, align: 'right' as const },
+    { title: 'P (kN)', width: 13, align: 'right' as const },
+    { title: 'Mθ (kN·m)', width: 14, align: 'right' as const }
+  ]
+
+  if (exactCurve) {
+    const descriptors = new Map(
+      [...exactCurve.stations, ...(exactCurve.nominalStations ?? [])].map((station) => [station.id, station])
+    )
+    const project = (point: PreviewSurfacePoint) =>
+      (point.Mx * Math.cos(exactCurve.beta) + point.My * Math.sin(exactCurve.beta)) / KNM
+    const stageRows = (stage: string, points: readonly PreviewSurfacePoint[]) =>
+      points.map((point, index) => {
+        const station = point.stationId === null ? null : descriptors.get(point.stationId) ?? null
+        return [
+          String(index + 1),
+          stage,
+          point.stationId ?? point.surfaceRole,
+          station ? stationDefinitionLabel(station.definition) : '—',
+          sci(point.state.e0, 4),
+          sci(point.state.kx, 4),
+          sci(point.state.ky, 4),
+          fmt(point.P / KN, 1),
+          fmt(project(point), 2)
+        ] as readonly string[]
+      })
+    tables.push({
+      title: `Vertical curve points — direct meridian at βeq = ${fmt(deg(exactCurve.beta), 3)}°`,
+      note: 'Each row is one strain-domain station on the meridian the load point is checked against. ε0, κx and κy are the plane that produced the row; P and Mθ are its resultants projected on βeq.',
+      columns: verticalColumns,
+      rows: [
+        ...stageRows('Design', activeDesignDirectionPoints(exactCurve)),
+        ...stageRows('Nominal', activeNominalDirectionPoints(exactCurve))
+      ]
+    })
+  } else {
+    const stageRows = (stage: string, points: ReadonlyArray<{ m: number; p: number }>) =>
+      points.map((point, index) => [
+        String(index + 1),
+        stage,
+        '—',
+        '—',
+        '—',
+        '—',
+        '—',
+        fmt(point.p, 1),
+        fmt(point.m, 2)
+      ] as readonly string[])
+    tables.push({
+      title: `Vertical curve points — fixed-grid plane at θ = ${fmt(interaction.thetaDeg, 2)}°`,
+      note: 'The combination has no published equilibrium state, so the meridian is a geometric cut of the sampled surface and carries no per-row strain plane.',
+      columns: verticalColumns,
+      rows: [...stageRows('Design', interaction.design), ...stageRows('Nominal', interaction.nominal)]
+    })
+  }
+
+  const contourRows = (stage: string, points: ReadonlyArray<{ mx: number; my: number }>) =>
+    points.map((point, index) => [
+      String(index + 1),
+      stage,
+      fmt(deg(Math.atan2(point.my, point.mx)), 3),
+      fmt(point.mx, 2),
+      fmt(point.my, 2),
+      fmt(Math.hypot(point.mx, point.my), 2)
+    ] as readonly string[])
+  const emptyStages = [
+    ...(fixedP.design.length === 0 ? ['Design'] : []),
+    ...(fixedP.nominal.length === 0 ? ['Nominal'] : [])
+  ]
+  tables.push({
+    title: `Fixed-P curve points — Mx-My contour at Pu = ${fmt(loadcase.P / KN, 1)} kN`,
+    note: `Cut of the ${surface.analysisOptions.samplingMode} triangulated surface at this combination's own axial force. The last row repeats the first because the contour is drawn closed.` +
+      (emptyStages.length > 0
+        ? ` The ${emptyStages.join(' and ')} surface does not reach this axial force, so it contributes no rows and is absent from the diagram.`
+        : ''),
+    columns: [
+      { title: '#', width: 5, align: 'right' as const },
+      { title: 'Stage', width: 10 },
+      { title: 'θM (°)', width: 12, align: 'right' as const },
+      { title: 'Mx (kN·m)', width: 16, align: 'right' as const },
+      { title: 'My (kN·m)', width: 16, align: 'right' as const },
+      { title: '|M| (kN·m)', width: 16, align: 'right' as const }
+    ],
+    rows: [...contourRows('Design', fixedP.design), ...contourRows('Nominal', fixedP.nominal)]
+  })
+
+  return tables
+}
+
+/** Parameter block printed beside the two curves on a combination's check page. */
+const basicsFor = (
+  row: CombinationRow,
+  result: InversePreviewResult,
+  fixedP: FixedPCurve,
+  neutralAxisDepth: number | null
+): LabelledValue[] => {
+  const state = result.state
+  const curvature = Math.hypot(state.kx, state.ky)
+  return [
+    ['Pu', `${fmt(row.pKn, 1)} kN`],
+    ['Mux', `${fmt(row.mxKnm, 1)} kN·m`],
+    ['Muy', `${fmt(row.myKnm, 1)} kN·m`],
+    ['Moment direction θL', `${fmt(row.thetaDeg, 2)}°`],
+    ['Resultant moment', `${fmt(Math.hypot(row.mxKnm, row.myKnm), 1)} kN·m`],
+    ['Strain-plane ε0', sci(state.e0, 4)],
+    ['Curvature κx', sci(state.kx, 4)],
+    ['Curvature κy', sci(state.ky, 4)],
+    ['Strain direction βeq', curvature > 1e-14 ? `${fmt(deg(Math.atan2(state.ky, state.kx)), 3)}°` : 'uniform strain'],
+    ['Neutral-axis depth c', neutralAxisDepth === null ? '—' : `${fmt(neutralAxisDepth, 1)} mm`],
+    ['Capacity at Pu', fixedP.capacity === null
+      ? '—'
+      : `Mx ${fmt(fixedP.capacity.mx, 1)} · My ${fmt(fixedP.capacity.my, 1)} kN·m`],
+    ['φ', row.phi === null ? '—' : fmt(row.phi, 4)],
+    ['Classification', row.classification],
+    ['Utilization UR', row.utilization === null ? '—' : fmt(row.utilization, 4)],
+    ['Fixed-P ratio', row.fixedPUtilization === null ? '—' : fmt(row.fixedPUtilization, 4)],
+    ['Verdict', row.verdict === 'adequate' ? 'ADEQUATE' : row.verdict === 'inadequate' ? 'INADEQUATE' : 'NOT CHECKED']
+  ]
+}
+
 export const buildColumnReportModel = (input: ReportInput): ColumnReportModel => {
   const profile = calculationProfile(input.calculationProfileId)
   const basis = input.designBasis
@@ -476,77 +681,50 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
   const detail: CombinationDetail[] = []
   const wanted = new Set(input.detailLoadcaseIds)
 
-  if (isBlock) {
-    const prepared = prepareBlockAnalysis(
-      input.calculationProfileId,
-      section,
-      rebars,
-      materialStore,
-      basis
-    )
-    const options = input.analysisOptions as EquivalentBlockAnalysisOptions
-    const solved = solveEquivalentBlockDemandsFromPrepared(prepared, options, input.loadcases)
-    for (let index = 0; index < input.loadcases.length; index += 1) {
-      const loadcase = input.loadcases[index]
-      const result = solved[index]
-      results.set(loadcase.id, result)
-      if (!wanted.has(loadcase.id)) continue
-      const beta = result.ok && result.admissibility.evaluated
-        ? strainGradientDirection(result.state)
-        : null
-      const exactCurve = beta === null
-        ? null
-        : buildEquivalentBlockExactDirectionCurveFromPrepared(prepared, options, beta)
-      detail.push(
-        blockDetail(prepared, drawingSection, origin, loadcase, result, input.surface, curves, exactCurve)
-      )
-    }
-  } else {
-    const options = input.analysisOptions as AnalysisOptions
-    const stateMaterials = buildResistanceMaterialSets(materialStore, basis).stateMaterials
-    const prepared = prepareAnalysis(section, rebars, stateMaterials, analysisMeshKernelOptions(options))
-    for (const loadcase of input.loadcases) {
-      const contour = sliceActiveDesignPContour(input.surface, loadcase.P)
-      // The inverse gives the equilibrium state; adequacy is the design-surface ray. Both, composed
-      // exactly as the application composes them.
-      const designCheck = checkLoadcaseUtilizationFromSurface(input.surface, loadcase)
-      const result = applyDesignCheckToInverse(
-        solveInversePreviewFromPrepared(
-          prepared,
-          loadcase,
-          contour,
-          codeAdjustedDemandOfCheck(designCheck)
-        ),
-        designCheck
-      )
-      results.set(loadcase.id, result)
-      if (!wanted.has(loadcase.id)) continue
-      const beta = result.ok && result.admissibility.evaluated
-        ? strainGradientDirection(result.state)
-        : null
-      const exactCurve = beta === null
-        ? null
-        : buildExactDirectionCurveFromPrepared(
-            prepared,
-            materialStore,
-            basis,
-            options,
-            beta
+  // One solve, shared with the demand-check workbook, so the two documents cannot disagree.
+  const solved = solveLoadcases({
+    calculationProfileId: input.calculationProfileId,
+    section,
+    rebars,
+    materialStore,
+    designBasis: basis,
+    analysisOptions: input.analysisOptions,
+    surface: input.surface,
+    loadcases: input.loadcases
+  })
+
+  for (const solution of solved.solutions) {
+    const { loadcase, result } = solution
+    results.set(loadcase.id, result)
+    const detailed = wanted.has(loadcase.id)
+    // The exact meridian is a full station sweep, so it is bought only for a worked-through case.
+    const exactCurve = detailed && solution.beta !== null ? solved.exactDirectionCurve(solution.beta) : null
+    detail.push(
+      solved.blockPrepared
+        ? blockDetail(
+            solved.blockPrepared,
+            drawingSection,
+            origin,
+            loadcase,
+            result,
+            input.surface,
+            curves,
+            exactCurve,
+            detailed
           )
-      detail.push(
-        fibreDetail(
-          prepared,
-          drawingSection,
-          origin,
-          materialStore,
-          loadcase,
-          result,
-          input.surface,
-          curves,
-          exactCurve
-        )
-      )
-    }
+        : fibreDetail(
+            solved.prepared!,
+            drawingSection,
+            origin,
+            materialStore,
+            loadcase,
+            result,
+            input.surface,
+            curves,
+            exactCurve,
+            detailed
+          )
+    )
   }
 
   const combinations = input.loadcases.map((loadcase) =>
@@ -752,20 +930,28 @@ const blockDetail = (
   result: InversePreviewResult,
   surface: PreviewSurface,
   curves: readonly InteractionCurve[],
-  exactCurve: ExactDirectionCurve | null
+  exactCurve: ExactDirectionCurve | null,
+  detailed: boolean
 ): CombinationDetail => {
   const row = combinationRow(loadcase, result)
   const trace = result.equivalentBlock
+  const interaction = interactionFor(surface, loadcase, curves, exactCurve)
+  const fixedP = fixedPCurveFor(surface, loadcase)
   const base = {
     row,
+    detailed,
     converged: result.converged,
     admissible: result.admissibility.evaluated === false || result.admissibility.ok,
     message: result.message,
-    interaction: interactionFor(surface, loadcase, curves, exactCurve)
+    state: result.converged ? { e0: result.state.e0, kx: result.state.kx, ky: result.state.ky } : null,
+    interaction,
+    fixedP,
+    curveTables: detailed ? curveTablesFor(interaction, fixedP, exactCurve, surface, loadcase) : []
   }
   if (!trace) {
     return {
       ...base,
+      basics: basicsFor(row, result, fixedP, null),
       neutralAxisAngleDeg: 0,
       neutralAxisLine: null,
       compressionZone: null,
@@ -788,6 +974,7 @@ const blockDetail = (
 
   return {
     ...base,
+    basics: basicsFor(row, result, fixedP, trace.neutralAxisDepth),
     // The drawn line is the ε = 0 line, which is at depth c, not at the block boundary.
     neutralAxisAngleDeg: deg(trace.neutralAxisAngle) + 90,
     neutralAxisLine: neutralAxisLine(
@@ -868,21 +1055,29 @@ const fibreDetail = (
   result: InversePreviewResult,
   surface: PreviewSurface,
   curves: readonly InteractionCurve[],
-  exactCurve: ExactDirectionCurve | null
+  exactCurve: ExactDirectionCurve | null,
+  detailed: boolean
 ): CombinationDetail => {
   const row = combinationRow(loadcase, result)
+  const interaction = interactionFor(surface, loadcase, curves, exactCurve)
+  const fixedP = fixedPCurveFor(surface, loadcase)
   const base = {
     row,
+    detailed,
     converged: result.converged,
     admissible: result.admissibility.evaluated === false || result.admissibility.ok,
     message: result.message,
-    interaction: interactionFor(surface, loadcase, curves, exactCurve)
+    state: result.converged ? { e0: result.state.e0, kx: result.state.kx, ky: result.state.ky } : null,
+    interaction,
+    fixedP,
+    curveTables: detailed ? curveTablesFor(interaction, fixedP, exactCurve, surface, loadcase) : []
   }
   const state: StrainState = result.state
   const curvature = Math.hypot(state.kx, state.ky)
   if (!result.converged || curvature < 1e-14) {
     return {
       ...base,
+      basics: basicsFor(row, result, fixedP, null),
       neutralAxisAngleDeg: 0,
       neutralAxisLine: null,
       compressionZone: null,
@@ -935,6 +1130,7 @@ const fibreDetail = (
 
   return {
     ...base,
+    basics: basicsFor(row, result, fixedP, compressionDepth),
     neutralAxisAngleDeg: deg(Math.atan2(normalY, normalX)) + 90,
     neutralAxisLine: neutralAxisLine(
       { minX: drawingSection.bounds.minX, maxX: drawingSection.bounds.maxX, minY: drawingSection.bounds.minY, maxY: drawingSection.bounds.maxY },

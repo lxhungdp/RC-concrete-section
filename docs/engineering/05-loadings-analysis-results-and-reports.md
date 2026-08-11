@@ -126,18 +126,34 @@ Diagnostic partial data is a separate preview type. It cannot satisfy this contr
 
 There is no current top-level Report menu. Each mechanics now has its own calculation-result
 workbook, the mesh audit exports remain the stress-strain Excel/DXF files under Analysis Options,
-and `Demand Check` exports a preview PDF design report. A **released** report — one generated from
-an accepted result — remains unimplemented.
+and `Demand Check` exports a preview PDF design report and a demand-check calculation workbook. A
+**released** report — one generated from an accepted result — remains unimplemented.
 
 The implemented PDF follows the section order below: input (section drawing beside the section,
 material and resistance data), section capacity (Nominal and Design interaction diagrams per
 published direction), factored ULS demand (one row per combination with its utilization and
-verdict), and then a detailed calculation per combination the engineer selected — transverse
-section with the neutral axis and compression zone, longitudinal section with the strain and stress
-diagrams over the depth, the interaction diagram carrying the load point and the governing
-proportional ray, the concrete and resultant ledger, the per-bar ledger, and the solver evidence.
-Detail pages are opt-in per combination because which cases are worth working through is an
-engineering judgement, not a software default.
+verdict), then a check page for **every** combination, and finally a worked calculation for the
+combinations the engineer selected.
+
+The check page carries the two curves the load point is actually judged against — the vertical
+P-Mθ meridian and the Mx-My contour cut at that combination's own axial force, each with the demand
+point and the capacity point on it — beside the solved strain plane, the resistance factor and the
+utilization. Every combination gets one because a check the reader cannot see plotted is a number
+without a picture.
+
+The worked calculation adds, per selected combination, the transverse section with the neutral axis
+and compression zone, the longitudinal section with the strain and stress diagrams over the depth,
+the concrete and resultant ledger, the per-bar ledger, the solver evidence, and the point tables
+behind both curves. These pages are opt-in per combination because which cases are worth working
+through is an engineering judgement, not a software default.
+
+The demand-check workbook publishes the same selection as live formulas: shared project sheets
+(summary, geometry, materials, integration mesh) followed by five sheets per selected combination —
+the inverse calculation that establishes the strain plane `(ε0, κx, κy)` and proves it balances the
+demand, the vertical meridian at that plane's own strain direction, and the three sheets of the
+fixed-P contour (the stations bracketing the axial force from below and from above, and the
+interpolation between them). The curve sheets are written by the same functions as the Section
+Results chart audits, so a curve exported from either menu is one calculation rather than two.
 
 Because no accepted-result contract exists yet, every page of that PDF is watermarked `PREVIEW` and
 states that it is not an accepted design result, as §"PDF output" below requires.

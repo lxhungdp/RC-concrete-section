@@ -8,12 +8,15 @@
  *   1  Input          section drawing beside the section, material and resistance data
  *   2  Capacity       Nominal and Design interaction diagrams, one per published direction
  *   3  Demand         every combination with its utilization and verdict
- *   4+ Detail         one spread per selected combination: cross-section and elevation with the
- *                     load point on the diagram, the bar ledger, and the solver evidence
+ *   4  Check          one page per combination: the vertical P-Mθ meridian and the fixed-P Mx-My
+ *                     contour, both with the load point on them, beside the solved state and UR
+ *   5+ Detail         one spread per *selected* combination: cross-section and elevation, the bar
+ *                     ledger, the solver evidence, and the point tables behind both curves
  *
- * Step 4 is optional and per-combination by design: a 60-combination model would otherwise produce
- * 120 pages nobody reads, and the combinations worth working through are a judgement the engineer
- * makes, not the software.
+ * Step 4 covers every combination because a check the reader cannot see plotted is a number without
+ * a picture. Step 5 is per-combination by selection: a 60-combination model would otherwise produce
+ * a hundred pages of tables nobody reads, and which combinations are worth working through is a
+ * judgement the engineer makes, not the software.
  */
 import { HELVETICA_BOLD } from './font-metrics'
 import { MARGIN, REPORT_COLORS, ReportDocument, type Frame } from './layout'
@@ -22,6 +25,7 @@ import type {
   BarState,
   ColumnReportModel,
   CombinationDetail,
+  FixedPCurve,
   InteractionCurve,
   XY
 } from '../model/report-model'
@@ -179,6 +183,79 @@ const drawInteraction = (
     page.circle(demand.x, demand.y, 1.1, 'fill')
     page.text(demand.x + 4.5, demand.y - 6, 'demand', { size: 5.5, color: REPORT_COLORS.demand })
   }
+  page.restore()
+}
+
+/**
+ * Square bounds centred on the moment origin.
+ *
+ * An Mx-My contour drawn to two different scales is not a picture of that contour: the demand
+ * direction on the page would no longer be the demand direction of the section. Equal ranges on
+ * both axes, plus the uniform frame scaling, keep the drawn ray at the angle it actually has.
+ */
+const contourBounds = (
+  curves: ReadonlyArray<ReadonlyArray<{ mx: number; my: number }>>,
+  extra: ReadonlyArray<{ mx: number; my: number }> = []
+) => {
+  const points = [...curves.flat(), ...extra]
+  const limit = points.reduce(
+    (current, point) => Math.max(current, Math.abs(point.mx), Math.abs(point.my)),
+    0
+  )
+  const span = limit > 0 ? limit * 1.1 : 1
+  return { minX: -span, maxX: span, minY: -span, maxY: span }
+}
+
+const drawFixedPContour = (
+  frame: Frame,
+  bounds: { minX: number; maxX: number; minY: number; maxY: number },
+  curve: FixedPCurve
+) => {
+  const { page } = frame
+  drawAxes(frame, bounds, { x: 'Mx (kN·m)', y: 'My (kN·m)' })
+  page.save()
+  page.clipRect(frame.left - 2, frame.bottom - 2, frame.width + 4, frame.height + 4)
+
+  const toFrame = (point: { mx: number; my: number }) => frame.map({ x: point.mx, y: point.my })
+  if (curve.nominal.length > 1) {
+    page.setStroke(REPORT_COLORS.nominal)
+    page.setLineWidth(0.7)
+    page.setDash([2.4, 1.8])
+    page.polyline(curve.nominal.map(toFrame), true)
+    page.setDash([])
+  }
+  if (curve.design.length > 1) {
+    page.setStroke(REPORT_COLORS.design)
+    page.setLineWidth(1.1)
+    page.polyline(curve.design.map(toFrame), true)
+  }
+
+  // The ray from the moment origin through the demand point is the direction the check is made in;
+  // where it leaves the Design contour is the moment the section still has at this axial force.
+  const zero = frame.map({ x: 0, y: 0 })
+  const demand = toFrame(curve.demand)
+  if (curve.capacity) {
+    const capacity = toFrame(curve.capacity)
+    page.setStroke(REPORT_COLORS.demand)
+    page.setLineWidth(0.5)
+    page.setDash([1.6, 1.6])
+    page.line(zero.x, zero.y, capacity.x, capacity.y)
+    page.setDash([])
+    page.setFill(REPORT_COLORS.demand)
+    page.circle(capacity.x, capacity.y, 2, 'fill')
+    page.text(capacity.x + 4, capacity.y + 3, 'capacity', { size: 5.5, color: REPORT_COLORS.demand })
+  } else {
+    page.setStroke(REPORT_COLORS.demand)
+    page.setLineWidth(0.5)
+    page.setDash([1.6, 1.6])
+    page.line(zero.x, zero.y, demand.x, demand.y)
+    page.setDash([])
+  }
+  page.setFill(REPORT_COLORS.demand)
+  page.circle(demand.x, demand.y, 2.6, 'fill')
+  page.setFill(hex('#ffffff'))
+  page.circle(demand.x, demand.y, 1.1, 'fill')
+  page.text(demand.x + 4.5, demand.y - 6, 'demand', { size: 5.5, color: REPORT_COLORS.demand })
   page.restore()
 }
 
@@ -584,15 +661,9 @@ export const renderColumnReport = (
     doc.paragraph(`${row.name}: ${row.note}`, { color: REPORT_COLORS.warn, size: 7 })
   }
 
-  // ---- 4. Detail per selected combination ---------------------------------
-  model.details.forEach((detail, index) => {
-    doc.newPage(A4_PORTRAIT)
-    doc.title(
-      `4.${index + 1}  ${detail.row.name}`,
-      `Pu = ${num(detail.row.pKn, 1)} kN · Mux = ${num(detail.row.mxKnm, 1)} kN·m · Muy = ${num(detail.row.myKnm, 1)} kN·m · θL = ${num(detail.row.thetaDeg, 2)}°`
-    )
-
-    const verdictColor =
+  // ---- 4. Check page per combination --------------------------------------
+  const verdictLine = (detail: CombinationDetail) => {
+    const color =
       detail.row.verdict === 'adequate'
         ? REPORT_COLORS.good
         : detail.row.verdict === 'inadequate'
@@ -602,9 +673,77 @@ export const renderColumnReport = (
       `${detail.row.verdict === 'adequate' ? 'ADEQUATE' : detail.row.verdict === 'inadequate' ? 'INADEQUATE' : 'NOT CHECKED'}` +
         `   ·   utilization ${detail.row.utilization === null ? '—' : num(detail.row.utilization, 4)}` +
         `   ·   fixed-P diagnostic ${detail.row.fixedPUtilization === null ? '—' : num(detail.row.fixedPUtilization, 4)}`,
-      { color: verdictColor, size: 9, font: HELVETICA_BOLD }
+      { color, size: 9, font: HELVETICA_BOLD }
     )
+  }
+  const combinationSubtitle = (detail: CombinationDetail) =>
+    `Pu = ${num(detail.row.pKn, 1)} kN · Mux = ${num(detail.row.mxKnm, 1)} kN·m · Muy = ${num(detail.row.myKnm, 1)} kN·m · θL = ${num(detail.row.thetaDeg, 2)}°`
+
+  model.details.forEach((detail, index) => {
+    doc.newPage(A4_PORTRAIT)
+    doc.title(`4.${index + 1}  ${detail.row.name}`, combinationSubtitle(detail))
+    verdictLine(detail)
     doc.paragraph(detail.message)
+
+    doc.heading('Resistance curves through the load point')
+    const curveHeight = 240
+    const verticalBounds = curveBounds(
+      [detail.interaction.design, detail.interaction.nominal],
+      [
+        { x: detail.interaction.demand.m, y: detail.interaction.demand.p },
+        ...(detail.interaction.capacity
+          ? [{ x: detail.interaction.capacity.m, y: detail.interaction.capacity.p }]
+          : [])
+      ]
+    )
+    const verticalFrame = doc.figure({
+      title: detail.interaction.kind === 'direct-beta'
+        ? `Vertical P–Mβ at βeq = ${num(detail.interaction.thetaDeg, 3)}°`
+        : `Vertical P–Mθ at θL = ${num(detail.interaction.thetaDeg, 2)}°`,
+      height: curveHeight,
+      bounds: verticalBounds,
+      widthFraction: 0.48,
+      preserveAspect: false,
+      caption: 'Design solid · Nominal dashed'
+    })
+    drawInteraction(verticalFrame, verticalBounds, detail.interaction, {
+      demand: detail.interaction.demand,
+      capacity: detail.interaction.capacity
+    })
+    const fixedBounds = contourBounds(
+      [detail.fixedP.design, detail.fixedP.nominal],
+      [detail.fixedP.demand, ...(detail.fixedP.capacity ? [detail.fixedP.capacity] : [])]
+    )
+    const fixedFrame = doc.figure({
+      title: `Fixed-P Mx–My at Pu = ${num(detail.fixedP.pKn, 1)} kN`,
+      height: curveHeight,
+      bounds: fixedBounds,
+      widthFraction: 0.48,
+      offsetFraction: 0.52,
+      // A missing Design contour is the result, not a drawing failure: the axial force is above what
+      // the Design surface reaches. Saying so on the figure stops it reading as an empty plot.
+      caption: detail.fixedP.design.length === 0 ? 'no Design cut at this P' : 'ray = demand direction'
+    })
+    drawFixedPContour(fixedFrame, fixedBounds, detail.fixedP)
+    doc.endFigureRow(curveHeight)
+    doc.paragraph(
+      detail.interaction.kind === 'direct-beta'
+        ? 'Left: the exact meridian in the equilibrium strain direction, with the load point projected on it. Right: the surface cut at this combination\'s own axial force; the dotted ray is the demand moment direction and its intersection is the moment still available there.'
+        : 'Left: a geometric plane cut of the sampled surface, used because this combination has no published equilibrium state. Right: the surface cut at this combination\'s own axial force, with the demand moment direction drawn as a ray.'
+    )
+
+    doc.heading('Check parameters and solved state')
+    doc.keyValues(detail.basics, 2)
+  })
+
+  // ---- 5. Worked calculation per selected combination ---------------------
+  const worked = model.details.filter((detail) => detail.detailed)
+  worked.forEach((detail, index) => {
+    doc.newPage(A4_PORTRAIT)
+    doc.title(
+      `5.${index + 1}  ${detail.row.name}`,
+      `Worked section state and the points behind both curves.  ${combinationSubtitle(detail)}`
+    )
 
     doc.heading('Section state')
     const detailHeight = 200
@@ -633,36 +772,6 @@ export const renderColumnReport = (
     if (detail.depthProfile) drawDepthProfile(elevationFrame, detail)
     doc.endFigureRow(detailHeight)
     barLegend(doc, detail.bars)
-
-    doc.heading(
-      detail.interaction.kind === 'direct-beta'
-        ? 'Exact direct meridian at the equilibrium strain direction'
-        : 'Fixed-grid geometric plane diagnostic'
-    )
-    const detailBounds = curveBounds(
-      [detail.interaction.design, detail.interaction.nominal],
-      [
-        { x: detail.interaction.demand.m, y: detail.interaction.demand.p },
-        ...(detail.interaction.capacity
-          ? [{ x: detail.interaction.capacity.m, y: detail.interaction.capacity.p }]
-          : [])
-      ]
-    )
-    const interactionFrame = doc.figure({
-      title: detail.interaction.kind === 'direct-beta'
-        ? `Direct P–Mβ at βeq = ${num(detail.interaction.thetaDeg, 3)}°, with the load point`
-        : `Fixed-grid P–Mθ at θL = ${num(detail.interaction.thetaDeg, 2)}°, with the load point`,
-      height: 210,
-      bounds: detailBounds,
-      preserveAspect: false,
-      caption: detail.interaction.kind === 'direct-beta'
-        ? 'solid = fixed Design · dashed = fixed Nominal · points are projected on βeq'
-        : 'solid = fixed Design · dashed = fixed Nominal · dotted ray = governing proportional check'
-    })
-    drawInteraction(interactionFrame, detailBounds, detail.interaction, {
-      demand: detail.interaction.demand,
-      capacity: detail.interaction.capacity
-    })
 
     doc.heading('Concrete and resultants')
     doc.keyValues([...detail.concrete, ...detail.resultants], 2)
@@ -697,11 +806,17 @@ export const renderColumnReport = (
 
     doc.heading('Solver and admissibility evidence')
     doc.keyValues(detail.evidence, 2)
+
+    for (const table of detail.curveTables) {
+      doc.heading(table.title)
+      doc.paragraph(table.note, { size: 7 })
+      doc.table({ columns: table.columns, rows: table.rows, size: 6.8 })
+    }
   })
 
-  if (model.details.length === 0) {
+  if (worked.length === 0) {
     doc.paragraph(
-      'No combination was selected for a detailed calculation. Select combinations in Demand Check before exporting to include worked states.',
+      'No combination was selected for a worked calculation. Select combinations in Demand Check before exporting to include the point tables behind the curves.',
       { size: 7 }
     )
   }
