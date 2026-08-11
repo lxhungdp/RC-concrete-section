@@ -313,10 +313,6 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   background: var(--sp-surface-sunken);
 }
 
-.pm-side-panel .pm-analysis-tabs {
-  grid-template-columns: repeat(3, 1fr);
-}
-
 .pm-side-panel .pm-page-tabs::before,
 .pm-side-panel .pm-analysis-tabs::before,
 .pm-side-panel .pm-geometry-tabs::before {
@@ -332,18 +328,10 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   transition: transform var(--sp-ease);
 }
 
-.pm-side-panel .pm-analysis-tabs::before {
-  width: calc((100% - 6px) / 3);
-}
-
 .pm-side-panel .pm-page-tabs:has(button:nth-child(2).is-active)::before,
 .pm-side-panel .pm-geometry-tabs:has(button:nth-child(2).is-active)::before,
 .pm-side-panel .pm-analysis-tabs:has(button:nth-child(2).is-active)::before {
   transform: translateX(100%);
-}
-
-.pm-side-panel .pm-analysis-tabs:has(button:nth-child(3).is-active)::before {
-  transform: translateX(200%);
 }
 
 .pm-side-panel .pm-page-tabs button,
@@ -419,6 +407,11 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   box-shadow: var(--sp-lift), inset 0 0 0 1px var(--sp-line);
   color: var(--sp-text);
   font-weight: 600;
+}
+
+.pm-side-panel .pm-detail-tabs button:disabled {
+  cursor: default;
+  opacity: 0.42;
 }
 
 /* ---------------------------------------------------------------------------
@@ -826,8 +819,8 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 
 .pm-side-panel .pm-boundary-row.is-applied,
 .pm-side-panel .pm-boundary-row.is-applied.is-active {
-  background: var(--sp-ok-soft);
-  box-shadow: inset 2px 0 0 var(--sp-ok);
+  background: var(--geometry-final-muted);
+  box-shadow: inset 2px 0 0 var(--geometry-final);
 }
 
 .pm-side-panel .pm-boundary-row-main,
@@ -884,8 +877,8 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   height: var(--sp-h-1);
   padding: 0 7px;
   border-radius: var(--sp-r-1);
-  background: var(--sp-ok-soft);
-  color: var(--sp-ok);
+  background: var(--geometry-final-muted);
+  color: var(--geometry-final);
   font-size: var(--sp-fs-1);
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -962,15 +955,36 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   color: var(--sp-accent);
 }
 
-.pm-side-panel .pm-boundary-detail-toolbar {
+.pm-side-panel .pm-vertex-section {
+  gap: 6px;
+}
+
+.pm-side-panel .pm-boundary-detail-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pm-side-panel .pm-section-title > .pm-boundary-detail-heading {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
 }
 
 .pm-side-panel .pm-boundary-detail-name {
-  flex: 1 1 auto;
+  display: block;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.pm-side-panel .pm-boundary-detail-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -2227,9 +2241,10 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   background: var(--sp-accent);
 }
 
-.pm-side-panel .pm-selection-badge.is-applied {
-  border-color: var(--sp-ok);
-  background: var(--sp-ok);
+.pm-side-panel .pm-selection-badge.is-applied,
+.pm-side-panel .pm-boundary-row.is-applied .pm-selection-badge {
+  border-color: var(--geometry-final);
+  background: var(--geometry-final);
 }
 
 .pm-side-panel .pm-boundary-create-section.pm-panel-section {

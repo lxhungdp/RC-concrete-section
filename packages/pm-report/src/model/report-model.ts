@@ -18,6 +18,7 @@ import {
   activeDesignSurfaceDataset,
   activeNominalDirectionPoints,
   activeNominalSurfaceDataset,
+  buildDirectMeridianSection,
   contourStrainAngleSamples,
   evaluatePreparedState,
   intersectFixedPContourWithMomentRay,
@@ -30,6 +31,7 @@ import {
   type InversePreviewResult,
   type PreviewSurface,
   type PreviewSurfacePoint,
+  type StationDefinition,
   type StrainState
 } from '@pm/analysis'
 import { prepareBlockAnalysis } from '@pm/analysis-equivalent-block'
@@ -114,6 +116,25 @@ export type InteractionCurve = {
   /** Signed moment about the θ direction, kN·m, against axial force in kN. */
   nominal: ReadonlyArray<{ m: number; p: number }>
   design: ReadonlyArray<{ m: number; p: number }>
+}
+
+/**
+ * A landmark on the published capacity meridian.
+ *
+ * The overview diagram is the one picture most reviewers read first, and a bare outline tells them
+ * nothing about *where* on it the section changes behaviour. These are the states an engineer looks
+ * for by name — the compression pole, the axial cap, first yield, the balanced point, the tension
+ * pole — carried as model data so the drawing and the table beside it cannot disagree.
+ */
+export type CurveMarker = {
+  /** Short symbol drawn on the diagram, e.g. `fs = fy`. */
+  label: string
+  /** The station criterion the point comes from, e.g. `εₛ/εy = 1`. */
+  station: string
+  design: { m: number; p: number } | null
+  nominal: { m: number; p: number } | null
+  phi: number | null
+  classification: string
 }
 
 /**
@@ -245,6 +266,10 @@ export type ColumnReportModel = {
   sampling: LabelledValue[]
   barSchedule: ReadonlyArray<readonly string[]>
   curves: readonly InteractionCurve[]
+  /** The single overview diagram; the principal plane every reviewer reads first. */
+  capacityCurve: InteractionCurve
+  /** Named states on `capacityCurve`, in meridian order from the compression pole down. */
+  capacityMarkers: readonly CurveMarker[]
   axialCapKn: number | null
   combinations: readonly CombinationRow[]
   details: readonly CombinationDetail[]
@@ -312,6 +337,123 @@ const buildCurves = (surface: PreviewSurface, loadcases: readonly LoadCombinatio
       nominal: planeCurve(nominal.points, nominal.triangles, thetaRad)
     }
   })
+
+/**
+ * Short symbol for a station a reviewer looks for by name, or null for a routine sampling station.
+ *
+ * The filter is deliberately narrow. Every station is already published in the point tables; what
+ * belongs on the diagram is the handful of states that change how the section behaves, because a
+ * diagram carrying all twenty-seven labels is a diagram nobody reads.
+ */
+const stationSymbol = (definition: StationDefinition | null): string | null => {
+  if (!definition) return null
+  if (definition.kind === 'pure-compression') return 'P0'
+  if (definition.kind === 'pure-tension') return 'Pure tension'
+  if (definition.kind === 'bar-tension-yield-ratio' || definition.kind === 'steel-stress-ratio') {
+    if (Math.abs(definition.ratio) < 1e-9) return 'fs = 0'
+    if (Math.abs(definition.ratio - 1) < 1e-9) return 'fs = fy'
+    return null
+  }
+  if (definition.kind === 'steel-strain' && Math.abs(definition.strain) < 1e-12) return 'fs = 0'
+  if (definition.kind === 'neutral-axis-depth-ratio' && Math.abs(definition.ratio - 1) < 1e-9) return 'c = D'
+  if (definition.kind === 'block-depth-ratio' && Math.abs(definition.ratio - 1) < 1e-9) return 'c = D'
+  return null
+}
+
+const markerSymbol = (
+  surfaceRole: PreviewSurfacePoint['surfaceRole'],
+  definition: StationDefinition | null
+): string | null => {
+  // A capped station is still that station: the cap moved where it sits, it did not replace what it
+  // is. Saying both is what lets a reader see that the compression pole is the cap. A cap point that
+  // is not a named station gets no mark — it only repeats the flat top the diagram already shows.
+  const symbol = stationSymbol(definition)
+  if (!symbol) return null
+  return surfaceRole === 'axial-cap' ? `${symbol} · Pmax` : symbol
+}
+
+type MeridianStation = {
+  key: string
+  station: string
+  definition: StationDefinition | null
+  surfaceRole: PreviewSurfacePoint['surfaceRole']
+  phi: number | null
+  classification: string
+  point: { m: number; p: number }
+}
+
+/** Surface vertices on one published meridian, in station order, with their station identity. */
+const meridianStations = (
+  dataset: { points: readonly PreviewSurfacePoint[]; stations: ReadonlyArray<{ id: string; definition: StationDefinition }> },
+  thetaDeg: number
+): MeridianStation[] => {
+  const descriptors = new Map(dataset.stations.map((station) => [station.id, station.definition]))
+  const thetaRad = (thetaDeg * Math.PI) / 180
+  const cos = Math.cos(thetaRad)
+  const sin = Math.sin(thetaRad)
+  return buildDirectMeridianSection([...dataset.points], thetaDeg, false).primary
+    .filter((point) => point.sectionPointRole === 'surface-vertex')
+    .map((point, index) => {
+      const definition = point.stationId ? descriptors.get(point.stationId) ?? null : null
+      return {
+        key: point.stationId ?? `${point.surfaceRole}#${index}`,
+        station: definition ? stationDefinitionLabel(definition) : point.surfaceRole,
+        definition,
+        surfaceRole: point.surfaceRole,
+        phi: point.resistance?.factor ?? null,
+        classification: point.resistance?.classification ?? '—',
+        point: { m: (point.Mx * cos + point.My * sin) / KNM, p: point.P / KN }
+      }
+    })
+}
+
+/**
+ * Short mark for the first station of a resistance class.
+ *
+ * The class name itself is already the row's own column; on the diagram it only has to say which
+ * φ regime starts here, and a mark wide enough to spell "compression-controlled" would crowd out
+ * the curve it points at.
+ */
+const classificationSymbol = (classification: string) => {
+  if (classification === 'compression-controlled') return 'φ = φc'
+  if (classification === 'tension-controlled') return 'φ = φt'
+  if (classification === 'transition') return 'φ ramp'
+  return classification
+}
+
+/**
+ * Landmarks on the overview meridian, paired across the two published stages.
+ *
+ * A resistance-classification change is included on top of the named states because that is where
+ * φ starts moving, and a reader who cannot see that boundary cannot explain the shape of the curve.
+ */
+const capacityMarkersFor = (surface: PreviewSurface, thetaDeg: number): CurveMarker[] => {
+  const design = meridianStations(activeDesignSurfaceDataset(surface), thetaDeg)
+  const nominal = new Map(meridianStations(activeNominalSurfaceDataset(surface), thetaDeg).map(
+    (station) => [station.key, station.point] as const
+  ))
+  const markers: CurveMarker[] = []
+  const claimed = new Set<string>()
+  design.forEach((station, index) => {
+    const previous = design[index - 1]
+    const symbol =
+      markerSymbol(station.surfaceRole, station.definition) ??
+      (previous && previous.classification !== station.classification && station.classification !== '—'
+        ? classificationSymbol(station.classification)
+        : null)
+    if (symbol === null || claimed.has(symbol)) return
+    claimed.add(symbol)
+    markers.push({
+      label: symbol,
+      station: station.station,
+      design: station.point,
+      nominal: nominal.get(station.key) ?? null,
+      phi: station.phi,
+      classification: station.classification
+    })
+  })
+  return markers
+}
 
 const directMeridianCurve = (curve: ExactDirectionCurve): InteractionCurve => {
   const project = (point: ExactDirectionCurve['designAdaptive'][number]) => ({
@@ -499,11 +641,50 @@ const fixedPCurveFor = (surface: PreviewSurface, loadcase: LoadCombination): Fix
 }
 
 /**
+ * Outer join of the Design and Nominal rows of one curve on a shared row identity.
+ *
+ * Design and Nominal are the same curve computed at two resistance stages: same stations, same
+ * directions, differing only in P and M. Printing them as two stacked blocks doubled the row count
+ * and left the reader subtracting across half a page, so they are joined into one row per identity
+ * and the stage becomes a pair of column groups. Design order leads because Design is what the
+ * check uses; a Nominal-only identity (or a Design-only one such as the axial cap) still gets its
+ * own row, with the missing stage shown as absent rather than silently dropped.
+ */
+const joinStages = <T>(
+  design: ReadonlyArray<{ key: string; value: T }>,
+  nominal: ReadonlyArray<{ key: string; value: T }>
+) => {
+  const nominalByKey = new Map(nominal.map((entry) => [entry.key, entry.value]))
+  const seen = new Set(design.map((entry) => entry.key))
+  return [
+    ...design.map((entry) => ({
+      key: entry.key,
+      design: entry.value,
+      nominal: nominalByKey.get(entry.key) ?? null
+    })),
+    ...nominal
+      .filter((entry) => !seen.has(entry.key))
+      .map((entry) => ({ key: entry.key, design: null, nominal: entry.value }))
+  ]
+}
+
+/** Occurrence-suffixed key, so two contour branches at one angle stay two rows rather than merging. */
+const branchKeyed = <T>(values: readonly T[], keyOf: (value: T) => string) => {
+  const counts = new Map<string, number>()
+  return values.map((value) => {
+    const base = keyOf(value)
+    const occurrence = (counts.get(base) ?? 0) + 1
+    counts.set(base, occurrence)
+    return { key: `${base}#${occurrence}`, value }
+  })
+}
+
+/**
  * Every point behind the two published curves.
  *
  * A drawn curve is a picture of a calculation; these tables are the calculation. When the meridian
- * is the exact direct-β one, each row carries the station identity and the strain plane that
- * produced it, so a reader can re-derive the point rather than measure it off the diagram.
+ * is the exact direct-β one, each row carries the station identity that produced it, so a reader
+ * can re-derive the point rather than measure it off the diagram.
  */
 const curveTablesFor = (
   interaction: CombinationDetail['interaction'],
@@ -516,95 +697,100 @@ const curveTablesFor = (
 
   const verticalColumns = [
     { title: '#', width: 5, align: 'right' as const },
-    { title: 'Stage', width: 10 },
-    { title: 'Station', width: 20 },
-    { title: 'Criterion', width: 24 },
-    { title: 'ε0', width: 14, align: 'right' as const },
-    { title: 'κx (1/mm)', width: 14, align: 'right' as const },
-    { title: 'κy (1/mm)', width: 14, align: 'right' as const },
-    { title: 'P (kN)', width: 13, align: 'right' as const },
-    { title: 'Mθ (kN·m)', width: 14, align: 'right' as const }
+    { title: 'Criterion', width: 26 },
+    { title: 'P design (kN)', width: 15, align: 'right' as const },
+    { title: 'Mθ design (kN·m)', width: 17, align: 'right' as const },
+    { title: 'P nominal (kN)', width: 15, align: 'right' as const },
+    { title: 'Mθ nominal (kN·m)', width: 17, align: 'right' as const }
+  ]
+  const verticalRow = (
+    index: number,
+    criterion: string,
+    entry: { design: { m: number; p: number } | null; nominal: { m: number; p: number } | null }
+  ): readonly string[] => [
+    String(index + 1),
+    criterion,
+    entry.design ? fmt(entry.design.p, 1) : '—',
+    entry.design ? fmt(entry.design.m, 2) : '—',
+    entry.nominal ? fmt(entry.nominal.p, 1) : '—',
+    entry.nominal ? fmt(entry.nominal.m, 2) : '—'
   ]
 
   if (exactCurve) {
     const descriptors = new Map(
       [...exactCurve.stations, ...(exactCurve.nominalStations ?? [])].map((station) => [station.id, station])
     )
-    const project = (point: PreviewSurfacePoint) =>
-      (point.Mx * Math.cos(exactCurve.beta) + point.My * Math.sin(exactCurve.beta)) / KNM
-    const stageRows = (stage: string, points: readonly PreviewSurfacePoint[]) =>
-      points.map((point, index) => {
-        const station = point.stationId === null ? null : descriptors.get(point.stationId) ?? null
-        return [
-          String(index + 1),
-          stage,
-          point.stationId ?? point.surfaceRole,
-          station ? stationDefinitionLabel(station.definition) : '—',
-          sci(point.state.e0, 4),
-          sci(point.state.kx, 4),
-          sci(point.state.ky, 4),
-          fmt(point.P / KN, 1),
-          fmt(project(point), 2)
-        ] as readonly string[]
+    const project = (point: PreviewSurfacePoint) => ({
+      m: (point.Mx * Math.cos(exactCurve.beta) + point.My * Math.sin(exactCurve.beta)) / KNM,
+      p: point.P / KN
+    })
+    const criteria = new Map<string, string>()
+    const staged = (points: readonly PreviewSurfacePoint[]) =>
+      branchKeyed(points, (point) => point.stationId ?? point.surfaceRole).map((entry) => {
+        const station = entry.value.stationId === null ? null : descriptors.get(entry.value.stationId) ?? null
+        criteria.set(entry.key, station ? stationDefinitionLabel(station.definition) : entry.value.surfaceRole)
+        return { key: entry.key, value: project(entry.value) }
       })
+    const joined = joinStages(
+      staged(activeDesignDirectionPoints(exactCurve)),
+      staged(activeNominalDirectionPoints(exactCurve))
+    )
     tables.push({
       title: `Vertical curve points — direct meridian at βeq = ${fmt(deg(exactCurve.beta), 3)}°`,
-      note: 'Each row is one strain-domain station on the meridian the load point is checked against. ε0, κx and κy are the plane that produced the row; P and Mθ are its resultants projected on βeq.',
+      note: 'One row per strain-domain station on the meridian the load point is checked against, with the Design and Nominal resultants of that station side by side. P and Mθ are projected on βeq.',
       columns: verticalColumns,
-      rows: [
-        ...stageRows('Design', activeDesignDirectionPoints(exactCurve)),
-        ...stageRows('Nominal', activeNominalDirectionPoints(exactCurve))
-      ]
+      rows: joined.map((entry, index) => verticalRow(index, criteria.get(entry.key) ?? '—', entry))
     })
   } else {
-    const stageRows = (stage: string, points: ReadonlyArray<{ m: number; p: number }>) =>
-      points.map((point, index) => [
-        String(index + 1),
-        stage,
-        '—',
-        '—',
-        '—',
-        '—',
-        '—',
-        fmt(point.p, 1),
-        fmt(point.m, 2)
-      ] as readonly string[])
+    const staged = (points: ReadonlyArray<{ m: number; p: number }>) =>
+      points.map((value, index) => ({ key: String(index), value }))
+    const joined = joinStages(staged(interaction.design), staged(interaction.nominal))
     tables.push({
       title: `Vertical curve points — fixed-grid plane at θ = ${fmt(interaction.thetaDeg, 2)}°`,
-      note: 'The combination has no published equilibrium state, so the meridian is a geometric cut of the sampled surface and carries no per-row strain plane.',
+      note: 'The combination has no published equilibrium state, so the meridian is a geometric cut of the sampled surface: its rows are cut vertices in path order and carry no station criterion.',
       columns: verticalColumns,
-      rows: [...stageRows('Design', interaction.design), ...stageRows('Nominal', interaction.nominal)]
+      rows: joined.map((entry, index) => verticalRow(index, `cut vertex ${index + 1}`, entry))
     })
   }
 
-  const contourRows = (stage: string, points: ReadonlyArray<{ mx: number; my: number }>) =>
-    points.map((point, index) => [
-      String(index + 1),
-      stage,
-      fmt(deg(Math.atan2(point.my, point.mx)), 3),
-      fmt(point.mx, 2),
-      fmt(point.my, 2),
-      fmt(Math.hypot(point.mx, point.my), 2)
-    ] as readonly string[])
   const emptyStages = [
     ...(fixedP.design.length === 0 ? ['Design'] : []),
     ...(fixedP.nominal.length === 0 ? ['Nominal'] : [])
   ]
+  const contourAngle = (point: { mx: number; my: number }) => deg(Math.atan2(point.my, point.mx))
+  const contourJoined = joinStages(
+    branchKeyed(fixedP.design, (point) => contourAngle(point).toFixed(6)),
+    branchKeyed(fixedP.nominal, (point) => contourAngle(point).toFixed(6))
+  )
   tables.push({
     title: `Fixed-P curve points — Mx-My contour at Pu = ${fmt(loadcase.P / KN, 1)} kN`,
-    note: `Cut of the ${surface.analysisOptions.samplingMode} triangulated surface at this combination's own axial force. The last row repeats the first because the contour is drawn closed.` +
+    note: `Cut of the ${surface.analysisOptions.samplingMode} triangulated surface at this combination's own axial force, Design and Nominal paired on the moment direction. The last row repeats the first because the contour is drawn closed.` +
       (emptyStages.length > 0
         ? ` The ${emptyStages.join(' and ')} surface does not reach this axial force, so it contributes no rows and is absent from the diagram.`
         : ''),
     columns: [
       { title: '#', width: 5, align: 'right' as const },
-      { title: 'Stage', width: 10 },
-      { title: 'θM (°)', width: 12, align: 'right' as const },
-      { title: 'Mx (kN·m)', width: 16, align: 'right' as const },
-      { title: 'My (kN·m)', width: 16, align: 'right' as const },
-      { title: '|M| (kN·m)', width: 16, align: 'right' as const }
+      { title: 'θM (°)', width: 11, align: 'right' as const },
+      { title: 'Mx design', width: 14, align: 'right' as const },
+      { title: 'My design', width: 14, align: 'right' as const },
+      { title: '|M| design', width: 14, align: 'right' as const },
+      { title: 'Mx nominal', width: 14, align: 'right' as const },
+      { title: 'My nominal', width: 14, align: 'right' as const },
+      { title: '|M| nominal', width: 14, align: 'right' as const }
     ],
-    rows: [...contourRows('Design', fixedP.design), ...contourRows('Nominal', fixedP.nominal)]
+    rows: contourJoined.map((entry, index) => {
+      const point = entry.design ?? entry.nominal!
+      return [
+        String(index + 1),
+        fmt(contourAngle(point), 3),
+        entry.design ? fmt(entry.design.mx, 2) : '—',
+        entry.design ? fmt(entry.design.my, 2) : '—',
+        entry.design ? fmt(Math.hypot(entry.design.mx, entry.design.my), 2) : '—',
+        entry.nominal ? fmt(entry.nominal.mx, 2) : '—',
+        entry.nominal ? fmt(entry.nominal.my, 2) : '—',
+        entry.nominal ? fmt(Math.hypot(entry.nominal.mx, entry.nominal.my), 2) : '—'
+      ] as readonly string[]
+    })
   })
 
   return tables
@@ -658,6 +844,8 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
   const drawing = drawingOf(section, rebars, materialStore, origin)
   const bounds = drawing.bounds
   const curves = buildCurves(input.surface, input.loadcases)
+  // θ = 0 is always published by `curveAngles`, so the overview diagram never has to be synthesised.
+  const capacityCurve = curves.find((curve) => Math.abs(curve.thetaDeg) < 1e-9) ?? curves[0]
 
   // One prepared block section for drawing-only clipping, whichever mechanics is in use.
   const drawingSection = prepareEquivalentBlockSection({
@@ -912,6 +1100,8 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       materialStore.steel.find((item) => item.id === (bar.steelMaterialId ?? materialStore.defaults.steelMaterialId))?.name ?? '—'
     ]),
     curves,
+    capacityCurve,
+    capacityMarkers: capacityMarkersFor(input.surface, capacityCurve.thetaDeg),
     axialCapKn: axialCapPoint === null ? null : axialCapPoint / KN,
     combinations,
     details: detail

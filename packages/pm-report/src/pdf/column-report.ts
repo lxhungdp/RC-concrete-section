@@ -18,13 +18,14 @@
  * a hundred pages of tables nobody reads, and which combinations are worth working through is a
  * judgement the engineer makes, not the software.
  */
-import { HELVETICA_BOLD } from './font-metrics'
+import { HELVETICA, HELVETICA_BOLD, measureText } from './font-metrics'
 import { MARGIN, REPORT_COLORS, ReportDocument, type Frame } from './layout'
 import { A4_PORTRAIT, hex } from './writer'
 import type {
   BarState,
   ColumnReportModel,
   CombinationDetail,
+  CurveMarker,
   FixedPCurve,
   InteractionCurve,
   XY
@@ -182,6 +183,54 @@ const drawInteraction = (
     page.setFill(hex('#ffffff'))
     page.circle(demand.x, demand.y, 1.1, 'fill')
     page.text(demand.x + 4.5, demand.y - 6, 'demand', { size: 5.5, color: REPORT_COLORS.demand })
+  }
+  page.restore()
+}
+
+/**
+ * Named states on the capacity meridian, labelled in place.
+ *
+ * Labels are pushed apart vertically before anything is drawn, because two overlapping labels lose
+ * more information than the leader lines cost. Each label keeps its own leader back to its point,
+ * so a displaced label still says which state it belongs to.
+ */
+const drawCurveMarkers = (frame: Frame, markers: readonly CurveMarker[]) => {
+  const { page } = frame
+  const placed = markers
+    .flatMap((marker) => (marker.design ? [{ marker, point: marker.design }] : []))
+    .map(({ marker, point }) => ({ marker, at: frame.map({ x: point.m, y: point.p }) }))
+    .filter(({ at }) =>
+      at.x >= frame.left - 1 && at.x <= frame.left + frame.width + 1 &&
+      at.y >= frame.bottom - 1 && at.y <= frame.bottom + frame.height + 1
+    )
+    .sort((left, right) => right.at.y - left.at.y)
+    .map((entry) => ({ ...entry, labelY: entry.at.y }))
+
+  const minimumGap = 9
+  for (let index = 1; index < placed.length; index += 1) {
+    const gap = placed[index - 1].labelY - placed[index].labelY
+    if (gap < minimumGap) placed[index].labelY = placed[index - 1].labelY - minimumGap
+  }
+
+  const labelSize = 6
+  page.save()
+  for (const { marker, at, labelY } of placed) {
+    // Labels sit to the right of their point, which is where a P-M diagram has its free space — but
+    // a label that would run past the plot box flips to the left instead of being clipped or
+    // overhanging the frame.
+    const width = measureText(marker.label, HELVETICA, labelSize)
+    const right = at.x + 7 + width <= frame.left + frame.width
+    const labelX = right ? at.x + 7 : at.x - 7
+    page.setStroke(REPORT_COLORS.hairline)
+    page.setLineWidth(0.3)
+    page.line(at.x, at.y, labelX + (right ? -1.5 : 1.5), labelY + 2)
+    page.setFill(REPORT_COLORS.accent)
+    page.circle(at.x, at.y, 1.9, 'fill')
+    page.text(labelX, labelY, marker.label, {
+      size: labelSize,
+      color: REPORT_COLORS.accent,
+      align: right ? 'left' : 'right'
+    })
   }
   page.restore()
 }
@@ -594,29 +643,61 @@ export const renderColumnReport = (
   })
 
   // ---- 2. Capacity --------------------------------------------------------
+  //
+  // One diagram, full width. Four small ones fitted on a page cost every named state its label and
+  // gained only the principal planes a reader can already infer; the states are what this page is
+  // for, so the θ = 0 meridian is drawn once, large enough to carry them.
   doc.newPage(A4_PORTRAIT)
   doc.title('2. Section capacity', 'Nominal reference and Design resistance. Only Design is compared with factored demand.')
   if (model.axialCapKn !== null) {
-    doc.paragraph(`Maximum design axial resistance applied at ${num(model.axialCapKn, 1)} kN; it appears as the flat top of each diagram.`)
+    doc.paragraph(`Maximum design axial resistance applied at ${num(model.axialCapKn, 1)} kN; it appears as the flat top of the diagram.`)
   }
-  const perRow = model.curves.length > 2 ? 2 : model.curves.length || 1
-  const curveHeight = perRow > 1 ? 200 : 250
-  model.curves.forEach((curve, index) => {
-    const bounds = curveBounds([curve.design, curve.nominal])
-    const column = index % perRow
-    const frame = doc.figure({
-      title: `Fixed-grid plane P–Mθ at θ = ${num(curve.thetaDeg, 2)}°`,
-      height: curveHeight,
-      bounds,
-      widthFraction: perRow > 1 ? 0.48 : 1,
-      offsetFraction: perRow > 1 ? column * 0.52 : 0,
-      preserveAspect: false,
-      caption: 'Design solid · Nominal dashed'
-    })
-    drawInteraction(frame, bounds, curve)
-    if (perRow > 1 && column === perRow - 1) doc.endFigureRow(curveHeight)
+  const capacityCurve = model.capacityCurve
+  const capacityBounds = curveBounds([capacityCurve.design, capacityCurve.nominal])
+  const capacityHeight = 420
+  const capacityFrame = doc.figure({
+    title: `Fixed-grid plane P–Mθ at θ = ${num(capacityCurve.thetaDeg, 2)}°`,
+    height: capacityHeight,
+    bounds: capacityBounds,
+    preserveAspect: false,
+    caption: 'Design solid · Nominal dashed · marked points listed below'
   })
-  if (perRow > 1 && model.curves.length % perRow === 1) doc.endFigureRow(curveHeight)
+  drawInteraction(capacityFrame, capacityBounds, capacityCurve)
+  drawCurveMarkers(capacityFrame, model.capacityMarkers)
+
+  if (model.capacityMarkers.length > 0) {
+    doc.heading('Marked states on the diagram')
+    doc.table({
+      columns: [
+        { title: 'Mark', width: 14 },
+        { title: 'Station criterion', width: 18 },
+        { title: 'P design (kN)', width: 13, align: 'right' },
+        { title: 'Mθ design (kN·m)', width: 15, align: 'right' },
+        { title: 'P nominal (kN)', width: 13, align: 'right' },
+        { title: 'Mθ nominal (kN·m)', width: 15, align: 'right' },
+        { title: 'φ', width: 8, align: 'right' },
+        { title: 'Class', width: 22 }
+      ],
+      rows: model.capacityMarkers.map((marker) => [
+        marker.label,
+        marker.station,
+        marker.design ? num(marker.design.p, 1) : '—',
+        marker.design ? num(marker.design.m, 2) : '—',
+        marker.nominal ? num(marker.nominal.p, 1) : '—',
+        marker.nominal ? num(marker.nominal.m, 2) : '—',
+        marker.phi === null ? '—' : num(marker.phi, 3),
+        marker.classification
+      ])
+    })
+    doc.paragraph(
+      'P0 is the compression pole, Pmax the axial cap where one applies, fs = 0 the state where the extreme bar first carries no stress, and fs = fy the balanced state where it first yields. A φ mark is the first station of a new resistance class, named in full in the Class column. Every other station on this meridian is tabulated per combination in section 5.',
+      { size: 7 }
+    )
+  }
+  doc.paragraph(
+    `Other published directions (${model.curves.map((curve) => `${num(curve.thetaDeg, 2)}°`).join(', ')}) are cut from the same surface; each combination is checked in section 4 against the plane it actually lies in.`,
+    { size: 7 }
+  )
 
   // ---- 3. Demand ----------------------------------------------------------
   doc.newPage(A4_PORTRAIT)

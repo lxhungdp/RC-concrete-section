@@ -120,6 +120,21 @@ const valueAt = (engine: HyperFormula, sheetName: string, address: string) => {
   return cell ? engine.getCellValue(cell) : null
 }
 
+/**
+ * Row of a curve sheet's table header.
+ *
+ * The head above it is a stacked identity block whose length follows how much context the sheet
+ * carries, so the table starts wherever that ends; finding it by its first header cell keeps these
+ * checks about the calculation rather than the layout.
+ */
+const headerRowOf = (sheet: ExcelJS.Worksheet) => {
+  for (let row = 3; row <= 40; row++) {
+    const first = String(sheet.getCell(row, 1).value ?? '')
+    if (first === '#' || first === 'β (deg)') return row
+  }
+  throw new Error(`${sheet.name} has no table header`)
+}
+
 /** Row index of a label in column A, or -1. */
 const rowOfLabel = (sheet: ExcelJS.Worksheet, label: string) => {
   for (let row = 1; row <= sheet.rowCount; row++) {
@@ -143,12 +158,13 @@ const checkSourceRows = (
     pass(`${label}: ${sheetName} exists`, false)
     return
   }
+  const headerRow = headerRowOf(sheet)
   const headerColumns = new Map<string, number>()
   for (let column = 1; column <= sheet.columnCount; column++) {
-    const value = sheet.getCell(7, column).value
+    const value = sheet.getCell(headerRow, column).value
     if (typeof value === 'string') headerColumns.set(value, column)
   }
-  const required = ['Source key', 'Final P', 'Final Mx', 'Final My', 'Engine P', 'Engine Mx', 'Engine My']
+  const required = ['Station / role', 'Final P', 'Final Mx', 'Final My', 'Engine P', 'Engine Mx', 'Engine My']
   const missing = required.filter((title) => !headerColumns.has(title))
   if (missing.length > 0) {
     pass(`${label}: ${sheetName} publishes the source block`, false, missing.join(', '))
@@ -156,8 +172,8 @@ const checkSourceRows = (
   }
   let rows = 0
   let worst = 0
-  for (let row = 8; row <= sheet.rowCount; row++) {
-    if (!sheet.getCell(row, headerColumns.get('Source key')!).value) continue
+  for (let row = headerRow + 1; row <= sheet.rowCount; row++) {
+    if (!sheet.getCell(row, headerColumns.get('Station / role')!).value) continue
     rows += 1
     const read = (title: string) => {
       const column = headerColumns.get(title)!
@@ -341,23 +357,37 @@ const runCase = async (relativePath: string, label: string) => {
     checkSourceRows(readBack, engine, `${tag}_Vertical`, tag)
     const fixedResult = readBack.getWorksheet(`${tag}_FixedP`)
     const rows = fixedResult
-      ? Array.from({ length: Math.max(0, fixedResult.rowCount - 7) }, (_unused, offset) => offset + 8)
-          .filter((row) => typeof fixedResult.getCell(row, 1).value === 'number')
+      ? Array.from(
+          { length: Math.max(0, fixedResult.rowCount - headerRowOf(fixedResult)) },
+          (_unused, offset) => offset + headerRowOf(fixedResult) + 1
+        ).filter((row) => typeof fixedResult.getCell(row, 1).value === 'number')
       : []
     if (rows.length === 0) {
       pass(`${tag}: fixed-P cut has no points and says so`,
-        Boolean(fixedResult && String(fixedResult.getCell(8, 1).value ?? '').includes('no intersection')),
+        Boolean(fixedResult && String(fixedResult.getCell(headerRowOf(fixedResult) + 1, 1).value ?? '').includes('no intersection')),
         'axial force outside the Design surface')
       return
     }
     checkSourceRows(readBack, engine, `${tag}_FixedP_Lo`, tag)
     checkSourceRows(readBack, engine, `${tag}_FixedP_Up`, tag)
+    // Columns are found by header rather than letter: the sheet drops program-only columns, and a
+    // test that hard-codes positions fails on layout rather than on the calculation it is checking.
+    const columnOf = (title: string) => {
+      for (let column = 1; column <= fixedResult!.columnCount; column++) {
+        if (fixedResult!.getCell(headerRowOf(fixedResult!), column).value === title) return column
+      }
+      throw new Error(`${tag}_FixedP has no ${title} column`)
+    }
+    const mxColumn = columnOf('Mx (kN·m)')
+    const myColumn = columnOf('My (kN·m)')
+    const engineMxColumn = columnOf('Engine Mx')
+    const engineMyColumn = columnOf('Engine My')
     let worst = 0
     for (const row of rows) {
-      const mx = valueAt(engine, `${tag}_FixedP`, `N${row}`)
-      const my = valueAt(engine, `${tag}_FixedP`, `O${row}`)
-      const engineMx = Number(fixedResult!.getCell(row, 16).value)
-      const engineMy = Number(fixedResult!.getCell(row, 17).value)
+      const mx = valueAt(engine, `${tag}_FixedP`, `${fixedResult!.getColumn(mxColumn).letter}${row}`)
+      const my = valueAt(engine, `${tag}_FixedP`, `${fixedResult!.getColumn(myColumn).letter}${row}`)
+      const engineMx = Number(fixedResult!.getCell(row, engineMxColumn).value)
+      const engineMy = Number(fixedResult!.getCell(row, engineMyColumn).value)
       const scale = Math.max(1e-6, Math.hypot(engineMx, engineMy))
       worst = Math.max(worst, Math.hypot(Number(mx) - engineMx, Number(my) - engineMy) / scale)
     }

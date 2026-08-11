@@ -10,22 +10,24 @@ import {
   Download,
   Eye,
   EyeOff,
-  FolderCog,
+  FolderOpen,
   Gauge,
   History,
+  Info,
   Lock,
   Minus,
   Moon,
   Plus,
   RectangleHorizontal,
   RotateCw,
-  Settings,
+  SlidersHorizontal,
   Share2,
   Sun,
   Unlock,
   Upload,
   X
 } from 'lucide-react'
+import webPackage from '../../package.json'
 import {
   allocateIds,
   composeSectionPrimitives,
@@ -94,7 +96,10 @@ import { CalculationBasisToolbar } from './CalculationBasisToolbar'
 import { PROJECT_EXAMPLES, type ProjectExample } from './project-examples'
 import {
   RECENT_PROJECT_STORAGE_KEY,
+  recentProjectsFromStorage,
   recentProjectFromRaw,
+  serializeRecentProjects,
+  upsertRecentProject,
   type RecentProject
 } from './recent-project'
 
@@ -214,6 +219,7 @@ type ScreenPoint = {
 type Tool = 'select' | 'draw-rectangle' | 'draw-circle' | 'draw-polygon'
 type Theme = 'light' | 'dark'
 type ProjectShareNotice = { kind: 'success' | 'error'; message: string }
+const THEME_STORAGE_KEY = 'pm-column-designer:theme:v1'
 /**
  * Section Results and Demand Check are separate menus because they answer different questions and
  * need different sidebars: one owns the capacity surface and its presentation, the other owns the
@@ -223,6 +229,7 @@ type WorkspaceModule = 'geometry' | 'materials' | 'analysis' | 'section' | 'dema
 
 /** Both result menus render the same stage component in different modes. */
 const isResultsModule = (module: WorkspaceModule) => module === 'section' || module === 'demand'
+const APP_VERSION = webPackage.version
 type GeometrySubTab = 'concrete' | 'rebar'
 type AnalysisSubTab = 'points' | 'mesh'
 type BuilderShape = 'rectangle' | 'circle' | 'capsule'
@@ -592,6 +599,7 @@ export function SectionDrawingClient() {
   const svgRef = useRef<SVGSVGElement | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const projectMenuRef = useRef<HTMLDivElement | null>(null)
+  const aboutMenuRef = useRef<HTMLDivElement | null>(null)
   const boundaryExcelInputRef = useRef<HTMLInputElement | null>(null)
   const rotationSessionRef = useRef<BoundaryObject | null>(null)
   const pendingFitAfterImportRef = useRef(false)
@@ -608,10 +616,11 @@ export function SectionDrawingClient() {
   >(null)
   const [theme, setTheme] = useState<Theme>('light')
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
+  const [aboutMenuOpen, setAboutMenuOpen] = useState(false)
   const [projectInformationOpen, setProjectInformationOpen] = useState(false)
   const [sharingProject, setSharingProject] = useState(false)
   const [projectShareNotice, setProjectShareNotice] = useState<ProjectShareNotice | null>(null)
-  const [recentProject, setRecentProject] = useState<RecentProject | null>(null)
+  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([])
   const [recentStorageReady, setRecentStorageReady] = useState(false)
   const [tool, setTool] = useState<Tool>('select')
   const [activeModule, setActiveModule] = useState<WorkspaceModule>('geometry')
@@ -722,12 +731,15 @@ export function SectionDrawingClient() {
   const publishRecentProject = useCallback((raw: unknown) => {
     const recent = recentProjectFromRaw(raw)
     if (!recent) return
-    try {
-      window.localStorage.setItem(RECENT_PROJECT_STORAGE_KEY, recent.raw)
-    } catch {
-      // Storage can be unavailable in a restricted browser; keep Recent usable for this session.
-    }
-    setRecentProject(recent)
+    setRecentProjects((current) => {
+      const next = upsertRecentProject(current, recent)
+      try {
+        window.localStorage.setItem(RECENT_PROJECT_STORAGE_KEY, serializeRecentProjects(next))
+      } catch {
+        // Storage can be unavailable in a restricted browser; keep Recent usable for this session.
+      }
+      return next
+    })
   }, [])
 
   const finalSection = useMemo(
@@ -824,6 +836,17 @@ export function SectionDrawingClient() {
     document.body.dataset.jscadTheme = theme
   }, [theme])
 
+  useLayoutEffect(() => {
+    try {
+      const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
+      if (storedTheme !== 'light' && storedTheme !== 'dark') return
+      document.body.dataset.jscadTheme = storedTheme
+      setTheme(storedTheme)
+    } catch {
+      // Storage may be unavailable in a restricted/private browser context.
+    }
+  }, [])
+
   useEffect(() => {
     if (!projectMenuOpen) return
 
@@ -840,6 +863,23 @@ export function SectionDrawingClient() {
       document.removeEventListener('keydown', closeOnEscape)
     }
   }, [projectMenuOpen])
+
+  useEffect(() => {
+    if (!aboutMenuOpen) return
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!aboutMenuRef.current?.contains(event.target as Node)) setAboutMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAboutMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutsidePointer)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [aboutMenuOpen])
 
   useLayoutEffect(() => {
     if (isResultsModule(activeModule)) return
@@ -2023,9 +2063,9 @@ export function SectionDrawingClient() {
     applyImportedProject(example.document)
   }
 
-  const loadRecentProject = () => {
+  const loadRecentProject = (recent: RecentProject) => {
     setProjectMenuOpen(false)
-    applyImportedProject(recentProject?.raw ?? buildCurrentProjectDocument())
+    applyImportedProject(recent.raw)
   }
 
   const saveProjectInformation = (name: string, information: ProjectInformation) => {
@@ -2057,13 +2097,13 @@ export function SectionDrawingClient() {
         }
       }
 
-      let stored: RecentProject | null = null
+      let stored: RecentProject[] = []
       try {
-        stored = recentProjectFromRaw(window.localStorage.getItem(RECENT_PROJECT_STORAGE_KEY))
+        stored = recentProjectsFromStorage(window.localStorage.getItem(RECENT_PROJECT_STORAGE_KEY))
       } catch {
         // Fall through to the current default project when storage access is restricted.
       }
-      if (stored) setRecentProject(stored)
+      if (stored.length > 0) setRecentProjects(stored)
       else publishRecentProject(buildCurrentProjectDocument())
       setRecentStorageReady(true)
     }
@@ -2286,6 +2326,18 @@ export function SectionDrawingClient() {
     startModuleTransition(() => setActiveModule(nextModule))
   }
 
+  const toggleTheme = () => {
+    setTheme((current) => {
+      const next = current === 'light' ? 'dark' : 'light'
+      try {
+        window.localStorage.setItem(THEME_STORAGE_KEY, next)
+      } catch {
+        // Theme still changes for the current session when storage is unavailable.
+      }
+      return next
+    })
+  }
+
   return (
     <main className="pm-shell">
       <header className="pm-app-header">
@@ -2293,7 +2345,6 @@ export function SectionDrawingClient() {
           <span className="pm-brand-mark">PM</span>
           <div>
             <h1>P-M Column Designer</h1>
-            <p>Stage 1 · Section resistance only</p>
           </div>
         </div>
 
@@ -2324,6 +2375,15 @@ export function SectionDrawingClient() {
             <Gauge size={16} />
             <span>Check</span>
           </button>
+          <button
+            className={activeModule === 'analysis' ? 'is-active' : ''}
+            onMouseEnter={() => preloadModule('analysis')}
+            onFocus={() => preloadModule('analysis')}
+            onClick={() => switchModule('analysis')}
+          >
+            <SlidersHorizontal size={16} />
+            <span>Analysis</span>
+          </button>
         </nav>
 
         <CalculationBasisToolbar
@@ -2333,18 +2393,7 @@ export function SectionDrawingClient() {
           onDesignBasisChange={setDesignBasis}
         />
 
-        <div className="pm-toolbar" aria-label="Project tools">
-          <button
-            className={activeModule === 'analysis' ? 'is-active' : ''}
-            onMouseEnter={() => preloadModule('analysis')}
-            onFocus={() => preloadModule('analysis')}
-            onClick={() => switchModule('analysis')}
-            title="Analysis Options"
-            aria-label="Analysis Options"
-          >
-            <Settings size={18} />
-          </button>
-          <span className="pm-toolbar-sep" aria-hidden="true" />
+        <div className="pm-toolbar" aria-label="Project and application tools">
           <div className="pm-project-menu" ref={projectMenuRef}>
             <button
               className={`pm-project-menu__trigger${projectMenuOpen ? ' is-active' : ''}`}
@@ -2353,9 +2402,12 @@ export function SectionDrawingClient() {
               aria-label="Open project information and files"
               aria-haspopup="dialog"
               aria-expanded={projectMenuOpen}
-              onClick={() => setProjectMenuOpen((open) => !open)}
+              onClick={() => {
+                setAboutMenuOpen(false)
+                setProjectMenuOpen((open) => !open)
+              }}
             >
-              <FolderCog size={18} />
+              <FolderOpen size={18} />
             </button>
             {projectMenuOpen && (
               <div className="pm-project-menu__popover" role="dialog" aria-label="Project information and files">
@@ -2415,18 +2467,27 @@ export function SectionDrawingClient() {
                 </section>
 
                 <section className="pm-project-menu__section">
-                  <div className="pm-project-menu__section-head"><span>Recent file</span></div>
-                  <button className="pm-project-menu__item pm-project-menu__recent" type="button" onClick={loadRecentProject}>
-                    <History size={15} />
-                    <span>
-                      <strong>{recentProject?.name ?? projectMeta.name ?? 'Column project'}</strong>
-                      <small>
-                        {recentProject && isEquivalentBlockProfileId(recentProject.calculationProfileId)
-                          ? 'Equivalent stress block'
-                          : 'Stress–strain'}
-                      </small>
-                    </span>
-                  </button>
+                  <div className="pm-project-menu__section-head"><span>Recent files</span></div>
+                  <div className="pm-project-menu__recent-list">
+                    {recentProjects.map((recent) => (
+                      <button
+                        className="pm-project-menu__item pm-project-menu__recent"
+                        type="button"
+                        key={`${recent.id}:${recent.createdAt}`}
+                        onClick={() => loadRecentProject(recent)}
+                      >
+                        <History size={15} />
+                        <span>
+                          <strong>{recent.name}</strong>
+                          <small>
+                            {isEquivalentBlockProfileId(recent.calculationProfileId)
+                              ? 'Equivalent stress block'
+                              : 'Stress–strain'}
+                          </small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </section>
 
                 <section className="pm-project-menu__section">
@@ -2451,9 +2512,48 @@ export function SectionDrawingClient() {
             )}
           </div>
           <span className="pm-toolbar-sep" aria-hidden="true" />
-          <button onClick={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))} title="Theme">
+          <button onClick={toggleTheme} title="Theme">
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           </button>
+          <div className="pm-about-menu" ref={aboutMenuRef}>
+            <button
+              className={aboutMenuOpen ? 'is-active' : ''}
+              type="button"
+              title="About P-M Column Designer"
+              aria-label="About P-M Column Designer"
+              aria-haspopup="dialog"
+              aria-expanded={aboutMenuOpen}
+              onClick={() => {
+                setProjectMenuOpen(false)
+                setAboutMenuOpen((open) => !open)
+              }}
+            >
+              <Info size={18} />
+            </button>
+            {aboutMenuOpen && (
+              <div className="pm-about-popover" role="dialog" aria-label="About P-M Column Designer">
+                <div className="pm-about-header">
+                  <span className="pm-about-mark" aria-hidden="true">PM</span>
+                  <div className="pm-about-title">
+                    <div>
+                      <h2>P-M Column Designer</h2>
+                      <span>v{APP_VERSION}</span>
+                    </div>
+                    <p>Reinforced-concrete P–M–M section resistance analysis</p>
+                    <p>Stage 1 · Section resistance only</p>
+                  </div>
+                </div>
+                <div className="pm-about-attribution">
+                  <strong>© 2026 Envico Co., Ltd.</strong>
+                  <span>Originally developed by Le Xuan Hung</span>
+                  <span>Open-source software licensed under the MIT License.</span>
+                </div>
+                <p className="pm-about-disclaimer">
+                  Engineering results require independent professional review.
+                </p>
+              </div>
+            )}
+          </div>
           <input
             ref={importInputRef}
             type="file"
@@ -2622,50 +2722,52 @@ export function SectionDrawingClient() {
 
             {boundaries.length > 0 && (
             <section className="pm-panel-section pm-vertex-section">
-              <div className="pm-section-title pm-section-title--with-action">
-                <h2>Boundary Details</h2>
+              <div className="pm-section-title pm-section-title--with-action pm-boundary-detail-header">
+                <div className="pm-boundary-detail-heading">
+                  <h2>Detail</h2>
+                  {activeBoundary && (
+                    <span className="pm-boundary-detail-name" title={activeBoundary.name}>
+                      {activeBoundary.name}
+                    </span>
+                  )}
+                </div>
                 {activeBoundary && (
-                  <button
-                    type="button"
-                    className="pm-file-btn"
-                    onClick={() => exportBoundaryExcel(activeBoundary)}
-                    title="Export boundary to Excel"
-                  >
-                    <Download size={13} />
-                    Excel
-                  </button>
-                )}
-              </div>
-
-              {activeBoundary ? (
-                <div className="pm-boundary-detail-toolbar">
-                  <span className="pm-boundary-detail-name" title={activeBoundary.name}>
-                    {activeBoundary.name}
-                  </span>
-                  <div className="pm-detail-tabs" role="tablist" aria-label={`${activeBoundary.name} details`}>
-                    {showBasicDetailTab && (
+                  <div className="pm-boundary-detail-actions">
+                    <div className="pm-detail-tabs" role="tablist" aria-label={`${activeBoundary.name} details`}>
                       <button
                         type="button"
                         role="tab"
                         aria-selected={effectiveDetailTab === 'basic'}
                         className={effectiveDetailTab === 'basic' ? 'is-active' : ''}
+                        disabled={!showBasicDetailTab}
                         onClick={() => setDetailTab('basic')}
                       >
                         Basic
                       </button>
-                    )}
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={effectiveDetailTab === 'points'}
+                        className={effectiveDetailTab === 'points' ? 'is-active' : ''}
+                        onClick={() => setDetailTab('points')}
+                      >
+                        Point
+                      </button>
+                    </div>
                     <button
                       type="button"
-                      role="tab"
-                      aria-selected={effectiveDetailTab === 'points'}
-                      className={effectiveDetailTab === 'points' ? 'is-active' : ''}
-                      onClick={() => setDetailTab('points')}
+                      className="pm-file-btn"
+                      onClick={() => exportBoundaryExcel(activeBoundary)}
+                      title="Export boundary to Excel"
                     >
-                      Points
+                      <Download size={13} />
+                      Excel
                     </button>
                   </div>
-                </div>
-              ) : (
+                )}
+              </div>
+
+              {!activeBoundary && (
                 <p className="pm-boundary-empty">Select a boundary to edit its details.</p>
               )}
 
@@ -3081,7 +3183,7 @@ export function SectionDrawingClient() {
           <>
             <div className="pm-analysis-tabs" role="tablist" aria-label="Analysis option groups">
               {([
-                ['points', 'Points'],
+                ['points', 'Point'],
                 ['mesh', analysisOptions.methodId === 'equivalent-block-surface-v1' ? 'Block' : 'Mesh']
               ] as const).map(([id, label]) => (
                 <button

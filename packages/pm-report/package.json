@@ -21,7 +21,8 @@
     "@pm/geometry": "0.1.0",
     "@pm/materials": "0.1.0",
     "@pm/project": "0.1.0",
-    "exceljs": "4.4.0"
+    "exceljs": "4.4.0",
+    "jszip": "3.10.1"
   },
   "devDependencies": {
     "hyperformula": "3.3.0"

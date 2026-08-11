@@ -577,10 +577,6 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   box-shadow: none;
 }
 
-.pm-side-panel .pm-analysis-tabs::before {
-  width: calc((100% - (var(--sp-4) * 2)) / 3);
-}
-
 .pm-side-panel .pm-page-tabs:has(button:nth-child(2).is-active)::before,
 .pm-side-panel .pm-geometry-tabs:has(button:nth-child(2).is-active)::before {
   transform: translateX(calc(100% + var(--sp-4)));
@@ -588,10 +584,6 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 
 .pm-side-panel .pm-analysis-tabs:has(button:nth-child(2).is-active)::before {
   transform: translateX(calc(100% + var(--sp-4)));
-}
-
-.pm-side-panel .pm-analysis-tabs:has(button:nth-child(3).is-active)::before {
-  transform: translateX(calc(200% + (var(--sp-4) * 2)));
 }
 
 .pm-side-panel .pm-page-tabs button,

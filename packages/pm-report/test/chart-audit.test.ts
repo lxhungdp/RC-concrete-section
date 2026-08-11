@@ -129,6 +129,21 @@ const formulaErrors = (readBack: ExcelJS.Workbook, engine: HyperFormula) => {
   return errors
 }
 
+/**
+ * Row of the table header.
+ *
+ * The sheet head is a stacked identity block whose length depends on how much context the caller
+ * supplied, so the table starts wherever that block ends. Finding it by its first header cell keeps
+ * these checks about the calculation instead of about the layout.
+ */
+const headerRowOf = (sheet: ExcelJS.Worksheet) => {
+  for (let row = 3; row <= 40; row++) {
+    const first = String(sheet.getCell(row, 1).value ?? '')
+    if (first === '#' || first === 'β (deg)') return row
+  }
+  throw new Error(`${sheet.name} has no table header`)
+}
+
 const assertNearEngine = (actual: number, expected: number, label: string) => {
   const tolerance = Math.max(1e-9, Math.abs(expected) * 1e-9)
   assert.ok(
@@ -146,12 +161,13 @@ const assertAllSourceRowsMatchEngine = (
   assert.ok(sheet, `${sheetName} must exist`)
   const sheetId = engine.getSheetId(sheetName)
   assert.notEqual(sheetId, undefined)
+  const headerRow = headerRowOf(sheet)
   const headerColumns = new Map<string, number>()
   for (let column = 1; column <= sheet.columnCount; column++) {
-    const value = sheet.getCell(7, column).value
+    const value = sheet.getCell(headerRow, column).value
     if (typeof value === 'string') headerColumns.set(value, column)
   }
-  const required = ['Source key', 'Final P', 'Final Mx', 'Final My', 'Engine P', 'Engine Mx', 'Engine My', 'ΔP', 'ΔM']
+  const required = ['Station / role', 'Final P', 'Final Mx', 'Final My', 'Engine P', 'Engine Mx', 'Engine My', 'ΔP', 'ΔM']
   for (const label of required) assert.ok(headerColumns.has(label), `${sheetName} must contain ${label}`)
   const valueAt = (row: number, label: string) => {
     const column = headerColumns.get(label)!
@@ -160,8 +176,8 @@ const assertAllSourceRowsMatchEngine = (
     assert.equal(typeof value, 'number', `${sheetName}!${sheet.getColumn(column).letter}${row} must recalculate`)
     return value as number
   }
-  for (let row = 8; row <= sheet.rowCount; row++) {
-    if (!sheet.getCell(row, headerColumns.get('Source key')!).value) continue
+  for (let row = headerRow + 1; row <= sheet.rowCount; row++) {
+    if (!sheet.getCell(row, headerColumns.get('Station / role')!).value) continue
     const finalP = valueAt(row, 'Final P')
     const finalMx = valueAt(row, 'Final Mx')
     const finalMy = valueAt(row, 'Final My')
@@ -204,34 +220,36 @@ test('vertical chart audit has four traceable sheets and formula-driven result v
 
   const result = workbook.getWorksheet('Result')
   assert.ok(result)
-  assert.match(result.getCell('C8').formula ?? '', /^\$AG\$/)
-  assert.match(result.getCell('D8').formula ?? '', /COS\(RADIANS/)
-  const meshFormulaRow = Array.from({ length: result.rowCount - 7 }, (_, index) => index + 8)
-    .find((row) => String(result.getCell(row, 41).value).startsWith('strain-state Mesh/Material'))
+  const head = headerRowOf(result)
+  const first = head + 1
+  assert.match(result.getCell(first, 3).formula ?? '', /^\$AC\$/)
+  assert.match(result.getCell(first, 4).formula ?? '', /COS\(RADIANS/)
+  const meshFormulaRow = Array.from({ length: result.rowCount - head }, (_, index) => index + head + 1)
+    .find((row) => String(result.getCell(row, 37).value).startsWith('strain-state Mesh/Material'))
   assert.ok(meshFormulaRow)
-  assert.match(result.getCell(meshFormulaRow, 21).formula ?? '', /SUMPRODUCT/)
-  assert.match(result.getCell(meshFormulaRow, 21).formula ?? '', /Mesh_A/)
-  assert.equal(typeof result.getCell('C8').result, 'number')
-  assert.equal(typeof result.getCell('D8').result, 'number')
+  assert.match(result.getCell(meshFormulaRow, 17).formula ?? '', /SUMPRODUCT/)
+  assert.match(result.getCell(meshFormulaRow, 17).formula ?? '', /Mesh_A/)
+  assert.equal(typeof result.getCell(first, 3).result, 'number')
+  assert.equal(typeof result.getCell(first, 4).result, 'number')
 
-  const resolvedRow = Array.from({ length: result.rowCount - 7 }, (_, index) => index + 8)
-    .find((row) => result.getCell(row, 10).value === 'c/D')
+  const resolvedRow = Array.from({ length: result.rowCount - head }, (_, index) => index + head + 1)
+    .find((row) => result.getCell(row, 6).value === 'c/D')
   assert.ok(resolvedRow, 'at least one station must expose its resolved c/D criterion')
-  const declaredRatio = Number(String(result.getCell(resolvedRow, 8).value).match(/c\/D = ([0-9.]+)/)?.[1])
+  const declaredRatio = Number(String(result.getCell(resolvedRow, 5).value).match(/c\/D = ([0-9.]+)/)?.[1])
   assert.ok(Number.isFinite(declaredRatio))
-  assert.ok(Math.abs(Number(result.getCell(resolvedRow, 11).value) - declaredRatio) < 1e-9)
-  assert.match(result.getCell(resolvedRow, 13).formula ?? '', /^L\d+-K\d+\*N\d+$/)
-  assert.equal(result.getCell(resolvedRow, 16).formula, '0')
-  assert.match(result.getCell(resolvedRow, 17).formula ?? '', /\(O\d+-P\d+\)\/\(L\d+-M\d+\)/)
-  assert.match(result.getCell(resolvedRow, 18).formula ?? '', /^O\d+-Q\d+\*L\d+$/)
-  assert.match(result.getCell(resolvedRow, 19).formula ?? '', /COS\(RADIANS/)
-  assert.match(result.getCell(resolvedRow, 20).formula ?? '', /SIN\(RADIANS/)
+  assert.ok(Math.abs(Number(result.getCell(resolvedRow, 7).value) - declaredRatio) < 1e-9)
+  assert.match(result.getCell(resolvedRow, 9).formula ?? '', /^H\d+-G\d+\*J\d+$/)
+  assert.equal(result.getCell(resolvedRow, 12).formula, '0')
+  assert.match(result.getCell(resolvedRow, 13).formula ?? '', /\(K\d+-L\d+\)\/\(H\d+-I\d+\)/)
+  assert.match(result.getCell(resolvedRow, 14).formula ?? '', /^K\d+-M\d+\*H\d+$/)
+  assert.match(result.getCell(resolvedRow, 15).formula ?? '', /COS\(RADIANS\(\$C\$6\)\)/)
+  assert.match(result.getCell(resolvedRow, 16).formula ?? '', /SIN\(RADIANS\(\$C\$6\)\)/)
 
-  const yieldRatioRow = Array.from({ length: result.rowCount - 7 }, (_, index) => index + 8)
-    .find((row) => result.getCell(row, 10).value === 'εₛ/εy')
+  const yieldRatioRow = Array.from({ length: result.rowCount - head }, (_, index) => index + head + 1)
+    .find((row) => result.getCell(row, 6).value === 'εₛ/εy')
   assert.ok(yieldRatioRow, 'at least one station must use the steel-yield criterion')
-  assert.match(result.getCell(yieldRatioRow, 16).formula ?? '', /S_\d+_fy\/S_\d+_Es/)
-  assert.match(result.getCell(yieldRatioRow, 17).formula ?? '', /\(O\d+-P\d+\)\/\(L\d+-M\d+\)/)
+  assert.match(result.getCell(yieldRatioRow, 12).formula ?? '', /S_\d+_fy\/S_\d+_Es/)
+  assert.match(result.getCell(yieldRatioRow, 13).formula ?? '', /\(K\d+-L\d+\)\/\(H\d+-I\d+\)/)
 
   const geometry = workbook.getWorksheet('Geometry')!
   assert.deepEqual(
@@ -264,7 +282,7 @@ test('vertical chart audit has four traceable sheets and formula-driven result v
     false
   ).primary.filter((point) => point.sectionPointRole === 'surface-vertex' && point.stationId !== null)
   let exportedStations = 0
-  while (typeof result.getCell(8 + exportedStations, 1).value === 'number') exportedStations++
+  while (typeof result.getCell(head + 1 + exportedStations, 1).value === 'number') exportedStations++
   assert.equal(exportedStations, expectedStations.length)
   assert.ok(expectedStations.filter((point) => point.surfaceRole === 'axial-cap').length > 1)
   for (const sheet of workbook.worksheets) {
@@ -285,18 +303,18 @@ test('vertical chart audit has four traceable sheets and formula-driven result v
     assert.equal(typeof value, 'number', `${address} must recalculate to a number`)
     return value as number
   }
-  const nonUniformRow = Array.from({ length: result.rowCount - 7 }, (_, index) => index + 8)
-    .find((row) => Math.hypot(Number(result.getCell(row, 19).result), Number(result.getCell(row, 20).result)) > 1e-12)
+  const nonUniformRow = Array.from({ length: result.rowCount - head }, (_, index) => index + head + 1)
+    .find((row) => Math.hypot(Number(result.getCell(row, 15).result), Number(result.getCell(row, 16).result)) > 1e-12)
   assert.ok(nonUniformRow)
-  const recalculatedCurvature = valueAt(`Q${nonUniformRow}`)
-  const recalculatedE0 = valueAt(`R${nonUniformRow}`)
-  const recalculatedKx = valueAt(`S${nonUniformRow}`)
-  const recalculatedKy = valueAt(`T${nonUniformRow}`)
+  const recalculatedCurvature = valueAt(`M${nonUniformRow}`)
+  const recalculatedE0 = valueAt(`N${nonUniformRow}`)
+  const recalculatedKx = valueAt(`O${nonUniformRow}`)
+  const recalculatedKy = valueAt(`P${nonUniformRow}`)
   assert.ok(Math.hypot(recalculatedKx, recalculatedKy) > 1e-12)
-  assert.ok(Math.abs(recalculatedCurvature - Number(result.getCell(nonUniformRow, 17).result)) < 1e-10)
-  assert.ok(Math.abs(recalculatedE0 - Number(result.getCell(nonUniformRow, 18).result)) < 1e-10)
-  assert.ok(Math.abs(recalculatedKx - Number(result.getCell(nonUniformRow, 19).result)) < 1e-10)
-  assert.ok(Math.abs(recalculatedKy - Number(result.getCell(nonUniformRow, 20).result)) < 1e-10)
+  assert.ok(Math.abs(recalculatedCurvature - Number(result.getCell(nonUniformRow, 13).result)) < 1e-10)
+  assert.ok(Math.abs(recalculatedE0 - Number(result.getCell(nonUniformRow, 14).result)) < 1e-10)
+  assert.ok(Math.abs(recalculatedKx - Number(result.getCell(nonUniformRow, 15).result)) < 1e-10)
+  assert.ok(Math.abs(recalculatedKy - Number(result.getCell(nonUniformRow, 16).result)) < 1e-10)
 
   const bytes = await buildChartAuditWorkbookBytes(input)
   assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b])
@@ -325,39 +343,62 @@ test('Fixed-P chart audit exports one selected P and interpolates the displayed 
     'FixedP_Upper',
     'Result'
   ])
-  assert.equal(result.getCell('B5').value, 'Selected P (kN)')
+  const head = headerRowOf(result)
+  const first = head + 1
+  assert.equal(result.getCell('A5').value, 'Selected P (kN)')
   assert.equal(result.getCell('C4').value, 'nominal')
   assert.equal(result.getCell('C5').value, 0)
-  assert.equal(result.getCell('B8').value, lower.getCell('A8').value)
-  assert.equal(result.getCell('B8').value, upper.getCell('A8').value)
-  assert.equal(result.getCell('C8').value, 1)
-  assert.equal(result.getCell('D8').value, lower.getCell('C8').value)
-  assert.equal(lower.getCell('G7').value, 'Criterion basis')
-  assert.equal(upper.getCell('G7').value, 'Criterion basis')
-  assert.match(result.getCell('E8').formula ?? '', /'FixedP_Lower'!\$G\$8/)
-  assert.match(result.getCell('H8').formula ?? '', /'FixedP_Upper'!\$G\$8/)
-  assert.match(result.getCell('G8').formula ?? '', /'FixedP_Lower'!\$AD\$8/)
-  assert.match(result.getCell('J8').formula ?? '', /'FixedP_Upper'!\$AD\$8/)
-  assert.equal(result.getCell('K8').formula, 'Selected_P')
-  assert.match(result.getCell('L8').formula ?? '', /\(K8-G8\)\/\(J8-G8\)/)
-  assert.match(result.getCell('N8').formula ?? '', /'FixedP_Lower'!\$AE\$8/)
-  assert.match(result.getCell('N8').formula ?? '', /'FixedP_Upper'!\$AE\$8/)
-  assert.match(result.getCell('O8').formula ?? '', /'FixedP_Lower'!\$AF\$8/)
-  assert.match(result.getCell('O8').formula ?? '', /'FixedP_Upper'!\$AF\$8/)
-  assert.equal(typeof result.getCell('N8').result, 'number')
-  assert.equal(typeof result.getCell('O8').result, 'number')
-  assert.ok(Number(result.getCell('G8').result) <= Number(result.getCell('K8').result))
-  assert.ok(Number(result.getCell('J8').result) >= Number(result.getCell('K8').result))
-  assert.match(lower.getCell('N8').formula ?? '', /\(L8-M8\)\/\(I8-J8\)/)
-  assert.match(lower.getCell('O8').formula ?? '', /^L8-N8\*I8$/)
-  assert.match(lower.getCell('P8').formula ?? '', /COS\(RADIANS\(F8\)\)/)
-  assert.match(lower.getCell('Q8').formula ?? '', /SIN\(RADIANS\(F8\)\)/)
+  assert.equal(headerRowOf(lower), head, 'the three fixed-P sheets must share one header row')
+  assert.equal(headerRowOf(upper), head)
+  // Row identity is the contour direction and its branch; the bracket sheets carry the same pair,
+  // and their source formulas read the angle out of column A rather than repeating it.
+  assert.equal(result.getCell(head, 2).value, 'β (deg)')
+  assert.equal(result.getCell(first, 2).value, lower.getCell(first, 1).value)
+  assert.equal(result.getCell(first, 2).value, upper.getCell(first, 1).value)
+  assert.equal(result.getCell(first, 3).value, 1)
+  assert.equal(result.getCell(first, 3).value, lower.getCell(first, 2).value)
+  assert.equal(lower.getCell(head, 1).value, 'β (deg)')
+  assert.equal(lower.getCell(head, 4).value, 'Criterion basis')
+  assert.equal(upper.getCell(head, 4).value, 'Criterion basis')
+  for (const sheet of [result, lower, upper]) {
+    const titles = Array.from({ length: sheet.columnCount }, (_, index) => sheet.getCell(head, index + 1).value)
+    for (const title of ['Source key', 'Direction ID', 'Chart β (deg)']) {
+      assert.equal(titles.includes(title), false, `${sheet.name} must not publish a ${title} column`)
+    }
+    // A column that holds nothing from the header down is a column that should have been removed.
+    for (let column = 1; column <= sheet.columnCount; column++) {
+      const used = Array.from({ length: sheet.rowCount - head + 1 }, (_, index) => head + index)
+        .some((row) => sheet.getCell(row, column).value !== null && sheet.getCell(row, column).value !== undefined)
+      assert.ok(used, `${sheet.name} column ${sheet.getColumn(column).letter} is empty`)
+    }
+  }
+  assert.match(result.getCell(first, 4).formula ?? '', new RegExp(`'FixedP_Lower'!\\$D\\$${first}`))
+  assert.match(result.getCell(first, 7).formula ?? '', new RegExp(`'FixedP_Upper'!\\$D\\$${first}`))
+  assert.match(result.getCell(first, 6).formula ?? '', new RegExp(`'FixedP_Lower'!\\$AA\\$${first}`))
+  assert.match(result.getCell(first, 9).formula ?? '', new RegExp(`'FixedP_Upper'!\\$AA\\$${first}`))
+  assert.equal(result.getCell(first, 10).formula, 'Selected_P')
+  assert.match(result.getCell(first, 11).formula ?? '', new RegExp(`\\(J${first}-F${first}\\)/\\(I${first}-F${first}\\)`))
+  assert.match(result.getCell(first, 13).formula ?? '', new RegExp(`'FixedP_Lower'!\\$AB\\$${first}`))
+  assert.match(result.getCell(first, 13).formula ?? '', new RegExp(`'FixedP_Upper'!\\$AB\\$${first}`))
+  assert.match(result.getCell(first, 14).formula ?? '', new RegExp(`'FixedP_Lower'!\\$AC\\$${first}`))
+  assert.match(result.getCell(first, 14).formula ?? '', new RegExp(`'FixedP_Upper'!\\$AC\\$${first}`))
+  assert.equal(typeof result.getCell(first, 13).result, 'number')
+  assert.equal(typeof result.getCell(first, 14).result, 'number')
+  assert.ok(Number(result.getCell(first, 6).result) <= Number(result.getCell(first, 10).result))
+  assert.ok(Number(result.getCell(first, 9).result) >= Number(result.getCell(first, 10).result))
+  assert.match(lower.getCell(first, 11).formula ?? '', new RegExp(`\\(I${first}-J${first}\\)/\\(F${first}-G${first}\\)`))
+  assert.equal(lower.getCell(first, 12).formula, `I${first}-K${first}*F${first}`)
+  assert.match(lower.getCell(first, 13).formula ?? '', new RegExp(`COS\\(RADIANS\\(A${first}\\)\\)`))
+  assert.match(lower.getCell(first, 14).formula ?? '', new RegExp(`SIN\\(RADIANS\\(A${first}\\)\\)`))
 
-  const rows = Array.from({ length: result.rowCount - 7 }, (_, index) => index + 8)
+  const rows = Array.from({ length: result.rowCount - head }, (_, index) => index + head + 1)
     .filter((row) => typeof result.getCell(row, 1).value === 'number')
-  assert.equal(rows.length, new Set(rows.map((row) => String(result.getCell(row, 2).value))).size)
-  assert.equal(rows.length, lower.rowCount - 7)
-  assert.equal(rows.length, upper.rowCount - 7)
+  assert.equal(
+    rows.length,
+    new Set(rows.map((row) => `${result.getCell(row, 2).value}#${result.getCell(row, 3).value}`)).size
+  )
+  assert.equal(rows.length, lower.rowCount - head)
+  assert.equal(rows.length, upper.rowCount - head)
 
   const { readBack, engine } = await recalculateWorkbook(workbook)
   assert.deepEqual(formulaErrors(readBack, engine), [])
@@ -365,12 +406,12 @@ test('Fixed-P chart audit exports one selected P and interpolates the displayed 
   assertAllSourceRowsMatchEngine(readBack, engine, 'FixedP_Upper')
   const resultSheetId = engine.getSheetId('Result')!
   for (const row of rows.slice(0, 6)) {
-    const mx = engine.getCellValue(engine.simpleCellAddressFromString(`N${row}`, resultSheetId)!)
-    const my = engine.getCellValue(engine.simpleCellAddressFromString(`O${row}`, resultSheetId)!)
+    const mx = engine.getCellValue(engine.simpleCellAddressFromString(`M${row}`, resultSheetId)!)
+    const my = engine.getCellValue(engine.simpleCellAddressFromString(`N${row}`, resultSheetId)!)
     assert.equal(typeof mx, 'number')
     assert.equal(typeof my, 'number')
-    assert.ok(Math.abs(Number(mx) - Number(result.getCell(row, 16).value)) < 1e-8)
-    assert.ok(Math.abs(Number(my) - Number(result.getCell(row, 17).value)) < 1e-8)
+    assert.ok(Math.abs(Number(mx) - Number(result.getCell(row, 15).value)) < 1e-8)
+    assert.ok(Math.abs(Number(my) - Number(result.getCell(row, 16).value)) < 1e-8)
   }
 })
 
@@ -380,11 +421,12 @@ test('Fixed-P Pmax rows keep distinct branch IDs for multiple points on one dire
   input.fixedP = Math.max(...dataset.points.map((point) => point.P))
   const workbook = await buildChartAuditWorkbook(input)
   const result = workbook.getWorksheet('Result')!
-  const rows = Array.from({ length: result.rowCount - 7 }, (_, index) => index + 8)
+  const head = headerRowOf(result)
+  const rows = Array.from({ length: result.rowCount - head }, (_, index) => index + head + 1)
     .filter((row) => typeof result.getCell(row, 1).value === 'number')
   const betaGroups = new Map<string, number[]>()
   for (const row of rows) {
-    const key = Number(result.getCell(row, 4).value).toFixed(6)
+    const key = Number(result.getCell(row, 2).value).toFixed(6)
     betaGroups.set(key, [...(betaGroups.get(key) ?? []), row])
   }
   const repeated = [...betaGroups.values()].find((group) => group.length > 1)
@@ -393,26 +435,23 @@ test('Fixed-P Pmax rows keep distinct branch IDs for multiple points on one dire
     repeated.map((row) => result.getCell(row, 3).value),
     repeated.map((_, index) => index + 1)
   )
-  assert.equal(
-    new Set(repeated.map((row) => String(result.getCell(row, 2).value))).size,
-    repeated.length
-  )
-  for (const row of repeated) assert.equal(result.getCell(row, 13).result, 'Exact station')
+  for (const row of repeated) assert.equal(result.getCell(row, 12).result, 'Exact station')
 
   const { readBack, engine } = await recalculateWorkbook(workbook)
   assert.deepEqual(formulaErrors(readBack, engine), [])
   assertAllSourceRowsMatchEngine(readBack, engine, 'FixedP_Lower')
   assertAllSourceRowsMatchEngine(readBack, engine, 'FixedP_Upper')
   const lower = readBack.getWorksheet('FixedP_Lower')!
-  const capRows = Array.from({ length: lower.rowCount - 7 }, (_, index) => index + 8)
-    .filter((row) => String(lower.getCell(row, 38).value).startsWith('axial-cap projected-ledger anchor'))
+  const lowerHead = headerRowOf(lower)
+  const capRows = Array.from({ length: lower.rowCount - lowerHead }, (_, index) => index + lowerHead + 1)
+    .filter((row) => String(lower.getCell(row, 35).value).startsWith('axial-cap projected-ledger anchor'))
   assert.ok(capRows.length > 1)
   for (const row of capRows) {
     assert.deepEqual(
-      [lower.getCell(row, 27).value, lower.getCell(row, 28).value, lower.getCell(row, 29).value],
+      [lower.getCell(row, 24).value, lower.getCell(row, 25).value, lower.getCell(row, 26).value],
       [1, 1, 1]
     )
-    assert.match(String(lower.getCell(row, 7).value), /^retained /)
+    assert.match(String(lower.getCell(row, 4).value), /^retained /)
   }
 })
 
@@ -454,9 +493,10 @@ test('equivalent-block chart audit uses its total ledger, omits the unused Mesh 
     const workbook = await buildChartAuditWorkbook(blockInput)
     assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ['Geometry', 'Materials', 'Result'])
     const result = workbook.getWorksheet('Result')!
-    assert.match(result.getCell('AA8').formula ?? '', /^AP8$/)
-    assert.match(String(result.getCell('AO8').value), /^equivalent-block total-ledger anchor/)
-    assert.notEqual(Number(result.getCell('AG8').result), 0)
+    const first = headerRowOf(result) + 1
+    assert.equal(result.getCell(first, 23).formula, `AL${first}`)
+    assert.match(String(result.getCell(first, 37).value), /^equivalent-block total-ledger anchor/)
+    assert.notEqual(Number(result.getCell(first, 29).result), 0)
 
     const { readBack, engine } = await recalculateWorkbook(workbook)
     assert.deepEqual(formulaErrors(readBack, engine), [])
@@ -505,16 +545,24 @@ test('adaptive stations export a resolved physical criterion and derive the stra
   input.sliceAngleDeg = exactDirectionCurve.beta * 180 / Math.PI
   const result = (await buildChartAuditWorkbook(input)).getWorksheet('Result')
   assert.ok(result)
-  const adaptiveRow = Array.from({ length: result.rowCount - 7 }, (_, index) => index + 8)
-    .find((row) =>
-      String(result.getCell(row, 7).value).includes('adaptive-station-') &&
-      !String(result.getCell(row, 10).value).startsWith('retained ')
+  // Every station on this sheet came from the adaptive surface, so the claim is checked on all of
+  // them rather than on one row picked out by an internal station id the sheet no longer publishes.
+  const head = headerRowOf(result)
+  const rows = Array.from({ length: result.rowCount - head }, (_, index) => index + head + 1)
+    .filter((row) => typeof result.getCell(row, 1).value === 'number')
+  const resolved = rows.filter((row) => !String(result.getCell(row, 6).value).startsWith('retained '))
+  assert.ok(resolved.length > 0)
+  for (const row of resolved) {
+    const basis: string = String(result.getCell(row, 6).value)
+    assert.ok(
+      ['c/D', 'εₛ/εy', 'resolved εₛ', 'ε = constant'].includes(basis),
+      `row ${row} must resolve to a physical criterion, got ${basis}`
     )
-  assert.ok(adaptiveRow)
-  assert.ok(['c/D', 'εₛ/εy', 'resolved εₛ'].includes(String(result.getCell(adaptiveRow, 10).value)))
-  assert.equal(typeof result.getCell(adaptiveRow, 11).value, 'number')
-  assert.match(result.getCell(adaptiveRow, 17).formula ?? '', /\(O\d+-P\d+\)\/\(L\d+-M\d+\)/)
-  assert.match(result.getCell(adaptiveRow, 18).formula ?? '', /^O\d+-Q\d+\*L\d+$/)
-  assert.match(result.getCell(adaptiveRow, 19).formula ?? '', /COS\(RADIANS/)
-  assert.match(result.getCell(adaptiveRow, 20).formula ?? '', /SIN\(RADIANS/)
+    assert.equal(typeof result.getCell(row, 7).value, 'number')
+    if (basis === 'ε = constant') continue
+    assert.match(result.getCell(row, 13).formula ?? '', /\(K\d+-L\d+\)\/\(H\d+-I\d+\)/)
+    assert.match(result.getCell(row, 14).formula ?? '', /^K\d+-M\d+\*H\d+$/)
+    assert.match(result.getCell(row, 15).formula ?? '', /COS\(RADIANS/)
+    assert.match(result.getCell(row, 16).formula ?? '', /SIN\(RADIANS/)
+  }
 })

@@ -36,6 +36,9 @@
   --applied: #15803d;
   --applied-muted: rgba(21, 128, 61, 0.12);
   --applied-border: rgba(21, 128, 61, 0.45);
+  --geometry-final: #a9564f;
+  --geometry-final-muted: rgba(169, 86, 79, 0.14);
+  --geometry-final-border: rgba(169, 86, 79, 0.52);
 }
 
 body[data-jscad-theme="dark"] {
@@ -72,6 +75,9 @@ body[data-jscad-theme="dark"] {
   --applied: #4ade80;
   --applied-muted: rgba(74, 222, 128, 0.14);
   --applied-border: rgba(74, 222, 128, 0.5);
+  --geometry-final: #e3b85c;
+  --geometry-final-muted: rgba(227, 184, 92, 0.16);
+  --geometry-final-border: rgba(227, 184, 92, 0.58);
 }
 
 * {
@@ -285,6 +291,116 @@ button {
   display: flex;
 }
 
+.pm-about-menu {
+  position: relative;
+  display: flex;
+}
+
+.pm-about-popover {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 9px);
+  right: -4px;
+  display: grid;
+  width: min(292px, calc(100vw - 28px));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: var(--shadow-mockup);
+  cursor: default;
+  text-align: left;
+}
+
+.pm-about-header {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+}
+
+.pm-about-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--accent-border);
+  border-radius: 7px;
+  background: var(--accent-muted);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.pm-about-title {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.pm-about-title > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pm-about-title h2,
+.pm-about-title p,
+.pm-about-disclaimer {
+  margin: 0;
+}
+
+.pm-about-title h2 {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-about-title > div > span {
+  flex: 0 0 auto;
+  color: var(--foreground-muted);
+  font-size: 0.58rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.pm-about-title p {
+  color: var(--foreground-muted);
+  font-size: 0.6rem;
+  line-height: 1.35;
+}
+
+.pm-about-attribution {
+  display: grid;
+  gap: 3px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--foreground-secondary);
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+
+.pm-about-attribution strong {
+  color: var(--foreground);
+  font-weight: 650;
+}
+
+.pm-about-disclaimer {
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--geometry-final) 24%, var(--border-subtle));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--geometry-final) 6%, var(--background));
+  color: var(--foreground-muted);
+  font-size: 0.58rem;
+  line-height: 1.4;
+}
+
 .pm-toolbar .pm-project-menu__trigger {
   width: 32px;
   padding: 0;
@@ -415,6 +531,11 @@ button {
 .pm-toolbar .pm-project-menu__recent {
   border: 0;
   background: transparent;
+}
+
+.pm-project-menu__recent-list {
+  display: grid;
+  gap: 1px;
 }
 
 .pm-toolbar .pm-project-menu__recent:hover,
@@ -985,16 +1106,23 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
   gap: 0;
 }
 
-.pm-boundary-detail-toolbar {
+.pm-boundary-detail-header {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  margin-bottom: 8px;
+}
+
+.pm-boundary-detail-heading {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
 
 .pm-boundary-detail-name {
-  flex: 1 1 auto;
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1004,8 +1132,12 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
   font-weight: 500;
 }
 
-.pm-boundary-detail-toolbar .pm-detail-tabs {
+.pm-boundary-detail-actions {
+  display: flex;
   flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 
 .pm-section-title .pm-boundary-export-btn {
@@ -1076,22 +1208,6 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
 .pm-page-tabs:has(button:nth-child(2).is-active)::before,
 .pm-geometry-tabs:has(button:nth-child(2).is-active)::before {
   transform: translateX(100%);
-}
-
-.pm-analysis-tabs {
-  grid-template-columns: repeat(3, 1fr);
-}
-
-.pm-analysis-tabs::before {
-  width: calc((100% - 6px) / 3);
-}
-
-.pm-analysis-tabs:has(button:nth-child(2).is-active)::before {
-  transform: translateX(100%);
-}
-
-.pm-analysis-tabs:has(button:nth-child(3).is-active)::before {
-  transform: translateX(200%);
 }
 
 .pm-page-tabs button,
@@ -1356,8 +1472,8 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
 }
 
 .pm-boundary-final-label {
-  color: var(--applied);
-  background: color-mix(in srgb, var(--applied) 12%, transparent);
+  color: var(--geometry-final);
+  background: color-mix(in srgb, var(--geometry-final) 14%, transparent);
 }
 
 .pm-boundary-row.is-selected {
@@ -1370,12 +1486,12 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
 }
 
 .pm-boundary-row.is-applied {
-  border-color: var(--applied-border);
-  background: var(--applied-muted);
+  border-color: var(--geometry-final-border);
+  background: var(--geometry-final-muted);
 }
 
 .pm-boundary-row.is-applied.is-active {
-  box-shadow: inset 3px 0 0 var(--applied);
+  box-shadow: inset 3px 0 0 var(--geometry-final);
 }
 
 .pm-boundary-export-btn {
@@ -1576,12 +1692,17 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
 }
 
 .pm-selection-badge.is-applied {
-  border-color: var(--applied);
-  background: var(--applied);
+  border-color: var(--geometry-final);
+  background: var(--geometry-final);
 }
 .pm-boundary-row.is-selected .pm-selection-badge {
   background: var(--btn-primary-bg);
   border-color: var(--btn-primary-bg);
+}
+
+.pm-boundary-row.is-applied .pm-selection-badge {
+  background: var(--geometry-final);
+  border-color: var(--geometry-final);
 }
 
 .pm-boundary-row-name,
@@ -2646,8 +2767,8 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
 }
 
 .pm-workspace-boundary.is-applied {
-  fill: var(--applied-muted);
-  stroke: var(--applied);
+  fill: var(--geometry-final-muted);
+  stroke: var(--geometry-final);
   stroke-width: 2;
   stroke-dasharray: none;
   cursor: default;
@@ -2655,23 +2776,23 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
 
 .pm-workspace-boundary.is-applied.is-selected,
 .pm-workspace-boundary.is-applied.is-active {
-  fill: color-mix(in srgb, var(--applied) 22%, transparent);
-  stroke: var(--applied);
+  fill: color-mix(in srgb, var(--geometry-final) 26%, transparent);
+  stroke: var(--geometry-final);
   stroke-width: 2;
 }
 
 .pm-workspace-boundary.is-applied:hover {
-  fill: color-mix(in srgb, var(--applied) 18%, transparent);
-  stroke: var(--applied);
+  fill: color-mix(in srgb, var(--geometry-final) 22%, transparent);
+  stroke: var(--geometry-final);
 }
 
 .pm-applied-section {
-  fill: var(--applied-muted);
+  fill: var(--geometry-final-muted);
   fill-rule: evenodd;
   filter: none;
   mix-blend-mode: normal;
   opacity: 1;
-  stroke: var(--applied);
+  stroke: var(--geometry-final);
   stroke-linecap: butt;
   stroke-linejoin: miter;
   stroke-opacity: 1;

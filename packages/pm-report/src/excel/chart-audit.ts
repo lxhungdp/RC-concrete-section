@@ -47,6 +47,7 @@ import {
   steelLaw,
   type MaterialLaw
 } from './workbook-common'
+import { injectSheetCharts, type SheetChart } from './sheet-charts'
 
 export type ChartAuditSource = 'vertical' | 'fixedP'
 export type ChartAuditResistanceStage = 'design' | 'nominal'
@@ -120,7 +121,6 @@ type VerticalResultRow = {
 type FixedPResultRow = {
   kind: 'fixedP'
   index: number
-  directionId: string
   branch: number
   angleDeg: number
   lowerKey: string
@@ -458,43 +458,88 @@ const addMaterialCurve = (
  *
  * Every chart sheet publishes the same block so a reviewer who has read it once can read it on any
  * sheet; only its first column moves, which is what `start` is for.
+ *
+ * Two fields are conditional rather than fixed, because both were program bookkeeping showing
+ * through into an engineer's sheet:
+ *
+ *   `key`   the internal `id|beta|station` triple. It identified a point for the writer and told a
+ *           reader nothing, so it is gone; the station/role column is the identity a reviewer uses.
+ *   `beta`  the strain direction. It varies row to row on a fixed-P contour, where it *is* the row
+ *           identity — but a vertical meridian has exactly one, and repeating it down the sheet is
+ *           noise. `sourceBlock` therefore takes an external reference for the constant case and
+ *           drops the column, so the formulas below point at the one cell that publishes it.
  */
-const SOURCE_HEADER_LABELS = [
-  'Source key', 'Station / role', 'β strain (deg)', 'Criterion basis', 'Criterion value',
-  'zc (mm)', 'z control (mm)', 'D (mm)', 'εc', 'ε control',
-  'κ (1/mm)', 'ε₀', 'κx (1/mm)', 'κy (1/mm)',
-  'Concrete P', 'Concrete Mx', 'Concrete My', 'Steel P', 'Steel Mx', 'Steel My',
-  'Base P', 'Base Mx', 'Base My', 'P factor', 'Mx factor', 'My factor', 'Final P', 'Final Mx', 'Final My',
-  'Engine P', 'Engine Mx', 'Engine My', 'ΔP', 'ΔM', 'Calculation mode',
-  'Base engine P', 'Base engine Mx', 'Base engine My',
-  'Concrete engine P', 'Concrete engine Mx', 'Concrete engine My',
-  'Steel engine P', 'Steel engine Mx', 'Steel engine My'
-]
+const SOURCE_FIELDS = [
+  { key: 'label', title: 'Station / role', width: 30 },
+  { key: 'beta', title: 'β strain (deg)', width: 12 },
+  { key: 'criterionBasis', title: 'Criterion basis', width: 30 },
+  { key: 'criterionValue', title: 'Criterion value', width: 16 },
+  { key: 'compressionProjection', title: 'zc (mm)', width: 14 },
+  { key: 'controlProjection', title: 'z control (mm)', width: 15 },
+  { key: 'sectionDepth', title: 'D (mm)', width: 14 },
+  { key: 'compressionStrain', title: 'εc', width: 14 },
+  { key: 'controlStrain', title: 'ε control', width: 14 },
+  { key: 'curvature', title: 'κ (1/mm)', width: 14 },
+  { key: 'e0', title: 'ε₀', width: 14 },
+  { key: 'kx', title: 'κx (1/mm)', width: 15 },
+  { key: 'ky', title: 'κy (1/mm)', width: 15 },
+  { key: 'cP', title: 'Concrete P', width: 14 },
+  { key: 'cMx', title: 'Concrete Mx', width: 14 },
+  { key: 'cMy', title: 'Concrete My', width: 14 },
+  { key: 'sP', title: 'Steel P', width: 14 },
+  { key: 'sMx', title: 'Steel Mx', width: 14 },
+  { key: 'sMy', title: 'Steel My', width: 14 },
+  { key: 'bP', title: 'Base P', width: 14 },
+  { key: 'bMx', title: 'Base Mx', width: 14 },
+  { key: 'bMy', title: 'Base My', width: 14 },
+  { key: 'pFactor', title: 'P factor', width: 14 },
+  { key: 'mxFactor', title: 'Mx factor', width: 14 },
+  { key: 'myFactor', title: 'My factor', width: 14 },
+  { key: 'fP', title: 'Final P', width: 14 },
+  { key: 'fMx', title: 'Final Mx', width: 14 },
+  { key: 'fMy', title: 'Final My', width: 14 },
+  { key: 'eP', title: 'Engine P', width: 16 },
+  { key: 'eMx', title: 'Engine Mx', width: 16 },
+  { key: 'eMy', title: 'Engine My', width: 16 },
+  { key: 'dP', title: 'ΔP', width: 16 },
+  { key: 'dM', title: 'ΔM', width: 16 },
+  { key: 'mode', title: 'Calculation mode', width: 16 },
+  { key: 'baseEP', title: 'Base engine P', width: 16 },
+  { key: 'baseEMx', title: 'Base engine Mx', width: 16 },
+  { key: 'baseEMy', title: 'Base engine My', width: 16 },
+  { key: 'concEP', title: 'Concrete engine P', width: 16 },
+  { key: 'concEMx', title: 'Concrete engine Mx', width: 16 },
+  { key: 'concEMy', title: 'Concrete engine My', width: 16 },
+  { key: 'steelEP', title: 'Steel engine P', width: 16 },
+  { key: 'steelEMx', title: 'Steel engine Mx', width: 16 },
+  { key: 'steelEMy', title: 'Steel engine My', width: 16 }
+] as const
 
-const sourceCells = (start: number) => ({
-  key: start, label: start + 1, beta: start + 2, criterionBasis: start + 3, criterionValue: start + 4,
-  compressionProjection: start + 5, controlProjection: start + 6, sectionDepth: start + 7,
-  compressionStrain: start + 8, controlStrain: start + 9, curvature: start + 10,
-  e0: start + 11, kx: start + 12, ky: start + 13,
-  cP: start + 14, cMx: start + 15, cMy: start + 16,
-  sP: start + 17, sMx: start + 18, sMy: start + 19,
-  bP: start + 20, bMx: start + 21, bMy: start + 22,
-  pFactor: start + 23, mxFactor: start + 24, myFactor: start + 25,
-  fP: start + 26, fMx: start + 27, fMy: start + 28,
-  eP: start + 29, eMx: start + 30, eMy: start + 31,
-  dP: start + 32, dM: start + 33, mode: start + 34,
-  baseEP: start + 35, baseEMx: start + 36, baseEMy: start + 37,
-  concEP: start + 38, concEMx: start + 39, concEMy: start + 40,
-  steelEP: start + 41, steelEMx: start + 42, steelEMy: start + 43
-})
+type SourceField = (typeof SOURCE_FIELDS)[number]['key']
 
-type SourceCells = ReturnType<typeof sourceCells>
+/**
+ * @param start first column the block occupies
+ * @param constantBetaRef absolute reference publishing the one strain direction of the whole sheet;
+ *                        supplying it removes the per-row β column
+ */
+const sourceBlock = (start: number, externalBetaRef?: (row: number) => string) => {
+  const fields = SOURCE_FIELDS.filter((field) => field.key !== 'beta' || externalBetaRef === undefined)
+  const columns = new Map<SourceField, number>(fields.map((field, index) => [field.key, start + index]))
+  const at = (key: SourceField) => columns.get(key)!
+  return {
+    at,
+    labels: fields.map((field) => field.title),
+    widths: fields.map((field) => field.width),
+    hasBetaColumn: externalBetaRef === undefined,
+    /** Where a row's strain direction lives: its own cell, or the column already publishing it. */
+    betaRef: (row: number) => externalBetaRef?.(row) ?? `${col(at('beta'))}${row}`,
+    /** Provenance columns: written for traceability, hidden because nobody reads them by choice. */
+    hiddenFirst: at('eP'),
+    hiddenLast: at('steelEMy')
+  }
+}
 
-const SOURCE_WIDTHS = [
-  24, 30, 12, 30, 16, 14, 15, 14, 14, 14, 14, 14, 15, 15,
-  14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
-  ...Array(15).fill(16)
-]
+type SourceBlock = ReturnType<typeof sourceBlock>
 
 /** Sheet names for the shared project sheets; overridable so a workbook can host several audits. */
 export type AuditSharedSheetNames = { geometry: string; materials: string; mesh: string }
@@ -974,13 +1019,13 @@ export const prepareAuditContext = (
 
   const steelContributionFormula = (
     sourceRow: number,
-    cells: SourceCells,
+    block: SourceBlock,
     axis: 'P' | 'Mx' | 'My'
   ) => {
     if (rebarRows.length === 0) return '=0'
-    const e0 = address(cells.e0, sourceRow)
-    const kx = address(cells.kx, sourceRow)
-    const ky = address(cells.ky, sourceRow)
+    const e0 = address(block.at('e0'), sourceRow)
+    const kx = address(block.at('kx'), sourceRow)
+    const ky = address(block.at('ky'), sourceRow)
     const terms = rebarRows.map(({ bar, row }) => {
       const steel = steelForBar(bar)
       if (!steel) return '0'
@@ -1020,37 +1065,39 @@ export const prepareAuditContext = (
     sheet: import('exceljs').Worksheet,
     row: number,
     source: SourcePoint,
-    cells: SourceCells,
+    block: SourceBlock,
     label = source.label
   ) => {
     const point = source.point
     const base = source.baseLedger
     const ref = (column: number) => address(column, row)
-    const betaRef = ref(cells.beta)
-    const zcRef = ref(cells.compressionProjection)
-    const zControlRef = ref(cells.controlProjection)
-    const depthRef = ref(cells.sectionDepth)
-    const epsCRef = ref(cells.compressionStrain)
-    const epsControlRef = ref(cells.controlStrain)
-    const curvatureRef = ref(cells.curvature)
-    const e0Ref = ref(cells.e0)
-    const kxRef = ref(cells.kx)
-    const kyRef = ref(cells.ky)
+    const betaRef = block.betaRef(row)
+    const zcRef = ref(block.at('compressionProjection'))
+    const zControlRef = ref(block.at('controlProjection'))
+    const depthRef = ref(block.at('sectionDepth'))
+    const epsCRef = ref(block.at('compressionStrain'))
+    const epsControlRef = ref(block.at('controlStrain'))
+    const curvatureRef = ref(block.at('curvature'))
+    const e0Ref = ref(block.at('e0'))
+    const kxRef = ref(block.at('kx'))
+    const kyRef = ref(block.at('ky'))
 
-    sheet.getCell(row, cells.key).value = source.key
-    sheet.getCell(row, cells.label).value = label
-    sheet.getCell(row, cells.beta).value = source.betaDeg
-    sheet.getCell(row, cells.beta).numFmt = '0.000'
-    sheet.getCell(row, cells.criterionBasis).value = source.criterion.basisLabel
-    sheet.getCell(row, cells.criterionValue).value = source.criterion.value
-    sheet.getCell(row, cells.criterionValue).numFmt = '0.000000'
+    sheet.getCell(row, block.at('label')).value = label
+    if (block.hasBetaColumn) {
+      sheet.getCell(row, block.at('beta')).value = source.betaDeg
+      sheet.getCell(row, block.at('beta')).numFmt = '0.000'
+      styleInput(sheet.getCell(row, block.at('beta')))
+    }
+    sheet.getCell(row, block.at('criterionBasis')).value = source.criterion.basisLabel
+    sheet.getCell(row, block.at('criterionValue')).value = source.criterion.value
+    sheet.getCell(row, block.at('criterionValue')).numFmt = '0.000000'
     setFormula(
-      sheet.getCell(row, cells.compressionProjection),
+      sheet.getCell(row, block.at('compressionProjection')),
       `=${scalarExtreme('MAX', exteriorGeometryRows, betaRef)}`,
       source.criterion.compressionProjection
     )
     setFormula(
-      sheet.getCell(row, cells.sectionDepth),
+      sheet.getCell(row, block.at('sectionDepth')),
       `=${zcRef}-${scalarExtreme('MIN', exteriorGeometryRows, betaRef)}`,
       source.criterion.sectionDepth
     )
@@ -1059,151 +1106,149 @@ export const prepareAuditContext = (
       : `${zcRef}-${depthRef}`
     if (source.criterion.kind === 'c-over-d') {
       setFormula(
-        sheet.getCell(row, cells.controlProjection),
-        `=${zcRef}-${ref(cells.criterionValue)}*${depthRef}`,
+        sheet.getCell(row, block.at('controlProjection')),
+        `=${zcRef}-${ref(block.at('criterionValue'))}*${depthRef}`,
         source.criterion.controlProjection
       )
     } else if (source.criterion.kind === 'uniform-strain') {
-      setFormula(sheet.getCell(row, cells.controlProjection), `=${zcRef}`, source.criterion.controlProjection)
+      setFormula(sheet.getCell(row, block.at('controlProjection')), `=${zcRef}`, source.criterion.controlProjection)
     } else {
-      setFormula(sheet.getCell(row, cells.controlProjection), `=${rebarControlFormula}`, source.criterion.controlProjection)
+      setFormula(sheet.getCell(row, block.at('controlProjection')), `=${rebarControlFormula}`, source.criterion.controlProjection)
     }
 
     if (source.criterion.kind === 'uniform-strain') {
-      setFormula(sheet.getCell(row, cells.compressionStrain), `=${ref(cells.criterionValue)}`, source.criterion.compressionStrain, '0.000000')
-      setFormula(sheet.getCell(row, cells.controlStrain), `=${ref(cells.criterionValue)}`, source.criterion.controlStrain, '0.000000')
-      setFormula(sheet.getCell(row, cells.curvature), '=0', 0, '0.000000000')
-      setFormula(sheet.getCell(row, cells.e0), `=${ref(cells.criterionValue)}`, point.state.e0, '0.000000')
+      setFormula(sheet.getCell(row, block.at('compressionStrain')), `=${ref(block.at('criterionValue'))}`, source.criterion.compressionStrain, '0.000000')
+      setFormula(sheet.getCell(row, block.at('controlStrain')), `=${ref(block.at('criterionValue'))}`, source.criterion.controlStrain, '0.000000')
+      setFormula(sheet.getCell(row, block.at('curvature')), '=0', 0, '0.000000000')
+      setFormula(sheet.getCell(row, block.at('e0')), `=${ref(block.at('criterionValue'))}`, point.state.e0, '0.000000')
     } else {
       const ultimateTolerance = Math.max(1e-10, Math.abs(cParams.epsCu) * 1e-8)
       if (Math.abs(source.criterion.compressionStrain - cParams.epsCu) <= ultimateTolerance) {
-        setFormula(sheet.getCell(row, cells.compressionStrain), '=C_ecu', source.criterion.compressionStrain, '0.000000')
+        setFormula(sheet.getCell(row, block.at('compressionStrain')), '=C_ecu', source.criterion.compressionStrain, '0.000000')
       } else {
-        sheet.getCell(row, cells.compressionStrain).value = source.criterion.compressionStrain
-        sheet.getCell(row, cells.compressionStrain).numFmt = '0.000000'
-        styleInput(sheet.getCell(row, cells.compressionStrain))
+        sheet.getCell(row, block.at('compressionStrain')).value = source.criterion.compressionStrain
+        sheet.getCell(row, block.at('compressionStrain')).numFmt = '0.000000'
+        styleInput(sheet.getCell(row, block.at('compressionStrain')))
       }
       if (source.criterion.kind === 'c-over-d') {
-        setFormula(sheet.getCell(row, cells.controlStrain), '=0', 0, '0.000000')
+        setFormula(sheet.getCell(row, block.at('controlStrain')), '=0', 0, '0.000000')
       } else if (source.criterion.kind === 'steel-yield-ratio') {
         const names = source.criterion.controllingSteelId === null
           ? null
           : steelNames.get(source.criterion.controllingSteelId)
         const yieldStrain = names ? `${names.fy}/${names.Es}` : '0'
         setFormula(
-          sheet.getCell(row, cells.controlStrain),
-          `=-${ref(cells.criterionValue)}*${yieldStrain}`,
+          sheet.getCell(row, block.at('controlStrain')),
+          `=-${ref(block.at('criterionValue'))}*${yieldStrain}`,
           source.criterion.controlStrain,
           '0.000000'
         )
       } else {
         setFormula(
-          sheet.getCell(row, cells.controlStrain),
-          `=${ref(cells.criterionValue)}`,
+          sheet.getCell(row, block.at('controlStrain')),
+          `=${ref(block.at('criterionValue'))}`,
           source.criterion.controlStrain,
           '0.000000'
         )
       }
       setFormula(
-        sheet.getCell(row, cells.curvature),
+        sheet.getCell(row, block.at('curvature')),
         `=IF(ABS(${zcRef}-${zControlRef})<0.000000000001,0,(${epsCRef}-${epsControlRef})/(${zcRef}-${zControlRef}))`,
         Math.hypot(point.state.kx, point.state.ky),
         '0.000000000'
       )
       setFormula(
-        sheet.getCell(row, cells.e0),
+        sheet.getCell(row, block.at('e0')),
         `=${epsCRef}-${curvatureRef}*${zcRef}`,
         point.state.e0,
         '0.000000'
       )
     }
-    setFormula(sheet.getCell(row, cells.kx), `=${curvatureRef}*COS(RADIANS(${betaRef}))`, point.state.kx, '0.000000000')
-    setFormula(sheet.getCell(row, cells.ky), `=${curvatureRef}*SIN(RADIANS(${betaRef}))`, point.state.ky, '0.000000000')
-    sheet.getCell(row, cells.pFactor).value = source.pFactor
-    sheet.getCell(row, cells.mxFactor).value = source.mxFactor
-    sheet.getCell(row, cells.myFactor).value = source.myFactor
-    sheet.getCell(row, cells.mode).value = source.calculationMode
+    setFormula(sheet.getCell(row, block.at('kx')), `=${curvatureRef}*COS(RADIANS(${betaRef}))`, point.state.kx, '0.000000000')
+    setFormula(sheet.getCell(row, block.at('ky')), `=${curvatureRef}*SIN(RADIANS(${betaRef}))`, point.state.ky, '0.000000000')
+    sheet.getCell(row, block.at('pFactor')).value = source.pFactor
+    sheet.getCell(row, block.at('mxFactor')).value = source.mxFactor
+    sheet.getCell(row, block.at('myFactor')).value = source.myFactor
+    sheet.getCell(row, block.at('mode')).value = source.calculationMode
     for (const column of [
-      cells.key,
-      cells.label,
-      cells.criterionBasis,
-      cells.pFactor,
-      cells.mxFactor,
-      cells.myFactor,
-      cells.mode
+      block.at('label'),
+      block.at('criterionBasis'),
+      block.at('pFactor'),
+      block.at('mxFactor'),
+      block.at('myFactor'),
+      block.at('mode')
     ]) {
       styleGenerated(sheet.getCell(row, column))
     }
-    styleInput(sheet.getCell(row, cells.beta))
-    styleInput(sheet.getCell(row, cells.criterionValue))
+    styleInput(sheet.getCell(row, block.at('criterionValue')))
 
     const eps = `(${e0Ref}+${kxRef}*Mesh_Y+${kyRef}*Mesh_X)`
     const fc = concreteArray(eps)
     if (!source.usesLedgerAnchor && meshFormulaReady && fc) {
-      setFormula(sheet.getCell(row, cells.cP), `=SUMPRODUCT(${fc},Mesh_A)/1000`, kn(base.concrete.P))
-      setFormula(sheet.getCell(row, cells.cMx), `=SUMPRODUCT(${fc},Mesh_A,Mesh_Y)/1000000`, knm(base.concrete.Mx))
-      setFormula(sheet.getCell(row, cells.cMy), `=SUMPRODUCT(${fc},Mesh_A,Mesh_X)/1000000`, knm(base.concrete.My))
+      setFormula(sheet.getCell(row, block.at('cP')), `=SUMPRODUCT(${fc},Mesh_A)/1000`, kn(base.concrete.P))
+      setFormula(sheet.getCell(row, block.at('cMx')), `=SUMPRODUCT(${fc},Mesh_A,Mesh_Y)/1000000`, knm(base.concrete.Mx))
+      setFormula(sheet.getCell(row, block.at('cMy')), `=SUMPRODUCT(${fc},Mesh_A,Mesh_X)/1000000`, knm(base.concrete.My))
     } else {
-      setFormula(sheet.getCell(row, cells.cP), `=${ref(cells.concEP)}`, kn(base.concrete.P))
-      setFormula(sheet.getCell(row, cells.cMx), `=${ref(cells.concEMx)}`, knm(base.concrete.Mx))
-      setFormula(sheet.getCell(row, cells.cMy), `=${ref(cells.concEMy)}`, knm(base.concrete.My))
+      setFormula(sheet.getCell(row, block.at('cP')), `=${ref(block.at('concEP'))}`, kn(base.concrete.P))
+      setFormula(sheet.getCell(row, block.at('cMx')), `=${ref(block.at('concEMx'))}`, knm(base.concrete.Mx))
+      setFormula(sheet.getCell(row, block.at('cMy')), `=${ref(block.at('concEMy'))}`, knm(base.concrete.My))
     }
     if (!source.usesLedgerAnchor && mechanicsSupportsMeshFormula) {
-      setFormula(sheet.getCell(row, cells.sP), steelContributionFormula(row, cells, 'P'), kn(base.steel.P))
-      setFormula(sheet.getCell(row, cells.sMx), steelContributionFormula(row, cells, 'Mx'), knm(base.steel.Mx))
-      setFormula(sheet.getCell(row, cells.sMy), steelContributionFormula(row, cells, 'My'), knm(base.steel.My))
+      setFormula(sheet.getCell(row, block.at('sP')), steelContributionFormula(row, block, 'P'), kn(base.steel.P))
+      setFormula(sheet.getCell(row, block.at('sMx')), steelContributionFormula(row, block, 'Mx'), knm(base.steel.Mx))
+      setFormula(sheet.getCell(row, block.at('sMy')), steelContributionFormula(row, block, 'My'), knm(base.steel.My))
     } else {
-      setFormula(sheet.getCell(row, cells.sP), `=${ref(cells.steelEP)}`, kn(base.steel.P))
-      setFormula(sheet.getCell(row, cells.sMx), `=${ref(cells.steelEMx)}`, knm(base.steel.Mx))
-      setFormula(sheet.getCell(row, cells.sMy), `=${ref(cells.steelEMy)}`, knm(base.steel.My))
+      setFormula(sheet.getCell(row, block.at('sP')), `=${ref(block.at('steelEP'))}`, kn(base.steel.P))
+      setFormula(sheet.getCell(row, block.at('sMx')), `=${ref(block.at('steelEMx'))}`, knm(base.steel.Mx))
+      setFormula(sheet.getCell(row, block.at('sMy')), `=${ref(block.at('steelEMy'))}`, knm(base.steel.My))
     }
     setFormula(
-      sheet.getCell(row, cells.bP),
-      source.usesLedgerAnchor ? `=${ref(cells.baseEP)}` : `=${ref(cells.cP)}+${ref(cells.sP)}`,
+      sheet.getCell(row, block.at('bP')),
+      source.usesLedgerAnchor ? `=${ref(block.at('baseEP'))}` : `=${ref(block.at('cP'))}+${ref(block.at('sP'))}`,
       kn(base.total.P)
     )
     setFormula(
-      sheet.getCell(row, cells.bMx),
-      source.usesLedgerAnchor ? `=${ref(cells.baseEMx)}` : `=${ref(cells.cMx)}+${ref(cells.sMx)}`,
+      sheet.getCell(row, block.at('bMx')),
+      source.usesLedgerAnchor ? `=${ref(block.at('baseEMx'))}` : `=${ref(block.at('cMx'))}+${ref(block.at('sMx'))}`,
       knm(base.total.Mx)
     )
     setFormula(
-      sheet.getCell(row, cells.bMy),
-      source.usesLedgerAnchor ? `=${ref(cells.baseEMy)}` : `=${ref(cells.cMy)}+${ref(cells.sMy)}`,
+      sheet.getCell(row, block.at('bMy')),
+      source.usesLedgerAnchor ? `=${ref(block.at('baseEMy'))}` : `=${ref(block.at('cMy'))}+${ref(block.at('sMy'))}`,
       knm(base.total.My)
     )
     const finalP = kn(base.total.P) * source.pFactor
     const finalMx = knm(base.total.Mx) * source.mxFactor
     const finalMy = knm(base.total.My) * source.myFactor
-    setFormula(sheet.getCell(row, cells.fP), `=${ref(cells.bP)}*${ref(cells.pFactor)}`, finalP)
-    setFormula(sheet.getCell(row, cells.fMx), `=${ref(cells.bMx)}*${ref(cells.mxFactor)}`, finalMx)
-    setFormula(sheet.getCell(row, cells.fMy), `=${ref(cells.bMy)}*${ref(cells.myFactor)}`, finalMy)
-    sheet.getCell(row, cells.eP).value = kn(point.P)
-    sheet.getCell(row, cells.eMx).value = knm(point.Mx)
-    sheet.getCell(row, cells.eMy).value = knm(point.My)
+    setFormula(sheet.getCell(row, block.at('fP')), `=${ref(block.at('bP'))}*${ref(block.at('pFactor'))}`, finalP)
+    setFormula(sheet.getCell(row, block.at('fMx')), `=${ref(block.at('bMx'))}*${ref(block.at('mxFactor'))}`, finalMx)
+    setFormula(sheet.getCell(row, block.at('fMy')), `=${ref(block.at('bMy'))}*${ref(block.at('myFactor'))}`, finalMy)
+    sheet.getCell(row, block.at('eP')).value = kn(point.P)
+    sheet.getCell(row, block.at('eMx')).value = knm(point.Mx)
+    sheet.getCell(row, block.at('eMy')).value = knm(point.My)
     setFormula(
-      sheet.getCell(row, cells.dP),
-      `=${ref(cells.fP)}-${ref(cells.eP)}`,
+      sheet.getCell(row, block.at('dP')),
+      `=${ref(block.at('fP'))}-${ref(block.at('eP'))}`,
       finalP - kn(point.P),
       '0.000000'
     )
     setFormula(
-      sheet.getCell(row, cells.dM),
-      `=SQRT((${ref(cells.fMx)}-${ref(cells.eMx)})^2+(${ref(cells.fMy)}-${ref(cells.eMy)})^2)`,
+      sheet.getCell(row, block.at('dM')),
+      `=SQRT((${ref(block.at('fMx'))}-${ref(block.at('eMx'))})^2+(${ref(block.at('fMy'))}-${ref(block.at('eMy'))})^2)`,
       Math.hypot(finalMx - knm(point.Mx), finalMy - knm(point.My)),
       '0.000000'
     )
-    sheet.getCell(row, cells.baseEP).value = kn(base.total.P)
-    sheet.getCell(row, cells.baseEMx).value = knm(base.total.Mx)
-    sheet.getCell(row, cells.baseEMy).value = knm(base.total.My)
-    sheet.getCell(row, cells.concEP).value = kn(base.concrete.P)
-    sheet.getCell(row, cells.concEMx).value = knm(base.concrete.Mx)
-    sheet.getCell(row, cells.concEMy).value = knm(base.concrete.My)
-    sheet.getCell(row, cells.steelEP).value = kn(base.steel.P)
-    sheet.getCell(row, cells.steelEMx).value = knm(base.steel.Mx)
-    sheet.getCell(row, cells.steelEMy).value = knm(base.steel.My)
-    for (let column = cells.eP; column <= cells.steelEMy; column++) {
-      if ([cells.dP, cells.dM].includes(column)) continue
+    sheet.getCell(row, block.at('baseEP')).value = kn(base.total.P)
+    sheet.getCell(row, block.at('baseEMx')).value = knm(base.total.Mx)
+    sheet.getCell(row, block.at('baseEMy')).value = knm(base.total.My)
+    sheet.getCell(row, block.at('concEP')).value = kn(base.concrete.P)
+    sheet.getCell(row, block.at('concEMx')).value = knm(base.concrete.Mx)
+    sheet.getCell(row, block.at('concEMy')).value = knm(base.concrete.My)
+    sheet.getCell(row, block.at('steelEP')).value = kn(base.steel.P)
+    sheet.getCell(row, block.at('steelEMx')).value = knm(base.steel.Mx)
+    sheet.getCell(row, block.at('steelEMy')).value = knm(base.steel.My)
+    for (let column = block.at('eP'); column <= block.at('steelEMy'); column++) {
+      if ([block.at('dP'), block.at('dM')].includes(column)) continue
       styleGenerated(sheet.getCell(row, column))
     }
   }
@@ -1243,34 +1288,80 @@ export const prepareAuditContext = (
 
 export type AuditContext = ReturnType<typeof prepareAuditContext>
 
-/** Chart sheets share this layout so the source block always starts on the same rows. */
-const MAIN_HEADER_ROW = 7
-const SOURCE_START_ROW = 8
+/**
+ * Sheet head: one stacked label/value block, then the legend, then the table.
+ *
+ * It used to be three blocks side by side — identity at B/C, caller context at E/F, sheet values at
+ * H/I — which put loose numbers above the middle of the table and left the columns under them
+ * unusable. Stacking everything at the left and pushing the table down instead means the head reads
+ * top to bottom, and no column exists only to hold a header value.
+ */
+const IDENTITY_FIRST_ROW = 3
+const IDENTITY_LABEL_SPAN = 2
+const IDENTITY_VALUE_COLUMN = IDENTITY_LABEL_SPAN + 1
+const IDENTITY_VALUE_SPAN = 2
+
+type IdentityEntry = {
+  label: string
+  value: string | number
+  /** Legend colour; `generated` when omitted. */
+  role?: 'generated' | 'input' | 'regenerate'
+  numFmt?: string
+}
+
+/** Row of the table header when `count` identity rows are reserved, legend row included. */
+const headerRowFor = (count: number) => IDENTITY_FIRST_ROW + count + 1
+
+const writeIdentityBlock = (
+  sheet: import('exceljs').Worksheet,
+  entries: readonly IdentityEntry[]
+) => {
+  entries.forEach((entry, index) => {
+    const row = IDENTITY_FIRST_ROW + index
+    sheet.mergeCells(row, 1, row, IDENTITY_LABEL_SPAN)
+    sheet.getCell(row, 1).value = entry.label
+    sheet.mergeCells(row, IDENTITY_VALUE_COLUMN, row, IDENTITY_VALUE_COLUMN + IDENTITY_VALUE_SPAN - 1)
+    const cell = sheet.getCell(row, IDENTITY_VALUE_COLUMN)
+    cell.value = entry.value
+    if (entry.numFmt) cell.numFmt = entry.numFmt
+    cell.alignment = { vertical: 'middle' }
+    if (entry.role === 'input') styleInput(cell)
+    else if (entry.role === 'regenerate') styleRegenerate(cell)
+    else styleGenerated(cell)
+  })
+  return entries.map((_entry, index) => `$${col(IDENTITY_VALUE_COLUMN)}$${IDENTITY_FIRST_ROW + index}`)
+}
 
 const zebraResultRows = (
   sheet: import('exceljs').Worksheet,
+  headerRow: number,
   rowCount: number,
   visibleColumns: number
 ) => {
-  for (let row = MAIN_HEADER_ROW + 1; row <= MAIN_HEADER_ROW + rowCount; row++) {
-    if (row % 2 !== 0) continue
+  for (let row = headerRow + 1; row <= headerRow + rowCount; row++) {
+    if ((row - headerRow) % 2 !== 0) continue
     for (let column = 1; column <= visibleColumns; column++) {
       sheet.getCell(row, column).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }
     }
   }
 }
 
-/** Extra label/value pairs written beside the chart identity block, from column E of row 3. */
-const writeContextRows = (
-  sheet: import('exceljs').Worksheet,
-  rows: ReadonlyArray<readonly [string, string | number]>
-) => {
-  rows.forEach(([label, value], index) => {
-    sheet.getCell(3 + index, 5).value = label
-    sheet.getCell(3 + index, 6).value = value
-    styleGenerated(sheet.getCell(3 + index, 6))
-  })
+/** Freeze under the table header, keeping the grid-line choice the caller already made. */
+const freezeUnder = (sheet: import('exceljs').Worksheet, headerRow: number, xSplit = 0) => {
+  sheet.views = [{
+    state: 'frozen',
+    xSplit,
+    ySplit: headerRow,
+    showGridLines: sheet.views[0]?.showGridLines ?? true
+  }]
 }
+
+/**
+ * The checked load point in the chart's own axes, so a curve sheet can plot the demand on its curve.
+ * `x`/`y` rather than named actions because the two sheets plot different pairs: (Mθ, P) on the
+ * meridian, (Mux, Muy) on the contour.
+ */
+export type DemandMarker = { x: number; y: number; xLabel: string; yLabel: string; label: string }
 
 export type VerticalAuditSheetOptions = {
   sheet: import('exceljs').Worksheet
@@ -1279,6 +1370,8 @@ export type VerticalAuditSheetOptions = {
   exactDirectionCurve?: ExactDirectionCurve | null
   titleText?: string
   contextRows?: ReadonlyArray<readonly [string, string | number]>
+  /** Load point on this meridian; plotted on the chart and published above the table. */
+  demand?: DemandMarker | null
 }
 
 /**
@@ -1313,50 +1406,128 @@ export const writeVerticalAuditSheet = (context: AuditContext, options: Vertical
     })
   })
 
-  reportTitle(sheet, options.titleText ?? 'FORMULA-DRIVEN CHART AUDIT', 34)
-  sheet.getCell('B2').value = context.mechanicsSupportsMeshFormula
-    ? 'Displayed values are formulas. Each physical station criterion determines ε₀, κx and κy; resistance is integrated from Materials and Mesh. Geometric axial-cap rows are explicitly anchored to their projected engine ledger.'
-    : 'Equivalent-block resultants use the engine total-ledger anchor because this mechanics has no concrete integration mesh. Use the calculation-mode column to identify the provenance.'
-  sheet.getCell('B2').font = { italic: true, color: { argb: NOTE_COLOR } }
-  sheet.mergeCells('B2:AH2')
-  sheet.getRow(2).height = 24
-  sheet.getCell('B3').value = 'Chart source'
-  sheet.getCell('C3').value = 'Vertical'
-  sheet.getCell('B4').value = 'Resistance stage'
-  sheet.getCell('C4').value = context.resistanceStage
-  sheet.getCell('B5').value = 'Selected beta (deg)'
-  sheet.getCell('C5').value = (options.exactDirectionCurve?.beta ?? options.sliceAngleDeg * Math.PI / 180) * 180 / Math.PI
-  styleGenerated(sheet.getCell('C3'))
-  styleGenerated(sheet.getCell('C4'))
-  styleRegenerate(sheet.getCell('C5'))
-  if (options.contextRows) writeContextRows(sheet, options.contextRows)
-  addLegend(sheet, 6)
+  /**
+   * The direction the stations on this sheet were actually solved in.
+   *
+   * It is not always the selected angle: without an exact direction curve the meridian snaps to the
+   * nearest sampled direction, and it is that direction the strain planes below belong to. One
+   * meridian has exactly one of them, so it is published once in the head and every row's formulas
+   * read it, instead of a column repeating the same number down the sheet. States with no curvature
+   * — the two poles — carry no direction at all, and their resultants do not depend on which is used.
+   */
+  const strainBetaDeg = [...sources.values()]
+    .filter((source) => Math.hypot(source.point.state.kx, source.point.state.ky) > 1e-14)
+    .map((source) => source.betaDeg)[0] ?? selected.betaDeg
+  const identity: IdentityEntry[] = [
+    { label: 'Chart source', value: 'Vertical' },
+    { label: 'Resistance stage', value: context.resistanceStage },
+    {
+      label: 'Selected β — M projection (deg)',
+      value: (options.exactDirectionCurve?.beta ?? options.sliceAngleDeg * Math.PI / 180) * 180 / Math.PI,
+      role: 'regenerate',
+      numFmt: '#,##0.0000'
+    },
+    {
+      label: 'Strain direction β — station formulas (deg)',
+      value: strainBetaDeg,
+      role: 'input',
+      numFmt: '#,##0.0000'
+    },
+    ...(options.contextRows ?? []).map(([label, value]) => ({ label, value })),
+    ...(options.demand
+      ? [
+          { label: options.demand.xLabel, value: options.demand.x, role: 'input' as const, numFmt: '#,##0.000' },
+          { label: options.demand.yLabel, value: options.demand.y, role: 'input' as const, numFmt: '#,##0.000' }
+        ]
+      : [])
+  ]
+  const headerRow = headerRowFor(identity.length)
+  const firstDataRow = headerRow + 1
+  const identityRef = (index: number) => `$${col(IDENTITY_VALUE_COLUMN)}$${IDENTITY_FIRST_ROW + index}`
+  // Index 2 is the selected β the M column is projected on; index 3 is the strain direction the
+  // station formulas are built in. They coincide for a requested meridian and differ for a snapped one.
+  const projectionRef = identityRef(2)
+  const block = sourceBlock(5, () => identityRef(3))
 
-  styleHeader(sheet, MAIN_HEADER_ROW, ['#', 'Resolved criterion', 'P (kN)', 'M (kN·m)'], 1)
-  styleHeader(sheet, MAIN_HEADER_ROW, SOURCE_HEADER_LABELS, 7)
-  const cells = sourceCells(7)
+  reportTitle(sheet, options.titleText ?? 'FORMULA-DRIVEN CHART AUDIT', block.at('fMy'))
+  sheet.getCell('A2').value = (context.mechanicsSupportsMeshFormula
+    ? 'Displayed values are formulas. Each physical station criterion determines ε₀, κx and κy; resistance is integrated from Materials and Mesh. Geometric axial-cap rows are explicitly anchored to their projected engine ledger.'
+    : 'Equivalent-block resultants use the engine total-ledger anchor because this mechanics has no concrete integration mesh. Use the calculation-mode column to identify the provenance.') +
+    ' Two angles are published above: the selected β the M column is projected on, and the strain direction the stations were solved in — the same for a requested meridian, and the nearest sampled direction when the surface has no meridian at the selected angle.'
+  sheet.getCell('A2').font = { italic: true, color: { argb: NOTE_COLOR } }
+  sheet.mergeCells(2, 1, 2, block.at('fMy'))
+  sheet.getRow(2).height = 24
+  const identityCells = writeIdentityBlock(sheet, identity)
+  const demandCells = options.demand
+    ? { x: identityCells[identityCells.length - 2], y: identityCells[identityCells.length - 1] }
+    : null
+  addLegend(sheet, headerRow - 1)
+
+  styleHeader(sheet, headerRow, ['#', 'Resolved criterion', 'P (kN)', 'M (kN·m)'], 1)
+  styleHeader(sheet, headerRow, block.labels, 5)
   ;[...sources.values()].forEach((source, index) => {
-    source.row = SOURCE_START_ROW + index
-    context.writeSourceCalculationRow(sheet, source.row, source, cells)
+    source.row = firstDataRow + index
+    context.writeSourceCalculationRow(sheet, source.row, source, block)
   })
   mainRows.forEach((row, index) => {
-    const excelRow = SOURCE_START_ROW + index
+    const excelRow = firstDataRow + index
     const source = sources.get(row.sourceKey)!
     sheet.getCell(excelRow, 1).value = row.index
     sheet.getCell(excelRow, 2).value = row.criterion
-    setFormula(sheet.getCell(excelRow, 3), `=$${col(cells.fP)}$${source.row}`, kn(row.engineP), '#,##0.0')
+    setFormula(sheet.getCell(excelRow, 3), `=$${col(block.at('fP'))}$${source.row}`, kn(row.engineP), '#,##0.0')
     setFormula(
       sheet.getCell(excelRow, 4),
-      `=$${col(cells.fMx)}$${source.row}*COS(RADIANS($C$5))+$${col(cells.fMy)}$${source.row}*SIN(RADIANS($C$5))`,
+      `=$${col(block.at('fMx'))}$${source.row}*COS(RADIANS(${projectionRef}))+$${col(block.at('fMy'))}$${source.row}*SIN(RADIANS(${projectionRef}))`,
       knm(row.engineM),
       '#,##0.00'
     )
   })
-  sheet.columns = [8, 32, 16, 16, 14, 14, ...SOURCE_WIDTHS].map((width) => ({ width }))
-  for (let column = cells.eP; column <= cells.steelEMy; column++) sheet.getColumn(column).hidden = true
-  sheet.autoFilter = `A${MAIN_HEADER_ROW}:D${MAIN_HEADER_ROW + mainRows.length}`
-  zebraResultRows(sheet, mainRows.length, 4)
-  return { rows: mainRows.length, betaDeg: selected.betaDeg }
+  sheet.columns = [8, 32, 16, 16, ...block.widths].map((width) => ({ width }))
+  for (let column = block.hiddenFirst; column <= block.hiddenLast; column++) {
+    sheet.getColumn(column).hidden = true
+  }
+  sheet.autoFilter = `A${headerRow}:D${headerRow + mainRows.length}`
+  zebraResultRows(sheet, headerRow, mainRows.length, 4)
+  freezeUnder(sheet, headerRow)
+
+  const lastRow = firstDataRow + Math.max(mainRows.length, sources.size) - 1
+  const chart: SheetChart | null = mainRows.length < 2 ? null : {
+    sheet: sheet.name,
+    title: `P–M meridian at β = ${selected.betaDeg.toFixed(2)}°`,
+    xTitle: 'M (kN·m)',
+    yTitle: 'P (kN)',
+    anchor: { column: 0, row: lastRow + 2 },
+    widthPx: 620,
+    heightPx: 420,
+    series: [
+      {
+        x: {
+          name: context.resistanceStage === 'design' ? 'Design' : 'Nominal',
+          ref: `$D$${firstDataRow}:$D$${firstDataRow + mainRows.length - 1}`,
+          values: mainRows.map((row) => knm(row.engineM))
+        },
+        y: {
+          name: 'P',
+          ref: `$C$${firstDataRow}:$C$${firstDataRow + mainRows.length - 1}`,
+          values: mainRows.map((row) => kn(row.engineP))
+        },
+        color: '1D4ED8',
+        line: 'solid',
+        marker: 'circle'
+      },
+      ...(demandCells && options.demand
+        ? [{
+            x: { name: options.demand.label, ref: demandCells.x, values: [options.demand.x] },
+            y: { name: options.demand.yLabel, ref: demandCells.y, values: [options.demand.y] },
+            color: 'B91C1C',
+            line: 'none' as const,
+            marker: 'diamond' as const,
+            markerSize: 8
+          }]
+        : [])
+    ]
+  }
+  return { rows: mainRows.length, betaDeg: selected.betaDeg, chart }
 }
 
 export type FixedPAuditSheetOptions = {
@@ -1371,7 +1542,43 @@ export type FixedPAuditSheetOptions = {
   lowerTitleText?: string
   upperTitleText?: string
   contextRows?: ReadonlyArray<readonly [string, string | number]>
+  /** Load point (Mux, Muy) at this axial force; plotted on the contour chart. */
+  demand?: DemandMarker | null
 }
+
+/**
+ * Result-sheet columns.
+ *
+ * The direction ID is gone: it was `fixedP-b23.400-branch1`, a string the program used to key its
+ * own rows, and every part of it that means anything to a reader is already in the β and Branch
+ * columns beside it. The bracket sheets lost it for the same reason, and lost their duplicate
+ * strain-β column too — the contour direction that identifies the row is the angle the source
+ * formulas now read.
+ */
+const FIXED_P_COLUMNS = {
+  index: 1,
+  angle: 2,
+  branch: 3,
+  lowerCriterion: 4,
+  lowerValue: 5,
+  lowerP: 6,
+  upperCriterion: 7,
+  upperValue: 8,
+  upperP: 9,
+  selectedP: 10,
+  ratio: 11,
+  status: 12,
+  mx: 13,
+  my: 14,
+  engineMx: 15,
+  engineMy: 16,
+  deltaM: 17
+} as const
+
+/** Column 1 is the contour direction on a bracket sheet, and the source block reads it. */
+const BRACKET_ANGLE_COLUMN = 1
+const BRACKET_BRANCH_COLUMN = 2
+const BRACKET_BLOCK_START = 3
 
 /**
  * The fixed-P Mx-My contour: the station bracketing P from below, the one from above, and the
@@ -1397,7 +1604,6 @@ export const writeFixedPAuditSheets = (context: AuditContext, options: FixedPAud
     const angleKey = angleDeg.toFixed(6)
     const branch = (branchesByAngle.get(angleKey) ?? 0) + 1
     branchesByAngle.set(angleKey, branch)
-    const directionId = `fixedP-b${angleDeg.toFixed(3)}-branch${branch}`
     const lower = sourceFor(
       bracket.below,
       `P below — ${bracket.below.stationId ?? 'resolved station'}`,
@@ -1413,7 +1619,6 @@ export const writeFixedPAuditSheets = (context: AuditContext, options: FixedPAud
     mainRows.push({
       kind: 'fixedP',
       index: index + 1,
-      directionId,
       branch,
       angleDeg,
       lowerKey: lower.key,
@@ -1423,82 +1628,112 @@ export const writeFixedPAuditSheets = (context: AuditContext, options: FixedPAud
     })
   })
 
-  reportTitle(result, options.titleText ?? 'FORMULA-DRIVEN CHART AUDIT', 18)
+  const lastResultColumn = FIXED_P_COLUMNS.deltaM
+  reportTitle(result, options.titleText ?? 'FORMULA-DRIVEN CHART AUDIT', lastResultColumn)
   result.getCell('B2').value =
-    'One result row is interpolated from the matching P-below and P-above rows. Direction ID and Branch preserve every distinct Pmax point; calculation mode distinguishes strain formulas from geometric or block ledger anchors.'
-  result.getCell('B2').font = { italic: true, color: { argb: NOTE_COLOR } }
-  result.mergeCells('B2:R2')
+    'One result row is interpolated from the matching P-below and P-above rows. β and Branch identify the row and preserve every distinct Pmax point; calculation mode on the bracket sheets distinguishes strain formulas from geometric or block ledger anchors.'
+  result.getCell('A2').font = { italic: true, color: { argb: NOTE_COLOR } }
+  result.mergeCells(2, 1, 2, lastResultColumn)
   result.getRow(2).height = 24
-  result.getCell('B3').value = 'Chart source'
-  result.getCell('C3').value = 'Fixed-P'
-  result.getCell('B4').value = 'Resistance stage'
-  result.getCell('C4').value = context.resistanceStage
-  result.getCell('B5').value = 'Selected P (kN)'
-  result.getCell('C5').value = kn(options.fixedP)
-  styleGenerated(result.getCell('C3'))
-  styleGenerated(result.getCell('C4'))
-  styleInput(result.getCell('C5'))
-  context.defineName(`'${result.name}'!$C$5`, options.selectedPName)
-  if (options.contextRows) writeContextRows(result, options.contextRows)
-  addLegend(result, 6)
 
-  const cells = sourceCells(4)
+  const block = sourceBlock(
+    BRACKET_BLOCK_START,
+    (row) => `${col(BRACKET_ANGLE_COLUMN)}${row}`
+  )
+  const callerContext = options.contextRows ?? []
+  const resultIdentity: IdentityEntry[] = [
+    { label: 'Chart source', value: 'Fixed-P' },
+    { label: 'Resistance stage', value: context.resistanceStage },
+    { label: 'Selected P (kN)', value: kn(options.fixedP), role: 'input', numFmt: '#,##0.000' },
+    ...callerContext.map(([label, value]) => ({ label, value })),
+    ...(options.demand
+      ? [
+          { label: options.demand.xLabel, value: options.demand.x, role: 'input' as const, numFmt: '#,##0.000' },
+          { label: options.demand.yLabel, value: options.demand.y, role: 'input' as const, numFmt: '#,##0.000' }
+        ]
+      : [])
+  ]
+  const bracketIdentity = (role: string): IdentityEntry[] => [
+    { label: 'Chart source', value: 'Fixed-P bracket' },
+    { label: 'Resistance stage', value: context.resistanceStage },
+    { label: 'Selected P (kN)', value: kn(options.fixedP), numFmt: '#,##0.000' },
+    { label: 'Bracket role', value: role },
+    ...callerContext.map(([label, value]) => ({ label, value }))
+  ]
+  /**
+   * One header row for all three sheets.
+   *
+   * The result sheet reads each bracket station out of the same row number on its own sheet, so the
+   * three tables have to start together however many head rows any one of them needs.
+   */
+  const identityRows = Math.max(resultIdentity.length, bracketIdentity('').length)
+  const headerRow = headerRowFor(identityRows)
+  const firstDataRow = headerRow + 1
+  const identityRef = (index: number) => `$${col(IDENTITY_VALUE_COLUMN)}$${IDENTITY_FIRST_ROW + index}`
+
+  result.getCell('A2').value =
+    'One result row is interpolated from the matching P-below and P-above rows. β and Branch identify the row and preserve every distinct Pmax point; calculation mode on the bracket sheets distinguishes strain formulas from geometric or block ledger anchors.'
+  const resultCells = writeIdentityBlock(result, resultIdentity)
+  context.defineName(`'${result.name}'!${identityRef(2)}`, options.selectedPName)
+  const demandCells = options.demand
+    ? { x: resultCells[resultCells.length - 2], y: resultCells[resultCells.length - 1] }
+    : null
+  addLegend(result, headerRow - 1)
+
   const setupBracketSheet = (
     sheet: import('exceljs').Worksheet,
     title: string,
     role: string
   ) => {
-    reportTitle(sheet, title, cells.steelEMy)
-    sheet.getCell('B2').value =
-      'Each row is one direction-specific bracket station. Physical stress-strain rows use Materials/Mesh formulas; geometric axial-cap and equivalent-block rows are explicitly labelled ledger anchors.'
-    sheet.getCell('B2').font = { italic: true, color: { argb: NOTE_COLOR } }
-    sheet.mergeCells(`B2:${col(cells.steelEMy)}2`)
-    sheet.getCell('B3').value = 'Selected P (kN)'
-    setFormula(sheet.getCell('C3'), `=${options.selectedPName}`, kn(options.fixedP), '#,##0.0')
-    sheet.getCell('D3').value = 'Bracket role'
-    sheet.getCell('E3').value = role
-    styleGenerated(sheet.getCell('E3'))
-    addLegend(sheet, 6)
-    styleHeader(
-      sheet,
-      MAIN_HEADER_ROW,
-      ['Direction ID', 'Branch', 'Chart β (deg)', ...SOURCE_HEADER_LABELS],
-      1
-    )
-    sheet.columns = [26, 10, 14, ...SOURCE_WIDTHS].map((width) => ({ width }))
-    for (let column = cells.eP; column <= cells.steelEMy; column++) sheet.getColumn(column).hidden = true
-    sheet.autoFilter = `A${MAIN_HEADER_ROW}:${col(cells.fMy)}${MAIN_HEADER_ROW + mainRows.length}`
+    reportTitle(sheet, title, block.at('fMy'))
+    sheet.getCell('A2').value =
+      'Each row is one direction-specific bracket station, identified by the contour direction β in column A — the same angle the strain formulas on this row read. Physical stress-strain rows use Materials/Mesh formulas; geometric axial-cap and equivalent-block rows are explicitly labelled ledger anchors.'
+    sheet.getCell('A2').font = { italic: true, color: { argb: NOTE_COLOR } }
+    sheet.mergeCells(2, 1, 2, block.at('fMy'))
+    sheet.getRow(2).height = 24
+    writeIdentityBlock(sheet, bracketIdentity(role))
+    // The selected P is the result sheet's own cell, so editing it there moves both brackets.
+    setFormula(sheet.getCell(IDENTITY_FIRST_ROW + 2, IDENTITY_VALUE_COLUMN), `=${options.selectedPName}`, kn(options.fixedP), '#,##0.000')
+    addLegend(sheet, headerRow - 1)
+    styleHeader(sheet, headerRow, ['β (deg)', 'Branch', ...block.labels], 1)
+    sheet.columns = [14, 10, ...block.widths].map((width) => ({ width }))
+    for (let column = block.hiddenFirst; column <= block.hiddenLast; column++) {
+      sheet.getColumn(column).hidden = true
+    }
+    sheet.autoFilter = `A${headerRow}:${col(block.at('fMy'))}${headerRow + mainRows.length}`
+    freezeUnder(sheet, headerRow, BRACKET_BRANCH_COLUMN)
   }
   setupBracketSheet(fixedPLower, options.lowerTitleText ?? 'FIXED-P LOWER BRACKETING STATIONS', 'P below or exact')
   setupBracketSheet(fixedPUpper, options.upperTitleText ?? 'FIXED-P UPPER BRACKETING STATIONS', 'P above or exact')
 
   const resultHeaders = [
-    '#', 'Direction ID', 'Branch', 'β (deg)',
+    '#', 'β (deg)', 'Branch',
     'Lower criterion', 'Lower value', 'P lower (kN)',
     'Upper criterion', 'Upper value', 'P upper (kN)',
     'Selected P (kN)', 'Ratio t', 'Status', 'Mx (kN·m)', 'My (kN·m)',
     'Engine Mx', 'Engine My', 'ΔM'
   ]
-  styleHeader(result, MAIN_HEADER_ROW, resultHeaders, 1)
+  styleHeader(result, headerRow, resultHeaders, 1)
   const lowerName = fixedPLower.name
   const upperName = fixedPUpper.name
   const sheetFormula = (sheetName: string, column: number, row: number) =>
     `='${sheetName}'!$${col(column)}$${row}`
+  const at = (column: number, row: number) => `${col(column)}${row}`
 
   mainRows.forEach((row, index) => {
-    const excelRow = SOURCE_START_ROW + index
+    const excelRow = firstDataRow + index
     const lower = sources.get(row.lowerKey)!
     const upper = sources.get(row.upperKey)!
     for (const [sheet, source, label] of [
       [fixedPLower, lower, `P below — ${lower.point.stationId ?? 'resolved station'}`],
       [fixedPUpper, upper, `P above — ${upper.point.stationId ?? 'resolved station'}`]
     ] as const) {
-      sheet.getCell(excelRow, 1).value = row.directionId
-      sheet.getCell(excelRow, 2).value = row.branch
-      sheet.getCell(excelRow, 3).value = row.angleDeg
-      sheet.getCell(excelRow, 3).numFmt = '0.000'
-      for (const column of [1, 2, 3]) styleGenerated(sheet.getCell(excelRow, column))
-      context.writeSourceCalculationRow(sheet, excelRow, source, cells, label)
+      sheet.getCell(excelRow, BRACKET_ANGLE_COLUMN).value = row.angleDeg
+      sheet.getCell(excelRow, BRACKET_ANGLE_COLUMN).numFmt = '0.000'
+      sheet.getCell(excelRow, BRACKET_BRANCH_COLUMN).value = row.branch
+      styleInput(sheet.getCell(excelRow, BRACKET_ANGLE_COLUMN))
+      styleGenerated(sheet.getCell(excelRow, BRACKET_BRANCH_COLUMN))
+      context.writeSourceCalculationRow(sheet, excelRow, source, block, label)
     }
 
     const lowerP = kn(lower.point.P)
@@ -1507,107 +1742,165 @@ export const writeFixedPAuditSheets = (context: AuditContext, options: FixedPAud
     const exact = Math.abs(upperP - lowerP) < 1e-12
     const ratio = exact ? 0 : (selectedP - lowerP) / (upperP - lowerP)
     const status = exact ? 'Exact station' : 'Interpolated'
-    result.getCell(excelRow, 1).value = row.index
-    result.getCell(excelRow, 2).value = row.directionId
-    result.getCell(excelRow, 3).value = row.branch
-    result.getCell(excelRow, 4).value = row.angleDeg
-    result.getCell(excelRow, 4).numFmt = '0.000'
-    for (const column of [1, 2, 3, 4]) styleGenerated(result.getCell(excelRow, column))
-    setFormula(result.getCell(excelRow, 5), sheetFormula(lowerName, cells.criterionBasis, excelRow), lower.criterion.basisLabel, '@')
-    setFormula(result.getCell(excelRow, 6), sheetFormula(lowerName, cells.criterionValue, excelRow), lower.criterion.value, '0.000000')
-    setFormula(result.getCell(excelRow, 7), sheetFormula(lowerName, cells.fP, excelRow), lowerP, '#,##0.0')
-    setFormula(result.getCell(excelRow, 8), sheetFormula(upperName, cells.criterionBasis, excelRow), upper.criterion.basisLabel, '@')
-    setFormula(result.getCell(excelRow, 9), sheetFormula(upperName, cells.criterionValue, excelRow), upper.criterion.value, '0.000000')
-    setFormula(result.getCell(excelRow, 10), sheetFormula(upperName, cells.fP, excelRow), upperP, '#,##0.0')
-    setFormula(result.getCell(excelRow, 11), `=${options.selectedPName}`, selectedP, '#,##0.0')
+    const lowerPRef = at(FIXED_P_COLUMNS.lowerP, excelRow)
+    const upperPRef = at(FIXED_P_COLUMNS.upperP, excelRow)
+    const selectedPRef = at(FIXED_P_COLUMNS.selectedP, excelRow)
+    const ratioRef = at(FIXED_P_COLUMNS.ratio, excelRow)
+    result.getCell(excelRow, FIXED_P_COLUMNS.index).value = row.index
+    result.getCell(excelRow, FIXED_P_COLUMNS.angle).value = row.angleDeg
+    result.getCell(excelRow, FIXED_P_COLUMNS.angle).numFmt = '0.000'
+    result.getCell(excelRow, FIXED_P_COLUMNS.branch).value = row.branch
+    for (const column of [FIXED_P_COLUMNS.index, FIXED_P_COLUMNS.angle, FIXED_P_COLUMNS.branch]) {
+      styleGenerated(result.getCell(excelRow, column))
+    }
+    setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.lowerCriterion), sheetFormula(lowerName, block.at('criterionBasis'), excelRow), lower.criterion.basisLabel, '@')
+    setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.lowerValue), sheetFormula(lowerName, block.at('criterionValue'), excelRow), lower.criterion.value, '0.000000')
+    setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.lowerP), sheetFormula(lowerName, block.at('fP'), excelRow), lowerP, '#,##0.0')
+    setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.upperCriterion), sheetFormula(upperName, block.at('criterionBasis'), excelRow), upper.criterion.basisLabel, '@')
+    setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.upperValue), sheetFormula(upperName, block.at('criterionValue'), excelRow), upper.criterion.value, '0.000000')
+    setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.upperP), sheetFormula(upperName, block.at('fP'), excelRow), upperP, '#,##0.0')
+    setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.selectedP), `=${options.selectedPName}`, selectedP, '#,##0.0')
     setFormula(
-      result.getCell(excelRow, 12),
-      `=IF(ABS(J${excelRow}-G${excelRow})<0.000000001,0,(K${excelRow}-G${excelRow})/(J${excelRow}-G${excelRow}))`,
+      result.getCell(excelRow, FIXED_P_COLUMNS.ratio),
+      `=IF(ABS(${upperPRef}-${lowerPRef})<0.000000001,0,(${selectedPRef}-${lowerPRef})/(${upperPRef}-${lowerPRef}))`,
       ratio,
       '0.000000'
     )
     setFormula(
-      result.getCell(excelRow, 13),
-      `=IF(ABS(J${excelRow}-G${excelRow})<0.000000001,"Exact station",IF(AND(K${excelRow}>=G${excelRow}-0.000001,K${excelRow}<=J${excelRow}+0.000001),"Interpolated","Outside range"))`,
+      result.getCell(excelRow, FIXED_P_COLUMNS.status),
+      `=IF(ABS(${upperPRef}-${lowerPRef})<0.000000001,"Exact station",IF(AND(${selectedPRef}>=${lowerPRef}-0.000001,${selectedPRef}<=${upperPRef}+0.000001),"Interpolated","Outside range"))`,
       status,
       '@'
     )
+    for (const [column, field, value] of [
+      [FIXED_P_COLUMNS.mx, block.at('fMx'), row.engineMx],
+      [FIXED_P_COLUMNS.my, block.at('fMy'), row.engineMy]
+    ] as const) {
+      setFormula(
+        result.getCell(excelRow, column),
+        `='${lowerName}'!$${col(field)}$${excelRow}+${ratioRef}*('${upperName}'!$${col(field)}$${excelRow}-'${lowerName}'!$${col(field)}$${excelRow})`,
+        knm(value),
+        '#,##0.00'
+      )
+    }
+    result.getCell(excelRow, FIXED_P_COLUMNS.engineMx).value = knm(row.engineMx)
+    result.getCell(excelRow, FIXED_P_COLUMNS.engineMy).value = knm(row.engineMy)
+    styleGenerated(result.getCell(excelRow, FIXED_P_COLUMNS.engineMx))
+    styleGenerated(result.getCell(excelRow, FIXED_P_COLUMNS.engineMy))
     setFormula(
-      result.getCell(excelRow, 14),
-      `='${lowerName}'!$${col(cells.fMx)}$${excelRow}+L${excelRow}*('${upperName}'!$${col(cells.fMx)}$${excelRow}-'${lowerName}'!$${col(cells.fMx)}$${excelRow})`,
-      knm(row.engineMx),
-      '#,##0.00'
-    )
-    setFormula(
-      result.getCell(excelRow, 15),
-      `='${lowerName}'!$${col(cells.fMy)}$${excelRow}+L${excelRow}*('${upperName}'!$${col(cells.fMy)}$${excelRow}-'${lowerName}'!$${col(cells.fMy)}$${excelRow})`,
-      knm(row.engineMy),
-      '#,##0.00'
-    )
-    result.getCell(excelRow, 16).value = knm(row.engineMx)
-    result.getCell(excelRow, 17).value = knm(row.engineMy)
-    styleGenerated(result.getCell(excelRow, 16))
-    styleGenerated(result.getCell(excelRow, 17))
-    setFormula(
-      result.getCell(excelRow, 18),
-      `=SQRT((N${excelRow}-P${excelRow})^2+(O${excelRow}-Q${excelRow})^2)`,
+      result.getCell(excelRow, FIXED_P_COLUMNS.deltaM),
+      `=SQRT((${at(FIXED_P_COLUMNS.mx, excelRow)}-${at(FIXED_P_COLUMNS.engineMx, excelRow)})^2+` +
+        `(${at(FIXED_P_COLUMNS.my, excelRow)}-${at(FIXED_P_COLUMNS.engineMy, excelRow)})^2)`,
       0,
       '0.000000'
     )
   })
-  result.columns = [8, 28, 10, 12, 30, 14, 16, 30, 14, 16, 16, 13, 18, 16, 16, 16, 16, 14]
+  result.columns = [8, 12, 10, 30, 14, 16, 30, 14, 16, 16, 13, 18, 16, 16, 16, 16, 14]
     .map((width) => ({ width }))
-  for (let column = 16; column <= 18; column++) result.getColumn(column).hidden = true
+  for (let column = FIXED_P_COLUMNS.engineMx; column <= FIXED_P_COLUMNS.deltaM; column++) {
+    result.getColumn(column).hidden = true
+  }
   if (mainRows.length > 0) {
-    result.autoFilter = `A${MAIN_HEADER_ROW}:O${MAIN_HEADER_ROW + mainRows.length}`
+    result.autoFilter = `A${headerRow}:${col(FIXED_P_COLUMNS.my)}${headerRow + mainRows.length}`
   } else {
     // An empty cut is a result: the selected axial force is outside what this surface reaches.
     // Saying so beats three sheets of bare headers that read like a failed export.
-    const message = result.getCell(SOURCE_START_ROW, 1)
+    const message = result.getCell(firstDataRow, 1)
     message.value = `The ${context.resistanceStage} surface has no intersection at P = ${kn(options.fixedP).toFixed(1)} kN, so this contour has no points. Compare the selected P with the axial bounds of the surface.`
     message.font = { italic: true, color: { argb: NOTE_COLOR } }
     message.alignment = { wrapText: true, vertical: 'top' }
-    result.mergeCells(SOURCE_START_ROW, 1, SOURCE_START_ROW, 15)
-    result.getRow(SOURCE_START_ROW).height = 28
+    result.mergeCells(firstDataRow, 1, firstDataRow, FIXED_P_COLUMNS.my)
+    result.getRow(firstDataRow).height = 28
   }
-  zebraResultRows(result, mainRows.length, 15)
-  return { rows: mainRows.length }
+  zebraResultRows(result, headerRow, mainRows.length, FIXED_P_COLUMNS.my)
+  freezeUnder(result, headerRow)
+
+  const chart: SheetChart | null = mainRows.length < 3 ? null : {
+    sheet: result.name,
+    title: `Mx–My contour at P = ${kn(options.fixedP).toFixed(1)} kN`,
+    xTitle: 'Mx (kN·m)',
+    yTitle: 'My (kN·m)',
+    anchor: { column: 0, row: firstDataRow + mainRows.length + 1 },
+    widthPx: 560,
+    heightPx: 520,
+    series: [
+      {
+        x: {
+          name: context.resistanceStage === 'design' ? 'Design contour' : 'Nominal contour',
+          ref: `$${col(FIXED_P_COLUMNS.mx)}$${firstDataRow}:$${col(FIXED_P_COLUMNS.mx)}$${firstDataRow + mainRows.length - 1}`,
+          values: mainRows.map((row) => knm(row.engineMx))
+        },
+        y: {
+          name: 'My',
+          ref: `$${col(FIXED_P_COLUMNS.my)}$${firstDataRow}:$${col(FIXED_P_COLUMNS.my)}$${firstDataRow + mainRows.length - 1}`,
+          values: mainRows.map((row) => knm(row.engineMy))
+        },
+        color: '1D4ED8',
+        line: 'solid',
+        marker: 'none'
+      },
+      ...(demandCells && options.demand
+        ? [{
+            x: { name: options.demand.label, ref: demandCells.x, values: [options.demand.x] },
+            y: { name: options.demand.yLabel, ref: demandCells.y, values: [options.demand.y] },
+            color: 'B91C1C',
+            line: 'none' as const,
+            marker: 'diamond' as const,
+            markerSize: 8
+          }]
+        : [])
+    ]
+  }
+  return { rows: mainRows.length, chart }
 }
 
-export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) => {
+/**
+ * Sheets plus the charts that belong on them.
+ *
+ * Charts are not part of the exceljs workbook — they are written into the finished package — so a
+ * caller that wants them has to carry the specs alongside. `buildChartAuditWorkbook` keeps the
+ * plain-workbook shape for callers that only inspect cells.
+ */
+export const buildChartAuditWorkbookParts = async (input: ChartAuditWorkbookInput) => {
   const workbook = await createWorkbook()
   const defineName = createDefineName(workbook)
   const context = prepareAuditContext(workbook, defineName, input)
+  const charts: SheetChart[] = []
 
   if (input.source === 'vertical') {
-    const result = hideGridLines(workbook.addWorksheet('Result', { views: [{ state: 'frozen', ySplit: 7 }], properties: { tabColor: { argb: 'FFEA580C' } } }))
-    writeVerticalAuditSheet(context, {
+    const result = hideGridLines(workbook.addWorksheet('Result', { properties: { tabColor: { argb: 'FFEA580C' } } }))
+    const written = writeVerticalAuditSheet(context, {
       sheet: result,
       sliceAngleDeg: input.sliceAngleDeg,
       exactDirectionCurve: input.exactDirectionCurve
     })
+    if (written.chart) charts.push(written.chart)
   } else {
-    const lower = hideGridLines(workbook.addWorksheet('FixedP_Lower', { views: [{ state: 'frozen', xSplit: 3, ySplit: 7 }], properties: { tabColor: { argb: 'FF2563EB' } } }))
-    const upper = hideGridLines(workbook.addWorksheet('FixedP_Upper', { views: [{ state: 'frozen', xSplit: 3, ySplit: 7 }], properties: { tabColor: { argb: 'FF7C3AED' } } }))
-    const result = hideGridLines(workbook.addWorksheet('Result', { views: [{ state: 'frozen', ySplit: 7 }], properties: { tabColor: { argb: 'FFEA580C' } } }))
-    writeFixedPAuditSheets(context, {
+    const lower = hideGridLines(workbook.addWorksheet('FixedP_Lower', { properties: { tabColor: { argb: 'FF2563EB' } } }))
+    const upper = hideGridLines(workbook.addWorksheet('FixedP_Upper', { properties: { tabColor: { argb: 'FF7C3AED' } } }))
+    const result = hideGridLines(workbook.addWorksheet('Result', { properties: { tabColor: { argb: 'FFEA580C' } } }))
+    const written = writeFixedPAuditSheets(context, {
       lower,
       upper,
       result,
       fixedP: input.fixedP,
       selectedPName: 'Selected_P'
     })
+    if (written.chart) charts.push(written.chart)
   }
 
   workbook.calcProperties.fullCalcOnLoad = true
-  return workbook
+  return { workbook, charts }
 }
 
+export const buildChartAuditWorkbook = async (input: ChartAuditWorkbookInput) =>
+  (await buildChartAuditWorkbookParts(input)).workbook
+
 export const buildChartAuditWorkbookBytes = async (input: ChartAuditWorkbookInput): Promise<Uint8Array> => {
-  const workbook = await buildChartAuditWorkbook(input)
+  const { workbook, charts } = await buildChartAuditWorkbookParts(input)
   const buffer = await workbook.xlsx.writeBuffer()
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer as ArrayBuffer)
   const copy = new Uint8Array(bytes.byteLength)
   copy.set(bytes)
-  return copy
+  return injectSheetCharts(copy, charts)
 }
