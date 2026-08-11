@@ -130,6 +130,11 @@ Use the smallest sufficient combination of:
 Each test names its requirement ID and oracle. Test tolerances are justified from the quantity and
 scale; they are not loosened until a failure disappears.
 
+CI runs `npm run check:security` and rejects every high or critical production advisory. The current
+ExcelJS 4.4 dependency retains a moderate `uuid` advisory for buffer-based v3/v5/v6 calls; this
+application does not call those APIs, and npm's proposed automatic fix is an unsafe ExcelJS
+downgrade. That exception remains documented and must be reevaluated on every ExcelJS update.
+
 ## 6. Review checklist
 
 Reviewers ask:

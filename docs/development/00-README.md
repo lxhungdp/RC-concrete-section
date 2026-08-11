@@ -57,9 +57,10 @@ Do not bypass stages. Do not send editor state directly to the kernel or compile
 persistence.
 
 This is the target accepted-product pipeline. The current preview implements persisted definitions,
-validation/preparation, numerical surfaces/checks, UI view models, a stress-strain result workbook,
-and stress-strain mesh Excel/DXF. It does not yet implement immutable `AcceptedResult`, a shared
-format-neutral `ReportModel`, an equivalent-block result workbook, or PDF release.
+validation/preparation, numerical surfaces/checks, UI view models, a shared format-neutral
+`ReportModel`, formula-audited result workbooks for both mechanics, stress-strain mesh Excel/DXF,
+and a deterministic watermarked preview PDF. It does not yet implement immutable `AcceptedResult`,
+result identity/signature, or released-report eligibility and approval.
 
 ## 4. Definition Of Done
 

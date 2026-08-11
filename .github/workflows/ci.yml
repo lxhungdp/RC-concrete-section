@@ -28,6 +28,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Production dependency audit
+        run: npm run check:security
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -52,6 +55,9 @@ jobs:
       - name: Equivalent-block Excel verification
         run: npm run test:excel-block
 
+      - name: Demand-check workbook and PDF-model agreement
+        run: npm run test:demand-check
+
       - name: PDF report verification
         run: npm run test:pdf-report
 
@@ -69,3 +75,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Web bundle budgets
+        run: npm run check:web-bundle

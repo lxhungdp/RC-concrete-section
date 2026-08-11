@@ -5168,3 +5168,62 @@ body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {
   border-radius: 0;
   background: transparent;
 }
+/* A route-level failure must remain visibly distinct from an engineering calculation rejection. */
+.pm-application-error {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: #f4f6f8;
+  color: #17202a;
+}
+
+.pm-application-error > section {
+  width: min(620px, 100%);
+  padding: 28px;
+  border: 1px solid #cbd2d9;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgb(15 23 42 / 10%);
+}
+
+.pm-application-error h1 {
+  margin: 6px 0 12px;
+  font-size: 24px;
+}
+
+.pm-application-error-kicker {
+  margin: 0;
+  color: #9f2d20;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pm-application-error code {
+  display: block;
+  margin-top: 16px;
+}
+
+.pm-application-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.pm-application-error-actions button {
+  padding: 9px 14px;
+  border: 1px solid #87929d;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pm-application-error-actions button:first-child {
+  border-color: #28527a;
+  background: #28527a;
+  color: #fff;
+}

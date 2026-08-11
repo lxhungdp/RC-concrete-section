@@ -209,6 +209,11 @@ modebar controls, click events, and filled 3D surfaces. Current preview implemen
   Plotly traces is unnecessary overhead;
 - app-level range sliders for quickly changing fixed `P` and the slice rotation angle.
 
+`npm run check:web-bundle` is the production bundle gate. It measures gzip bytes for the initial
+route, Plotly, the analysis worker and Excel, plus raw Brotli WASM bytes. The checked-in ceilings are
+budgets, not targets: a deliberate increase requires an implementation review and a budget change
+in the same patch. This gate changes no engineering input, result, or fingerprint.
+
 The section-mesh chart is available only to the stress-strain route. Equivalent-block projects show
 an exact-clipping explanation instead because they have no concrete integration mesh. The chart is
 an inspector, not a duplicate of the static section drawing. It supports
@@ -275,11 +280,12 @@ Results are keyed by input hash and result ID, not by the currently selected row
 
 ## 6. Report package
 
-This section is target architecture. The current `@pm/report` package generates the stress-strain
-calculation workbook and stress-strain mesh Excel/DXF audit files from preview inputs. It does not
-yet consume an `AcceptedResult`, build a format-neutral `ReportModel`, render PDF, or export an
-equivalent-block calculation ledger. The UI explicitly blocks the latter instead of passing a block
-state into the fiber workbook.
+This section separates current preview behavior from the target released-report architecture. The
+current `@pm/report` package builds one format-neutral `ReportModel`, formula-audited calculation
+workbooks for both mechanics, stress-strain mesh Excel/DXF audit files, and a deterministic
+watermarked preview PDF. These artifacts are still built from preview inputs: the package does not
+yet consume an immutable `AcceptedResult`, validate released-report eligibility, or attach a result
+identity/signature and approval record.
 
 The report pipeline is deliberately downstream:
 

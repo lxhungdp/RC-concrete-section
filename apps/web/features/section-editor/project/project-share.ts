@@ -1,4 +1,5 @@
 import { createDefaultProjectInformation, type PmProjectDocument } from '@pm/project'
+import { importProjectShareBrotli } from '#project-share-brotli'
 
 export const PROJECT_SHARE_HASH_KEY = 'project'
 
@@ -99,7 +100,7 @@ const isBrotliWasmApi = (value: unknown): value is BrotliWasmApi =>
   typeof (value as Partial<BrotliWasmApi>).DecompressStream === 'function'
 
 const resolveBrotliWasm = async (): Promise<BrotliWasmApi> => {
-  let candidate: unknown = await import('brotli-wasm')
+  let candidate: unknown = await importProjectShareBrotli()
   for (let depth = 0; depth < 6; depth += 1) {
     if (isBrotliWasmApi(candidate)) return candidate
     if (

@@ -3,6 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
+  "imports": {
+    "#project-share-brotli": {
+      "browser": "./features/section-editor/project/project-share-brotli.browser.ts",
+      "node": "./features/section-editor/project/project-share-brotli.node.ts",
+      "default": "./features/section-editor/project/project-share-brotli.browser.ts"
+    }
+  },
   "scripts": {
     "dev": "next dev --webpack -p 3001",
     "start": "next start -p 3001",
@@ -22,7 +29,7 @@
     "@structures/cad-drawing": "0.1.0",
     "brotli-wasm": "3.0.1",
     "lucide-react": "1.25.0",
-    "next": "16.2.10",
+    "next": "16.3.0",
     "plotly.js-dist-min": "3.7.0",
     "react": "19.2.7",
     "react-dom": "19.2.7"

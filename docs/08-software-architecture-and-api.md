@@ -210,9 +210,10 @@ on unit tests alone.
 
 ## 11. Target reporting boundary
 
-The current `@pm/report` output is a preview stress-strain calculation workbook plus stress-strain
-mesh Excel/DXF. It does not consume a certified result DTO, does not render PDF, and does not yet
-provide an equivalent-block ledger workbook.
+The current `@pm/report` output includes formula-audited result workbooks for both mechanics,
+stress-strain mesh Excel/DXF, a shared format-neutral `ReportModel`, and a deterministic watermarked
+preview PDF. It does not consume an immutable accepted-result DTO or provide released-report
+eligibility, result identity/signature, and approval metadata.
 
 Reports consume only certified result DTOs and must show:
 

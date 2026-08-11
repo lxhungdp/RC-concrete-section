@@ -37,7 +37,7 @@ export type SectionResultsSummary = {
   directionCount: number
   stationCount: number
   samplingMode: 'fixed' | 'adaptive'
-  /** Adaptive-refinement evidence, or null when the surface has none yet. */
+  /** Measured interpolation evidence, or null when this sampling mode did not take probes. */
   refinement: {
     tolerance: number
     maxRelative: number
@@ -221,11 +221,19 @@ export function SectionResultsPanel({
           <strong>{integer(summary.surfacePoints)}</strong>
           {summary.refinement ? (
             <>
-              <span>Interp. error</span>
-              <strong className={summary.refinement.withinTolerance ? '' : 'is-warning'}>
-                {`${(summary.refinement.maxRelative * 100).toFixed(3)}% / ${(
-                  summary.refinement.tolerance * 100
-                ).toFixed(2)}%`}
+              <span>{summary.samplingMode === 'fixed' ? 'Measured interp. error' : 'Interp. error / tolerance'}</span>
+              <strong
+                className={
+                  summary.samplingMode === 'fixed' || !summary.refinement.withinTolerance
+                    ? 'is-warning'
+                    : ''
+                }
+              >
+                {summary.samplingMode === 'fixed'
+                  ? `${(summary.refinement.maxRelative * 100).toFixed(3)}% · screening`
+                  : `${(summary.refinement.maxRelative * 100).toFixed(3)}% / ${(
+                      summary.refinement.tolerance * 100
+                    ).toFixed(2)}%`}
               </strong>
             </>
           ) : null}

@@ -1,50 +1,18 @@
-import {
-  AnalysisInputError,
-  analysisInputKey,
-  buildExactDirectionCurveFromPrepared,
-  buildDesignPreviewSurfaceFromPrepared,
-  buildSectionFieldMapFromPrepared,
-  checkLoadcaseUtilizationFromSurface,
-  checkLoadcasesUtilizationFromSurface,
-  codeAdjustedDemandOfCheck,
-  prepareAnalysis,
-  sliceActiveDesignPContour,
-  solveInversePreviewFromPrepared,
-  type InversePreviewResult,
-  type ExactDirectionCurve,
-  type LoadcaseQuickCheckResult,
-  type PreparedAnalysis,
-  type PreviewSurface,
-  type SectionFieldMap
+import type {
+  InversePreviewResult,
+  ExactDirectionCurve,
+  LoadcaseQuickCheckResult,
+  PreviewSurface,
+  SectionFieldMap
 } from '@pm/analysis'
-import {
-  buildEquivalentBlockPreviewSurfaceFromPrepared,
-  buildEquivalentBlockExactDirectionCurveFromPrepared,
-  buildEquivalentBlockFieldMapFromPrepared,
-  prepareBlockAnalysis,
-  solveEquivalentBlockDemandFromPrepared,
-  type PreparedBlockAnalysis
-} from '@pm/analysis-equivalent-block'
-import {
-  buildResistanceMaterialSets,
-  createDefaultDesignBasis,
-  type DesignBasis
-} from '@pm/design'
-import {
-  buildChartAuditWorkbookBytes,
-  buildDemandCheckWorkbookBytes,
-  exportEquivalentBlockWorkbook,
-  exportMeshAuditDxf,
-  exportMeshAuditWorkbook,
-  exportSectionWorkbook,
-  type DemandCheckExcelInput,
-  type EquivalentBlockExcelInput,
-  type ExcelExportInput,
-  type ChartAuditWorkbookInput
+import type {
+  DemandCheckExcelInput,
+  EquivalentBlockExcelInput,
+  ExcelExportInput,
+  ChartAuditWorkbookInput
 } from '@pm/report'
 import type { ReportInput } from '@pm/report/report-model'
-import { analysisMeshKernelOptions, isEquivalentBlockAnalysisOptions, type AnalysisOptions } from '@pm/project'
-import { packSectionMeshView, type SectionMeshView } from './section-mesh-view'
+import type { SectionMeshView } from './section-mesh-view'
 import type {
   AnalysisWorkerJob,
   AnalysisWorkerRequest,
@@ -82,47 +50,7 @@ let sequence = 0
 let workerGeneration = 0
 const pending = new Map<string, PendingJob>()
 const workerSurfaceHandles = new WeakMap<PreviewSurface, { surfaceId: string; generation: number }>()
-let fallbackPreparedCache: { key: string; value: PreparedAnalysis } | null = null
-let fallbackBlockCache: { key: string; value: PreparedBlockAnalysis } | null = null
-let pdfUnicodeFontPromise: Promise<Uint8Array> | null = null
-
-const pdfUnicodeFont = () => {
-  pdfUnicodeFontPromise ??= fetch('/fonts/PMReportUnicode-Regular.ttf').then(async (response) => {
-    if (!response.ok) throw new Error(`Unicode PDF font could not be loaded (${response.status}).`)
-    return new Uint8Array(await response.arrayBuffer())
-  })
-  return pdfUnicodeFontPromise
-}
-
-const fallbackPreparedFor = (
-  payload: Pick<BuildSurfacePayload, 'section' | 'rebars' | 'materialStore'> & { analysisOptions: AnalysisOptions } & {
-    designBasis?: DesignBasis
-  }
-) => {
-  const meshOptions = analysisMeshKernelOptions(payload.analysisOptions)
-  const designBasis = payload.designBasis ?? createDefaultDesignBasis(payload.materialStore)
-  const stateMaterials = buildResistanceMaterialSets(payload.materialStore, designBasis).stateMaterials
-  const key = `${analysisInputKey(payload.section, payload.rebars, stateMaterials, meshOptions)}:${JSON.stringify(designBasis)}`
-  if (fallbackPreparedCache?.key === key) return fallbackPreparedCache.value
-  const value = prepareAnalysis(payload.section, payload.rebars, stateMaterials, meshOptions)
-  fallbackPreparedCache = { key, value }
-  return value
-}
-
-const fallbackBlockFor = (payload: Pick<BuildSurfacePayload,
-  'calculationProfileId' | 'section' | 'rebars' | 'materialStore' | 'designBasis'>) => {
-  const key = JSON.stringify(payload)
-  if (fallbackBlockCache?.key === key) return fallbackBlockCache.value
-  const value = prepareBlockAnalysis(
-    payload.calculationProfileId,
-    payload.section,
-    payload.rebars,
-    payload.materialStore,
-    payload.designBasis
-  )
-  fallbackBlockCache = { key, value }
-  return value
-}
+const loadFallback = () => import('./fallback')
 
 const nextJobId = (type: AnalysisWorkerJob['type']) => `${type}-${Date.now()}-${++sequence}`
 
@@ -222,24 +150,7 @@ const runWorkerOrFallback = async <T>(
 export const buildPreviewSurfaceAsync = (payload: BuildSurfacePayload, signal?: AbortSignal): Promise<PreviewSurface> =>
   runWorkerOrFallback<BuildSurfaceWorkerResult>(
     { type: 'buildSurface', payload },
-    () => {
-      if (isEquivalentBlockAnalysisOptions(payload.analysisOptions)) {
-        const result = buildEquivalentBlockPreviewSurfaceFromPrepared(
-          fallbackBlockFor(payload),
-          payload.analysisOptions
-        )
-        result.calculationProfileId = payload.calculationProfileId
-        return { surfaceId: 'main-thread-fallback', surface: result }
-      }
-      const result = buildDesignPreviewSurfaceFromPrepared(
-        fallbackPreparedFor({ ...payload, analysisOptions: payload.analysisOptions }),
-        payload.materialStore,
-        payload.designBasis,
-        payload.analysisOptions
-      )
-      result.calculationProfileId = payload.calculationProfileId
-      return { surfaceId: 'main-thread-fallback', surface: result }
-    },
+    async () => (await loadFallback()).buildPreviewSurfaceFallback(payload),
     signal
   ).then((result) => {
     if (result.surfaceId !== 'main-thread-fallback') {
@@ -263,22 +174,7 @@ export const buildExactDirectionCurveAsync = (
 ): Promise<ExactDirectionCurve> =>
   runWorkerOrFallback<ExactDirectionCurve>(
     { type: 'buildExactDirection', payload },
-    () => {
-      if (isEquivalentBlockAnalysisOptions(payload.analysisOptions)) {
-        return buildEquivalentBlockExactDirectionCurveFromPrepared(
-          fallbackBlockFor(payload),
-          payload.analysisOptions,
-          payload.beta
-        )
-      }
-      return buildExactDirectionCurveFromPrepared(
-        fallbackPreparedFor({ ...payload, analysisOptions: payload.analysisOptions }),
-        payload.materialStore,
-        payload.designBasis,
-        payload.analysisOptions,
-        payload.beta
-      )
-    },
+    async () => (await loadFallback()).buildExactDirectionFallback(payload),
     signal
   )
 
@@ -291,7 +187,7 @@ export const checkLoadcasesAsync = (
       type: 'checkLoadcases',
       payload: { ...workerSurfaceReference(payload.surface), loadcases: payload.loadcases }
     },
-    () => checkLoadcasesUtilizationFromSurface(payload.surface, payload.loadcases),
+    async () => (await loadFallback()).checkLoadcasesFallback(payload),
     signal
   )
 
@@ -309,31 +205,7 @@ export const checkLoadcaseAsync = (
         analysisOptions: payload.surface.analysisOptions
       }
     },
-    () => {
-      if (isEquivalentBlockAnalysisOptions(payload.surface.analysisOptions)) {
-        return solveEquivalentBlockDemandFromPrepared(
-          fallbackBlockFor(payload),
-          payload.surface.analysisOptions,
-          payload.loadcase
-        )
-      }
-      const contour = sliceActiveDesignPContour(payload.surface, payload.loadcase.P)
-      const designCheck = checkLoadcaseUtilizationFromSurface(payload.surface, payload.loadcase)
-      const inverse = solveInversePreviewFromPrepared(
-        fallbackPreparedFor({ ...payload, analysisOptions: payload.surface.analysisOptions }),
-        payload.loadcase,
-        contour,
-        codeAdjustedDemandOfCheck(designCheck)
-      )
-      return {
-        ...inverse,
-        utilization: designCheck.proportionalUtilization,
-        proportionalUtilization: designCheck.proportionalUtilization,
-        fixedPUtilization: designCheck.fixedPUtilization,
-        designCapacityPoint: designCheck.capacityPoint,
-        resistance: designCheck.resistance
-      }
-    },
+    async () => (await loadFallback()).checkLoadcaseFallback(payload),
     signal
   )
 
@@ -343,16 +215,7 @@ export const buildSectionFieldMapAsync = (
 ): Promise<SectionFieldMap> =>
   runWorkerOrFallback<SectionFieldMap>(
     { type: 'buildFieldMap', payload },
-    () => {
-      if (isEquivalentBlockAnalysisOptions(payload.analysisOptions)) {
-        if (!payload.blockState) throw new Error('The axial-cap face has no unique equivalent-block field state.')
-        return buildEquivalentBlockFieldMapFromPrepared(fallbackBlockFor(payload), payload.blockState)
-      }
-      return buildSectionFieldMapFromPrepared(
-        fallbackPreparedFor({ ...payload, analysisOptions: payload.analysisOptions }),
-        payload.state
-      )
-    },
+    async () => (await loadFallback()).buildSectionFieldMapFallback(payload),
     signal
   )
 
@@ -362,7 +225,7 @@ export const buildSectionMeshAsync = (
 ): Promise<SectionMeshView> =>
   runWorkerOrFallback<SectionMeshView>(
     { type: 'buildSectionMesh', payload },
-    () => packSectionMeshView(fallbackPreparedFor(payload).mesh),
+    async () => (await loadFallback()).buildSectionMeshFallback(payload),
     signal
   )
 
@@ -373,21 +236,7 @@ const exportMeshAuditAsync = async (
 ) => {
   const result = await runWorkerOrFallback<ArrayBuffer>(
     { type, payload },
-    async () => {
-      const mesh = fallbackPreparedFor(payload).mesh
-      const input = {
-        projectName: payload.projectName,
-        sectionName: payload.sectionName,
-        section: payload.section,
-        rebars: payload.rebars,
-        mesh
-      }
-      const blob =
-        type === 'exportMeshExcel'
-          ? await exportMeshAuditWorkbook(input)
-          : exportMeshAuditDxf(input)
-      return blob.arrayBuffer()
-    },
+    async () => (await loadFallback()).exportMeshAuditFallback(type, payload),
     signal
   )
   return new Blob([result], {
@@ -411,10 +260,7 @@ export const exportMeshAuditDxfAsync = (
 export const exportSectionWorkbookAsync = async (payload: ExcelExportInput, signal?: AbortSignal): Promise<Blob> => {
   const result = await runWorkerOrFallback<ArrayBuffer>(
     { type: 'exportExcel', payload },
-    async () => {
-      const blob = await exportSectionWorkbook(payload)
-      return blob.arrayBuffer()
-    },
+    async () => (await loadFallback()).exportSectionWorkbookFallback(payload),
     signal
   )
   return new Blob([result], {
@@ -428,10 +274,7 @@ export const exportEquivalentBlockWorkbookAsync = async (
 ): Promise<Blob> => {
   const result = await runWorkerOrFallback<ArrayBuffer>(
     { type: 'exportBlockExcel', payload },
-    async () => {
-      const blob = await exportEquivalentBlockWorkbook(payload)
-      return blob.arrayBuffer()
-    },
+    async () => (await loadFallback()).exportEquivalentBlockWorkbookFallback(payload),
     signal
   )
   return new Blob([result], {
@@ -449,10 +292,7 @@ export const exportChartAuditWorkbookAsync = async (
       type: 'exportChartAudit',
       payload: { ...rest, ...workerSurfaceReference(surface) }
     },
-    async () => {
-      const bytes = await buildChartAuditWorkbookBytes(payload)
-      return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
-    },
+    async () => (await loadFallback()).exportChartAuditWorkbookFallback(payload),
     signal
   )
   return new Blob([result], {
@@ -470,10 +310,7 @@ export const exportDemandCheckWorkbookAsync = async (
       type: 'exportDemandCheck',
       payload: { ...rest, ...workerSurfaceReference(surface) }
     },
-    async () => {
-      const bytes = await buildDemandCheckWorkbookBytes(payload)
-      return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
-    },
+    async () => (await loadFallback()).exportDemandCheckWorkbookFallback(payload),
     signal
   )
   return new Blob([result], {
@@ -487,23 +324,8 @@ export const exportColumnReportPdfAsync = async (
 ): Promise<{ blob: Blob; fileName: string }> => {
   const result = await runWorkerOrFallback<{ bytes: ArrayBuffer; fileName: string }>(
     { type: 'exportPdfReport', payload },
-    async () => {
-      const { buildColumnReportPdf } = await import('@pm/report/pdf')
-      const report = buildColumnReportPdf(payload, {
-        unicodeFontBytes: await pdfUnicodeFont()
-      })
-      return {
-        bytes: report.bytes.buffer.slice(
-          report.bytes.byteOffset,
-          report.bytes.byteOffset + report.bytes.byteLength
-        ) as ArrayBuffer,
-        fileName: report.fileName
-      }
-    },
+    async () => (await loadFallback()).exportColumnReportPdfFallback(payload),
     signal
   )
   return { blob: new Blob([result.bytes], { type: 'application/pdf' }), fileName: result.fileName }
 }
-
-/** Re-exported so callers can present a kernel input rejection instead of a generic failure. */
-export { AnalysisInputError }

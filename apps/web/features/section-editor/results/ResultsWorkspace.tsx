@@ -58,6 +58,29 @@ import {
 type ResultsViewMode = 'overview' | 'loadcase'
 type ResultsTheme = 'light' | 'dark'
 
+const DeferredChart = ({ primary, children }: { primary: boolean; children: ReactNode }) => {
+  const [ready, setReady] = useState(primary)
+
+  useEffect(() => {
+    if (primary || ready) {
+      if (primary && !ready) setReady(true)
+      return
+    }
+    const browserWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number
+      cancelIdleCallback?: (id: number) => void
+    }
+    if (browserWindow.requestIdleCallback) {
+      const id = browserWindow.requestIdleCallback(() => setReady(true), { timeout: 500 })
+      return () => browserWindow.cancelIdleCallback?.(id)
+    }
+    const id = window.setTimeout(() => setReady(true), 120)
+    return () => window.clearTimeout(id)
+  }, [primary, ready])
+
+  return ready ? children : <div className="pm-results-plot-placeholder">Preparing chart…</div>
+}
+
 
 type Props = {
   theme: ResultsTheme
@@ -1724,7 +1747,9 @@ export function ResultsWorkspace({
           {controls ? <div className="pm-results-plot-actions">{controls}</div> : null}
         </div>
         <div className="pm-results-plot-body">
-          <div className="pm-results-plot-canvas">{children}</div>
+          <div className="pm-results-plot-canvas">
+            <DeferredChart primary={primary}>{children}</DeferredChart>
+          </div>
           {footer}
         </div>
       </article>

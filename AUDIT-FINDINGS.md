@@ -1,5 +1,11 @@
 # Independent Audit Findings — pm-column-designer
 
+> [!WARNING]
+> **Historical audit — superseded.** This document is evidence for commit `c1fe77f` only. The current
+> implementation has resolved or materially changed several findings below. Do not use this file as
+> a current release assessment; rerun and record a new commit-scoped audit instead of editing the
+> historical claims in place.
+
 **Audit date:** 2026-08-07
 **Commit audited:** `c1fe77f` ("fixed error") on branch `dev/22points`, working tree clean apart from this file.
 
