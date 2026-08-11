@@ -4,7 +4,7 @@
   "private": true,
   "license": "MIT",
   "description": "Modular web platform for reinforced concrete column P-M-M section design.",
-  "homepage": "https://pmcurve.vercel.app/",
+  "homepage": "https://pmdesigner.vercel.app/",
   "scripts": {
     "dev": "npm run dev -w @pm/web",
     "start": "npm run start -w @pm/web",

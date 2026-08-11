@@ -232,7 +232,7 @@ export const CALCULATION_PROFILES: readonly CalculationProfile[] = [
       label: 'EN 1992 parabolic–rectangular law',
       materialModelType: 'ec2-parabolic-rectangular',
       source: 'code-default'
-    }],
+    }, USER_CURVE],
     materialStandard: 'EC2',
     designProfileId: 'en-1992-1-1-2004-default',
     resistanceFormat: 'designMaterialReevaluation',

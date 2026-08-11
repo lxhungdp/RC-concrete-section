@@ -202,6 +202,31 @@ test('a user curve is a concrete-model choice under a Code, not a Custom standar
   assert.equal(calculationProfile(profileId).code, 'KDS')
 })
 
+test('an EN project can document and round-trip an explicit UMD concrete curve', () => {
+  const profileId = 'en-1992-1-1-2004-stress-strain' as const
+  const materials = applyConcreteModelToMaterials(
+    applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId),
+    profileId,
+    'user-stress-strain-curve'
+  )
+  const design = createDesignBasisForCalculationProfile(profileId)
+  design.modified = true
+  design.materialModelModified = true
+  design.overrideReason = 'Use the explicit UMD design-level concrete curve supplied with the verification case.'
+
+  assert.equal(materials.concrete.standard, 'EC2')
+  assert.equal(activeConcreteModelId(profileId, materials.concrete), 'user-stress-strain-curve')
+
+  const document = createProjectDocument({
+    calculationProfileId: profileId,
+    geometry: createEmptyGeometryInput({ id: 1, name: 'UMD explicit curve' }),
+    materials,
+    design
+  })
+  const parsed = parseProjectDocument(document)
+  assert.equal(parsed.ok, true, parsed.ok ? 'UMD-style EN project parsed' : parsed.error)
+})
+
 test('EN DesignBasis is the canonical owner of partial factors even if a material snapshot is stale', () => {
   const profileId = 'en-1992-1-1-2004-stress-strain' as const
   const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)

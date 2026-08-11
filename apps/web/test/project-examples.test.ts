@@ -22,6 +22,58 @@ test('every project-menu example is a valid version-1 project document', () => {
   }
 })
 
+test('the P16 UMD project replaces the KDS equivalent-stress rectangle example', () => {
+  assert.equal(PROJECT_EXAMPLES.some((example) => example.id === 'kds-eq-rectangle'), false)
+  const p16 = PROJECT_EXAMPLES.find((example) => example.id === 'en-umd-p16')
+  assert.ok(p16)
+  const parsed = parseProjectDocument(p16.document)
+  assert.equal(parsed.ok, true, parsed.ok ? 'P16 UMD example parsed' : parsed.error)
+  if (!parsed.ok) return
+  assert.equal(parsed.document.inputs.calculationProfileId, 'en-1992-1-1-2004-stress-strain')
+  assert.equal(parsed.document.inputs.geometry.rebars.length, 408)
+  assert.equal(parsed.document.inputs.loadings.combinations.length, 6)
+})
+
+test('ENVICO is a KDS stress-strain project-menu example', () => {
+  const envico = PROJECT_EXAMPLES.find((example) => example.id === 'kds-stress-strain-envico')
+  assert.ok(envico)
+  assert.equal(envico.label, 'ENVICO')
+  const parsed = parseProjectDocument(envico.document)
+  assert.equal(parsed.ok, true, parsed.ok ? 'ENVICO example parsed' : parsed.error)
+  if (!parsed.ok) return
+  assert.deepEqual(parsed.warnings, [])
+  assert.equal(parsed.document.meta.name, 'ENVICO')
+  assert.equal(parsed.document.inputs.calculationProfileId, 'kds-2024-stress-strain')
+  assert.equal(parsed.document.inputs.analysis.methodId, 'strain-domain-surface-v1')
+  assert.equal(parsed.document.inputs.geometry.outers.length, 7)
+  assert.equal(parsed.document.inputs.geometry.outers.reduce((sum, outer) => sum + outer.holes.length, 0), 1)
+  assert.equal(parsed.document.inputs.geometry.rebars.length, 226)
+  assert.equal(parsed.document.inputs.loadings.combinations.length, 2)
+})
+
+test('realistic reinforced sections replace the four simplified equivalent-stress menu examples', () => {
+  for (const removedId of ['kds-eq-hollow', 'kds-eq-l-shape', 'kds-eq-two-regions', 'aci-eq-rectangle']) {
+    assert.equal(PROJECT_EXAMPLES.some((example) => example.id === removedId), false)
+  }
+  const expected = [
+    { id: 'kds-real-chamfered-hollow', profile: 'kds-142020-equivalent-block', bars: 44, outerPoints: 8, holes: 1 },
+    { id: 'kds-real-two-circular-voids', profile: 'kds-142020-equivalent-block', bars: 82, outerPoints: 8, holes: 2 },
+    { id: 'kds-real-h-section', profile: 'kds-142020-equivalent-block', bars: 42, outerPoints: 12, holes: 0 },
+    { id: 'aci-real-circular-annulus', profile: 'aci-318-19-22-equivalent-block', bars: 36, outerPoints: 72, holes: 1 }
+  ] as const
+  for (const item of expected) {
+    const example = PROJECT_EXAMPLES.find((candidate) => candidate.id === item.id)
+    assert.ok(example, item.id)
+    const parsed = parseProjectDocument(example.document)
+    assert.equal(parsed.ok, true, parsed.ok ? `${item.id} parsed` : parsed.error)
+    if (!parsed.ok) continue
+    assert.equal(parsed.document.inputs.calculationProfileId, item.profile)
+    assert.equal(parsed.document.inputs.geometry.rebars.length, item.bars)
+    assert.equal(parsed.document.inputs.geometry.outers[0]?.points.length, item.outerPoints)
+    assert.equal(parsed.document.inputs.geometry.outers[0]?.holes.length, item.holes)
+  }
+})
+
 test('Recent accepts current version-1 projects and rejects invalid local data', () => {
   const recent = recentProjectFromRaw(PROJECT_EXAMPLES[0]!.document)
   assert.ok(recent)

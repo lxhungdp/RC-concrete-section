@@ -2,15 +2,15 @@
   "schema": "pm-column-project",
   "version": 1,
   "meta": {
-    "id": 1,
-    "name": "P16 Column ULS — UMD verification case",
+    "id": 16,
+    "name": "P16 Column ULS R - UMD comparison input",
     "information": {
-      "client": "Reference verification",
-      "company": "P-M Column Designer",
-      "designedBy": "Engineering example",
-      "checkedBy": "Independent review",
-      "address": "",
-      "date": "2026-07-30"
+      "client": "Client name",
+      "company": "Company name",
+      "designedBy": "Designer",
+      "checkedBy": "Checker",
+      "address": "Company address",
+      "date": "2026-08-12"
     },
     "createdAt": "2026-07-30T00:00:00.000Z",
     "updatedAt": "2026-08-12T00:00:00.000Z"
@@ -19,7 +19,7 @@
     "calculationProfileId": "en-1992-1-1-2004-stress-strain",
     "geometry": {
       "id": 1,
-      "name": "P16 — UMD hollow rectangular column 4500 x 12000, 650 wall",
+      "name": "P16 Column ULS R from UMD",
       "outers": [
         {
           "id": 1,
@@ -2937,7 +2937,7 @@
       "strainSign": "compression-positive",
       "concrete": {
         "id": 1,
-        "name": "C50 (UMD explicit ULS curve)",
+        "name": "UMD C50 explicit ULS curve",
         "standard": "EC2",
         "fck": 50,
         "mc": 2400,
@@ -2995,13 +2995,14 @@
         },
         "elasticModulus": 37280,
         "factors": {
+          "alpha": 1,
           "gammaC": 1
         }
       },
       "steel": [
         {
           "id": 1,
-          "name": "FY500 (UMD)",
+          "name": "UMD FY500",
           "standard": "EC2",
           "fy": 500,
           "elasticModulus": 200000,
@@ -3009,10 +3010,11 @@
             "type": "elastic-perfectly-plastic"
           },
           "limits": {
+            "epsY": 0.00225,
             "epsU": 0.05
           },
           "factors": {
-            "gammaS": 1.111
+            "gammaS": 1.1111111111111112
           }
         }
       ],
@@ -3024,7 +3026,7 @@
       "combinations": [
         {
           "id": 1,
-          "name": "Load Case 1 (UMD)",
+          "name": "UMD Load Case 1",
           "actionBasis": "factoredULS",
           "P": 181800000,
           "Mx": 42950000000,
@@ -3032,7 +3034,7 @@
         },
         {
           "id": 2,
-          "name": "Load Case 2 (UMD)",
+          "name": "UMD Load Case 2",
           "actionBasis": "factoredULS",
           "P": 122300000,
           "Mx": -56420000000,
@@ -3040,7 +3042,7 @@
         },
         {
           "id": 3,
-          "name": "Load Case 3 (UMD)",
+          "name": "UMD Load Case 3",
           "actionBasis": "factoredULS",
           "P": 118300000,
           "Mx": 24550000000,
@@ -3048,7 +3050,7 @@
         },
         {
           "id": 4,
-          "name": "Load Case 4 (UMD)",
+          "name": "UMD Load Case 4",
           "actionBasis": "factoredULS",
           "P": 111000000,
           "Mx": 26200000000,
@@ -3056,7 +3058,7 @@
         },
         {
           "id": 5,
-          "name": "Load Case 5 (UMD)",
+          "name": "UMD Load Case 5",
           "actionBasis": "factoredULS",
           "P": 173300000,
           "Mx": 125400000000,
@@ -3064,7 +3066,7 @@
         },
         {
           "id": 6,
-          "name": "Load Case 6 (UMD)",
+          "name": "UMD Load Case 6",
           "actionBasis": "factoredULS",
           "P": 173000000,
           "Mx": 0,
@@ -3292,16 +3294,18 @@
         },
         "refinement": {
           "type": "fixed",
-          "probe": "all"
+          "probe": {
+            "stationIds": []
+          }
         }
       },
       "mesh": {
         "sizing": {
           "type": "automatic",
-          "seedDivisions": 32
+          "seedDivisions": 96
         },
-        "maxCells": 250000,
-        "maxSubdivision": 4
+        "maxCells": 1000000,
+        "maxSubdivision": 6
       }
     },
     "design": {

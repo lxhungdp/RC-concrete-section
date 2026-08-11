@@ -143,6 +143,59 @@ const rowOfLabel = (sheet: ExcelJS.Worksheet, label: string) => {
   return -1
 }
 
+const GROUP_FILL_ARGB = 'FFD6E4F5'
+
+/** Columns a merge starting at column A covers, or 1 when the cell is not merged. */
+const mergedWidth = (sheet: ExcelJS.Worksheet, row: number) => {
+  const anchor = sheet.getCell(row, 1)
+  let width = 0
+  while (width < sheet.columnCount && sheet.getCell(row, width + 1).master === anchor) width++
+  return width
+}
+
+/** Printable columns a row occupies before its first empty cell; hidden columns do not count. */
+const filledWidth = (sheet: ExcelJS.Worksheet, row: number) => {
+  let width = 0
+  for (let column = 1; column <= sheet.columnCount; column++) {
+    const cell = sheet.getCell(row, column)
+    const occupied = cell.master !== cell ||
+      (cell.value !== null && cell.value !== undefined && cell.value !== '')
+    if (!occupied) break
+    if (!sheet.getColumn(column).hidden) width = column
+  }
+  return width
+}
+
+/**
+ * Every block heading stops exactly where its own header row stops, and the sheet title reaches the
+ * widest block. Blocks may differ in width; a heading that overhangs its own table is what makes a
+ * printed sheet look broken, so it is asserted rather than eyeballed.
+ */
+const checkBlockAlignment = (sheet: ExcelJS.Worksheet, label: string) => {
+  const widths: number[] = []
+  const ragged: string[] = []
+  for (let row = 2; row <= sheet.rowCount; row++) {
+    const cell = sheet.getCell(row, 1)
+    const fill = cell.fill as ExcelJS.FillPattern | undefined
+    if (fill?.fgColor?.argb !== GROUP_FILL_ARGB) continue
+    const heading = mergedWidth(sheet, row)
+    const header = filledWidth(sheet, row + 1)
+    if (heading !== header) {
+      ragged.push(`"${String(cell.value ?? '')}" heading ${heading} vs header ${header}`)
+    }
+    widths.push(heading)
+  }
+  pass(`${label}: ${sheet.name} block headings match their own tables`,
+    widths.length > 0 && ragged.length === 0,
+    ragged.length > 0 ? ragged.join(' | ') : `${widths.length} block(s)`)
+  if (widths.length > 0) {
+    const widest = Math.max(...widths)
+    pass(`${label}: ${sheet.name} title spans the widest block`,
+      mergedWidth(sheet, 1) === widest,
+      `title ${mergedWidth(sheet, 1)} vs widest block ${widest}`)
+  }
+}
+
 /**
  * Reuses the chart-audit contract: on every source block, the value reconstructed from the
  * station's own criterion must equal the engine point it was built from.
@@ -281,6 +334,9 @@ const runCase = async (relativePath: string, label: string) => {
     names.join(', '))
   pass('every sheet name fits the Excel 31-character limit',
     names.every((name) => name.length <= 31))
+
+  console.log('== 1b. Every sheet is a stack of aligned blocks ==')
+  for (const sheet of workbook.worksheets) checkBlockAlignment(sheet, label)
 
   console.log('== 2. The exported file recalculates ==')
   const { readBack, engine } = await recalculate(workbook)

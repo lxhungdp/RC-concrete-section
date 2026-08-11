@@ -266,6 +266,43 @@ test('equivalent-block example projects parse and solve with their shipped produ
   }
 })
 
+test('realistic section example projects parse and solve with their shipped production options', () => {
+  const directory = resolve(process.cwd(), 'docs/examples/realistic-sections')
+  const files = readdirSync(directory)
+    .filter((file) => /^(KDS|ACI)-REAL-\d{2}-.+\.pm-project\.json$/.test(file))
+    .sort()
+  assert.equal(files.length, 4, 'the realistic UI set must contain four replacement examples')
+
+  for (const file of files) {
+    const parsed = parseProjectDocument(readFileSync(resolve(directory, file), 'utf8'))
+    assert.ok(parsed.ok, `${file}: project schema v1 must parse`)
+    if (!parsed.ok) continue
+    assert.deepEqual(parsed.warnings, [], `${file}: import warnings`)
+    const { inputs } = parsed.document
+    assert.equal(parsed.document.version, 1, `${file}: project version`)
+    assert.notEqual(inputs.calculationProfileId, 'kds-2024-stress-strain', `${file}: block profile`)
+    assert.equal(inputs.analysis.methodId, 'equivalent-block-surface-v1', `${file}: analysis method`)
+    const options = inputs.analysis as EquivalentBlockAnalysisOptions
+    const prepared = prepareBlockAnalysis(
+      inputs.calculationProfileId,
+      sectionGeometryFromGeometryInput(inputs.geometry),
+      geometryInputRebars(inputs.geometry),
+      inputs.materials,
+      inputs.design
+    )
+    const designSurface = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+    const preview = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options, designSurface)
+    assert.equal(designSurface.topology.closed, true, `${file}: closed design surface`)
+    assertCardinalSlicesHaveNoCapToTensionChord(preview, file)
+    assert.equal(inputs.loadings.combinations.length, 3, `${file}: design loadcase count`)
+    for (const loadcase of inputs.loadings.combinations) {
+      const solved = solveEquivalentBlockDemandFromPrepared(prepared, options, loadcase, designSurface)
+      assert.equal(solved.ok, true, `${file}/${loadcase.name}: demand solve`)
+      assert.ok(solved.utilization !== null && solved.utilization < 1, `${file}/${loadcase.name}: inside surface`)
+    }
+  }
+})
+
 test('equivalent-block admissibility is reference-point invariant in all moment quadrants', () => {
   const file = resolve(process.cwd(), 'docs/examples/equivalent-block/KDS-EB-03-l-shape-8-bars.pm-project.json')
   const parsed = parseProjectDocument(readFileSync(file, 'utf8'))

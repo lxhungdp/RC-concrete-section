@@ -1336,7 +1336,14 @@ const triangulateCapLoop = (
   }
   const distanceTolerance = Math.max(1e-12 * momentScale, tolerance)
   const crossTolerance = Math.max(1e-12 * momentScale ** 2, tolerance ** 2)
-  const cleaned = source.filter((index, position, values) => {
+  const distinctIndices = source.filter((index, position, values) => position === 0 || index !== values[position - 1])
+  if (distinctIndices.length > 1 && distinctIndices[0] === distinctIndices[distinctIndices.length - 1]) {
+    distinctIndices.pop()
+  }
+  const boundary = signedAreaInMomentPlane(distinctIndices, points) >= 0
+    ? distinctIndices
+    : [...distinctIndices].reverse()
+  const cleaned = boundary.filter((index, position, values) => {
     if (position === 0) return true
     const current = points[index].resultants
     const previous = points[values[position - 1]].resultants
@@ -1368,7 +1375,7 @@ const triangulateCapLoop = (
   if (cleaned.length < 3) {
     throw new EquivalentBlockInputError('SOLVER_INPUT', 'The axial-cap contour collapsed below three distinct moment points.')
   }
-  const loop = signedAreaInMomentPlane(cleaned, points) >= 0 ? [...cleaned] : [...cleaned].reverse()
+  const loop = [...cleaned]
   const remaining = [...loop]
   const triangles: CapacitySurfaceTriangle[] = []
   let guard = 0
@@ -1403,6 +1410,51 @@ const triangulateCapLoop = (
     throw new EquivalentBlockInputError(
       'SOLVER_INPUT',
       `The axial-cap contour could not be triangulated reliably (${loop.length} vertices, ${remaining.length} unresolved).`
+    )
+  }
+  /**
+   * Ear clipping intentionally removes collinear cap vertices, but every such vertex still belongs
+   * to a clipped side-face edge. Restore them by subdividing the matching boundary triangle; otherwise
+   * a circular or straight-sided cap reports one open edge for every omitted intermediate vertex.
+   */
+  for (let edge = 0; edge < loop.length; edge += 1) {
+    const left = loop[edge]
+    const right = loop[(edge + 1) % loop.length]
+    const chain = [left]
+    let position = boundary.indexOf(left)
+    let guard = 0
+    while (boundary[position] !== right && guard <= boundary.length) {
+      position = (position + 1) % boundary.length
+      chain.push(boundary[position])
+      guard += 1
+    }
+    if (chain[chain.length - 1] !== right) {
+      throw new EquivalentBlockInputError('SOLVER_INPUT', 'The axial-cap boundary subdivision is inconsistent.')
+    }
+    if (chain.length <= 2) continue
+    const triangleIndex = triangles.findIndex((triangle) => {
+      const vertices = [triangle.a, triangle.b, triangle.c]
+      return vertices.includes(left) && vertices.includes(right)
+    })
+    if (triangleIndex < 0) {
+      throw new EquivalentBlockInputError('SOLVER_INPUT', 'A subdivided axial-cap edge has no adjacent triangle.')
+    }
+    const triangle = triangles[triangleIndex]
+    const third = [triangle.a, triangle.b, triangle.c].find((vertex) => vertex !== left && vertex !== right)
+    if (third === undefined) {
+      throw new EquivalentBlockInputError('SOLVER_INPUT', 'A subdivided axial-cap triangle is degenerate.')
+    }
+    const replacements = chain.slice(0, -1).map((vertex, index) => ({
+      a: vertex,
+      b: chain[index + 1],
+      c: third
+    }))
+    triangles.splice(triangleIndex, 1, ...replacements)
+  }
+  if (triangles.length !== boundary.length - 2) {
+    throw new EquivalentBlockInputError(
+      'SOLVER_INPUT',
+      `The axial-cap boundary subdivision is incomplete (${boundary.length} vertices, ${triangles.length} triangles).`
     )
   }
   return triangles

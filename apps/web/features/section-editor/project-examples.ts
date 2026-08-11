@@ -1,9 +1,10 @@
 import stressStrainKds from '../../../../docs/examples/reference-case/projects/PM-advanced (7) 2D.pm-project.json'
-import equivalentBlockKdsRectangle from '../../../../docs/examples/equivalent-block/KDS-EB-01-rectangle-8-bars.pm-project.json'
-import equivalentBlockKdsHollow from '../../../../docs/examples/equivalent-block/KDS-EB-02-hollow-8-bars.pm-project.json'
-import equivalentBlockKdsLShape from '../../../../docs/examples/equivalent-block/KDS-EB-03-l-shape-8-bars.pm-project.json'
-import equivalentBlockKdsTwoRegions from '../../../../docs/examples/equivalent-block/KDS-EB-04-two-islands-8-bars.pm-project.json'
-import equivalentBlockAciRectangle from '../../../../docs/examples/equivalent-block/ACI-EB-01-rectangle-8-bars.pm-project.json'
+import stressStrainEnUmdP16 from '../../../../docs/examples/reference-case/projects/P16_Column_ULS.pm-project.json'
+import stressStrainKdsEnvico from '../../../../docs/examples/user-projects/ENVICO.pm-project.json'
+import realisticKdsChamferedHollow from '../../../../docs/examples/realistic-sections/KDS-REAL-01-chamfered-hollow.pm-project.json'
+import realisticKdsTwoCircularVoids from '../../../../docs/examples/realistic-sections/KDS-REAL-02-chamfered-two-circular-voids.pm-project.json'
+import realisticKdsHSection from '../../../../docs/examples/realistic-sections/KDS-REAL-03-h-section.pm-project.json'
+import realisticAciCircularAnnulus from '../../../../docs/examples/realistic-sections/ACI-REAL-04-circular-annulus.pm-project.json'
 
 export type ProjectExample = {
   id: string
@@ -25,33 +26,39 @@ export const PROJECT_EXAMPLES: readonly ProjectExample[] = [
     document: stressStrainKds
   },
   {
-    id: 'kds-eq-rectangle',
-    label: 'Eq Stress',
-    description: 'KDS · Rectangle',
-    document: equivalentBlockKdsRectangle
+    id: 'kds-stress-strain-envico',
+    label: 'ENVICO',
+    description: 'KDS · Stress–strain',
+    document: stressStrainKdsEnvico
   },
   {
-    id: 'kds-eq-hollow',
-    label: 'Eq Stress',
-    description: 'KDS · Hollow',
-    document: equivalentBlockKdsHollow
+    id: 'en-umd-p16',
+    label: 'Stress–strain',
+    description: 'EN 1992 · P16 UMD',
+    document: stressStrainEnUmdP16
   },
   {
-    id: 'kds-eq-l-shape',
+    id: 'kds-real-chamfered-hollow',
     label: 'Eq Stress',
-    description: 'KDS · L-shape',
-    document: equivalentBlockKdsLShape
+    description: 'KDS · Chamfered hollow',
+    document: realisticKdsChamferedHollow
   },
   {
-    id: 'kds-eq-two-regions',
+    id: 'kds-real-two-circular-voids',
     label: 'Eq Stress',
-    description: 'KDS · Two regions',
-    document: equivalentBlockKdsTwoRegions
+    description: 'KDS · Two circular voids',
+    document: realisticKdsTwoCircularVoids
   },
   {
-    id: 'aci-eq-rectangle',
+    id: 'kds-real-h-section',
     label: 'Eq Stress',
-    description: 'ACI 318 · Rectangle',
-    document: equivalentBlockAciRectangle
+    description: 'KDS · H-section',
+    document: realisticKdsHSection
+  },
+  {
+    id: 'aci-real-circular-annulus',
+    label: 'Eq Stress',
+    description: 'ACI 318 · Circular annulus',
+    document: realisticAciCircularAnnulus
   }
 ]

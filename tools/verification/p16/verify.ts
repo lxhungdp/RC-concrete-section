@@ -50,9 +50,11 @@ import {
   createDefaultAnalysisOptions,
   createLoadCombination,
   createProjectDocument,
+  parseProjectDocument,
+  serializeProjectDocument,
   type AnalysisOptions
 } from '@pm/project'
-import { createEn1992DesignBasis } from '@pm/design'
+import { createEn1992DesignBasis, setMaterialFactorComponentValue } from '@pm/design'
 
 const ROOT = process.cwd()
 const SOURCE = resolve(ROOT, 'docs/examples/reference-case/source/P16_Column_ULS_R _260730_콘크리트 커브 추가수정.md')
@@ -339,15 +341,52 @@ const MATERIALS = materialStore()
 const SECTION = sectionGeometryFromGeometryInput(GEOMETRY)
 const REBARS = geometryInputRebars(GEOMETRY)
 
+const withDirections = (count: number): AnalysisOptions => {
+  const options = createDefaultAnalysisOptions()
+  options.directions.seed = { type: 'uniform', count, startDeg: 0 }
+  return options
+}
+
+const projectDesign = (() => {
+  const basis = setMaterialFactorComponentValue(
+    setMaterialFactorComponentValue(createEn1992DesignBasis(), 'gammaC', 1),
+    'gammaS',
+    1.111
+  )
+  basis.modified = true
+  basis.materialModelModified = true
+  basis.overrideReason =
+    'Match the UMD report: use its explicit design-level concrete curve (gammaC,ULS = 1.000) ' +
+    'and reinforcement factor gammaS,ULS = 1.111.'
+  return basis
+})()
+
 const document = createProjectDocument({
+  calculationProfileId: 'en-1992-1-1-2004-stress-strain',
   geometry: GEOMETRY,
   materials: MATERIALS,
   loadings: loadings(),
-  design: createEn1992DesignBasis(),
-  meta: { id: 1, name: 'P16 Column ULS — UMD verification case', createdAt: '2026-07-30T00:00:00.000Z' }
+  analysis: withDirections(360),
+  design: projectDesign,
+  meta: {
+    id: 1,
+    name: 'P16 Column ULS — UMD verification case',
+    information: {
+      client: 'Reference verification',
+      company: 'P-M Column Designer',
+      designedBy: 'Engineering example',
+      checkedBy: 'Independent review',
+      address: '',
+      date: '2026-07-30'
+    },
+    createdAt: '2026-07-30T00:00:00.000Z'
+  }
 })
+document.meta.updatedAt = '2026-08-12T00:00:00.000Z'
+const parsedDocument = parseProjectDocument(document)
+if (!parsedDocument.ok) throw new Error(`Generated UMD project is not importable: ${parsedDocument.error}`)
 mkdirSync(dirname(PROJECT_OUT), { recursive: true })
-writeFileSync(PROJECT_OUT, `${JSON.stringify(document, null, 2)}\n`, 'utf8')
+writeFileSync(PROJECT_OUT, `${serializeProjectDocument(parsedDocument.document)}\n`, 'utf8')
 
 // ---------------------------------------------------------------- run the engine
 const PREPARED = prepareAnalysis(SECTION, REBARS, MATERIALS)
@@ -355,12 +394,6 @@ const ORIGIN = PREPARED.origin
 const CONCRETE = compileConcreteMaterial(MATERIALS.concrete)
 const STEEL = compileSteelMaterial(MATERIALS.steel[0])
 const FYD = MATERIALS.steel[0].fy / (MATERIALS.steel[0].factors?.gammaS ?? 1)
-
-const withDirections = (count: number): AnalysisOptions => {
-  const options = createDefaultAnalysisOptions()
-  options.directions.seed = { type: 'uniform', count, startDeg: 0 }
-  return options
-}
 
 const surface24 = buildPreviewSurface(SECTION, REBARS, MATERIALS, {}, withDirections(24))
 const surface96 = buildPreviewSurface(SECTION, REBARS, MATERIALS, {}, withDirections(96))

@@ -35,18 +35,30 @@ import {
 } from '@pm/project'
 import {
   HEADER_FILL,
-  NOTE_COLOR,
-  TITLE_FILL,
   col,
   concreteLaw,
   concreteModelParameters,
   createDefineName,
   createWorkbook,
-  sectionHeading,
   steelDesignFy,
   steelLaw,
   type MaterialLaw
 } from './workbook-common'
+import {
+  addLegend,
+  blockHeading,
+  freezeUnder,
+  hideGridLines,
+  reportTitle,
+  setFormula,
+  sheetNote,
+  styleGenerated,
+  styleHeader,
+  styleInput,
+  styleRegenerate,
+  tableBlock,
+  zebraRows
+} from './sheet-layout'
 import { injectSheetCharts, type SheetChart } from './sheet-charts'
 
 export type ChartAuditSource = 'vertical' | 'fixedP'
@@ -175,69 +187,6 @@ const formulaNames = (expression: string, names: Record<string, string>) =>
       expression
     )
 
-const styleHeader = (sheet: import('exceljs').Worksheet, row: number, labels: readonly string[], start = 1) => {
-  labels.forEach((label, index) => {
-    const cell = sheet.getCell(row, start + index)
-    cell.value = label
-    cell.font = { bold: true, size: 10, color: { argb: 'FF1F2937' } }
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } }
-    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
-    cell.border = { bottom: { style: 'thin', color: { argb: 'FF94A3B8' } } }
-  })
-  sheet.getRow(row).height = 28
-}
-
-const reportTitle = (sheet: import('exceljs').Worksheet, text: string, span: number) => {
-  sheet.mergeCells(1, 1, 1, span)
-  const cell = sheet.getCell(1, 1)
-  cell.value = text
-  cell.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } }
-  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TITLE_FILL } }
-  cell.alignment = { vertical: 'middle' }
-  sheet.getRow(1).height = 22
-}
-
-const setFormula = (
-  cell: import('exceljs').Cell,
-  formula: string,
-  result: number | string | boolean,
-  numFmt = '#,##0.000'
-) => {
-  cell.value = { formula: formula.startsWith('=') ? formula.slice(1) : formula, result }
-  cell.numFmt = numFmt
-  styleFormula(cell)
-}
-
-const INPUT_TEXT = 'FF0070C0'
-const FORMULA_TEXT = 'FF008000'
-const GENERATED_TEXT = 'FF64748B'
-const REGENERATE_TEXT = 'FFC65911'
-
-const colorCellText = (cell: import('exceljs').Cell, argb: string) => {
-  cell.font = { ...(cell.font ?? {}), color: { argb } }
-}
-
-const styleInput = (cell: import('exceljs').Cell) => colorCellText(cell, INPUT_TEXT)
-const styleFormula = (cell: import('exceljs').Cell) => colorCellText(cell, FORMULA_TEXT)
-const styleGenerated = (cell: import('exceljs').Cell) => colorCellText(cell, GENERATED_TEXT)
-const styleRegenerate = (cell: import('exceljs').Cell) => colorCellText(cell, REGENERATE_TEXT)
-
-const addLegend = (sheet: import('exceljs').Worksheet, row: number) => {
-  const entries = [
-    ['Legend', null],
-    ['Editable calculation input', INPUT_TEXT],
-    ['Formula', FORMULA_TEXT],
-    ['Generated / check', GENERATED_TEXT],
-    ['Requires re-export / remesh', REGENERATE_TEXT]
-  ] as const
-  entries.forEach(([label, color], index) => {
-    const cell = sheet.getCell(row, 1 + index)
-    cell.value = label
-    cell.font = { size: 9, bold: index === 0, color: { argb: color ?? 'FF475569' } }
-    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
-  })
-  sheet.getRow(row).height = 24
-}
 
 const resolvedStrainCriterion = (
   section: SectionGeometry,
@@ -423,33 +372,36 @@ const bracketForContourPoint = (
   return candidates.sort((left, right) => left.error - right.error)[0] ?? null
 }
 
+/**
+ * A tabulated law as its own block: heading, header, then the sampled curve.
+ *
+ * `Points` is a table column rather than a loose cell beside the header because the interpolation
+ * formulas need a cell to name, and a named cell that floats outside every table is exactly the
+ * kind of thing that breaks a printed page.
+ */
 const addMaterialCurve = (
   sheet: import('exceljs').Worksheet,
   defineName: ReturnType<typeof createDefineName>,
   startRow: number,
-  startColumn: number,
   prefix: string,
   titleText: string,
   law: MaterialLaw,
   sheetName = 'Materials'
 ) => {
   if (!law.samples?.length) return startRow
-  sheet.getCell(startRow, startColumn).value = titleText
-  sheet.getCell(startRow, startColumn).font = { bold: true, color: { argb: 'FF1F3864' } }
-  sheet.getCell(startRow + 1, startColumn).value = 'Strain'
-  sheet.getCell(startRow + 1, startColumn + 1).value = 'Stress (MPa)'
-  for (let index = 0; index < law.samples.length; index++) {
-    sheet.getCell(startRow + 2 + index, startColumn).value = law.samples[index].strain
-    sheet.getCell(startRow + 2 + index, startColumn + 1).value = law.samples[index].stress
-    styleInput(sheet.getCell(startRow + 2 + index, startColumn))
-    styleInput(sheet.getCell(startRow + 2 + index, startColumn + 1))
-  }
-  const first = startRow + 2
+  const first = tableBlock(sheet, startRow, titleText, ['Strain', 'Stress (MPa)', 'Points'])
+  law.samples.forEach((sample, index) => {
+    sheet.getCell(first + index, 1).value = sample.strain
+    sheet.getCell(first + index, 2).value = sample.stress
+    styleInput(sheet.getCell(first + index, 1))
+    styleInput(sheet.getCell(first + index, 2))
+  })
   const last = first + law.samples.length - 1
-  defineName(`'${sheetName}'!$${col(startColumn)}$${first}:$${col(startColumn)}$${last}`, `${prefix}_eps`)
-  defineName(`'${sheetName}'!$${col(startColumn + 1)}$${first}:$${col(startColumn + 1)}$${last}`, `${prefix}_sig`)
-  sheet.getCell(startRow + 1, startColumn + 2).value = law.samples.length
-  defineName(`'${sheetName}'!$${col(startColumn + 2)}$${startRow + 1}`, `${prefix}_n`)
+  defineName(`'${sheetName}'!$A$${first}:$A$${last}`, `${prefix}_eps`)
+  defineName(`'${sheetName}'!$B$${first}:$B$${last}`, `${prefix}_sig`)
+  sheet.getCell(first, 3).value = law.samples.length
+  styleGenerated(sheet.getCell(first, 3))
+  defineName(`'${sheetName}'!$C$${first}`, `${prefix}_n`)
   return last + 2
 }
 
@@ -550,11 +502,6 @@ const DEFAULT_SHARED_SHEET_NAMES: AuditSharedSheetNames = {
   mesh: 'Mesh'
 }
 
-const hideGridLines = (sheet: import('exceljs').Worksheet) => {
-  sheet.views = [{ ...sheet.views[0], showGridLines: false }]
-  return sheet
-}
-
 export const prepareAuditContext = (
   workbook: import('exceljs').Workbook,
   defineName: ReturnType<typeof createDefineName>,
@@ -581,60 +528,56 @@ export const prepareAuditContext = (
   const cParams = concreteModelParameters(concrete)
   const steelLaws = new Map(calculationMaterials.steel.map((steel) => [steel.id, steelLaw(steel)] as const))
 
-  const geometry = hideGridLines(workbook.addWorksheet(sheetNames.geometry, { views: [{ state: 'frozen', ySplit: 8 }], properties: { tabColor: { argb: 'FF2563EB' } } }))
-  const materials = hideGridLines(workbook.addWorksheet(sheetNames.materials, { views: [{ state: 'frozen', ySplit: 4 }], properties: { tabColor: { argb: 'FF7C3AED' } } }))
+  // These three stack several tables of different widths, so no single frozen header applies; only
+  // the Mesh point table is long enough to want one, and it freezes itself once its rows are known.
+  const geometry = hideGridLines(workbook.addWorksheet(sheetNames.geometry, { properties: { tabColor: { argb: 'FF2563EB' } } }))
+  const materials = hideGridLines(workbook.addWorksheet(sheetNames.materials, { properties: { tabColor: { argb: 'FF7C3AED' } } }))
   const meshSheet = mechanicsSupportsMeshFormula
-    ? hideGridLines(workbook.addWorksheet(sheetNames.mesh, { views: [{ state: 'frozen', ySplit: 6 }], properties: { tabColor: { argb: 'FF0F766E' } } }))
+    ? hideGridLines(workbook.addWorksheet(sheetNames.mesh, { properties: { tabColor: { argb: 'FF0F766E' } } }))
     : null
   const geometryRef = (column: string, row: number) => `'${sheetNames.geometry}'!$${column}$${row}`
 
   // -----------------------------------------------------------------------
   // Geometry
   // -----------------------------------------------------------------------
-  reportTitle(geometry, 'PROJECT GEOMETRY AND LOAD INPUTS', 9)
-  addLegend(geometry, 2)
-  geometry.getCell('B3').value = 'Project'
-  geometry.getCell('C3').value = input.projectName
-  geometry.getCell('B4').value = 'Section'
-  geometry.getCell('C4').value = input.sectionName
-  geometry.getCell('B5').value = 'Calculation profile'
-  geometry.getCell('C5').value = input.surface.calculationProfileId ?? input.surface.analysisOptions.methodId
-  for (const row of [3, 4, 5]) geometry.mergeCells(row, 3, row, 5)
-  geometry.getCell('C4').alignment = { wrapText: true, vertical: 'middle' }
-  geometry.getRow(4).height = 30
-  geometry.getCell('B6').value = 'Analysis origin X'
-  geometry.getCell('C6').value = origin.x
-  geometry.getCell('D6').value = 'mm'
-  geometry.getCell('B7').value = 'Analysis origin Y'
-  geometry.getCell('C7').value = origin.y
-  geometry.getCell('D7').value = 'mm'
-  for (const address of ['C3', 'C4', 'C5', 'C6', 'C7']) styleGenerated(geometry.getCell(address))
-  defineName(geometryRef('C', 6), 'Origin_X')
-  defineName(geometryRef('C', 7), 'Origin_Y')
+  const GEOMETRY_SPAN = 9
+  reportTitle(geometry, 'PROJECT GEOMETRY AND LOAD INPUTS', GEOMETRY_SPAN)
+  addLegend(geometry, 2, GEOMETRY_SPAN)
 
+  // Project identity and the analysis origin used to sit in two side-by-side blocks at B/C and F/G,
+  // which put the origin — a value every formula on every sheet depends on — in a column the tables
+  // below use for something else. One stacked key/value table instead.
   const projectInformation = input.projectInformation
-  const identityRows: Array<[string, string]> = [
-    ['Client', projectInformation?.client ?? ''],
-    ['Company', projectInformation?.company ?? ''],
-    ['Designed by', projectInformation?.designedBy ?? ''],
-    ['Checked by', projectInformation?.checkedBy ?? ''],
-    ['Address', projectInformation?.address ?? ''],
-    ['Date', projectInformation?.date ?? '']
+  const identityRows: Array<[string, string | number, 'origin-x' | 'origin-y' | null]> = [
+    ['Project', input.projectName, null],
+    ['Section', input.sectionName, null],
+    ['Calculation profile', input.surface.calculationProfileId ?? input.surface.analysisOptions.methodId, null],
+    ['Analysis origin X (mm)', origin.x, 'origin-x'],
+    ['Analysis origin Y (mm)', origin.y, 'origin-y'],
+    ['Client', projectInformation?.client ?? '', null],
+    ['Company', projectInformation?.company ?? '', null],
+    ['Designed by', projectInformation?.designedBy ?? '', null],
+    ['Checked by', projectInformation?.checkedBy ?? '', null],
+    ['Address', projectInformation?.address ?? '', null],
+    ['Date', projectInformation?.date ?? '', null]
   ]
-  identityRows.forEach(([label, value], index) => {
-    geometry.getCell(3 + index, 6).value = label
-    geometry.getCell(3 + index, 7).value = value
-    styleGenerated(geometry.getCell(3 + index, 7))
+  const identityFirst = tableBlock(geometry, 3, 'Project and calculation identity', ['Item', 'Value'])
+  identityRows.forEach(([label, value, role], index) => {
+    const row = identityFirst + index
+    geometry.getCell(row, 1).value = label
+    const cell = geometry.getCell(row, 2)
+    cell.value = value
+    cell.alignment = { wrapText: true, vertical: 'middle' }
+    styleGenerated(cell)
+    if (role === 'origin-x') defineName(geometryRef('B', row), 'Origin_X')
+    if (role === 'origin-y') defineName(geometryRef('B', row), 'Origin_Y')
   })
 
-  const boundaryHeader = 12
-  styleHeader(
-    geometry,
-    boundaryHeader,
-    ['Ring ID', 'Boundary', 'Point order', 'X input (mm)', 'Y input (mm)', 'x local (mm)', 'y local (mm)'],
-    1
-  )
-  let geometryRow = boundaryHeader + 1
+  const boundaryHeading = identityFirst + identityRows.length + 1
+  const boundaryHeader = boundaryHeading + 1
+  let geometryRow = tableBlock(geometry, boundaryHeading, 'Section boundary', [
+    'Ring ID', 'Boundary', 'Point order', 'X input (mm)', 'Y input (mm)', 'x local (mm)', 'y local (mm)'
+  ])
   const boundaryFirst = geometryRow
   const boundaryGeometryRows: Array<{ row: number; exterior: boolean }> = []
   input.section.solids.forEach((solid, solidIndex) => {
@@ -660,12 +603,13 @@ export const prepareAuditContext = (
   defineName(`${geometryRef('F', boundaryFirst)}:$F$${boundaryLast}`, 'Boundary_X')
   defineName(`${geometryRef('G', boundaryFirst)}:$G$${boundaryLast}`, 'Boundary_Y')
 
-  const rebarHeader = geometryRow + 2
-  sectionHeading(geometry, rebarHeader - 1, 'Reinforcement', 9)
-  styleHeader(geometry, rebarHeader, ['No.', 'Rebar ID', 'Diameter (mm)', 'X world (mm)', 'Y world (mm)', 'X local (mm)', 'Y local (mm)', 'Area (mm²)', 'Steel material ID'], 1)
+  const rebarFirst = tableBlock(geometry, geometryRow + 1, 'Reinforcement', [
+    'No.', 'Rebar ID', 'Diameter (mm)', 'X world (mm)', 'Y world (mm)',
+    'X local (mm)', 'Y local (mm)', 'Area (mm²)', 'Steel material ID'
+  ])
   const rebarRows: Array<{ bar: GeometryInputRebarView; row: number }> = []
   input.rebars.forEach((bar, index) => {
-    const row = rebarHeader + 1 + index
+    const row = rebarFirst + index
     rebarRows.push({ bar, row })
     geometry.getCell(row, 1).value = index + 1
     geometry.getCell(row, 2).value = bar.id
@@ -681,12 +625,10 @@ export const prepareAuditContext = (
     geometry.getCell(row, 9).value = bar.steelMaterialId ?? calculationMaterials.defaults.steelMaterialId
   })
 
-  let loadRow = rebarHeader + input.rebars.length + 4
-  sectionHeading(geometry, loadRow, 'Project load cases', 7)
-  loadRow++
-  styleHeader(geometry, loadRow, ['ID', 'Name', 'P (kN)', 'Mx (kN·m)', 'My (kN·m)', 'Action basis'], 1)
+  let loadRow = tableBlock(geometry, rebarFirst + input.rebars.length + 1, 'Project load cases', [
+    'ID', 'Name', 'P (kN)', 'Mx (kN·m)', 'My (kN·m)', 'Action basis'
+  ])
   for (const loadcase of input.loadcases ?? []) {
-    loadRow++
     geometry.getCell(loadRow, 1).value = loadcase.id
     geometry.getCell(loadRow, 2).value = loadcase.name
     geometry.getCell(loadRow, 3).value = kn(loadcase.P)
@@ -696,26 +638,38 @@ export const prepareAuditContext = (
     for (const column of [3, 4, 5]) styleInput(geometry.getCell(loadRow, column))
     geometry.getCell(loadRow, 2).alignment = { wrapText: true, vertical: 'top' }
     geometry.getRow(loadRow).height = 28
+    loadRow++
   }
-  geometry.columns = [18, 24, 14, 16, 16, 16, 16, 15, 18].map((width) => ({ width }))
+  geometry.columns = [26, 30, 15, 16, 16, 16, 16, 15, 18].map((width) => ({ width }))
 
   // -----------------------------------------------------------------------
   // Materials
   // -----------------------------------------------------------------------
-  reportTitle(materials, 'MATERIALS AND RESISTANCE BASIS', 8)
-  addLegend(materials, 2)
-  materials.getCell('A3').value = 'Active result stage'
-  materials.getCell('B3').value = input.resistanceStage === 'design' ? 'Design resistance' : 'Nominal resistance'
-  materials.getCell('D3').value = 'Calculation profile'
-  materials.getCell('E3').value = input.designBasis.identity.document
-  for (const address of ['B3', 'E3']) styleGenerated(materials.getCell(address))
+  const MATERIALS_SPAN = 8
+  reportTitle(materials, 'MATERIALS AND RESISTANCE BASIS', MATERIALS_SPAN)
+  addLegend(materials, 2, MATERIALS_SPAN)
 
-  sectionHeading(materials, 5, 'Concrete', 5)
-  styleHeader(materials, 6, ['Symbol', 'Parameter', 'Value', 'Unit', 'Basis / use in calculation'], 1)
-  let concreteRow = 7
-  const addConcreteMetadata = (label: string, value: string) => {
+  const stageFirst = tableBlock(materials, 3, 'Active result stage', ['Item', 'Value'])
+  ;([
+    ['Result stage', input.resistanceStage === 'design' ? 'Design resistance' : 'Nominal resistance'],
+    ['Calculation profile', input.designBasis.identity.document]
+  ] as const).forEach(([label, value], index) => {
+    materials.getCell(stageFirst + index, 1).value = label
+    materials.getCell(stageFirst + index, 2).value = value
+    styleGenerated(materials.getCell(stageFirst + index, 2))
+  })
+
+  let concreteRow = tableBlock(materials, stageFirst + 3, 'Concrete', [
+    'Symbol', 'Parameter', 'Value', 'Unit', 'Basis / use in calculation'
+  ])
+  // Metadata rows carry no unit, but they still fill the table's own columns rather than stopping
+  // two short of it: a row that ends where its neighbours do is what makes the block printable.
+  const addConcreteMetadata = (label: string, value: string, description: string) => {
     materials.getCell(concreteRow, 2).value = label
     materials.getCell(concreteRow, 3).value = value
+    materials.getCell(concreteRow, 4).value = '–'
+    materials.getCell(concreteRow, 5).value = description
+    materials.getCell(concreteRow, 5).alignment = { wrapText: true, vertical: 'top' }
     styleGenerated(materials.getCell(concreteRow, 3))
     concreteRow++
   }
@@ -738,9 +692,9 @@ export const prepareAuditContext = (
     if (definedName) defineName(`'${sheetNames.materials}'!$C$${concreteRow}`, definedName)
     concreteRow++
   }
-  addConcreteMetadata('Material', concrete.name)
-  addConcreteMetadata('Standard', concrete.standard)
-  addConcreteMetadata('Stress–strain law', concrete.stressStrain.type)
+  addConcreteMetadata('Material', concrete.name, 'Concrete definition this export was built from')
+  addConcreteMetadata('Standard', concrete.standard, 'Standard the material definition declares')
+  addConcreteMetadata('Stress–strain law', concrete.stressStrain.type, 'Model the parameters below belong to')
   addConcreteParameter('f′c / fck', 'Specified concrete compressive strength', concrete.fck, 'MPa', 'C_fck', 'Strength used by the active material law')
   if (concrete.elasticModulus !== undefined) {
     addConcreteParameter('Eᴄ', 'Elastic modulus', concrete.elasticModulus, 'MPa', null, 'Concrete elastic modulus reported by the selected standard')
@@ -767,12 +721,12 @@ export const prepareAuditContext = (
   styleGenerated(materials.getCell(concreteRow, 3))
   concreteRow++
 
-  const steelHeader = concreteRow + 2
-  sectionHeading(materials, steelHeader - 1, 'Reinforcing steel', 8)
-  styleHeader(materials, steelHeader, ['ID', 'Material', 'Standard', 'fy (MPa)', 'Eₛ (MPa)', 'εy', 'εu', 'Stress–strain law'], 1)
+  const steelFirst = tableBlock(materials, concreteRow + 1, 'Reinforcing steel', [
+    'ID', 'Material', 'Standard', 'fy (MPa)', 'Eₛ (MPa)', 'εy', 'εu', 'Stress–strain law'
+  ])
   const steelNames = new Map<number, { fy: string; Es: string; curvePrefix: string }>()
   calculationMaterials.steel.forEach((steel, index) => {
-    const row = steelHeader + 1 + index
+    const row = steelFirst + index
     const prefix = `S_${steel.id}`
     const names = { fy: `${prefix}_fy`, Es: `${prefix}_Es`, curvePrefix: `${prefix}_curve` }
     steelNames.set(steel.id, names)
@@ -791,14 +745,13 @@ export const prepareAuditContext = (
     defineName(`'${sheetNames.materials}'!$E$${row}`, names.Es)
   })
 
-  let curveRow = steelHeader + calculationMaterials.steel.length + 3
-  curveRow = addMaterialCurve(materials, defineName, curveRow, 1, 'C_curve', 'Concrete tabulated law', cLaw, sheetNames.materials)
+  let curveRow = steelFirst + calculationMaterials.steel.length + 1
+  curveRow = addMaterialCurve(materials, defineName, curveRow, 'C_curve', 'Concrete tabulated law', cLaw, sheetNames.materials)
   for (const steel of calculationMaterials.steel) {
     curveRow = addMaterialCurve(
       materials,
       defineName,
       curveRow,
-      1,
       steelNames.get(steel.id)!.curvePrefix,
       `Steel ${steel.id} tabulated law`,
       steelLaws.get(steel.id)!,
@@ -806,16 +759,17 @@ export const prepareAuditContext = (
     )
   }
 
-  const basisRow = curveRow + 1
-  sectionHeading(materials, basisRow, 'Resistance basis', 5)
-  styleHeader(materials, basisRow + 1, ['Symbol / setting', 'Parameter', 'Value', 'Unit', 'Code basis / note'], 1)
-  let resistanceRow = basisRow + 2
+  let resistanceRow = tableBlock(materials, curveRow, 'Resistance basis', [
+    'Symbol / setting', 'Parameter', 'Value', 'Unit', 'Code basis / note'
+  ])
   const addResistanceRow = (symbol: string, label: string, value: string | number | boolean, unit = '–', note = '') => {
-    materials.getCell(resistanceRow, 1).value = symbol || null
+    materials.getCell(resistanceRow, 1).value = symbol || '–'
     materials.getCell(resistanceRow, 2).value = label
     materials.getCell(resistanceRow, 3).value = typeof value === 'boolean' ? (value ? 'Yes' : 'No') : value
     materials.getCell(resistanceRow, 4).value = unit
-    materials.getCell(resistanceRow, 5).value = note || null
+    // Every row reaches the last column of its own table; an em dash says "no clause reference"
+    // rather than leaving the block's right edge ragged from one row to the next.
+    materials.getCell(resistanceRow, 5).value = note || '–'
     materials.getCell(resistanceRow, 5).alignment = { wrapText: true, vertical: 'top' }
     styleRegenerate(materials.getCell(resistanceRow, 3))
     resistanceRow++
@@ -851,33 +805,44 @@ export const prepareAuditContext = (
       addResistanceRow('emin/D', 'Minimum eccentricity depth factor', input.designBasis.minimumEccentricity.depthFactor, '–', input.designBasis.minimumEccentricity.clauseRef)
     }
   }
-  materials.getCell(resistanceRow + 1, 1).value =
+  sheetNote(
+    materials,
+    resistanceRow + 1,
+    MATERIALS_SPAN,
     'Blue text marks editable values that drive formulas. Orange text marks settings that require re-export because they change the generated surface or mesh.'
-  materials.getCell(resistanceRow + 1, 1).font = { italic: true, color: { argb: NOTE_COLOR } }
-  materials.mergeCells(resistanceRow + 1, 1, resistanceRow + 1, 5)
-  materials.columns = [18, 32, 26, 16, 54, 14, 14, 24].map((width) => ({ width }))
+  )
+  materials.columns = [20, 32, 26, 14, 54, 14, 14, 24].map((width) => ({ width }))
 
   // -----------------------------------------------------------------------
   // Mesh
   // -----------------------------------------------------------------------
   if (meshSheet && mesh) {
-    reportTitle(meshSheet, 'CONCRETE INTEGRATION MESH', 7)
-    meshSheet.getCell('B2').value =
-      'X and Y are measured from the analysis origin. Area is the quadrature weight used directly by Result SUMPRODUCT formulas.'
-    meshSheet.getCell('B2').font = { italic: true, color: { argb: NOTE_COLOR } }
-    meshSheet.mergeCells('B2:G2')
-    meshSheet.getCell('B3').value = 'Cell size (mm)'
-    meshSheet.getCell('C3').value = mesh.report.cellSize
-    meshSheet.getCell('D3').value = 'Points'
-    meshSheet.getCell('E3').value = mesh.points.length
-    meshSheet.getCell('F3').value = 'Area error'
-    meshSheet.getCell('G3').value = mesh.report.areaError
-    styleRegenerate(meshSheet.getCell('C3'))
-    styleGenerated(meshSheet.getCell('E3'))
-    styleGenerated(meshSheet.getCell('G3'))
-    addLegend(meshSheet, 4)
-    styleHeader(meshSheet, 5, ['No.', 'X local (mm)', 'Y local (mm)', 'Area (mm²)', 'Component', 'X world (mm)', 'Y world (mm)'], 1)
-    const meshFirst = 6
+    const MESH_SPAN = 7
+    reportTitle(meshSheet, 'CONCRETE INTEGRATION MESH', MESH_SPAN)
+    addLegend(meshSheet, 2, MESH_SPAN)
+    sheetNote(
+      meshSheet,
+      3,
+      MESH_SPAN,
+      'X and Y are measured from the analysis origin. Area is the quadrature weight used directly by the Result SUMPRODUCT formulas.'
+    )
+    const summaryFirst = tableBlock(meshSheet, 4, 'Mesh summary', ['Item', 'Value', 'Unit'])
+    ;([
+      ['Cell size', mesh.report.cellSize, 'mm', 'regenerate'],
+      ['Quadrature points', mesh.points.length, '–', 'generated'],
+      ['Area error', mesh.report.areaError, '–', 'generated']
+    ] as const).forEach(([label, value, unit, role], index) => {
+      const row = summaryFirst + index
+      meshSheet.getCell(row, 1).value = label
+      meshSheet.getCell(row, 2).value = value
+      meshSheet.getCell(row, 3).value = unit
+      if (role === 'regenerate') styleRegenerate(meshSheet.getCell(row, 2))
+      else styleGenerated(meshSheet.getCell(row, 2))
+    })
+    const meshFirst = tableBlock(meshSheet, summaryFirst + 4, 'Quadrature points', [
+      'No.', 'X local (mm)', 'Y local (mm)', 'Area (mm²)', 'Component', 'X world (mm)', 'Y world (mm)'
+    ])
+    freezeUnder(meshSheet, meshFirst - 1)
     mesh.points.forEach((point, index) => {
       const row = meshFirst + index
       meshSheet.getCell(row, 1).value = index + 1
@@ -893,7 +858,7 @@ export const prepareAuditContext = (
     defineName(`'${sheetNames.mesh}'!$B$${meshFirst}:$B$${meshLast}`, 'Mesh_X')
     defineName(`'${sheetNames.mesh}'!$C$${meshFirst}:$C$${meshLast}`, 'Mesh_Y')
     defineName(`'${sheetNames.mesh}'!$D$${meshFirst}:$D$${meshLast}`, 'Mesh_A')
-    meshSheet.columns = [10, 16, 16, 16, 14, 16, 16].map((width) => ({ width }))
+    meshSheet.columns = [20, 16, 16, 16, 16, 16, 16].map((width) => ({ width }))
   }
 
   // -----------------------------------------------------------------------
@@ -1296,10 +1261,12 @@ export type AuditContext = ReturnType<typeof prepareAuditContext>
  * unusable. Stacking everything at the left and pushing the table down instead means the head reads
  * top to bottom, and no column exists only to hold a header value.
  */
-const IDENTITY_FIRST_ROW = 3
+const IDENTITY_HEADING_ROW = 3
+const IDENTITY_FIRST_ROW = IDENTITY_HEADING_ROW + 2
 const IDENTITY_LABEL_SPAN = 2
 const IDENTITY_VALUE_COLUMN = IDENTITY_LABEL_SPAN + 1
 const IDENTITY_VALUE_SPAN = 2
+const IDENTITY_SPAN = IDENTITY_LABEL_SPAN + IDENTITY_VALUE_SPAN
 
 type IdentityEntry = {
   label: string
@@ -1309,13 +1276,27 @@ type IdentityEntry = {
   numFmt?: string
 }
 
-/** Row of the table header when `count` identity rows are reserved, legend row included. */
-const headerRowFor = (count: number) => IDENTITY_FIRST_ROW + count + 1
+/** Row of the table header when `count` identity rows are reserved, legend and heading included. */
+const headerRowFor = (count: number) => IDENTITY_FIRST_ROW + count + 2
 
 const writeIdentityBlock = (
   sheet: import('exceljs').Worksheet,
   entries: readonly IdentityEntry[]
 ) => {
+  // The head is a block like any other: heading, header, body, all four columns wide.
+  blockHeading(sheet, IDENTITY_HEADING_ROW, 'Chart identity', IDENTITY_SPAN)
+  const headerRow = IDENTITY_HEADING_ROW + 1
+  sheet.mergeCells(headerRow, 1, headerRow, IDENTITY_LABEL_SPAN)
+  sheet.mergeCells(headerRow, IDENTITY_VALUE_COLUMN, headerRow, IDENTITY_VALUE_COLUMN + IDENTITY_VALUE_SPAN - 1)
+  ;([[1, 'Item'], [IDENTITY_VALUE_COLUMN, 'Value']] as const).forEach(([column, label]) => {
+    const cell = sheet.getCell(headerRow, column)
+    cell.value = label
+    cell.font = { bold: true, size: 10, color: { argb: 'FF1F2937' } }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } }
+    cell.alignment = { horizontal: 'center', vertical: 'middle' }
+    cell.border = { bottom: { style: 'thin', color: { argb: 'FF94A3B8' } } }
+  })
+  sheet.getRow(headerRow).height = 20
   entries.forEach((entry, index) => {
     const row = IDENTITY_FIRST_ROW + index
     sheet.mergeCells(row, 1, row, IDENTITY_LABEL_SPAN)
@@ -1330,30 +1311,6 @@ const writeIdentityBlock = (
     else styleGenerated(cell)
   })
   return entries.map((_entry, index) => `$${col(IDENTITY_VALUE_COLUMN)}$${IDENTITY_FIRST_ROW + index}`)
-}
-
-const zebraResultRows = (
-  sheet: import('exceljs').Worksheet,
-  headerRow: number,
-  rowCount: number,
-  visibleColumns: number
-) => {
-  for (let row = headerRow + 1; row <= headerRow + rowCount; row++) {
-    if ((row - headerRow) % 2 !== 0) continue
-    for (let column = 1; column <= visibleColumns; column++) {
-      sheet.getCell(row, column).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }
-    }
-  }
-}
-
-/** Freeze under the table header, keeping the grid-line choice the caller already made. */
-const freezeUnder = (sheet: import('exceljs').Worksheet, headerRow: number, xSplit = 0) => {
-  sheet.views = [{
-    state: 'frozen',
-    xSplit,
-    ySplit: headerRow,
-    showGridLines: sheet.views[0]?.showGridLines ?? true
-  }]
 }
 
 /**
@@ -1449,20 +1406,24 @@ export const writeVerticalAuditSheet = (context: AuditContext, options: Vertical
   const projectionRef = identityRef(2)
   const block = sourceBlock(5, () => identityRef(3))
 
-  reportTitle(sheet, options.titleText ?? 'FORMULA-DRIVEN CHART AUDIT', block.at('fMy'))
-  sheet.getCell('A2').value = (context.mechanicsSupportsMeshFormula
-    ? 'Displayed values are formulas. Each physical station criterion determines ε₀, κx and κy; resistance is integrated from Materials and Mesh. Geometric axial-cap rows are explicitly anchored to their projected engine ledger.'
-    : 'Equivalent-block resultants use the engine total-ledger anchor because this mechanics has no concrete integration mesh. Use the calculation-mode column to identify the provenance.') +
-    ' Two angles are published above: the selected β the M column is projected on, and the strain direction the stations were solved in — the same for a requested meridian, and the nearest sampled direction when the surface has no meridian at the selected angle.'
-  sheet.getCell('A2').font = { italic: true, color: { argb: NOTE_COLOR } }
-  sheet.mergeCells(2, 1, 2, block.at('fMy'))
-  sheet.getRow(2).height = 24
+  const sheetSpan = block.at('fMy')
+  reportTitle(sheet, options.titleText ?? 'FORMULA-DRIVEN CHART AUDIT', sheetSpan)
+  sheetNote(
+    sheet,
+    2,
+    sheetSpan,
+    (context.mechanicsSupportsMeshFormula
+      ? 'Displayed values are formulas. Each physical station criterion determines ε₀, κx and κy; resistance is integrated from Materials and Mesh. Geometric axial-cap rows are explicitly anchored to their projected engine ledger.'
+      : 'Equivalent-block resultants use the engine total-ledger anchor because this mechanics has no concrete integration mesh. Use the calculation-mode column to identify the provenance.') +
+      ' Two angles are published above: the selected β the M column is projected on, and the strain direction the stations were solved in — the same for a requested meridian, and the nearest sampled direction when the surface has no meridian at the selected angle.'
+  )
   const identityCells = writeIdentityBlock(sheet, identity)
   const demandCells = options.demand
     ? { x: identityCells[identityCells.length - 2], y: identityCells[identityCells.length - 1] }
     : null
-  addLegend(sheet, headerRow - 1)
+  addLegend(sheet, headerRow - 2, sheetSpan)
 
+  blockHeading(sheet, headerRow - 1, 'Meridian stations', sheetSpan)
   styleHeader(sheet, headerRow, ['#', 'Resolved criterion', 'P (kN)', 'M (kN·m)'], 1)
   styleHeader(sheet, headerRow, block.labels, 5)
   ;[...sources.values()].forEach((source, index) => {
@@ -1487,7 +1448,7 @@ export const writeVerticalAuditSheet = (context: AuditContext, options: Vertical
     sheet.getColumn(column).hidden = true
   }
   sheet.autoFilter = `A${headerRow}:D${headerRow + mainRows.length}`
-  zebraResultRows(sheet, headerRow, mainRows.length, 4)
+  zebraRows(sheet, headerRow, mainRows.length, 4)
   freezeUnder(sheet, headerRow)
 
   const lastRow = firstDataRow + Math.max(mainRows.length, sources.size) - 1
@@ -1628,13 +1589,10 @@ export const writeFixedPAuditSheets = (context: AuditContext, options: FixedPAud
     })
   })
 
-  const lastResultColumn = FIXED_P_COLUMNS.deltaM
+  // Columns past the interpolated moments hold the engine values the ΔM check reads and are hidden,
+  // so the title, the note and the heading are sized to what the sheet actually prints.
+  const lastResultColumn = FIXED_P_COLUMNS.my
   reportTitle(result, options.titleText ?? 'FORMULA-DRIVEN CHART AUDIT', lastResultColumn)
-  result.getCell('B2').value =
-    'One result row is interpolated from the matching P-below and P-above rows. β and Branch identify the row and preserve every distinct Pmax point; calculation mode on the bracket sheets distinguishes strain formulas from geometric or block ledger anchors.'
-  result.getCell('A2').font = { italic: true, color: { argb: NOTE_COLOR } }
-  result.mergeCells(2, 1, 2, lastResultColumn)
-  result.getRow(2).height = 24
 
   const block = sourceBlock(
     BRACKET_BLOCK_START,
@@ -1671,30 +1629,38 @@ export const writeFixedPAuditSheets = (context: AuditContext, options: FixedPAud
   const firstDataRow = headerRow + 1
   const identityRef = (index: number) => `$${col(IDENTITY_VALUE_COLUMN)}$${IDENTITY_FIRST_ROW + index}`
 
-  result.getCell('A2').value =
+  sheetNote(
+    result,
+    2,
+    lastResultColumn,
     'One result row is interpolated from the matching P-below and P-above rows. β and Branch identify the row and preserve every distinct Pmax point; calculation mode on the bracket sheets distinguishes strain formulas from geometric or block ledger anchors.'
+  )
   const resultCells = writeIdentityBlock(result, resultIdentity)
   context.defineName(`'${result.name}'!${identityRef(2)}`, options.selectedPName)
   const demandCells = options.demand
     ? { x: resultCells[resultCells.length - 2], y: resultCells[resultCells.length - 1] }
     : null
-  addLegend(result, headerRow - 1)
+  addLegend(result, headerRow - 2, lastResultColumn)
+  blockHeading(result, headerRow - 1, 'Contour rows', lastResultColumn)
 
   const setupBracketSheet = (
     sheet: import('exceljs').Worksheet,
     title: string,
     role: string
   ) => {
-    reportTitle(sheet, title, block.at('fMy'))
-    sheet.getCell('A2').value =
+    const bracketSpan = block.at('fMy')
+    reportTitle(sheet, title, bracketSpan)
+    sheetNote(
+      sheet,
+      2,
+      bracketSpan,
       'Each row is one direction-specific bracket station, identified by the contour direction β in column A — the same angle the strain formulas on this row read. Physical stress-strain rows use Materials/Mesh formulas; geometric axial-cap and equivalent-block rows are explicitly labelled ledger anchors.'
-    sheet.getCell('A2').font = { italic: true, color: { argb: NOTE_COLOR } }
-    sheet.mergeCells(2, 1, 2, block.at('fMy'))
-    sheet.getRow(2).height = 24
+    )
     writeIdentityBlock(sheet, bracketIdentity(role))
     // The selected P is the result sheet's own cell, so editing it there moves both brackets.
     setFormula(sheet.getCell(IDENTITY_FIRST_ROW + 2, IDENTITY_VALUE_COLUMN), `=${options.selectedPName}`, kn(options.fixedP), '#,##0.000')
-    addLegend(sheet, headerRow - 1)
+    addLegend(sheet, headerRow - 2, bracketSpan)
+    blockHeading(sheet, headerRow - 1, `Bracketing stations — ${role}`, bracketSpan)
     styleHeader(sheet, headerRow, ['β (deg)', 'Branch', ...block.labels], 1)
     sheet.columns = [14, 10, ...block.widths].map((width) => ({ width }))
     for (let column = block.hiddenFirst; column <= block.hiddenLast; column++) {
@@ -1805,14 +1771,14 @@ export const writeFixedPAuditSheets = (context: AuditContext, options: FixedPAud
   } else {
     // An empty cut is a result: the selected axial force is outside what this surface reaches.
     // Saying so beats three sheets of bare headers that read like a failed export.
-    const message = result.getCell(firstDataRow, 1)
-    message.value = `The ${context.resistanceStage} surface has no intersection at P = ${kn(options.fixedP).toFixed(1)} kN, so this contour has no points. Compare the selected P with the axial bounds of the surface.`
-    message.font = { italic: true, color: { argb: NOTE_COLOR } }
-    message.alignment = { wrapText: true, vertical: 'top' }
-    result.mergeCells(firstDataRow, 1, firstDataRow, FIXED_P_COLUMNS.my)
-    result.getRow(firstDataRow).height = 28
+    sheetNote(
+      result,
+      firstDataRow,
+      FIXED_P_COLUMNS.my,
+      `The ${context.resistanceStage} surface has no intersection at P = ${kn(options.fixedP).toFixed(1)} kN, so this contour has no points. Compare the selected P with the axial bounds of the surface.`
+    )
   }
-  zebraResultRows(result, headerRow, mainRows.length, FIXED_P_COLUMNS.my)
+  zebraRows(result, headerRow, mainRows.length, FIXED_P_COLUMNS.my)
   freezeUnder(result, headerRow)
 
   const chart: SheetChart | null = mainRows.length < 3 ? null : {

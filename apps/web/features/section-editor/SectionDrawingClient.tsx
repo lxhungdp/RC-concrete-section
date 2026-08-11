@@ -8,10 +8,13 @@ import {
   ChevronRight,
   Circle,
   Download,
+  ExternalLink,
   Eye,
   EyeOff,
   FolderOpen,
   Gauge,
+  GitFork,
+  Globe2,
   History,
   Info,
   Lock,
@@ -2545,9 +2548,31 @@ export function SectionDrawingClient() {
                 </div>
                 <div className="pm-about-attribution">
                   <strong>© 2026 Envico Co., Ltd.</strong>
-                  <span>Originally developed by Le Xuan Hung</span>
+                  <span>Developed by Le Xuan Hung</span>
                   <span>Open-source software licensed under the MIT License.</span>
                 </div>
+                <nav className="pm-about-links" aria-label="Project links">
+                  <a
+                    href="https://pmdesigner.vercel.app/"
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Open project website"
+                  >
+                    <Globe2 size={15} aria-hidden="true" />
+                    <span>Website</span>
+                    <ExternalLink size={12} aria-hidden="true" />
+                  </a>
+                  <a
+                    href="https://github.com/lxhungdp/RC-concrete-section.git"
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Open GitHub repository"
+                  >
+                    <GitFork size={15} aria-hidden="true" />
+                    <span>GitHub</span>
+                    <ExternalLink size={12} aria-hidden="true" />
+                  </a>
+                </nav>
                 <p className="pm-about-disclaimer">
                   Engineering results require independent professional review.
                 </p>

@@ -7,8 +7,14 @@ import {
   intersectFixedPContourWithMomentRay,
   sliceFixedPContour
 } from '@pm/analysis'
-import { createDefaultAnalysisOptions, createLoadCombination, createProjectDocument } from '@pm/project'
-import type { DesignBasis } from '@pm/design'
+import {
+  createDefaultAnalysisOptions,
+  createLoadCombination,
+  createProjectDocument,
+  parseProjectDocument,
+  serializeProjectDocument
+} from '@pm/project'
+import { createEn1992DesignBasis, setMaterialFactorComponentValue } from '@pm/design'
 import type { GeometryInput, GeometryInputRebar } from '@pm/geometry'
 import type { MaterialStore, StressStrainPoint } from '@pm/materials'
 
@@ -272,7 +278,7 @@ const materials: MaterialStore = {
       zeroTension: true,
       points: parseConcreteCurve()
     },
-    limits: { epsCu: 0.0032, ignoreTension: true },
+    limits: { eps0: 0.0021, epsCu: 0.0032, ignoreTension: true },
     factors: { alpha: 1, gammaC: 1 }
   },
   steel: [
@@ -295,25 +301,20 @@ analysis.directions.seed = { type: 'uniform', count: 360, startDeg: 0 }
 analysis.directions.refinement = { type: 'fixed', probe: { stationIds: [] } }
 analysis.mesh = { sizing: { type: 'automatic', seedDivisions: 96 }, maxCells: 1_000_000, maxSubdivision: 6 }
 
-const design: DesignBasis = {
-  basisVersion: 1,
-  profileId: 'en-1992-1-1-2004-default',
-  identity: {
-    organization: 'UMD',
-    document: 'UMD P16_Column_ULS_R extracted inputs',
-    edition: '2026-07-30 markdown export',
-    methodId: 'umd-explicit-material-factors',
-    profileVersion: '1.0.0'
-  },
-  verificationStatus: 'draft',
-  format: 'designMaterialReevaluation',
-  factors: { alphaCc: 1, gammaC: 1, gammaS: 1.1111111111111112 },
-  modified: true,
-  overrideReason: 'Match UMD report factors: gmc,ULS = 1.000 and gms,ULS = 1.111.'
-}
+const design = setMaterialFactorComponentValue(
+  setMaterialFactorComponentValue(createEn1992DesignBasis(), 'gammaC', 1),
+  'gammaS',
+  1.111
+)
+design.modified = true
+design.materialModelModified = true
+design.overrideReason =
+  'Match the UMD report: use its explicit design-level concrete curve (gammaC,ULS = 1.000) ' +
+  'and reinforcement factor gammaS,ULS = 1.111.'
 
 const loadcases = parseLoadCases()
 const project = createProjectDocument({
+  calculationProfileId: 'en-1992-1-1-2004-stress-strain',
   geometry,
   materials,
   loadings: { combinations: loadcases },
@@ -325,9 +326,12 @@ const project = createProjectDocument({
     createdAt: '2026-07-30T00:00:00.000Z'
   }
 })
+project.meta.updatedAt = '2026-08-12T00:00:00.000Z'
+const parsedProject = parseProjectDocument(project)
+if (!parsedProject.ok) throw new Error(`Generated UMD project is not importable: ${parsedProject.error}`)
 
 const inputPath = path.join(outputDir, 'P16_Column_ULS_R_UMD_input.pm-project.json')
-fs.writeFileSync(inputPath, JSON.stringify(project, null, 2))
+fs.writeFileSync(inputPath, serializeProjectDocument(parsedProject.document))
 
 const section = {
   solids: geometry.outers.map((outer) => ({

@@ -144,6 +144,20 @@ const headerRowOf = (sheet: ExcelJS.Worksheet) => {
   throw new Error(`${sheet.name} has no table header`)
 }
 
+/**
+ * Row carrying `label` in column A.
+ *
+ * Every block on every sheet starts at column A and labels its own rows there, so looking a row up
+ * by what it says keeps these checks about the calculation rather than about which row a block
+ * happens to land on.
+ */
+const rowOfLabel = (sheet: ExcelJS.Worksheet, label: string) => {
+  for (let row = 1; row <= sheet.rowCount; row++) {
+    if (sheet.getCell(row, 1).value === label) return row
+  }
+  throw new Error(`${sheet.name} has no row labelled ${label}`)
+}
+
 const assertNearEngine = (actual: number, expected: number, label: string) => {
   const tolerance = Math.max(1e-9, Math.abs(expected) * 1e-9)
   assert.ok(
@@ -202,6 +216,64 @@ const hasSolidFill = (cell: ExcelJS.Cell) => {
   return fill.type === 'pattern' && fill.pattern === 'solid'
 }
 
+/** Columns a merge starting at column A covers, or 1 when the cell is not merged. */
+const mergedWidth = (sheet: ExcelJS.Worksheet, row: number) => {
+  const anchor = sheet.getCell(row, 1)
+  let width = 0
+  while (width < sheet.columnCount && sheet.getCell(row, width + 1).master === anchor) width++
+  return width
+}
+
+/**
+ * Printable columns a row occupies before its first empty cell.
+ *
+ * Merged cells count as occupied; hidden diagnostic columns do not, because a heading is sized to
+ * what the sheet actually shows.
+ */
+const filledWidth = (sheet: ExcelJS.Worksheet, row: number) => {
+  let width = 0
+  for (let column = 1; column <= sheet.columnCount; column++) {
+    const cell = sheet.getCell(row, column)
+    const occupied = cell.master !== cell ||
+      (cell.value !== null && cell.value !== undefined && cell.value !== '')
+    if (!occupied) break
+    if (!sheet.getColumn(column).hidden) width = column
+  }
+  return width
+}
+
+const GROUP_FILL_ARGB = 'FFD6E4F5'
+
+/**
+ * Every block heading stops exactly where its own header row stops.
+ *
+ * Blocks on one sheet may be different widths — a load-case table needs six columns and a
+ * reinforcement table nine — but a heading that runs past its own header is what made these sheets
+ * print badly, so it is asserted rather than eyeballed.
+ */
+const assertBlocksAligned = (sheet: ExcelJS.Worksheet) => {
+  const blocks: Array<{ title: string; width: number }> = []
+  for (let row = 2; row <= sheet.rowCount; row++) {
+    const cell = sheet.getCell(row, 1)
+    const fill = cell.fill as ExcelJS.FillPattern | undefined
+    if (fill?.fgColor?.argb !== GROUP_FILL_ARGB) continue
+    const title = String(cell.value ?? '')
+    const heading = mergedWidth(sheet, row)
+    const header = filledWidth(sheet, row + 1)
+    assert.equal(
+      heading,
+      header,
+      `${sheet.name}: "${title}" heading spans ${heading} columns but its header row spans ${header}`
+    )
+    blocks.push({ title, width: heading })
+  }
+  assert.ok(blocks.length > 0, `${sheet.name} must publish at least one titled block`)
+  // Sheet-wide furniture — title and legend — reaches the widest block, so the page edge is straight.
+  const widest = Math.max(...blocks.map((block) => block.width))
+  assert.equal(mergedWidth(sheet, 1), widest, `${sheet.name}: the title must span the widest block`)
+  return blocks
+}
+
 test('vertical chart audit has four traceable sheets and formula-driven result values', async () => {
   const input = workbookInput('vertical')
   const workbook = await buildChartAuditWorkbook(input)
@@ -212,9 +284,10 @@ test('vertical chart audit has four traceable sheets and formula-driven result v
     'Mesh',
     'Result'
   ])
-  assert.ok((workbook.getWorksheet('Geometry')?.rowCount ?? 0) > rebars.length)
-  assert.equal(workbook.getWorksheet('Geometry')?.getCell('G3').value, 'Engineering review client')
-  assert.equal(workbook.getWorksheet('Geometry')?.getCell('G4').value, 'Audit engineering')
+  const geometrySheet = workbook.getWorksheet('Geometry')!
+  assert.ok(geometrySheet.rowCount > rebars.length)
+  assert.equal(geometrySheet.getCell(rowOfLabel(geometrySheet, 'Client'), 2).value, 'Engineering review client')
+  assert.equal(geometrySheet.getCell(rowOfLabel(geometrySheet, 'Company'), 2).value, 'Audit engineering')
   assert.ok((workbook.getWorksheet('Materials')?.rowCount ?? 0) > 10)
   assert.ok((workbook.getWorksheet('Mesh')?.rowCount ?? 0) > 6)
 
@@ -242,8 +315,12 @@ test('vertical chart audit has four traceable sheets and formula-driven result v
   assert.equal(result.getCell(resolvedRow, 12).formula, '0')
   assert.match(result.getCell(resolvedRow, 13).formula ?? '', /\(K\d+-L\d+\)\/\(H\d+-I\d+\)/)
   assert.match(result.getCell(resolvedRow, 14).formula ?? '', /^K\d+-M\d+\*H\d+$/)
-  assert.match(result.getCell(resolvedRow, 15).formula ?? '', /COS\(RADIANS\(\$C\$6\)\)/)
-  assert.match(result.getCell(resolvedRow, 16).formula ?? '', /SIN\(RADIANS\(\$C\$6\)\)/)
+  // κx and κy are built from the strain direction published in the identity block, wherever that
+  // block's rows land.
+  const strainDirectionCell = `$C$${rowOfLabel(result, 'Strain direction β — station formulas (deg)')}`
+  const literal = strainDirectionCell.replace(/\$/g, '\\$')
+  assert.match(result.getCell(resolvedRow, 15).formula ?? '', new RegExp(`COS\\(RADIANS\\(${literal}\\)\\)`))
+  assert.match(result.getCell(resolvedRow, 16).formula ?? '', new RegExp(`SIN\\(RADIANS\\(${literal}\\)\\)`))
 
   const yieldRatioRow = Array.from({ length: result.rowCount - head }, (_, index) => index + head + 1)
     .find((row) => result.getCell(row, 6).value === 'εₛ/εy')
@@ -251,9 +328,20 @@ test('vertical chart audit has four traceable sheets and formula-driven result v
   assert.match(result.getCell(yieldRatioRow, 12).formula ?? '', /S_\d+_fy\/S_\d+_Es/)
   assert.match(result.getCell(yieldRatioRow, 13).formula ?? '', /\(K\d+-L\d+\)\/\(H\d+-I\d+\)/)
 
-  const geometry = workbook.getWorksheet('Geometry')!
+  const geometry = geometrySheet
+  for (const sheet of workbook.worksheets) assertBlocksAligned(sheet)
   assert.deepEqual(
-    Array.from({ length: 7 }, (_, index) => geometry.getCell(12, index + 1).value),
+    assertBlocksAligned(geometry).map((block) => [block.title, block.width]),
+    [
+      ['Project and calculation identity', 2],
+      ['Section boundary', 7],
+      ['Reinforcement', 9],
+      ['Project load cases', 6]
+    ]
+  )
+  const boundaryHeader = rowOfLabel(geometry, 'Section boundary') + 1
+  assert.deepEqual(
+    Array.from({ length: 7 }, (_, index) => geometry.getCell(boundaryHeader, index + 1).value),
     ['Ring ID', 'Boundary', 'Point order', 'X input (mm)', 'Y input (mm)', 'x local (mm)', 'y local (mm)']
   )
   const materials = workbook.getWorksheet('Materials')!
@@ -261,16 +349,15 @@ test('vertical chart audit has four traceable sheets and formula-driven result v
   assert.ok(materials.getColumn(1).values.includes('εcu'))
   assert.equal(materials.getColumn(1).values.some((value) => String(value).startsWith('project.materials.')), false)
 
-  const rebarHeader = geometry.getColumn(2).values.findIndex((value) => value === 'Rebar ID')
-  assert.ok(rebarHeader > 0)
+  const rebarHeader = rowOfLabel(geometry, 'Reinforcement') + 1
+  assert.equal(geometry.getCell(rebarHeader, 2).value, 'Rebar ID')
   const rebarDiameter = geometry.getCell(rebarHeader + 1, 3)
   assert.equal(rebarDiameter.font.color?.argb, 'FF0070C0')
   assert.equal(hasSolidFill(rebarDiameter), false)
-  assert.equal(geometry.getCell('C3').font.color?.argb, 'FF64748B')
-  assert.equal(hasSolidFill(geometry.getCell('C3')), false)
-  const loadcaseSection = geometry.getColumn(2).values.findIndex((value) => value === 'Project load cases')
-  assert.ok(loadcaseSection > 0)
-  const firstLoadcaseRow = loadcaseSection + 2
+  const projectValue = geometry.getCell(rowOfLabel(geometry, 'Project'), 2)
+  assert.equal(projectValue.font.color?.argb, 'FF64748B')
+  assert.equal(hasSolidFill(projectValue), false)
+  const firstLoadcaseRow = rowOfLabel(geometry, 'Project load cases') + 2
   for (const column of [3, 4, 5]) {
     assert.equal(geometry.getCell(firstLoadcaseRow, column).font.color?.argb, 'FF0070C0')
     assert.equal(hasSolidFill(geometry.getCell(firstLoadcaseRow, column)), false)
@@ -345,9 +432,9 @@ test('Fixed-P chart audit exports one selected P and interpolates the displayed 
   ])
   const head = headerRowOf(result)
   const first = head + 1
-  assert.equal(result.getCell('A5').value, 'Selected P (kN)')
-  assert.equal(result.getCell('C4').value, 'nominal')
-  assert.equal(result.getCell('C5').value, 0)
+  const selectedPRow = rowOfLabel(result, 'Selected P (kN)')
+  assert.equal(result.getCell(rowOfLabel(result, 'Resistance stage'), 3).value, 'nominal')
+  assert.equal(result.getCell(selectedPRow, 3).value, 0)
   assert.equal(headerRowOf(lower), head, 'the three fixed-P sheets must share one header row')
   assert.equal(headerRowOf(upper), head)
   // Row identity is the contour direction and its branch; the bracket sheets carry the same pair,

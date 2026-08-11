@@ -11,11 +11,11 @@ Files in this directory are evidence fixtures, not declarations of current defau
   The matching schema-v1 project migrates to and every repository-generated calculation uses `unified-27-v2`;
   regression checks compare only source-independent anchors when the external sheet's sampling does
   not match the canonical schedule.
-- `projects/P16_Column_ULS.pm-project.json` is an archived pre-profile EC2/UMD comparison snapshot. EC2 is
-  not a complete current calculation profile, so this file is evidence data and is not expected to
-  pass the current schema-v1 profile-consistency checks. It is not an import template. The current
-  parser is version-locked to v1 but still performs the limited defaults/repairs listed in
-  [`../../development/02-data-contracts-persistence-and-versioning.md`](../../development/02-data-contracts-persistence-and-versioning.md).
+- `projects/P16_Column_ULS.pm-project.json` is the importable schema-v1 input for the UMD comparison.
+  It selects the EN 1992 stress-strain preview profile, records the UMD explicit design-level concrete
+  curve as a documented model modification, and uses the report factors `gammaC,ULS = 1.000` and
+  `gammaS,ULS = 1.111`. Regenerate and validate it together with the comparison oracle by running
+  `node --import tsx tools/verification/p16/verify.ts`.
 - UMD comparison JSON/XLSX files record external comparison data and the assumptions of that run.
 - Generated Excel workbooks are audit artifacts and may be overwritten only by the explicit fixture
   update workflow after test review. Their station sheets export and verify the canonical 27 points.

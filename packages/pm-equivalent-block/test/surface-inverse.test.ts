@@ -215,6 +215,48 @@ test('axial clipping creates a closed cap face at the exact requested force', ()
   close(pureCompressionRay.loadFactor!, axialCap, 1e-10)
 })
 
+test('axial clipping preserves collinear cap-loop vertices from subdivided side faces', () => {
+  const loop = [
+    { Mx: -1, My: -1 }, { Mx: 0, My: -1 }, { Mx: 1, My: -1 }, { Mx: 1, My: 0 },
+    { Mx: 1, My: 1 }, { Mx: 0, My: 1 }, { Mx: -1, My: 1 }, { Mx: -1, My: 0 }
+  ]
+  const points: CapacitySurface['points'] = [
+    { id: 0, resultants: { P: -1, Mx: 0, My: 0 }, kind: 'tension-pole' },
+    ...loop.map((moment, index) => ({
+      id: index + 1,
+      resultants: { P: 0, ...moment },
+      kind: 'state' as const
+    })),
+    { id: 9, resultants: { P: 2, Mx: 0, My: 0 }, kind: 'compression-pole' as const }
+  ]
+  const triangles: CapacitySurface['triangles'] = []
+  for (let index = 0; index < loop.length; index += 1) {
+    const current = index + 1
+    const next = (index + 1) % loop.length + 1
+    triangles.push({ a: 0, b: current, c: next })
+    triangles.push({ a: 9, b: next, c: current })
+  }
+  const surface: CapacitySurface = {
+    points,
+    triangles,
+    directions: [],
+    stations: [],
+    normalization: { P: 2, Mx: 1, My: 1 },
+    maxDirectionalInterpolationError: 0,
+    maxStationInterpolationError: 0,
+    directionRefinementPasses: 0,
+    stationRefinementPasses: 0,
+    directionRefinementConverged: true,
+    stationRefinementConverged: true,
+    topology: evaluateSurfaceTopology(points, triangles)
+  }
+  assert.equal(surface.topology.closed, true)
+  const clipped = clipCapacitySurfaceByAxialCap(surface, 1)
+  assert.equal(clipped.topology.closed, true, JSON.stringify(clipped.topology))
+  assert.equal(clipped.topology.boundaryEdges, 0)
+  assert.equal(clipped.topology.degenerateTriangles, 0)
+})
+
 test('ray intersection returns the analytical octahedron boundary', () => {
   const pointValues = [
     { P: 1, Mx: 0, My: 0 }, { P: -1, Mx: 0, My: 0 },
