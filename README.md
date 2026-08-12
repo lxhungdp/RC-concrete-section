@@ -12,6 +12,70 @@ engineering kernels run locally in the browser through a Web Worker.
 > The application evaluates the resistance of a short reinforced-concrete **cross-section**. It is
 > not a complete column/member design program and must not be presented as one.
 
+## Product tour
+
+From arbitrary reinforced-concrete geometry to an auditable `P-Mx-My` demand check. Click any
+screenshot to inspect the full-resolution engineering detail.
+
+<p align="center">
+  <a href="docs/assets/screenshots/interaction-surface-and-slices.png">
+    <img src="docs/assets/screenshots/interaction-surface-and-slices.png" alt="Three-dimensional P-Mx-My resistance surface with a direct-beta meridian and fixed-P contour" width="100%">
+  </a>
+</p>
+<p align="center">
+  <strong>Resistance workspace</strong> — inspect the 3D design or nominal surface together with
+  direct-β meridians, fixed-P contours and the underlying chart data.
+</p>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/assets/screenshots/geometry-editor.png">
+        <img src="docs/assets/screenshots/geometry-editor.png" alt="Geometry editor showing irregular concrete solids, openings and discrete reinforcement">
+      </a><br>
+      <strong>Arbitrary section geometry</strong><br>
+      Build multiple polygonal solids and openings, then place discrete reinforcement with visible
+      point numbering and section properties.
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/assets/screenshots/verified-section-mesh.png">
+        <img src="docs/assets/screenshots/verified-section-mesh.png" alt="Verified triangular integration mesh for an irregular reinforced-concrete section">
+      </a><br>
+      <strong>Verified numerical model</strong><br>
+      Review the exact clipped mesh, integration-point count, mesh size and area-closure evidence
+      before interpreting a resistance surface.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/assets/screenshots/mesh-gauss-points.png">
+        <img src="docs/assets/screenshots/mesh-gauss-points.png" alt="Detailed section mesh with triangles, Gauss integration points and reinforcement fibers">
+      </a><br>
+      <strong>Mesh-level audit view</strong><br>
+      Zoom into concrete triangles, Gauss points and reinforcement fibers; export the same audit
+      model to Excel or DXF.
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/assets/screenshots/directional-and-fixed-p-results.png">
+        <img src="docs/assets/screenshots/directional-and-fixed-p-results.png" alt="Directional P-M result with tabulated stations, 3D resistance surface and fixed-P Mx-My contour">
+      </a><br>
+      <strong>Directional and fixed-P results</strong><br>
+      Compare tabulated strain-domain stations, a selected bending direction, the complete 3D
+      surface and an axial-force slice in one workspace.
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" valign="top">
+      <a href="docs/assets/screenshots/demand-check-section-field.png">
+        <img src="docs/assets/screenshots/demand-check-section-field.png" alt="Demand-check workspace showing utilization, converged section field, neutral axis and capacity intersections">
+      </a><br>
+      <strong>Demand check and compatible section field</strong><br>
+      Trace a factored loadcase from utilization and capacity intersections back to its converged
+      strain field, neutral axis, stress range, solver residual and governing demand direction.
+    </td>
+  </tr>
+</table>
+
 ## 1. Standard and verification status
 
 **KDS is the only code family currently exposed as an engineering section-check workflow.** Other
