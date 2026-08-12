@@ -1,0 +1,1996 @@
+{
+  "schema": "pm-column-project",
+  "version": 1,
+  "meta": {
+    "id": 1,
+    "name": "Hi",
+    "information": {
+      "client": "Client name",
+      "company": "Company name",
+      "designedBy": "Designer",
+      "checkedBy": "Checker",
+      "address": "Company address",
+      "date": "2026-08-12"
+    },
+    "createdAt": "2026-08-12T00:01:31.666Z",
+    "updatedAt": "2026-08-12T00:17:46.536Z"
+  },
+  "inputs": {
+    "calculationProfileId": "kds-2024-stress-strain",
+    "geometry": {
+      "id": 1,
+      "name": "Hi",
+      "outers": [
+        {
+          "id": 1,
+          "points": [
+            {
+              "id": 1,
+              "x": -1831.586508507639,
+              "y": -342.2916779843559
+            },
+            {
+              "id": 2,
+              "x": -1538.1422282874976,
+              "y": -279.9181707390281
+            },
+            {
+              "id": 3,
+              "x": -1683.680411859929,
+              "y": 404.7851497746359
+            },
+            {
+              "id": 4,
+              "x": -1194.606611493026,
+              "y": 508.7409951835155
+            },
+            {
+              "id": 5,
+              "x": -1049.0684279205946,
+              "y": -175.96232533014847
+            },
+            {
+              "id": 6,
+              "x": -755.6241477004529,
+              "y": -113.58881808482067
+            },
+            {
+              "id": 7,
+              "x": -1046.7005148453159,
+              "y": 1255.8178229425073
+            },
+            {
+              "id": 8,
+              "x": -1340.1447950654576,
+              "y": 1193.4443156971795
+            },
+            {
+              "id": 9,
+              "x": -1236.188949656578,
+              "y": 704.3705153302767
+            },
+            {
+              "id": 10,
+              "x": -1725.262750023481,
+              "y": 600.414669921397
+            },
+            {
+              "id": 11,
+              "x": -1829.2185954323606,
+              "y": 1089.4884702882998
+            },
+            {
+              "id": 12,
+              "x": -2122.662875652502,
+              "y": 1027.114963042972
+            }
+          ],
+          "holes": []
+        },
+        {
+          "id": 2,
+          "points": [
+            {
+              "id": 13,
+              "x": -559.9946275536918,
+              "y": -72.0064799212688
+            },
+            {
+              "id": 14,
+              "x": -364.36510740693063,
+              "y": -30.42414175771694
+            },
+            {
+              "id": 15,
+              "x": -655.4414745517937,
+              "y": 1338.982499269611
+            },
+            {
+              "id": 16,
+              "x": -851.0709946985548,
+              "y": 1297.4001611060592
+            }
+          ],
+          "holes": []
+        },
+        {
+          "id": 3,
+          "points": [
+            {
+              "id": 17,
+              "x": -892.6533328621067,
+              "y": 1493.0296812528204
+            },
+            {
+              "id": 18,
+              "x": -877.251308741107,
+              "y": 1457.180552658444
+            },
+            {
+              "id": 19,
+              "x": -849.3027242147997,
+              "y": 1429.9534117696935
+            },
+            {
+              "id": 20,
+              "x": -813.0617798823363,
+              "y": 1415.4953852137874
+            },
+            {
+              "id": 21,
+              "x": -774.0474037069503,
+              "y": 1416.0060902612156
+            },
+            {
+              "id": 22,
+              "x": -738.1982751125736,
+              "y": 1431.4081143822154
+            },
+            {
+              "id": 23,
+              "x": -710.9711342238234,
+              "y": 1459.3566989085227
+            },
+            {
+              "id": 24,
+              "x": -696.5131076679173,
+              "y": 1495.5976432409861
+            },
+            {
+              "id": 25,
+              "x": -697.0238127153456,
+              "y": 1534.6120194163723
+            },
+            {
+              "id": 26,
+              "x": -712.4258368363453,
+              "y": 1570.4611480107487
+            },
+            {
+              "id": 27,
+              "x": -740.3744213626526,
+              "y": 1597.688288899499
+            },
+            {
+              "id": 28,
+              "x": -776.6153656951159,
+              "y": 1612.1463154554049
+            },
+            {
+              "id": 29,
+              "x": -815.6297418705021,
+              "y": 1611.6356104079769
+            },
+            {
+              "id": 30,
+              "x": -851.4788704648786,
+              "y": 1596.233586286977
+            },
+            {
+              "id": 31,
+              "x": -878.7060113536288,
+              "y": 1568.2850017606697
+            },
+            {
+              "id": 32,
+              "x": -893.164037909535,
+              "y": 1532.0440574282065
+            }
+          ],
+          "holes": []
+        }
+      ],
+      "rebars": [
+        {
+          "id": 1,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1800.777,
+          "y": -294.849
+        },
+        {
+          "id": 2,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1752.007,
+          "y": -284.483
+        },
+        {
+          "id": 3,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1703.238,
+          "y": -274.117
+        },
+        {
+          "id": 4,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1654.468,
+          "y": -263.75
+        },
+        {
+          "id": 5,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1605.699,
+          "y": -253.384
+        },
+        {
+          "id": 6,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1591.676,
+          "y": -220.453
+        },
+        {
+          "id": 7,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1602.042,
+          "y": -171.684
+        },
+        {
+          "id": 8,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1612.408,
+          "y": -122.914
+        },
+        {
+          "id": 9,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1622.774,
+          "y": -74.144
+        },
+        {
+          "id": 10,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1633.141,
+          "y": -25.375
+        },
+        {
+          "id": 11,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1643.507,
+          "y": 23.395
+        },
+        {
+          "id": 12,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1653.873,
+          "y": 72.165
+        },
+        {
+          "id": 13,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1664.24,
+          "y": 120.934
+        },
+        {
+          "id": 14,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1674.606,
+          "y": 169.704
+        },
+        {
+          "id": 15,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1684.972,
+          "y": 218.473
+        },
+        {
+          "id": 16,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1695.339,
+          "y": 267.243
+        },
+        {
+          "id": 17,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1705.705,
+          "y": 316.013
+        },
+        {
+          "id": 18,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1716.071,
+          "y": 364.782
+        },
+        {
+          "id": 19,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1726.437,
+          "y": 413.552
+        },
+        {
+          "id": 20,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1704.396,
+          "y": 441.276
+        },
+        {
+          "id": 21,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1655.626,
+          "y": 451.642
+        },
+        {
+          "id": 22,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1606.857,
+          "y": 462.008
+        },
+        {
+          "id": 23,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1558.087,
+          "y": 472.374
+        },
+        {
+          "id": 24,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1509.317,
+          "y": 482.741
+        },
+        {
+          "id": 25,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1460.548,
+          "y": 493.107
+        },
+        {
+          "id": 26,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1411.778,
+          "y": 503.473
+        },
+        {
+          "id": 27,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1363.009,
+          "y": 513.84
+        },
+        {
+          "id": 28,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1314.239,
+          "y": 524.206
+        },
+        {
+          "id": 29,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1265.469,
+          "y": 534.572
+        },
+        {
+          "id": 30,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1216.7,
+          "y": 544.939
+        },
+        {
+          "id": 31,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1167.93,
+          "y": 555.305
+        },
+        {
+          "id": 32,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1154.309,
+          "y": 511.547
+        },
+        {
+          "id": 33,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1143.943,
+          "y": 462.777
+        },
+        {
+          "id": 34,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1133.577,
+          "y": 414.008
+        },
+        {
+          "id": 35,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1123.21,
+          "y": 365.238
+        },
+        {
+          "id": 36,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1112.844,
+          "y": 316.468
+        },
+        {
+          "id": 37,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1102.478,
+          "y": 267.699
+        },
+        {
+          "id": 38,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1092.112,
+          "y": 218.929
+        },
+        {
+          "id": 39,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1081.745,
+          "y": 170.159
+        },
+        {
+          "id": 40,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1071.379,
+          "y": 121.39
+        },
+        {
+          "id": 41,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1061.013,
+          "y": 72.62
+        },
+        {
+          "id": 42,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1050.646,
+          "y": 23.851
+        },
+        {
+          "id": 43,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1040.28,
+          "y": -24.919
+        },
+        {
+          "id": 44,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1029.914,
+          "y": -73.689
+        },
+        {
+          "id": 45,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1019.547,
+          "y": -122.458
+        },
+        {
+          "id": 46,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -975.551,
+          "y": -119.442
+        },
+        {
+          "id": 47,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -926.782,
+          "y": -109.076
+        },
+        {
+          "id": 48,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -878.012,
+          "y": -98.71
+        },
+        {
+          "id": 49,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -829.242,
+          "y": -88.343
+        },
+        {
+          "id": 50,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -807.869,
+          "y": -60.186
+        },
+        {
+          "id": 51,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -818.235,
+          "y": -11.416
+        },
+        {
+          "id": 52,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -828.602,
+          "y": 37.354
+        },
+        {
+          "id": 53,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -838.968,
+          "y": 86.123
+        },
+        {
+          "id": 54,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -849.334,
+          "y": 134.893
+        },
+        {
+          "id": 55,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -859.7,
+          "y": 183.663
+        },
+        {
+          "id": 56,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -870.067,
+          "y": 232.432
+        },
+        {
+          "id": 57,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -880.433,
+          "y": 281.202
+        },
+        {
+          "id": 58,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -890.799,
+          "y": 329.971
+        },
+        {
+          "id": 59,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -901.166,
+          "y": 378.741
+        },
+        {
+          "id": 60,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -911.532,
+          "y": 427.511
+        },
+        {
+          "id": 61,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -921.898,
+          "y": 476.28
+        },
+        {
+          "id": 62,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -932.265,
+          "y": 525.05
+        },
+        {
+          "id": 63,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -942.631,
+          "y": 573.819
+        },
+        {
+          "id": 64,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -952.997,
+          "y": 622.589
+        },
+        {
+          "id": 65,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -963.364,
+          "y": 671.359
+        },
+        {
+          "id": 66,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -973.73,
+          "y": 720.128
+        },
+        {
+          "id": 67,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -984.096,
+          "y": 768.898
+        },
+        {
+          "id": 68,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -994.462,
+          "y": 817.667
+        },
+        {
+          "id": 69,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1004.829,
+          "y": 866.437
+        },
+        {
+          "id": 70,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1015.195,
+          "y": 915.207
+        },
+        {
+          "id": 71,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1025.561,
+          "y": 963.976
+        },
+        {
+          "id": 72,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1035.928,
+          "y": 1012.746
+        },
+        {
+          "id": 73,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1046.294,
+          "y": 1061.516
+        },
+        {
+          "id": 74,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1056.66,
+          "y": 1110.285
+        },
+        {
+          "id": 75,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1067.027,
+          "y": 1159.055
+        },
+        {
+          "id": 76,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1077.393,
+          "y": 1207.824
+        },
+        {
+          "id": 77,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1125.728,
+          "y": 1198.126
+        },
+        {
+          "id": 78,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1174.498,
+          "y": 1187.76
+        },
+        {
+          "id": 79,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1223.268,
+          "y": 1177.394
+        },
+        {
+          "id": 80,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1272.037,
+          "y": 1167.027
+        },
+        {
+          "id": 81,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1286.729,
+          "y": 1134.53
+        },
+        {
+          "id": 82,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1276.362,
+          "y": 1085.761
+        },
+        {
+          "id": 83,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1265.996,
+          "y": 1036.991
+        },
+        {
+          "id": 84,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1255.63,
+          "y": 988.222
+        },
+        {
+          "id": 85,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1245.263,
+          "y": 939.452
+        },
+        {
+          "id": 86,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1234.897,
+          "y": 890.682
+        },
+        {
+          "id": 87,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1224.531,
+          "y": 841.913
+        },
+        {
+          "id": 88,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1214.165,
+          "y": 793.143
+        },
+        {
+          "id": 89,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1203.798,
+          "y": 744.373
+        },
+        {
+          "id": 90,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1193.432,
+          "y": 695.604
+        },
+        {
+          "id": 91,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1215.473,
+          "y": 667.88
+        },
+        {
+          "id": 92,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1264.243,
+          "y": 657.514
+        },
+        {
+          "id": 93,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1313.013,
+          "y": 647.148
+        },
+        {
+          "id": 94,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1361.782,
+          "y": 636.781
+        },
+        {
+          "id": 95,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1410.552,
+          "y": 626.415
+        },
+        {
+          "id": 96,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1459.321,
+          "y": 616.049
+        },
+        {
+          "id": 97,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1508.091,
+          "y": 605.682
+        },
+        {
+          "id": 98,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1556.861,
+          "y": 595.316
+        },
+        {
+          "id": 99,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1605.63,
+          "y": 584.95
+        },
+        {
+          "id": 100,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1654.4,
+          "y": 574.583
+        },
+        {
+          "id": 101,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1703.17,
+          "y": 564.217
+        },
+        {
+          "id": 102,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1751.939,
+          "y": 553.851
+        },
+        {
+          "id": 103,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1765.56,
+          "y": 597.609
+        },
+        {
+          "id": 104,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1775.926,
+          "y": 646.379
+        },
+        {
+          "id": 105,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1786.293,
+          "y": 695.148
+        },
+        {
+          "id": 106,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1796.659,
+          "y": 743.918
+        },
+        {
+          "id": 107,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1807.025,
+          "y": 792.687
+        },
+        {
+          "id": 108,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1817.391,
+          "y": 841.457
+        },
+        {
+          "id": 109,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1827.758,
+          "y": 890.227
+        },
+        {
+          "id": 110,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1838.124,
+          "y": 938.996
+        },
+        {
+          "id": 111,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1848.49,
+          "y": 987.766
+        },
+        {
+          "id": 112,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1858.857,
+          "y": 1036.535
+        },
+        {
+          "id": 113,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1903.287,
+          "y": 1032.851
+        },
+        {
+          "id": 114,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1952.057,
+          "y": 1022.485
+        },
+        {
+          "id": 115,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -2000.826,
+          "y": 1012.119
+        },
+        {
+          "id": 116,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -2049.596,
+          "y": 1001.752
+        },
+        {
+          "id": 117,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -2070.301,
+          "y": 973.161
+        },
+        {
+          "id": 118,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -2059.935,
+          "y": 924.391
+        },
+        {
+          "id": 119,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -2049.568,
+          "y": 875.621
+        },
+        {
+          "id": 120,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -2039.202,
+          "y": 826.852
+        },
+        {
+          "id": 121,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -2028.836,
+          "y": 778.082
+        },
+        {
+          "id": 122,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -2018.469,
+          "y": 729.313
+        },
+        {
+          "id": 123,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -2008.103,
+          "y": 680.543
+        },
+        {
+          "id": 124,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1997.737,
+          "y": 631.773
+        },
+        {
+          "id": 125,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1987.37,
+          "y": 583.004
+        },
+        {
+          "id": 126,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1977.004,
+          "y": 534.234
+        },
+        {
+          "id": 127,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1966.638,
+          "y": 485.464
+        },
+        {
+          "id": 128,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1956.272,
+          "y": 436.695
+        },
+        {
+          "id": 129,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1945.905,
+          "y": 387.925
+        },
+        {
+          "id": 130,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1935.539,
+          "y": 339.156
+        },
+        {
+          "id": 131,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1925.173,
+          "y": 290.386
+        },
+        {
+          "id": 132,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1914.806,
+          "y": 241.616
+        },
+        {
+          "id": 133,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1904.44,
+          "y": 192.847
+        },
+        {
+          "id": 134,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1894.074,
+          "y": 144.077
+        },
+        {
+          "id": 135,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1883.707,
+          "y": 95.308
+        },
+        {
+          "id": 136,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1873.341,
+          "y": 46.538
+        },
+        {
+          "id": 137,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1862.975,
+          "y": -2.232
+        },
+        {
+          "id": 138,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1852.609,
+          "y": -51.001
+        },
+        {
+          "id": 139,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1842.242,
+          "y": -99.771
+        },
+        {
+          "id": 140,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1831.876,
+          "y": -148.54
+        },
+        {
+          "id": 141,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1821.51,
+          "y": -197.31
+        },
+        {
+          "id": 142,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -1811.143,
+          "y": -246.08
+        },
+        {
+          "id": 143,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -529.185,
+          "y": -24.564
+        },
+        {
+          "id": 144,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -480.615,
+          "y": -14.24
+        },
+        {
+          "id": 145,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -432.045,
+          "y": -3.916
+        },
+        {
+          "id": 146,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -417.83,
+          "y": 28.718
+        },
+        {
+          "id": 147,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -428.154,
+          "y": 77.288
+        },
+        {
+          "id": 148,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -438.478,
+          "y": 125.858
+        },
+        {
+          "id": 149,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -448.801,
+          "y": 174.428
+        },
+        {
+          "id": 150,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -459.125,
+          "y": 222.998
+        },
+        {
+          "id": 151,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -469.449,
+          "y": 271.568
+        },
+        {
+          "id": 152,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -479.773,
+          "y": 320.138
+        },
+        {
+          "id": 153,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -490.097,
+          "y": 368.708
+        },
+        {
+          "id": 154,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -500.421,
+          "y": 417.279
+        },
+        {
+          "id": 155,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -510.745,
+          "y": 465.849
+        },
+        {
+          "id": 156,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -521.069,
+          "y": 514.419
+        },
+        {
+          "id": 157,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -531.393,
+          "y": 562.989
+        },
+        {
+          "id": 158,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -541.716,
+          "y": 611.559
+        },
+        {
+          "id": 159,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -552.04,
+          "y": 660.129
+        },
+        {
+          "id": 160,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -562.364,
+          "y": 708.699
+        },
+        {
+          "id": 161,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -572.688,
+          "y": 757.269
+        },
+        {
+          "id": 162,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -583.012,
+          "y": 805.839
+        },
+        {
+          "id": 163,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -593.336,
+          "y": 854.409
+        },
+        {
+          "id": 164,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -603.66,
+          "y": 902.979
+        },
+        {
+          "id": 165,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -613.984,
+          "y": 951.55
+        },
+        {
+          "id": 166,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -624.308,
+          "y": 1000.12
+        },
+        {
+          "id": 167,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -634.631,
+          "y": 1048.69
+        },
+        {
+          "id": 168,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -644.955,
+          "y": 1097.26
+        },
+        {
+          "id": 169,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -655.279,
+          "y": 1145.83
+        },
+        {
+          "id": 170,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -665.603,
+          "y": 1194.4
+        },
+        {
+          "id": 171,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -675.927,
+          "y": 1242.97
+        },
+        {
+          "id": 172,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -686.251,
+          "y": 1291.54
+        },
+        {
+          "id": 173,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -734.821,
+          "y": 1281.216
+        },
+        {
+          "id": 174,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -783.391,
+          "y": 1270.892
+        },
+        {
+          "id": 175,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -797.606,
+          "y": 1238.258
+        },
+        {
+          "id": 176,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -787.282,
+          "y": 1189.688
+        },
+        {
+          "id": 177,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -776.959,
+          "y": 1141.118
+        },
+        {
+          "id": 178,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -766.635,
+          "y": 1092.548
+        },
+        {
+          "id": 179,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -756.311,
+          "y": 1043.978
+        },
+        {
+          "id": 180,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -745.987,
+          "y": 995.408
+        },
+        {
+          "id": 181,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -735.663,
+          "y": 946.838
+        },
+        {
+          "id": 182,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -725.339,
+          "y": 898.268
+        },
+        {
+          "id": 183,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -715.015,
+          "y": 849.697
+        },
+        {
+          "id": 184,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -704.691,
+          "y": 801.127
+        },
+        {
+          "id": 185,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -694.367,
+          "y": 752.557
+        },
+        {
+          "id": 186,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -684.044,
+          "y": 703.987
+        },
+        {
+          "id": 187,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -673.72,
+          "y": 655.417
+        },
+        {
+          "id": 188,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -663.396,
+          "y": 606.847
+        },
+        {
+          "id": 189,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -653.072,
+          "y": 558.277
+        },
+        {
+          "id": 190,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -642.748,
+          "y": 509.707
+        },
+        {
+          "id": 191,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -632.424,
+          "y": 461.137
+        },
+        {
+          "id": 192,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -622.1,
+          "y": 412.567
+        },
+        {
+          "id": 193,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -611.776,
+          "y": 363.997
+        },
+        {
+          "id": 194,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -601.452,
+          "y": 315.427
+        },
+        {
+          "id": 195,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -591.129,
+          "y": 266.856
+        },
+        {
+          "id": 196,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -580.805,
+          "y": 218.286
+        },
+        {
+          "id": 197,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -570.481,
+          "y": 169.716
+        },
+        {
+          "id": 198,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -560.157,
+          "y": 121.146
+        },
+        {
+          "id": 199,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -549.833,
+          "y": 72.576
+        },
+        {
+          "id": 200,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -539.509,
+          "y": 24.006
+        },
+        {
+          "id": 201,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -852.761,
+          "y": 1501.509
+        },
+        {
+          "id": 202,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -820.959,
+          "y": 1461.711
+        },
+        {
+          "id": 203,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -770.396,
+          "y": 1461.11
+        },
+        {
+          "id": 204,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -737.837,
+          "y": 1499.964
+        },
+        {
+          "id": 205,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -748.401,
+          "y": 1549.665
+        },
+        {
+          "id": 206,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -793.949,
+          "y": 1571.916
+        },
+        {
+          "id": 207,
+          "steelMaterialId": 1,
+          "dia": 20,
+          "x": -839.895,
+          "y": 1550.801
+        }
+      ]
+    },
+    "materials": {
+      "strainSign": "compression-positive",
+      "concrete": {
+        "id": 1,
+        "name": "Concrete C30",
+        "standard": "KDS",
+        "fck": 30,
+        "mc": 2350,
+        "elasticModulus": 28417.475283133517,
+        "stressStrain": {
+          "type": "kds-parabolic",
+          "n": 2,
+          "eps0": 0.002,
+          "epsCu": 0.0033,
+          "alpha": 0.85
+        },
+        "limits": {
+          "eps0": 0.002,
+          "epsCu": 0.0033,
+          "ignoreTension": true
+        },
+        "factors": {
+          "alpha": 0.85
+        }
+      },
+      "steel": [
+        {
+          "id": 1,
+          "name": "Rebar SD400",
+          "standard": "KDS",
+          "fy": 400,
+          "elasticModulus": 200000,
+          "stressStrain": {
+            "type": "elastic-perfectly-plastic"
+          },
+          "limits": {
+            "epsY": 0.002
+          }
+        }
+      ],
+      "defaults": {
+        "steelMaterialId": 1
+      }
+    },
+    "loadings": {
+      "combinations": [
+        {
+          "id": 1,
+          "name": "LC1",
+          "actionBasis": "factoredULS",
+          "P": 10000000,
+          "Mx": 900000000,
+          "My": 500000000
+        }
+      ]
+    },
+    "analysis": {
+      "optionsVersion": 1,
+      "methodId": "strain-domain-surface-v1",
+      "samplingMode": "fixed",
+      "stations": {
+        "basedOn": "unified-27-v2",
+        "intermediate": [
+          {
+            "id": 1,
+            "label": "c/D = 3",
+            "criterion": {
+              "type": "depth-ratio",
+              "ratio": 3
+            }
+          },
+          {
+            "id": 2,
+            "label": "c/D = 2",
+            "criterion": {
+              "type": "depth-ratio",
+              "ratio": 2
+            }
+          },
+          {
+            "id": 3,
+            "label": "c/D = 1.5",
+            "criterion": {
+              "type": "depth-ratio",
+              "ratio": 1.5
+            }
+          },
+          {
+            "id": 4,
+            "label": "c/D = 1.2",
+            "criterion": {
+              "type": "depth-ratio",
+              "ratio": 1.2
+            }
+          },
+          {
+            "id": 5,
+            "label": "c/D = 1.1",
+            "criterion": {
+              "type": "depth-ratio",
+              "ratio": 1.1
+            }
+          },
+          {
+            "id": 6,
+            "label": "c/D = 1",
+            "criterion": {
+              "type": "depth-ratio",
+              "ratio": 1
+            }
+          },
+          {
+            "id": 7,
+            "label": "εₛ/εy = 0",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 0
+            }
+          },
+          {
+            "id": 8,
+            "label": "εₛ/εy = 0.25",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 0.25
+            }
+          },
+          {
+            "id": 9,
+            "label": "εₛ/εy = 0.375",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 0.375
+            }
+          },
+          {
+            "id": 10,
+            "label": "εₛ/εy = 0.5",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 0.5
+            }
+          },
+          {
+            "id": 11,
+            "label": "εₛ/εy = 0.625",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 0.625
+            }
+          },
+          {
+            "id": 12,
+            "label": "εₛ/εy = 0.75",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 0.75
+            }
+          },
+          {
+            "id": 13,
+            "label": "εₛ/εy = 0.875",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 0.875
+            }
+          },
+          {
+            "id": 14,
+            "label": "εₛ/εy = 1",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 1
+            }
+          },
+          {
+            "id": 15,
+            "label": "εₛ/εy = 1.25",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 1.25
+            }
+          },
+          {
+            "id": 16,
+            "label": "εₛ/εy = 1.5",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 1.5
+            }
+          },
+          {
+            "id": 17,
+            "label": "εₛ/εy = 1.75",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 1.75
+            }
+          },
+          {
+            "id": 18,
+            "label": "εₛ/εy = 2",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 2
+            }
+          },
+          {
+            "id": 19,
+            "label": "εₛ/εy = 2.5",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 2.5
+            }
+          },
+          {
+            "id": 20,
+            "label": "εₛ/εy = 3",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 3
+            }
+          },
+          {
+            "id": 21,
+            "label": "εₛ/εy = 4",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 4
+            }
+          },
+          {
+            "id": 22,
+            "label": "εₛ/εy = 5",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 5
+            }
+          },
+          {
+            "id": 23,
+            "label": "εₛ/εy = 7.5",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 7.5
+            }
+          },
+          {
+            "id": 24,
+            "label": "εₛ/εy = 10",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 10
+            }
+          },
+          {
+            "id": 25,
+            "label": "εₛ/εy = 20",
+            "criterion": {
+              "type": "bar-tension-yield-ratio",
+              "ratio": 20
+            }
+          }
+        ],
+        "refinement": {
+          "type": "fixed"
+        }
+      },
+      "directions": {
+        "seed": {
+          "type": "uniform",
+          "count": 36,
+          "startDeg": 0
+        },
+        "refinement": {
+          "type": "fixed",
+          "probe": "all"
+        }
+      },
+      "mesh": {
+        "sizing": {
+          "type": "automatic",
+          "seedDivisions": 32
+        },
+        "maxCells": 250000,
+        "maxSubdivision": 4
+      }
+    },
+    "design": {
+      "basisVersion": 3,
+      "profileId": "kds-142020-2022-appendix-material-factors",
+      "identity": {
+        "organization": "MOLIT/KDS",
+        "document": "KDS 14 20 20:2022 Appendix — Separate design using material factors",
+        "edition": "2022",
+        "methodId": "kds-142020-2022-appendix-design-material-reevaluation",
+        "profileVersion": "1.0.0"
+      },
+      "verificationStatus": "draft",
+      "format": "designMaterialReevaluation",
+      "factors": {
+        "concrete": {
+          "characteristicSymbol": "fck",
+          "designSymbol": "fcd",
+          "components": [
+            {
+              "id": "phiC",
+              "symbol": "φc",
+              "label": "Concrete material coefficient",
+              "operation": "multiply",
+              "value": 0.65,
+              "clauseRef": "KDS 14 20 20:2022 Appendix, 2.2(1)①"
+            }
+          ]
+        },
+        "reinforcement": {
+          "characteristicSymbol": "fyk",
+          "designSymbol": "fyd",
+          "components": [
+            {
+              "id": "phiS",
+              "symbol": "φs",
+              "label": "Reinforcement and prestressing-steel material coefficient",
+              "operation": "multiply",
+              "value": 0.9,
+              "clauseRef": "KDS 14 20 20:2022 Appendix, 2.2(1)②"
+            }
+          ]
+        }
+      },
+      "compressionEndpoint": "peak-stress-strain",
+      "minimumEccentricity": {
+        "constantMm": 15,
+        "depthFactor": 0.03,
+        "clauseRef": "KDS 14 20 20:2022 Appendix, 3.2, equations (3-4) and (3-5)"
+      },
+      "modified": false,
+      "overrideReason": ""
+    }
+  }
+}
+

@@ -51,6 +51,23 @@ test('ENVICO is a KDS stress-strain project-menu example', () => {
   assert.equal(parsed.document.inputs.loadings.combinations.length, 2)
 })
 
+test('Hi is a KDS stress-strain project-menu example', () => {
+  const hi = PROJECT_EXAMPLES.find((example) => example.id === 'kds-stress-strain-hi')
+  assert.ok(hi)
+  assert.equal(hi.label, 'Hi')
+  const parsed = parseProjectDocument(hi.document)
+  assert.equal(parsed.ok, true, parsed.ok ? 'Hi example parsed' : parsed.error)
+  if (!parsed.ok) return
+  assert.deepEqual(parsed.warnings, [])
+  assert.equal(parsed.document.meta.name, 'Hi')
+  assert.equal(parsed.document.inputs.calculationProfileId, 'kds-2024-stress-strain')
+  assert.equal(parsed.document.inputs.analysis.methodId, 'strain-domain-surface-v1')
+  assert.equal(parsed.document.inputs.geometry.outers.length, 3)
+  assert.equal(parsed.document.inputs.geometry.outers.reduce((sum, outer) => sum + outer.holes.length, 0), 0)
+  assert.equal(parsed.document.inputs.geometry.rebars.length, 207)
+  assert.equal(parsed.document.inputs.loadings.combinations.length, 1)
+})
+
 test('realistic reinforced sections replace the four simplified equivalent-stress menu examples', () => {
   for (const removedId of ['kds-eq-hollow', 'kds-eq-l-shape', 'kds-eq-two-regions', 'aci-eq-rectangle']) {
     assert.equal(PROJECT_EXAMPLES.some((example) => example.id === removedId), false)
