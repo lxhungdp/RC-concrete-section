@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import { Download, Eye, EyeOff, Loader2 } from 'lucide-react'
 import type { ExactDirectionCurve, PreviewSurface } from '@pm/analysis'
 import type { DesignBasis } from '@pm/design'
@@ -20,9 +20,11 @@ import {
   formatChartTableForce,
   formatChartTableMoment,
   type ChartTableMoments,
+  type ChartTableRow,
   type ChartTableSource,
   type ChartTableStageForces
 } from './chart-data-table'
+import { ChartCalculationDialog } from './ChartCalculationDialog'
 
 export type SectionResultsSummary = {
   hasAppliedSection: boolean
@@ -128,6 +130,7 @@ export function SectionResultsPanel({
   const includeDesign = resistanceStage === 'design'
   const includeNominal = resistanceStage === 'nominal'
   const [exporting, setExporting] = useState(false)
+  const [selectedRow, setSelectedRow] = useState<ChartTableRow | null>(null)
 
   const rows = useMemo(
     () =>
@@ -173,6 +176,26 @@ export function SectionResultsPanel({
     } finally {
       setExporting(false)
     }
+  }
+
+  useEffect(() => {
+    setSelectedRow(null)
+  }, [surface, exactDirectionCurve, fixedP, view.sliceAngle])
+
+  const selectSource = (next: ChartTableSource) => {
+    setSelectedRow(null)
+    setSource(next)
+  }
+
+  const selectResistanceStage = (next: 'design' | 'nominal') => {
+    setSelectedRow(null)
+    setResistanceStage(next)
+  }
+
+  const rowKeyDown = (event: KeyboardEvent<HTMLTableRowElement>, row: ChartTableRow) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    setSelectedRow(row)
   }
 
   return (
@@ -272,7 +295,7 @@ export function SectionResultsPanel({
                 type="radio"
                 name="chart-data-source"
                 checked={source === 'vertical'}
-                onChange={() => setSource('vertical')}
+                onChange={() => selectSource('vertical')}
               />
               Vertical
             </label>
@@ -281,7 +304,7 @@ export function SectionResultsPanel({
                 type="radio"
                 name="chart-data-source"
                 checked={source === 'fixedP'}
-                onChange={() => setSource('fixedP')}
+                onChange={() => selectSource('fixedP')}
               />
               Fixed-P
             </label>
@@ -292,7 +315,7 @@ export function SectionResultsPanel({
                 type="radio"
                 name="chart-data-resistance-stage"
                 checked={resistanceStage === 'design'}
-                onChange={() => setResistanceStage('design')}
+                onChange={() => selectResistanceStage('design')}
               />
               Design
             </label>
@@ -301,12 +324,14 @@ export function SectionResultsPanel({
                 type="radio"
                 name="chart-data-resistance-stage"
                 checked={resistanceStage === 'nominal'}
-                onChange={() => setResistanceStage('nominal')}
+                onChange={() => selectResistanceStage('nominal')}
               />
               Nominal
             </label>
           </fieldset>
         </div>
+
+        {rows.length > 0 ? <p className="pm-chart-data-inspect-hint">Select a row to inspect its formulas, inputs and stored calculation evidence.</p> : null}
 
         <div className="pm-chart-data-table-wrap">
           {!surface ? (
@@ -337,7 +362,15 @@ export function SectionResultsPanel({
               <tbody>
                 {rows.map((row) =>
                   row.kind === 'fixedP' ? (
-                    <tr key={row.key}>
+                    <tr
+                      key={row.key}
+                      tabIndex={0}
+                      aria-label={`Open calculation details for row ${row.index}, beta ${fmt(row.angleDeg, 3)} degrees`}
+                      aria-selected={selectedRow?.key === row.key}
+                      className={selectedRow?.key === row.key ? 'is-selected' : undefined}
+                      onClick={() => setSelectedRow(row)}
+                      onKeyDown={(event) => rowKeyDown(event, row)}
+                    >
                       <td>{row.index}</td>
                       <td>{row.branch}</td>
                       <td>{fmt(row.angleDeg, 3)}°</td>
@@ -371,7 +404,15 @@ export function SectionResultsPanel({
               <tbody>
                 {rows.map((row) =>
                   row.kind === 'vertical' ? (
-                    <tr key={row.key}>
+                    <tr
+                      key={row.key}
+                      tabIndex={0}
+                      aria-label={`Open calculation details for row ${row.index}, ${row.criterion}`}
+                      aria-selected={selectedRow?.key === row.key}
+                      className={selectedRow?.key === row.key ? 'is-selected' : undefined}
+                      onClick={() => setSelectedRow(row)}
+                      onKeyDown={(event) => rowKeyDown(event, row)}
+                    >
                       <td>{row.index}</td>
                       <td title={row.criterion}>{row.criterion}</td>
                       {includeDesign ? <SumCells stage={row.design} /> : null}
@@ -384,6 +425,20 @@ export function SectionResultsPanel({
           )}
         </div>
       </section>
+
+      {selectedRow && surface ? (
+        <ChartCalculationDialog
+          row={selectedRow}
+          summary={summary}
+          surface={surface}
+          projectName={projectName}
+          section={section}
+          rebars={rebars}
+          materialStore={materialStore}
+          designBasis={designBasis}
+          onClose={() => setSelectedRow(null)}
+        />
+      ) : null}
     </>
   )
 }

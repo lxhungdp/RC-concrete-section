@@ -2,6 +2,7 @@ import type {
   InversePreviewResult,
   ExactDirectionCurve,
   LoadcaseQuickCheckResult,
+  PointCalculationAudit,
   PreviewSurface,
   SectionFieldMap
 } from '@pm/analysis'
@@ -18,6 +19,7 @@ import type {
   AnalysisWorkerRequest,
   AnalysisWorkerResponse,
   BuildFieldMapPayload,
+  BuildPointAuditsPayload,
   BuildExactDirectionPayload,
   BuildSectionMeshPayload,
   BuildSurfacePayload,
@@ -226,6 +228,16 @@ export const buildSectionMeshAsync = (
   runWorkerOrFallback<SectionMeshView>(
     { type: 'buildSectionMesh', payload },
     async () => (await loadFallback()).buildSectionMeshFallback(payload),
+    signal
+  )
+
+export const buildPointAuditsAsync = (
+  payload: BuildPointAuditsPayload,
+  signal?: AbortSignal
+): Promise<Array<{ key: string; audit: PointCalculationAudit }>> =>
+  runWorkerOrFallback<Array<{ key: string; audit: PointCalculationAudit }>>(
+    { type: 'buildPointAudits', payload },
+    async () => (await loadFallback()).buildPointAuditsFallback(payload),
     signal
   )
 

@@ -110,11 +110,41 @@ test('fixed-P table selects exactly one resistance stage from the fixed surface 
     assert.equal(row.kind, 'fixedP')
     assert.ok(row.design && Math.abs(Math.hypot(row.design.Mx, row.design.My) - 10) < 1e-10)
     assert.equal(row.nominal, null)
+    assert.equal(row.evidence.stage, 'design')
+    assert.equal(row.evidence.bracket?.exact, true)
   }
   for (const row of nominalTable) {
     assert.equal(row.kind, 'fixedP')
     assert.ok(row.nominal && Math.abs(Math.hypot(row.nominal.Mx, row.nominal.My) - 12) < 1e-10)
     assert.equal(row.design, null)
+    assert.equal(row.evidence.stage, 'nominal')
+  }
+})
+
+test('fixed-P row evidence reconstructs the displayed sample from its authoritative bracket', () => {
+  const table = buildChartTableRows({
+    surface,
+    source: 'fixedP',
+    resistanceStage: 'design',
+    sliceAngleDeg: 0,
+    fixedP: 0.5
+  })
+
+  assert.equal(table.length, 4)
+  for (const row of table) {
+    assert.equal(row.kind, 'fixedP')
+    if (row.kind !== 'fixedP') continue
+    const bracket = row.evidence.bracket
+    assert.ok(bracket)
+    assert.equal(bracket.exact, false)
+    const reconstructedP = bracket.below.P + bracket.ratio * (bracket.above.P - bracket.below.P)
+    const reconstructedMx = bracket.below.Mx + bracket.ratio * (bracket.above.Mx - bracket.below.Mx)
+    const reconstructedMy = bracket.below.My + bracket.ratio * (bracket.above.My - bracket.below.My)
+    assert.ok(Math.abs(reconstructedP - row.evidence.sample.P) < 1e-10)
+    assert.ok(Math.abs(reconstructedMx - row.evidence.sample.Mx) < 1e-10)
+    assert.ok(Math.abs(reconstructedMy - row.evidence.sample.My) < 1e-10)
+    assert.equal(row.design?.Mx, row.evidence.sample.Mx)
+    assert.equal(row.design?.My, row.evidence.sample.My)
   }
 })
 
@@ -132,6 +162,9 @@ test('fixed direction tables use the direct fixed meridian, not a nearby adaptiv
   assert.equal(middle?.kind, 'vertical')
   assert.equal(middle?.design?.total.M, 10)
   assert.equal(middle?.nominal, null)
+  assert.equal(middle?.evidence.stage, 'design')
+  assert.equal(middle?.evidence.angleDeg, 0)
+  assert.equal(middle?.evidence.point.ledger.total.Mx, middle?.design?.total.M)
 })
 
 test('an exact direction table selects Design or Nominal without merging their rows', () => {

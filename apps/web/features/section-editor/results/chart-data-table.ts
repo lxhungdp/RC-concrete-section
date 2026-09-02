@@ -4,10 +4,11 @@ import {
   activeNominalDirectionPoints,
   activeNominalSurfaceDataset,
   buildDirectMeridianSection,
-  contourStrainAngleSamples,
-  sliceFixedPContour,
   stationDefinitionLabel,
+  traceFixedPContourSamples,
   type ExactDirectionCurve,
+  type FixedPInterpolationBracket,
+  type PreviewContourPoint,
   type PreviewSurface,
   type PreviewSurfacePoint,
   type Resultant,
@@ -18,6 +19,7 @@ import type { ChartAuditWorkbookInput } from '@pm/report'
 import { exportChartAuditWorkbookAsync } from '../../../application/analysis/client'
 
 export type ChartTableSource = 'vertical' | 'fixedP'
+export type ChartTableResistanceStage = 'design' | 'nominal'
 
 export type ChartTableForces = {
   /** Axial force, N. */
@@ -46,6 +48,12 @@ export type ChartTableVerticalRow = {
   criterion: string
   design: ChartTableStageForces | null
   nominal: ChartTableStageForces | null
+  evidence: {
+    stage: ChartTableResistanceStage
+    angleDeg: number
+    point: PreviewSurfacePoint
+    station: SurfaceStation | null
+  }
 }
 
 export type ChartTableFixedPRow = {
@@ -58,6 +66,14 @@ export type ChartTableFixedPRow = {
   angleDeg: number
   design: ChartTableMoments | null
   nominal: ChartTableMoments | null
+  evidence: {
+    stage: ChartTableResistanceStage
+    fixedP: number
+    sample: PreviewContourPoint
+    bracket: FixedPInterpolationBracket | null
+    belowStation: SurfaceStation | null
+    aboveStation: SurfaceStation | null
+  }
 }
 
 export type ChartTableRow = ChartTableVerticalRow | ChartTableFixedPRow
@@ -88,6 +104,7 @@ type VerticalDraft = {
   criterion: string
   design: ChartTableStageForces | null
   nominal: ChartTableStageForces | null
+  evidence: ChartTableVerticalRow['evidence']
 }
 
 type FixedPDraft = {
@@ -99,13 +116,14 @@ type FixedPDraft = {
   angleDeg: number
   design: ChartTableMoments | null
   nominal: ChartTableMoments | null
+  evidence: ChartTableFixedPRow['evidence']
 }
 
 const collectVertical = (
   points: PreviewSurfacePoint[],
   angleDeg: number,
   descriptors: SurfaceStation[],
-  stage: 'design' | 'nominal',
+  stage: ChartTableResistanceStage,
   drafts: Map<string, VerticalDraft>
 ) => {
   const primary = buildDirectMeridianSection(points, angleDeg, false).primary.filter((point) =>
@@ -115,10 +133,13 @@ const collectVertical = (
   for (const point of primary) {
     const key = `vertical-${point.stationId}`
     const forces = forcesFromLedger(point.ledger, momentOf)
+    const station = descriptors.find((descriptor) => descriptor.id === point.stationId) ?? null
+    const evidence: ChartTableVerticalRow['evidence'] = { stage, angleDeg, point, station }
     const existing = drafts.get(key)
     if (existing) {
       if (stage === 'design') existing.design = forces
       else existing.nominal = forces
+      existing.evidence = evidence
       continue
     }
     drafts.set(key, {
@@ -126,11 +147,12 @@ const collectVertical = (
       key,
       sort: point.station,
       criterion: stationDefinitionLabel(
-        descriptors.find((descriptor) => descriptor.id === point.stationId)?.definition ??
+        station?.definition ??
         { kind: 'block-adaptive', label: 'Adaptive midpoint' }
       ),
       design: stage === 'design' ? forces : null,
-      nominal: stage === 'nominal' ? forces : null
+      nominal: stage === 'nominal' ? forces : null,
+      evidence
     })
   }
 }
@@ -146,12 +168,15 @@ const collectFixedP = (
   points: PreviewSurfacePoint[],
   fixedP: number,
   triangles: PreviewSurface['triangles'] | PreviewSurface['nominalTriangles'],
-  stage: 'design' | 'nominal',
+  descriptors: SurfaceStation[],
+  stage: ChartTableResistanceStage,
   drafts: Map<string, FixedPDraft>
 ) => {
-  const samples = contourStrainAngleSamples(sliceFixedPContour(points, fixedP, triangles))
+  const samples = traceFixedPContourSamples(points, fixedP, triangles)
+  const descriptorsById = new Map(descriptors.map((descriptor) => [descriptor.id, descriptor] as const))
   const branchesByAngle = new Map<string, number>()
-  for (const [offset, point] of samples.entries()) {
+  for (const [offset, trace] of samples.entries()) {
+    const point = trace.point
     const angleDeg = normalizeAngleDeg((point.beta * 180) / Math.PI)
     const angleKey = angleDeg.toFixed(6)
     const branch = (branchesByAngle.get(angleKey) ?? 0) + 1
@@ -159,6 +184,12 @@ const collectFixedP = (
     const directionId = `${betaKey(angleDeg)}-branch${branch}`
     const key = `${stage}-${directionId}`
     const moments: ChartTableMoments = { Mx: point.Mx, My: point.My }
+    const belowStation = trace.bracket?.below.stationId
+      ? descriptorsById.get(trace.bracket.below.stationId) ?? null
+      : null
+    const aboveStation = trace.bracket?.above.stationId
+      ? descriptorsById.get(trace.bracket.above.stationId) ?? null
+      : null
     drafts.set(key, {
       kind: 'fixedP',
       key,
@@ -167,7 +198,15 @@ const collectFixedP = (
       branch,
       angleDeg,
       design: stage === 'design' ? moments : null,
-      nominal: stage === 'nominal' ? moments : null
+      nominal: stage === 'nominal' ? moments : null,
+      evidence: {
+        stage,
+        fixedP,
+        sample: point,
+        bracket: trace.bracket,
+        belowStation,
+        aboveStation
+      }
     })
   }
 }
@@ -176,7 +215,7 @@ export const buildChartTableRows = (input: {
   surface: PreviewSurface | null
   exactDirectionCurve?: ExactDirectionCurve | null
   source: ChartTableSource
-  resistanceStage: 'design' | 'nominal'
+  resistanceStage: ChartTableResistanceStage
   sliceAngleDeg: number
   fixedP: number
 }): ChartTableRow[] => {
@@ -217,7 +256,8 @@ export const buildChartTableRows = (input: {
           index: index + 1,
           criterion: row.criterion,
           design: includeDesign ? row.design : null,
-          nominal: includeNominal ? row.nominal : null
+          nominal: includeNominal ? row.nominal : null,
+          evidence: row.evidence
         }))
     }
     if (includeDesign) {
@@ -246,7 +286,8 @@ export const buildChartTableRows = (input: {
         index: index + 1,
         criterion: row.criterion,
         design: includeDesign ? row.design : null,
-        nominal: includeNominal ? row.nominal : null
+        nominal: includeNominal ? row.nominal : null,
+        evidence: row.evidence
       }))
   }
 
@@ -256,6 +297,7 @@ export const buildChartTableRows = (input: {
       designDataset.points,
       input.fixedP,
       designDataset.triangles,
+      designDataset.stations,
       'design',
       drafts
     )
@@ -265,6 +307,7 @@ export const buildChartTableRows = (input: {
       nominalDataset.points,
       input.fixedP,
       nominalDataset.triangles,
+      nominalDataset.stations,
       'nominal',
       drafts
     )
@@ -279,7 +322,8 @@ export const buildChartTableRows = (input: {
       branch: row.branch,
       angleDeg: row.angleDeg,
       design: includeDesign ? row.design : null,
-      nominal: includeNominal ? row.nominal : null
+      nominal: includeNominal ? row.nominal : null,
+      evidence: row.evidence
     }))
 }
 

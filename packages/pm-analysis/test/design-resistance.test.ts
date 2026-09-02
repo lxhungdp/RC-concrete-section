@@ -26,6 +26,7 @@ import {
 import {
   AnalysisInputError,
   buildDesignPreviewSurfaceFromPrepared,
+  buildStressStrainPointCalculationAudit,
   checkLoadcaseUtilizationFromSurface,
   codeAdjustedDemandOfCheck,
   prepareAnalysis,
@@ -169,6 +170,46 @@ test('design surface preserves IDs and pairs every uncapped design state with it
   assert.ok(capCentres.every((point) => Math.abs(point.P - capCentres[0].P) < 1e-8))
 })
 
+test('selected-point stress-strain audit reproduces every contribution and the stored Design point', () => {
+  const basis = createKdsBasicDesignBasis()
+  const sets = buildResistanceMaterialSets(materials, basis)
+  const prepared = prepareAnalysis(section, rebars, sets.stateMaterials)
+  const surface = buildDesignPreviewSurfaceFromPrepared(prepared, materials, basis, compactOptions())
+  const point = surface.points.find((candidate) =>
+    candidate.surfaceRole === 'physical-state' &&
+    candidate.resistance?.factor !== null &&
+    Math.abs(candidate.Mx) + Math.abs(candidate.My) > 1
+  )
+  assert.ok(point)
+  const audit = buildStressStrainPointCalculationAudit(prepared, materials, basis, 'design', point)
+  assert.equal(audit.kind, 'stress-strain')
+  if (audit.kind !== 'stress-strain') return
+  assert.equal(audit.reconciliation.ok, true)
+  assert.equal(audit.nominalReferenceReconciliation.ok, true)
+  assert.ok(audit.concreteGroups.length >= 2)
+  assert.equal(audit.rebars.length, rebars.length)
+  assert.equal(audit.concreteGroups.reduce((sum, group) => sum + group.count, 0), audit.mesh.points)
+  assert.ok(audit.concreteLaw.parameters.some((parameter) => parameter.symbol === 'αeff'))
+  assert.ok(audit.concreteLaw.parameters.some((parameter) => parameter.symbol === 'γc'))
+  const groupedConcrete = audit.concreteGroups.reduce((sum, group) => sum + group.resultant.P, 0)
+  const barNet = audit.rebars.reduce((sum, bar) => sum + bar.net.P, 0)
+  assert.ok(Math.abs(groupedConcrete - audit.mechanicalLedger.concrete.P) <= Math.max(1, Math.abs(groupedConcrete)) * 1e-12)
+  assert.ok(Math.abs(barNet - audit.mechanicalLedger.steel.P) <= Math.max(1, Math.abs(barNet)) * 1e-12)
+  assert.ok(Math.abs(audit.displayedLedger.total.P - point.P) <= Math.max(1, Math.abs(point.P)) * 1e-10)
+})
+
+test('selected-point audit refuses to assign a strain calculation to a synthetic axial-cap face', () => {
+  const basis = createKdsBasicDesignBasis()
+  const sets = buildResistanceMaterialSets(materials, basis)
+  const prepared = prepareAnalysis(section, rebars, sets.stateMaterials)
+  const surface = buildDesignPreviewSurfaceFromPrepared(prepared, materials, basis, compactOptions())
+  const point = surface.points.find((candidate) => candidate.surfaceRole === 'axial-cap')
+  assert.ok(point)
+  const audit = buildStressStrainPointCalculationAudit(prepared, materials, basis, 'design', point)
+  assert.equal(audit.kind, 'unavailable')
+  if (audit.kind === 'unavailable') assert.equal(audit.reason, 'synthetic-axial-cap')
+})
+
 test('design-material format reevaluates the same strain states with design material strengths', () => {
   const basis = createEn1992DesignBasis()
   const sets = buildResistanceMaterialSets(materials, basis)
@@ -183,6 +224,18 @@ test('design-material format reevaluates the same strain states with design mate
   assert.equal(point.resistance?.factor, null)
   assert.equal(point.resistance?.format, 'designMaterialReevaluation')
   assert.ok(point.resistance?.stages.includes('design-material-reevaluation'))
+  const audit = buildStressStrainPointCalculationAudit(
+    prepareAnalysis(section, rebars, sets.stateMaterials),
+    materials,
+    basis,
+    'design',
+    point
+  )
+  assert.equal(audit.kind, 'stress-strain')
+  if (audit.kind === 'stress-strain') {
+    assert.equal(audit.nominalReferenceReconciliation.ok, true)
+    assert.notEqual(audit.nominalReferenceLedger.total.P, audit.mechanicalLedger.total.P)
+  }
 })
 
 test('EN 1992 domain 5 rotates about eps_c2 and joins the eps_cu2 boundary continuously', () => {

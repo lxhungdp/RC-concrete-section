@@ -185,6 +185,8 @@ or reference values; they never call material or resistance evaluators.
 - per-combination summary/detail;
 - point-in-domain and stored utilization evidence;
 - fixed-`P` contour from triangle slicing;
+- row-level Vertical vertex evidence and Fixed-P bracketing/interpolation evidence for the on-screen
+  calculation inspector;
 - hover/failure-mode/contribution information;
 - unit-formatted copies for presentation;
 - result comparison by compatible basis/profile.
@@ -277,6 +279,22 @@ inside Results.
 | accepted/stale | view/compare allowed; report release disabled for current project |
 
 Results are keyed by input hash and result ID, not by the currently selected row name.
+
+Envelope-table row selection is presentation state only. The selected row carries a discriminated
+`vertical` or `fixedP` evidence object from the same package query that built its displayed values.
+React may format that evidence and draw explanatory geometry, but it must not search for different
+brackets, evaluate materials, apply factors, or reconstruct a capacity result. Changing chart
+source or resistance stage clears the selection so Vertical, Fixed-P, Design, and Nominal evidence
+cannot be mixed accidentally.
+
+Opening the inspector sends a lazy `buildPointAudits` worker request containing the applied inputs,
+calculation-profile identity, selected resistance stage, and exact stored vertex or Fixed-P bracket
+vertices. `@pm/analysis` owns the stress-strain trace; `@pm/analysis-equivalent-block` owns the exact
+block trace. Each returns a serializable DTO of effective laws, formulas/provenance, compatible
+depth profile, complete grouped concrete sums, complete rebar ledger, resistance stages, and stored
+result reconciliation. Fixed-P endpoints are queried and displayed independently; the browser never
+assigns an invented strain state to the interpolated contour point. Closing or changing the selected
+row aborts an outstanding request.
 
 ## 6. Report package
 

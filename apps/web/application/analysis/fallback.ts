@@ -2,6 +2,7 @@ import {
   analysisInputKey,
   buildDesignPreviewSurfaceFromPrepared,
   buildExactDirectionCurveFromPrepared,
+  buildStressStrainPointCalculationAudit,
   buildSectionFieldMapFromPrepared,
   checkLoadcaseUtilizationFromSurface,
   checkLoadcasesUtilizationFromSurface,
@@ -19,6 +20,7 @@ import {
 import {
   buildEquivalentBlockExactDirectionCurveFromPrepared,
   buildEquivalentBlockFieldMapFromPrepared,
+  buildEquivalentBlockPointCalculationAudit,
   buildEquivalentBlockPreviewSurfaceFromPrepared,
   prepareBlockAnalysis,
   solveEquivalentBlockDemandFromPrepared,
@@ -43,6 +45,7 @@ import { packSectionMeshView, type SectionMeshView } from './section-mesh-view'
 import type {
   BuildExactDirectionPayload,
   BuildFieldMapPayload,
+  BuildPointAuditsPayload,
   BuildSectionMeshPayload,
   BuildSurfacePayload,
   BuildSurfaceWorkerResult,
@@ -166,6 +169,27 @@ export const buildSectionFieldMapFallback = (payload: BuildFieldMapPayload): Sec
 
 export const buildSectionMeshFallback = (payload: BuildSectionMeshPayload): SectionMeshView =>
   packSectionMeshView(preparedFor(payload).mesh)
+
+export const buildPointAuditsFallback = (payload: BuildPointAuditsPayload) => {
+  if (isEquivalentBlockAnalysisOptions(payload.analysisOptions)) {
+    const prepared = blockFor(payload)
+    return payload.points.map(({ key, point }) => ({
+      key,
+      audit: buildEquivalentBlockPointCalculationAudit(prepared, payload.stage, point)
+    }))
+  }
+  const prepared = preparedFor({ ...payload, analysisOptions: payload.analysisOptions })
+  return payload.points.map(({ key, point }) => ({
+    key,
+    audit: buildStressStrainPointCalculationAudit(
+      prepared,
+      payload.materialStore,
+      payload.designBasis,
+      payload.stage,
+      point
+    )
+  }))
+}
 
 export const exportMeshAuditFallback = async (
   type: 'exportMeshExcel' | 'exportMeshDxf',

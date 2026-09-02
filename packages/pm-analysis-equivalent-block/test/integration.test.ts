@@ -30,6 +30,7 @@ import {
   buildEquivalentBlockDesignSurfaceFromPrepared,
   buildEquivalentBlockExactDirectionCurveFromPrepared,
   buildEquivalentBlockFieldMapFromPrepared,
+  buildEquivalentBlockPointCalculationAudit,
   buildEquivalentBlockPreviewSurfaceFromPrepared,
   prepareBlockAnalysis,
   solveEquivalentBlockDemandFromPrepared,
@@ -204,6 +205,34 @@ const assertCardinalSlicesHaveNoCapToTensionChord = (
     }
   }
 }
+
+test('selected-point equivalent-block audit reproduces exact clipped concrete and every bar term', () => {
+  const { prepared, options } = build('kds-142020-equivalent-block')
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+  const point = surface.points.find((candidate) =>
+    candidate.surfaceRole === 'physical-state' &&
+    candidate.equivalentBlock !== undefined &&
+    candidate.resistance?.factor !== null
+  )
+  assert.ok(point)
+  const audit = buildEquivalentBlockPointCalculationAudit(prepared, 'design', point)
+  assert.equal(audit.kind, 'equivalent-block')
+  if (audit.kind !== 'equivalent-block') return
+  assert.equal(audit.reconciliation.ok, true)
+  assert.equal(audit.nominalReferenceReconciliation.ok, true)
+  assert.ok(audit.block.area > 0)
+  assert.equal(audit.rebars.length, geometry.rebars.length)
+  const barNet = audit.rebars.reduce((sum, bar) => sum + bar.net.P, 0)
+  assert.ok(Math.abs(barNet - audit.mechanicalLedger.steel.P) <= Math.max(1, Math.abs(barNet)) * 1e-12)
+  assert.ok(Math.abs(audit.displayedLedger.total.P - point.P) <= Math.max(1, Math.abs(point.P)) * 1e-10)
+  if (audit.block.blockDepth < audit.block.projectedSectionDepth) {
+    assert.ok(audit.depthProfile.samples.some((sample, index, samples) => index > 0 &&
+      Math.abs(sample.depth - samples[index - 1].depth) < 1e-12 &&
+      sample.stress === 0 && samples[index - 1].stress === audit.block.compressionStress
+    ), 'stress diagram must retain the exact equivalent-block discontinuity')
+  }
+  assert.match(audit.provenance.concrete, /KDS 14 20 20:2022/)
+})
 
 test('KDS block cardinal slices do not weld the axial cap to the tension pole', () => {
   const parsed = parseProjectDocument(readFileSync(
@@ -617,6 +646,14 @@ test('KDS Appendix block route reevaluates materials, uses eps_c0, omits phi/cap
   assert.ok(surface.points.every((point) => point.surfaceRole !== 'axial-cap'))
   assert.ok(surface.points.every((point) => point.resistance?.factor == null))
   assert.ok(surface.nominalPoints.length > 0, 'the characteristic reference surface remains available')
+  const materialFactorPoint = surface.points.find((point) => point.surfaceRole === 'physical-state' && point.equivalentBlock)
+  assert.ok(materialFactorPoint)
+  const materialFactorAudit = buildEquivalentBlockPointCalculationAudit(prepared, 'design', materialFactorPoint)
+  assert.equal(materialFactorAudit.kind, 'equivalent-block')
+  if (materialFactorAudit.kind === 'equivalent-block') {
+    assert.equal(materialFactorAudit.nominalReferenceReconciliation.ok, true)
+    assert.notEqual(materialFactorAudit.nominalReferenceLedger.total.P, materialFactorAudit.mechanicalLedger.total.P)
+  }
 
   const compression = surface.points.reduce((maximum, point) => point.P > maximum.P ? point : maximum)
   const solved = solveEquivalentBlockDemandFromPrepared(prepared, options, {

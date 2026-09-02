@@ -4,6 +4,7 @@ import {
   contourStrainAngleSamples,
   intersectFixedPContourWithMomentRay,
   sliceFixedPContour,
+  traceFixedPContourSamples,
   type PreviewSurfacePoint,
   type SurfaceIndexTriangle
 } from '../src/index'
@@ -55,6 +56,19 @@ test('fixed-P slicing keeps the diagonal intersection of the authoritative trian
   close(intermediate[0].Mx, 50)
   close(intermediate[0].My, 150)
   assert.ok(contour.every((item) => item.P === 0))
+})
+
+test('fixed-P trace exposes the same-meridian interpolation evidence for every sampled row', () => {
+  const traces = traceFixedPContourSamples(points, 0, topology)
+
+  assert.equal(traces.length, 2)
+  for (const trace of traces) {
+    assert.ok(trace.bracket)
+    const { below, above, ratio } = trace.bracket
+    close(below.P + ratio * (above.P - below.P), trace.point.P)
+    close(below.Mx + ratio * (above.Mx - below.Mx), trace.point.Mx)
+    close(below.My + ratio * (above.My - below.My), trace.point.My)
+  }
 })
 
 test('the second interpolation uses the two triangle-cut chords, including the diagonal vertex', () => {

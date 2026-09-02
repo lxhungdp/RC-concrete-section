@@ -3,7 +3,9 @@ import type {
   ExactDirectionCurve,
   InversePreviewResult,
   LoadcaseQuickCheckResult,
+  PointCalculationAudit,
   PreviewSurface,
+  PreviewSurfacePoint,
   SectionFieldMap
 } from '@pm/analysis'
 import type { DesignBasis } from '@pm/design'
@@ -66,6 +68,11 @@ export type BuildSectionMeshPayload = {
   analysisOptions: AnalysisOptions
 }
 
+export type BuildPointAuditsPayload = BuildSurfacePayload & {
+  stage: 'design' | 'nominal'
+  points: Array<{ key: string; point: PreviewSurfacePoint }>
+}
+
 export type MeshAuditExportPayload = BuildSectionMeshPayload & {
   projectName: string
   sectionName: string
@@ -106,6 +113,7 @@ export type AnalysisWorkerJob =
   | { type: 'checkLoadcase'; jobId: string; payload: CheckLoadcaseWorkerPayload }
   | { type: 'buildExactDirection'; jobId: string; payload: BuildExactDirectionPayload }
   | { type: 'buildSectionMesh'; jobId: string; payload: BuildSectionMeshPayload }
+  | { type: 'buildPointAudits'; jobId: string; payload: BuildPointAuditsPayload }
   | { type: 'exportMeshExcel'; jobId: string; payload: MeshAuditExportPayload }
   | { type: 'exportMeshDxf'; jobId: string; payload: MeshAuditExportPayload }
   | { type: 'buildFieldMap'; jobId: string; payload: BuildFieldMapPayload }
@@ -123,6 +131,7 @@ export type AnalysisWorkerResultMap = {
   checkLoadcase: InversePreviewResult
   buildExactDirection: ExactDirectionCurve
   buildSectionMesh: SectionMeshView
+  buildPointAudits: Array<{ key: string; audit: PointCalculationAudit }>
   exportMeshExcel: ArrayBuffer
   exportMeshDxf: ArrayBuffer
   buildFieldMap: SectionFieldMap

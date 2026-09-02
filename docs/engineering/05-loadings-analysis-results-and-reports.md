@@ -101,6 +101,32 @@ capacity. It provides:
 - convergence/error evidence and resolution history;
 - diagnostics for invalid, cancelled, non-converged, or preview runs.
 
+The Section Results envelope table is also an on-screen audit entry point. Selecting a row opens a
+stage- and source-specific calculation inspector built from the same stored point/query evidence as
+that row. A Vertical row exposes its physical criterion, compatible state, contribution ledger,
+resistance stages, and final projected ordinate. A Fixed-P row instead exposes the two surface
+states that bracket the selected axial force, the interpolation ratio, and the resulting `Mx`/`My`;
+it must not be presented as one independently solved strain state. The inspector includes the basic
+geometry and material inputs before any derived value. It then identifies the numerical integration
+model, draws the compatible strain and concrete-stress profiles with the neutral axis, and publishes
+the actual material-law equations, effective coefficients, source/provenance status, grouped sums of
+all concrete integration points, every reinforcement/displaced-concrete term, resistance route, and
+a scale-aware reconciliation to the stored table point. The three-point triangle mesh is summarized
+because listing every quadrature row is not usable on screen; the grouped sums remain complete and
+the largest-force term in each material branch is exposed as a readable calculation example.
+Equivalent-block results instead publish the exact clipped polygon area and centroid, `a = beta1 c`,
+block stress, and all bar terms, and state explicitly that no concrete integration mesh is used.
+
+Detailed terms are generated lazily from the selected stored state by the owning mechanics package.
+They must reuse the stored profile, applied section, material store, mesh or exact-block evaluator,
+DesignBasis, origin, units, and sign convention. The UI does not evaluate materials, clip geometry,
+apply resistance factors, or reconstruct resultants. If the recomputed detailed sum does not match
+the stored point within the declared scale-aware tolerance, the inspector fails closed.
+
+This inspector is review evidence for the current preview result. It does not make the result
+accepted, independently verified, code compliant, or releasable, and it must identify unavailable
+physical evidence for poles, cap faces, or failed query brackets rather than inventing it.
+
 Plots shall use the accepted oriented triangle mesh. A convex hull of sampled capacity points is
 prohibited because it can show non-capacity regions as valid.
 

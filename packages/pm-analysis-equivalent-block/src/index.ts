@@ -1,31 +1,39 @@
 import {
+  AnalysisInputError,
   activeDesignSurfaceDataset,
   activeNominalSurfaceDataset,
   projectedBoundaryDepth,
+  reconcileCalculationAuditResultant,
   sectionBoundaryPoints,
   stationDefinitionLabel,
   type DesignResistanceTrace,
+  type CalculationAuditDepthProfile,
+  type CalculationAuditRebar,
+  type CalculationAuditStage,
   type EquivalentBlockStateTrace,
   type ExactDirectionCurve,
   type InversePreviewResult,
   type PreviewSurface,
   type PreviewSurfaceDataset,
   type PreviewSurfacePoint,
+  type PointCalculationAudit,
   type ResultantLedger,
   type SectionFieldMap,
   type StrainAdmissibility,
   type StrainState,
   type SurfaceStation
 } from '@pm/analysis'
-import { createAci318Model } from '@pm/code-aci318'
-import { createAs3600Model } from '@pm/code-as3600'
+import { ACI_318_19_PROVENANCE, createAci318Model } from '@pm/code-aci318'
+import { AS_3600_2018_PROVENANCE, createAs3600Model } from '@pm/code-as3600'
 import {
+  CUSTOM_BLOCK_PROVENANCE,
   createCustomBlockModel,
   type CustomBlockDefinition,
   type CustomSteelLawDefinition
 } from '@pm/code-custom'
-import { createKds142020Model } from '@pm/code-kds142020'
+import { KDS_142020_PROVENANCE, createKds142020Model } from '@pm/code-kds142020'
 import {
+  buildResistanceMaterialSets,
   minimumEccentricityCandidates,
   minimumEccentricityMessage,
   assertDesignMaterialApplicability,
@@ -48,7 +56,12 @@ import {
   type PreparedEquivalentBlockSection
 } from '@pm/equivalent-block'
 import { netConcreteCentroid, type GeometryInputRebarView, type SectionGeometry } from '@pm/geometry'
-import { assertValidMaterialStore, userBlockCompressionStress, type MaterialStore } from '@pm/materials'
+import {
+  assertValidMaterialStore,
+  describeSteelMaterialLaw,
+  userBlockCompressionStress,
+  type MaterialStore
+} from '@pm/materials'
 import {
   cloneCalculationAnalysisOptions,
   isEquivalentBlockProfileId,
@@ -894,6 +907,324 @@ const evaluationTrace = (
 const nominalEvaluationFrom = (evaluation: CapacityEvaluation | undefined) => {
   const source = evaluation?.source as { nominal?: NominalBlockEvaluation } | NominalBlockEvaluation | undefined
   return source && 'nominal' in source ? source.nominal : source as NominalBlockEvaluation | undefined
+}
+
+const blockAuditProvenance = (prepared: PreparedBlockAnalysis) => {
+  if (prepared.profileId === 'aci-318-19-22-equivalent-block') return ACI_318_19_PROVENANCE
+  if (prepared.profileId === 'as-3600-2018-amd2-equivalent-block') return AS_3600_2018_PROVENANCE
+  if (prepared.profileId === 'custom-equivalent-block') return CUSTOM_BLOCK_PROVENANCE
+  return {
+    document: prepared.designBasis.identity.document,
+    ...KDS_142020_PROVENANCE
+  }
+}
+
+const blockAuditScale = (ledger: ResultantLedger, factor: number): ResultantLedger => {
+  const scale = (value: { P: number; Mx: number; My: number }) => ({
+    P: value.P * factor,
+    Mx: value.Mx * factor,
+    My: value.My * factor
+  })
+  return {
+    concrete: scale(ledger.concrete),
+    steelGross: scale(ledger.steelGross),
+    displacedConcrete: scale(ledger.displacedConcrete),
+    steel: scale(ledger.steel),
+    total: scale(ledger.total)
+  }
+}
+
+const blockAuditLedger = (
+  evaluation: NominalBlockEvaluation,
+  referencePoint: { x: number; y: number }
+): ResultantLedger => {
+  const concrete = {
+    P: evaluation.concrete.force,
+    Mx: evaluation.concrete.Mx,
+    My: evaluation.concrete.My
+  }
+  const steelGross = { P: 0, Mx: 0, My: 0 }
+  const displacedConcrete = { P: 0, Mx: 0, My: 0 }
+  for (const bar of evaluation.bars) {
+    const grossForce = bar.steelStress * bar.area
+    const displacedForce = -bar.displacedConcreteStress * bar.area
+    steelGross.P += grossForce
+    steelGross.Mx += grossForce * (bar.y - referencePoint.y)
+    steelGross.My += grossForce * (bar.x - referencePoint.x)
+    displacedConcrete.P += displacedForce
+    displacedConcrete.Mx += displacedForce * (bar.y - referencePoint.y)
+    displacedConcrete.My += displacedForce * (bar.x - referencePoint.x)
+  }
+  const steel = {
+    P: steelGross.P + displacedConcrete.P,
+    Mx: steelGross.Mx + displacedConcrete.Mx,
+    My: steelGross.My + displacedConcrete.My
+  }
+  return {
+    concrete,
+    steelGross,
+    displacedConcrete,
+    steel,
+    total: {
+      P: concrete.P + steel.P,
+      Mx: concrete.Mx + steel.Mx,
+      My: concrete.My + steel.My
+    }
+  }
+}
+
+/** Lazy exact-clipping calculation trace for one stored equivalent-block surface vertex. */
+export const buildEquivalentBlockPointCalculationAudit = (
+  prepared: PreparedBlockAnalysis,
+  stage: CalculationAuditStage,
+  point: PreviewSurfacePoint
+): PointCalculationAudit => {
+  if (point.surfaceRole === 'axial-cap') {
+    return {
+      kind: 'unavailable',
+      pointId: point.id,
+      stage,
+      reason: 'synthetic-axial-cap',
+      message: 'The maximum-axial-resistance cap is a geometric face and has no unique neutral-axis state. Audit the physical source station and the cap stage instead.'
+    }
+  }
+  const trace = point.equivalentBlock
+  if (!trace) {
+    return {
+      kind: 'unavailable',
+      pointId: point.id,
+      stage,
+      reason: 'missing-physical-state',
+      message: 'This pole/reference point has no unique neutral-axis depth. The software will not invent a block geometry for it.'
+    }
+  }
+  const blockState: BlockSectionState = {
+    neutralAxisAngle: trace.neutralAxisAngle,
+    neutralAxisDepth: trace.neutralAxisDepth
+  }
+  const evaluation = stage === 'nominal'
+    ? prepared.referenceModel.bindNominalEvaluator(prepared.section)(blockState)
+    : prepared.designBasis.format === 'designMaterialReevaluation'
+      ? prepared.designModel.bindNominalEvaluator(prepared.section)(blockState)
+      : prepared.designModel.bindDesignEvaluator(prepared.section)(blockState)
+  const nominal = nominalEvaluationFrom(evaluation)
+  if (!nominal) {
+    throw new AnalysisInputError(
+      'AUDIT_RECONCILIATION_FAILED',
+      'The equivalent-block evaluator did not retain its nominal component calculation.',
+      { pointId: point.id }
+    )
+  }
+  const zero = () => ({ P: 0, Mx: 0, My: 0 })
+  const add = (target: { P: number; Mx: number; My: number }, value: { P: number; Mx: number; My: number }) => {
+    target.P += value.P
+    target.Mx += value.Mx
+    target.My += value.My
+  }
+  const concrete = {
+    P: nominal.concrete.force,
+    Mx: nominal.concrete.Mx,
+    My: nominal.concrete.My
+  }
+  const steelGross = zero()
+  const displacedConcrete = zero()
+  const materialSets = buildResistanceMaterialSets(prepared.materialStore, prepared.designBasis)
+  const calculationMaterials = stage === 'nominal'
+    ? materialSets.referenceMaterials
+    : prepared.designBasis.format === 'designMaterialReevaluation'
+      ? materialSets.designMaterials
+      : materialSets.referenceMaterials
+  const rebars: CalculationAuditRebar[] = nominal.bars.map((bar) => {
+    const source = prepared.rebars.find((candidate) => String(candidate.id) === bar.id)
+    if (!source) {
+      throw new AnalysisInputError('AUDIT_RECONCILIATION_FAILED', `Equivalent-block audit rebar ${bar.id} is missing from the input.`, { pointId: point.id })
+    }
+    const grossForce = bar.steelStress * bar.area
+    const displacedForce = -bar.displacedConcreteStress * bar.area
+    const gross = {
+      P: grossForce,
+      Mx: grossForce * (bar.y - prepared.section.referencePoint.y),
+      My: grossForce * (bar.x - prepared.section.referencePoint.x)
+    }
+    const displaced = {
+      P: displacedForce,
+      Mx: displacedForce * (bar.y - prepared.section.referencePoint.y),
+      My: displacedForce * (bar.x - prepared.section.referencePoint.x)
+    }
+    const net = {
+      P: gross.P + displaced.P,
+      Mx: gross.Mx + displaced.Mx,
+      My: gross.My + displaced.My
+    }
+    add(steelGross, gross)
+    add(displacedConcrete, displaced)
+    return {
+      id: source.id,
+      diameter: source.dia,
+      steelMaterialId: source.steelMaterialId ?? calculationMaterials.defaults.steelMaterialId,
+      x: bar.x - prepared.section.referencePoint.x,
+      y: bar.y - prepared.section.referencePoint.y,
+      area: bar.area,
+      strain: bar.strain,
+      stress: bar.netStress,
+      force: bar.force,
+      Mx: bar.Mx,
+      My: bar.My,
+      steelStress: bar.steelStress,
+      displacedConcreteStress: -bar.displacedConcreteStress,
+      netStress: bar.netStress,
+      steelGross: gross,
+      displacedConcrete: displaced,
+      net
+    }
+  })
+  const steel = {
+    P: steelGross.P + displacedConcrete.P,
+    Mx: steelGross.Mx + displacedConcrete.Mx,
+    My: steelGross.My + displacedConcrete.My
+  }
+  const mechanicalLedger: ResultantLedger = {
+    concrete,
+    steelGross,
+    displacedConcrete,
+    steel,
+    total: {
+      P: concrete.P + steel.P,
+      Mx: concrete.Mx + steel.Mx,
+      My: concrete.My + steel.My
+    }
+  }
+  const resistanceFactor = stage === 'design' && prepared.designBasis.format === 'globalResultantFactor'
+    ? point.resistance?.factor ?? null
+    : null
+  if (stage === 'design' && prepared.designBasis.format === 'globalResultantFactor' && resistanceFactor === null) {
+    throw new AnalysisInputError(
+      'AUDIT_RECONCILIATION_FAILED',
+      'A Design equivalent-block state has no stored strength-reduction factor.',
+      { pointId: point.id }
+    )
+  }
+  const displayedLedger = resistanceFactor === null
+    ? mechanicalLedger
+    : blockAuditScale(mechanicalLedger, resistanceFactor)
+  const nominalReferenceEvaluation = nominalEvaluationFrom(
+    prepared.referenceModel.bindNominalEvaluator(prepared.section)(blockState)
+  )
+  if (!nominalReferenceEvaluation) {
+    throw new AnalysisInputError(
+      'AUDIT_RECONCILIATION_FAILED',
+      'The reference equivalent-block evaluator did not retain its component calculation.',
+      { pointId: point.id }
+    )
+  }
+  const nominalReferenceLedger = blockAuditLedger(
+    nominalReferenceEvaluation,
+    prepared.section.referencePoint
+  )
+  const storedNominalReference = stage === 'nominal'
+    ? point.ledger.total
+    : point.resistance?.nominalReference
+  if (!storedNominalReference) {
+    throw new AnalysisInputError(
+      'AUDIT_RECONCILIATION_FAILED',
+      'A Design equivalent-block point has no stored nominal/reference resultant.',
+      { pointId: point.id }
+    )
+  }
+  const forceScale = Math.max(1, Math.abs(mechanicalLedger.total.P), nominal.concrete.stress * prepared.section.grossArea)
+  const nominalReferenceReconciliation = reconcileCalculationAuditResultant(
+    nominalReferenceLedger.total,
+    storedNominalReference,
+    forceScale,
+    prepared.section.characteristicLength
+  )
+  const reconciliation = reconcileCalculationAuditResultant(
+    displayedLedger.total,
+    { P: point.P, Mx: point.Mx, My: point.My },
+    forceScale,
+    prepared.section.characteristicLength
+  )
+  if (!nominalReferenceReconciliation.ok || !reconciliation.ok) {
+    throw new AnalysisInputError(
+      'AUDIT_RECONCILIATION_FAILED',
+      `The exact-block audit does not reproduce its stored reference/selected result (relative deltas ${nominalReferenceReconciliation.relativeMaximum}/${reconciliation.relativeMaximum}).`,
+      { pointId: point.id, nominalReferenceReconciliation, reconciliation }
+    )
+  }
+  const depth = nominal.diagnostics.projectedSectionDepth
+  const blockDepth = nominal.state.blockDepth
+  const profileDepths = [...Array.from({ length: 41 }, (_, index) => depth * index / 40), blockDepth]
+    .filter((value) => value >= 0 && value <= depth)
+    .sort((left, right) => left - right)
+    .filter((value, index, values) => index === 0 || Math.abs(value - values[index - 1]) > 1e-10 * Math.max(1, depth))
+  const samples: CalculationAuditDepthProfile['samples'] = profileDepths.flatMap((sampleDepth) => {
+    const sample = {
+      depth: sampleDepth,
+      strain: nominal.diagnostics.extremeCompressionStrain * (1 - sampleDepth / blockState.neutralAxisDepth),
+      stress: sampleDepth <= blockDepth ? nominal.concrete.stress : 0
+    }
+    return Math.abs(sampleDepth - blockDepth) <= 1e-10 * Math.max(1, depth) && blockDepth < depth
+      ? [sample, { ...sample, stress: 0 }]
+      : [sample]
+  })
+  const depthProfile: CalculationAuditDepthProfile = {
+    normalX: Math.cos(blockState.neutralAxisAngle),
+    normalY: Math.sin(blockState.neutralAxisAngle),
+    tensionEdgeProjection: nominal.diagnostics.compressionEdgeProjection - depth - (
+      Math.cos(blockState.neutralAxisAngle) * prepared.section.referencePoint.x +
+      Math.sin(blockState.neutralAxisAngle) * prepared.section.referencePoint.y
+    ),
+    compressionEdgeProjection: nominal.diagnostics.compressionEdgeProjection - (
+      Math.cos(blockState.neutralAxisAngle) * prepared.section.referencePoint.x +
+      Math.sin(blockState.neutralAxisAngle) * prepared.section.referencePoint.y
+    ),
+    projectedSectionDepth: depth,
+    neutralAxisProjection: nominal.diagnostics.neutralAxisProjection - (
+      Math.cos(blockState.neutralAxisAngle) * prepared.section.referencePoint.x +
+      Math.sin(blockState.neutralAxisAngle) * prepared.section.referencePoint.y
+    ),
+    neutralAxisDepth: blockState.neutralAxisDepth,
+    neutralAxisInsideSection: blockState.neutralAxisDepth <= depth,
+    samples
+  }
+  return {
+    kind: 'equivalent-block',
+    pointId: point.id,
+    stage,
+    origin: { ...prepared.section.referencePoint },
+    state: { ...point.state },
+    depthProfile,
+    provenance: blockAuditProvenance(prepared),
+    block: {
+      neutralAxisAngle: blockState.neutralAxisAngle,
+      neutralAxisDepth: blockState.neutralAxisDepth,
+      projectedSectionDepth: depth,
+      extremeCompressionStrain: nominal.diagnostics.extremeCompressionStrain,
+      beta1: nominal.state.blockDepth / blockState.neutralAxisDepth,
+      blockDepth: nominal.state.blockDepth,
+      compressionStress: nominal.concrete.stress,
+      compressionEdgeProjection: nominal.diagnostics.compressionEdgeProjection,
+      neutralAxisProjection: nominal.diagnostics.neutralAxisProjection,
+      blockBoundaryProjection: nominal.diagnostics.blockBoundaryProjection,
+      area: nominal.concrete.area,
+      centroidX: nominal.concrete.centroid.x - prepared.section.referencePoint.x,
+      centroidY: nominal.concrete.centroid.y - prepared.section.referencePoint.y,
+      geometry: nominal.concrete.geometry,
+      resultant: concrete
+    },
+    steelLaws: calculationMaterials.steel.map((material) => ({
+      materialId: material.id,
+      name: material.name,
+      law: describeSteelMaterialLaw(material)
+    })),
+    rebars,
+    mechanicalLedger,
+    nominalReferenceLedger,
+    displayedLedger,
+    resistanceFactor,
+    nominalReferenceReconciliation,
+    reconciliation
+  }
 }
 
 const evaluateBlockAdmissibility = (

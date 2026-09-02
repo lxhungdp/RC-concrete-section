@@ -4,13 +4,11 @@ import {
   activeNominalDirectionPoints,
   activeNominalSurfaceDataset,
   buildDirectMeridianSection,
-  contourStrainAngleSamples,
   evaluatePreparedState,
   prepareAnalysisFromMesh,
-  sliceFixedPContour,
   stationDefinitionLabel,
+  traceFixedPContourSamples,
   type ExactDirectionCurve,
-  type PreviewContourPoint,
   type PreviewSurface,
   type PreviewSurfacePoint,
   type ResultantLedger,
@@ -142,10 +140,6 @@ type FixedPResultRow = {
 }
 
 const normalizeAngleDeg = (degrees: number) => ((degrees % 360) + 360) % 360
-const angleDistanceDeg = (left: number, right: number) => {
-  const distance = Math.abs(normalizeAngleDeg(left) - normalizeAngleDeg(right))
-  return Math.min(distance, 360 - distance)
-}
 const kn = (value: number) => value / 1_000
 const knm = (value: number) => value / 1_000_000
 const componentFactor = (target: number, base: number, preferred: number) => {
@@ -327,49 +321,6 @@ const collectVerticalPoints = (selected: ReturnType<typeof selectedDirection>) =
       return { point, definition, criterion: stationDefinitionLabel(definition) }
     })
     .sort((left, right) => left.point.station - right.point.station)
-}
-
-const directionPoints = (
-  surface: PreviewSurface,
-  stage: ChartAuditResistanceStage,
-  angleDeg: number
-): PreviewSurfacePoint[] => {
-  const dataset = selectedDataset(surface, stage)
-  return buildDirectMeridianSection(dataset.points, angleDeg, false).primary
-    .filter((point) => point.sectionPointRole === 'surface-vertex')
-    .filter((point) => angleDistanceDeg(point.beta * 180 / Math.PI, angleDeg) < 1e-5 || Math.hypot(point.Mx, point.My) < 1e-8)
-    .sort((left, right) => left.station - right.station)
-}
-
-const bracketForContourPoint = (
-  surface: PreviewSurface,
-  stage: ChartAuditResistanceStage,
-  fixedP: number,
-  sample: PreviewContourPoint
-): { below: PreviewSurfacePoint; above: PreviewSurfacePoint } | null => {
-  const angleDeg = normalizeAngleDeg(sample.beta * 180 / Math.PI)
-  const points = directionPoints(surface, stage, angleDeg)
-  const exact = points
-    .filter((point) => Math.abs(point.P - fixedP) <= Math.max(1e-7, Math.abs(fixedP) * 1e-12))
-    .sort((left, right) =>
-      (left.Mx - sample.Mx) ** 2 + (left.My - sample.My) ** 2 -
-      ((right.Mx - sample.Mx) ** 2 + (right.My - sample.My) ** 2)
-    )[0]
-  if (exact) return { below: exact, above: exact }
-
-  const candidates: Array<{ below: PreviewSurfacePoint; above: PreviewSurfacePoint; error: number }> = []
-  for (let index = 1; index < points.length; index++) {
-    const first = points[index - 1]
-    const second = points[index]
-    if ((fixedP - first.P) * (fixedP - second.P) > 0 || Math.abs(second.P - first.P) < 1e-12) continue
-    const ratio = (fixedP - first.P) / (second.P - first.P)
-    const mx = first.Mx + ratio * (second.Mx - first.Mx)
-    const my = first.My + ratio * (second.My - first.My)
-    const below = first.P <= second.P ? first : second
-    const above = first.P <= second.P ? second : first
-    candidates.push({ below, above, error: (mx - sample.Mx) ** 2 + (my - sample.My) ** 2 })
-  }
-  return candidates.sort((left, right) => left.error - right.error)[0] ?? null
 }
 
 /**
@@ -1552,13 +1503,10 @@ export const writeFixedPAuditSheets = (context: AuditContext, options: FixedPAud
   const descriptors = new Map(dataset.stations.map((station) => [station.id, station.definition] as const))
   const { sources, sourceFor } = context.createSourceCollector()
   const mainRows: FixedPResultRow[] = []
-  const samples = contourStrainAngleSamples(
-    sliceFixedPContour(dataset.points, options.fixedP, dataset.triangles)
-  )
+  const samples = traceFixedPContourSamples(dataset.points, options.fixedP, dataset.triangles)
   const branchesByAngle = new Map<string, number>()
-  samples.forEach((sample, index) => {
+  samples.forEach(({ point: sample, bracket }, index) => {
     const angleDeg = normalizeAngleDeg(sample.beta * 180 / Math.PI)
-    const bracket = bracketForContourPoint(context.surface, context.resistanceStage, options.fixedP, sample)
     if (!bracket) {
       throw new Error(`Fixed-P audit could not bracket P at β=${angleDeg.toFixed(6)}°.`)
     }

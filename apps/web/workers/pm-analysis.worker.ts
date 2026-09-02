@@ -4,6 +4,7 @@ import {
   applyDesignCheckToInverse,
   buildDesignPreviewSurfaceFromPrepared,
   buildExactDirectionCurveFromPrepared,
+  buildStressStrainPointCalculationAudit,
   buildSectionFieldMapFromPrepared,
   checkLoadcaseUtilizationFromSurface,
   checkLoadcasesUtilizationFromSurface,
@@ -20,6 +21,7 @@ import {
   buildEquivalentBlockExactDirectionCurveFromPrepared,
   buildEquivalentBlockPreviewSurfaceFromPrepared,
   buildEquivalentBlockFieldMapFromPrepared,
+  buildEquivalentBlockPointCalculationAudit,
   prepareBlockAnalysis,
   solveEquivalentBlockDemandFromPrepared,
   type EquivalentBlockDesignSurface,
@@ -295,6 +297,32 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
         { type: 'success', jobId: request.jobId, requestType: request.type, result },
         sectionMeshTransferList(result)
       )
+      return
+    }
+
+    if (request.type === 'buildPointAudits') {
+      const result = isEquivalentBlockAnalysisOptions(request.payload.analysisOptions)
+        ? (() => {
+            const prepared = preparedBlockFor(request.payload)
+            return request.payload.points.map(({ key, point }) => ({
+              key,
+              audit: buildEquivalentBlockPointCalculationAudit(prepared, request.payload.stage, point)
+            }))
+          })()
+        : (() => {
+            const prepared = preparedFor({ ...request.payload, analysisOptions: request.payload.analysisOptions })
+            return request.payload.points.map(({ key, point }) => ({
+              key,
+              audit: buildStressStrainPointCalculationAudit(
+                prepared,
+                request.payload.materialStore,
+                request.payload.designBasis,
+                request.payload.stage,
+                point
+              )
+            }))
+          })()
+      workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
       return
     }
 

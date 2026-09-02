@@ -10,11 +10,16 @@ import {
 } from '@pm/geometry'
 import {
   compileMaterialStore,
+  describeConcreteMaterialLaw,
+  describeSteelMaterialLaw,
   materialStoreIssues,
   concreteModelSupportIssue,
   IMPLEMENTED_STRAIN_DOMAIN,
+  resolveEc2ParabolicRectangularParams,
+  resolveKdsParabolicParams,
   strainDomainMismatch,
   type CompiledMaterial,
+  type MaterialLawAudit,
   type MaterialStore,
   type SteelMaterial,
   type StrainDomainId
@@ -65,6 +70,7 @@ export type AnalysisErrorCode =
   | 'MESH_NOT_VERIFIED'
   | 'INVALID_MATERIAL'
   | 'INVALID_REBAR'
+  | 'AUDIT_RECONCILIATION_FAILED'
 
 export class AnalysisInputError extends Error {
   readonly code: AnalysisErrorCode
@@ -146,6 +152,146 @@ export type ResultantLedger = {
   /** concrete + steel. */
   total: Resultant
 }
+
+export type CalculationAuditStage = 'design' | 'nominal'
+
+export type CalculationAuditTerm = {
+  x: number
+  y: number
+  area: number
+  strain: number
+  stress: number
+  force: number
+  Mx: number
+  My: number
+}
+
+export type CalculationAuditConcreteGroup = {
+  id: string
+  label: string
+  count: number
+  area: number
+  strainMinimum: number
+  strainMaximum: number
+  stressMinimum: number
+  stressMaximum: number
+  resultant: Resultant
+  /** Largest absolute force term in this exact group; a readable term, not a statistical sample. */
+  representative: CalculationAuditTerm
+}
+
+export type CalculationAuditRebar = CalculationAuditTerm & {
+  id: number
+  diameter: number
+  steelMaterialId: number
+  steelStress: number
+  displacedConcreteStress: number
+  netStress: number
+  steelGross: Resultant
+  displacedConcrete: Resultant
+  net: Resultant
+}
+
+export type CalculationAuditDepthProfile = {
+  normalX: number
+  normalY: number
+  tensionEdgeProjection: number
+  compressionEdgeProjection: number
+  projectedSectionDepth: number
+  neutralAxisProjection: number | null
+  neutralAxisDepth: number | null
+  neutralAxisInsideSection: boolean | null
+  samples: Array<{ depth: number; strain: number; stress: number }>
+}
+
+export type CalculationAuditReconciliation = {
+  expected: Resultant
+  stored: Resultant
+  delta: Resultant
+  relativeMaximum: number
+  tolerance: number
+  ok: boolean
+}
+
+export type StressStrainPointCalculationAudit = {
+  kind: 'stress-strain'
+  pointId: string
+  stage: CalculationAuditStage
+  origin: AnalysisOrigin
+  state: StrainState
+  depthProfile: CalculationAuditDepthProfile
+  concreteLaw: MaterialLawAudit
+  steelLaws: Array<{ materialId: number; name: string; law: MaterialLawAudit }>
+  mesh: ConcreteMeshReport
+  concreteGroups: CalculationAuditConcreteGroup[]
+  rebars: CalculationAuditRebar[]
+  /** Result of the local stress integration before a global resultant factor, if any. */
+  mechanicalLedger: ResultantLedger
+  /** Reference-material result at the same compatible state, before any Design route. */
+  nominalReferenceLedger: ResultantLedger
+  displayedLedger: ResultantLedger
+  resistanceFactor: number | null
+  nominalReferenceReconciliation: CalculationAuditReconciliation
+  reconciliation: CalculationAuditReconciliation
+}
+
+export type EquivalentBlockPointCalculationAudit = {
+  kind: 'equivalent-block'
+  pointId: string
+  stage: CalculationAuditStage
+  origin: AnalysisOrigin
+  state: StrainState
+  depthProfile: CalculationAuditDepthProfile
+  provenance: {
+    document: string
+    concrete: string
+    resistance: string
+    methodId: string
+    implementationVersion: string
+    verificationStatus: string
+  }
+  block: {
+    neutralAxisAngle: number
+    neutralAxisDepth: number
+    projectedSectionDepth: number
+    extremeCompressionStrain: number
+    beta1: number
+    blockDepth: number
+    compressionStress: number
+    compressionEdgeProjection: number
+    neutralAxisProjection: number
+    blockBoundaryProjection: number
+    area: number
+    centroidX: number
+    centroidY: number
+    geometry: Array<{
+      outer: Array<{ x: number; y: number }>
+      holes: Array<Array<{ x: number; y: number }>>
+    }>
+    resultant: Resultant
+  }
+  steelLaws: Array<{ materialId: number; name: string; law: MaterialLawAudit }>
+  rebars: CalculationAuditRebar[]
+  mechanicalLedger: ResultantLedger
+  nominalReferenceLedger: ResultantLedger
+  displayedLedger: ResultantLedger
+  resistanceFactor: number | null
+  nominalReferenceReconciliation: CalculationAuditReconciliation
+  reconciliation: CalculationAuditReconciliation
+}
+
+export type UnavailablePointCalculationAudit = {
+  kind: 'unavailable'
+  pointId: string
+  stage: CalculationAuditStage
+  reason: 'synthetic-axial-cap' | 'missing-physical-state'
+  message: string
+}
+
+export type PointCalculationAudit =
+  | StressStrainPointCalculationAudit
+  | EquivalentBlockPointCalculationAudit
+  | UnavailablePointCalculationAudit
 
 export type PreviewSurfacePointRole =
   | 'physical-state'
@@ -612,9 +758,9 @@ export type LoadcaseQuickCheckResult = {
  * A fiber carries its already-resolved constitutive law. Resolution happens once, up front, so the
  * integration loop cannot encounter a missing material and cannot silently substitute one.
  */
-type Fiber =
-  | { x: number; y: number; area: number; kind: 'concrete' }
-  | { x: number; y: number; area: number; kind: 'rebar'; rebarId: number; steel: CompiledMaterial }
+type ConcreteFiber = { x: number; y: number; area: number; kind: 'concrete' }
+type RebarFiber = { x: number; y: number; area: number; kind: 'rebar'; rebarId: number; steel: CompiledMaterial }
+type Fiber = ConcreteFiber | RebarFiber
 
 type AnalysisMaterials = {
   concrete: CompiledMaterial
@@ -633,8 +779,8 @@ export type PreparedAnalysis = {
   readonly materialStore: MaterialStore
   readonly origin: AnalysisOrigin
   readonly mesh: ConcreteMesh
-  readonly concreteFibers: Fiber[]
-  readonly rebarFibers: Fiber[]
+  readonly concreteFibers: ConcreteFiber[]
+  readonly rebarFibers: RebarFiber[]
   readonly fibers: Fiber[]
   readonly materials: AnalysisMaterials
   /** Exact outer-boundary vertices in the centroidal analysis frame. */
@@ -924,7 +1070,7 @@ export const analysisDirections = (options: AnalysisOptions): number[] => {
  * real clipped triangle, so meshed area and first moments reproduce the exact polygon properties
  * instead of rasterising the boundary.
  */
-const concreteFibersFromMesh = (mesh: ConcreteMesh, origin: AnalysisOrigin): Fiber[] =>
+const concreteFibersFromMesh = (mesh: ConcreteMesh, origin: AnalysisOrigin): ConcreteFiber[] =>
   mesh.points.map((point) => ({
     x: point.x - origin.x,
     y: point.y - origin.y,
@@ -996,7 +1142,7 @@ const buildRebarFibers = (
   origin: AnalysisOrigin,
   materials: AnalysisMaterials,
   defaultSteelMaterialId: number
-): Fiber[] =>
+): RebarFiber[] =>
   rebars.map((bar) => {
     const steelMaterialId = bar.steelMaterialId ?? defaultSteelMaterialId
     const steel = materials.steel.get(steelMaterialId)
@@ -2945,6 +3091,304 @@ const scaleLedger = (ledger: ResultantLedger, factor: number): ResultantLedger =
   total: scaleResultant(ledger.total, factor)
 })
 
+const concreteAuditBranch = (material: MaterialStore['concrete'], strain: number) => {
+  const model = material.stressStrain
+  if (model.type === 'kds-parabolic') {
+    const resolved = resolveKdsParabolicParams(material)
+    if (strain <= 0) return { id: '01-zero-tension', label: 'Zero/tension branch (ε ≤ 0)' }
+    if (strain <= resolved.eps0) return { id: '02-parabolic', label: 'Parabolic branch (0 < ε ≤ εc0)' }
+    if (strain <= resolved.epsCu) return { id: '03-plateau', label: 'Compression plateau (εc0 < ε ≤ εcu)' }
+    return { id: '04-outside-ultimate', label: 'Outside ultimate strain (ε > εcu; zero stress)' }
+  }
+  if (model.type === 'ec2-parabolic-rectangular') {
+    const resolved = resolveEc2ParabolicRectangularParams(material)
+    if (strain <= 0) return { id: '01-zero-tension', label: 'Zero/tension branch (ε ≤ 0)' }
+    if (strain <= resolved.epsC2) return { id: '02-parabolic', label: 'Parabolic branch (0 < ε ≤ εc2)' }
+    if (strain <= resolved.epsCu2) return { id: '03-plateau', label: 'Compression plateau (εc2 < ε ≤ εcu2)' }
+    return { id: '04-outside-ultimate', label: 'Outside ultimate strain (ε > εcu2; zero stress)' }
+  }
+  if (model.type === 'user-curve') {
+    if ((model.zeroTension ?? material.limits.ignoreTension) && strain <= 0) {
+      return { id: '00-zero-tension', label: 'User-law zero-tension branch' }
+    }
+    const points = [...model.points].sort((left, right) => left.strain - right.strain)
+    if (strain <= points[0].strain) return { id: '01-lower-clamp', label: 'User law: lower end clamp' }
+    for (let index = 1; index < points.length; index += 1) {
+      if (strain <= points[index].strain) {
+        return { id: `segment-${String(index).padStart(3, '0')}`, label: `User law: linear segment ${index}` }
+      }
+    }
+    return { id: '99-upper-clamp', label: 'User law: upper end clamp' }
+  }
+  return { id: 'unsupported-local-law', label: 'Unsupported local concrete law' }
+}
+
+const auditDepthProfile = (
+  prepared: PreparedAnalysis,
+  state: StrainState
+): CalculationAuditDepthProfile => {
+  const curvature = Math.hypot(state.kx, state.ky)
+  const normalX = curvature > 1e-15 ? state.ky / curvature : 0
+  const normalY = curvature > 1e-15 ? state.kx / curvature : 1
+  const projections = prepared.concreteBoundary.map((point) => normalX * point.x + normalY * point.y)
+  const tensionEdgeProjection = projections.length > 0 ? Math.min(...projections) : 0
+  const compressionEdgeProjection = projections.length > 0 ? Math.max(...projections) : 0
+  const projectedSectionDepth = compressionEdgeProjection - tensionEdgeProjection
+  const neutralAxisProjection = curvature > 1e-15 ? -state.e0 / curvature : null
+  const neutralAxisDepth = neutralAxisProjection === null ? null : compressionEdgeProjection - neutralAxisProjection
+  const neutralAxisInsideSection = neutralAxisProjection === null
+    ? null
+    : neutralAxisProjection >= tensionEdgeProjection && neutralAxisProjection <= compressionEdgeProjection
+  const sampleCount = 41
+  const samples = Array.from({ length: sampleCount }, (_, index) => {
+    const depth = projectedSectionDepth * index / (sampleCount - 1)
+    const projection = compressionEdgeProjection - depth
+    const strain = state.e0 + curvature * projection
+    return { depth, strain, stress: prepared.materials.concrete.stress(strain) }
+  })
+  return {
+    normalX,
+    normalY,
+    tensionEdgeProjection,
+    compressionEdgeProjection,
+    projectedSectionDepth,
+    neutralAxisProjection,
+    neutralAxisDepth,
+    neutralAxisInsideSection,
+    samples
+  }
+}
+
+export const reconcileCalculationAuditResultant = (
+  expected: Resultant,
+  stored: Resultant,
+  forceScale: number,
+  lengthScale: number
+): CalculationAuditReconciliation => {
+  const delta = {
+    P: expected.P - stored.P,
+    Mx: expected.Mx - stored.Mx,
+    My: expected.My - stored.My
+  }
+  const normalized = [
+    Math.abs(delta.P) / Math.max(1, forceScale, Math.abs(stored.P)),
+    Math.abs(delta.Mx) / Math.max(1, forceScale * lengthScale, Math.abs(stored.Mx)),
+    Math.abs(delta.My) / Math.max(1, forceScale * lengthScale, Math.abs(stored.My))
+  ]
+  const relativeMaximum = Math.max(...normalized)
+  const tolerance = 1e-8
+  return { expected, stored, delta, relativeMaximum, tolerance, ok: relativeMaximum <= tolerance }
+}
+
+/**
+ * Build a lazy, serializable calculation trace for one stored stress-strain surface vertex.
+ *
+ * The function reuses the exact mesh and compiled material owners. It is intentionally absent from
+ * surface construction because retaining every fibre term at every vertex would multiply the
+ * result payload by the surface-state count.
+ */
+export const buildStressStrainPointCalculationAudit = (
+  statePrepared: PreparedAnalysis,
+  sourceMaterials: MaterialStore,
+  designBasis: DesignBasis,
+  stage: CalculationAuditStage,
+  point: PreviewSurfacePoint
+): PointCalculationAudit => {
+  if (point.surfaceRole === 'axial-cap') {
+    return {
+      kind: 'unavailable',
+      pointId: point.id,
+      stage,
+      reason: 'synthetic-axial-cap',
+      message: 'The maximum-axial-resistance cap is a geometric projection face and has no unique strain plane. Its source crossing and cap operation must be audited instead.'
+    }
+  }
+  const sets = buildResistanceMaterialSets(sourceMaterials, designBasis)
+  const referencePrepared = JSON.stringify(sets.referenceMaterials) === JSON.stringify(statePrepared.materialStore)
+    ? statePrepared
+    : prepareAnalysisFromMesh(
+        statePrepared.section,
+        statePrepared.rebars,
+        sets.referenceMaterials,
+        statePrepared.mesh,
+        statePrepared.origin
+      )
+  const calculationMaterials = stage === 'nominal'
+    ? sets.referenceMaterials
+    : designBasis.format === 'designMaterialReevaluation'
+      ? sets.designMaterials
+      : sets.referenceMaterials
+  const prepared = JSON.stringify(calculationMaterials) === JSON.stringify(statePrepared.materialStore)
+    ? statePrepared
+    : prepareAnalysisFromMesh(
+        statePrepared.section,
+        statePrepared.rebars,
+        calculationMaterials,
+        statePrepared.mesh,
+        statePrepared.origin
+      )
+  const concreteGroups = new Map<string, CalculationAuditConcreteGroup>()
+  const concrete = zeroResultant()
+  for (const fiber of prepared.concreteFibers) {
+    const fiberStrain = strainAt(point.state, fiber)
+    const stress = prepared.materials.concrete.stress(fiberStrain)
+    const force = stress * fiber.area
+    const term: CalculationAuditTerm = {
+      x: fiber.x,
+      y: fiber.y,
+      area: fiber.area,
+      strain: fiberStrain,
+      stress,
+      force,
+      Mx: force * fiber.y,
+      My: force * fiber.x
+    }
+    if (Object.values(term).some((value) => !Number.isFinite(value))) {
+      throw new AnalysisInputError('AUDIT_RECONCILIATION_FAILED', 'A concrete audit term is non-finite.', { pointId: point.id })
+    }
+    accumulate(concrete, force, fiber)
+    const branch = concreteAuditBranch(calculationMaterials.concrete, fiberStrain)
+    const current = concreteGroups.get(branch.id)
+    if (!current) {
+      concreteGroups.set(branch.id, {
+        ...branch,
+        count: 1,
+        area: fiber.area,
+        strainMinimum: fiberStrain,
+        strainMaximum: fiberStrain,
+        stressMinimum: stress,
+        stressMaximum: stress,
+        resultant: { P: force, Mx: term.Mx, My: term.My },
+        representative: term
+      })
+      continue
+    }
+    current.count += 1
+    current.area += fiber.area
+    current.strainMinimum = Math.min(current.strainMinimum, fiberStrain)
+    current.strainMaximum = Math.max(current.strainMaximum, fiberStrain)
+    current.stressMinimum = Math.min(current.stressMinimum, stress)
+    current.stressMaximum = Math.max(current.stressMaximum, stress)
+    accumulate(current.resultant, force, fiber)
+    if (Math.abs(force) > Math.abs(current.representative.force)) current.representative = term
+  }
+
+  const steelGross = zeroResultant()
+  const displacedConcrete = zeroResultant()
+  const rebars: CalculationAuditRebar[] = prepared.rebarFibers.map((fiber) => {
+    const source = prepared.rebars.find((bar) => bar.id === fiber.rebarId)
+    if (!source) {
+      throw new AnalysisInputError('AUDIT_RECONCILIATION_FAILED', `Audit rebar ${fiber.rebarId} is not present in the prepared input.`, { pointId: point.id })
+    }
+    const fiberStrain = strainAt(point.state, fiber)
+    const steelStress = fiber.steel.stress(fiberStrain)
+    const concreteStress = prepared.materials.concrete.stress(fiberStrain)
+    const grossForce = steelStress * fiber.area
+    const displacedForce = -concreteStress * fiber.area
+    const netForce = grossForce + displacedForce
+    const gross = { P: grossForce, Mx: grossForce * fiber.y, My: grossForce * fiber.x }
+    const displaced = { P: displacedForce, Mx: displacedForce * fiber.y, My: displacedForce * fiber.x }
+    const net = addResultant(gross, displaced)
+    accumulate(steelGross, grossForce, fiber)
+    accumulate(displacedConcrete, displacedForce, fiber)
+    return {
+      id: source.id,
+      diameter: source.dia,
+      steelMaterialId: source.steelMaterialId ?? calculationMaterials.defaults.steelMaterialId,
+      x: fiber.x,
+      y: fiber.y,
+      area: fiber.area,
+      strain: fiberStrain,
+      stress: netForce / fiber.area,
+      force: netForce,
+      Mx: net.Mx,
+      My: net.My,
+      steelStress,
+      displacedConcreteStress: -concreteStress,
+      netStress: steelStress - concreteStress,
+      steelGross: gross,
+      displacedConcrete: displaced,
+      net
+    }
+  })
+  const steel = addResultant(steelGross, displacedConcrete)
+  const mechanicalLedger = {
+    concrete,
+    steelGross,
+    displacedConcrete,
+    steel,
+    total: addResultant(concrete, steel)
+  }
+  const resistanceFactor = stage === 'design' && designBasis.format === 'globalResultantFactor'
+    ? point.resistance?.factor ?? null
+    : null
+  if (stage === 'design' && designBasis.format === 'globalResultantFactor' && resistanceFactor === null) {
+    throw new AnalysisInputError(
+      'AUDIT_RECONCILIATION_FAILED',
+      'A Design point on a global-factor surface has no stored resistance factor.',
+      { pointId: point.id }
+    )
+  }
+  const displayedLedger = resistanceFactor === null
+    ? mechanicalLedger
+    : scaleLedger(mechanicalLedger, resistanceFactor)
+  const nominalReferenceLedger = prepared === referencePrepared
+    ? mechanicalLedger
+    : evaluatePreparedState(referencePrepared, point.state)
+  const storedNominalReference = stage === 'nominal'
+    ? point.ledger.total
+    : point.resistance?.nominalReference
+  if (!storedNominalReference) {
+    throw new AnalysisInputError(
+      'AUDIT_RECONCILIATION_FAILED',
+      'A Design point has no stored nominal/reference resultant for the same compatible state.',
+      { pointId: point.id }
+    )
+  }
+  const nominalReferenceReconciliation = reconcileCalculationAuditResultant(
+    nominalReferenceLedger.total,
+    storedNominalReference,
+    referencePrepared.forceScale,
+    referencePrepared.lengthScale
+  )
+  const reconciliation = reconcileCalculationAuditResultant(
+    displayedLedger.total,
+    point.ledger.total,
+    prepared.forceScale,
+    prepared.lengthScale
+  )
+  if (!nominalReferenceReconciliation.ok || !reconciliation.ok) {
+    throw new AnalysisInputError(
+      'AUDIT_RECONCILIATION_FAILED',
+      `The selected state audit does not reproduce its stored reference/selected result (relative deltas ${nominalReferenceReconciliation.relativeMaximum}/${reconciliation.relativeMaximum}).`,
+      { pointId: point.id, nominalReferenceReconciliation, reconciliation }
+    )
+  }
+  return {
+    kind: 'stress-strain',
+    pointId: point.id,
+    stage,
+    origin: { ...prepared.origin },
+    state: { ...point.state },
+    depthProfile: auditDepthProfile(prepared, point.state),
+    concreteLaw: describeConcreteMaterialLaw(calculationMaterials.concrete),
+    steelLaws: calculationMaterials.steel.map((material) => ({
+      materialId: material.id,
+      name: material.name,
+      law: describeSteelMaterialLaw(material)
+    })),
+    mesh: { ...prepared.mesh.report },
+    concreteGroups: [...concreteGroups.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    rebars,
+    mechanicalLedger,
+    nominalReferenceLedger,
+    displayedLedger,
+    resistanceFactor,
+    nominalReferenceReconciliation,
+    reconciliation
+  }
+}
+
 const surfaceBounds = (points: PreviewSurfacePoint[]) => ({
   P: mappedRange(points, (point) => point.P),
   Mx: mappedRange(points, (point) => point.Mx),
@@ -3417,6 +3861,97 @@ export const sliceFixedPContour = (
 
   return contour.sort((a, b) => Math.atan2(a.My, a.Mx) - Math.atan2(b.My, b.Mx))
 }
+
+export type FixedPInterpolationBracket = {
+  /** Surface state at or below the selected axial force. */
+  below: PreviewSurfacePoint
+  /** Surface state at or above the selected axial force. */
+  above: PreviewSurfacePoint
+  /** `t = (Pselected - Pbelow) / (Pabove - Pbelow)`; zero for an exact station. */
+  ratio: number
+  exact: boolean
+}
+
+export type FixedPContourSampleTrace = {
+  /** The same sampled-direction point returned by `contourStrainAngleSamples`. */
+  point: PreviewContourPoint
+  /** Null is a fail-closed diagnostic: the displayed point could not be traced to one meridian. */
+  bracket: FixedPInterpolationBracket | null
+}
+
+const normalizeAngleDegrees = (degrees: number) => ((degrees % 360) + 360) % 360
+const angleDistanceDegrees = (left: number, right: number) => {
+  const distance = Math.abs(normalizeAngleDegrees(left) - normalizeAngleDegrees(right))
+  return Math.min(distance, 360 - distance)
+}
+
+const fixedPDirectionPoints = (
+  points: PreviewSurfacePoint[],
+  angleDeg: number
+): PreviewSurfacePoint[] => buildDirectMeridianSection(points, angleDeg, false).primary
+  .filter((point) => point.sectionPointRole === 'surface-vertex')
+  .filter((point) =>
+    angleDistanceDegrees(point.beta * 180 / Math.PI, angleDeg) < 1e-5 ||
+    Math.hypot(point.Mx, point.My) < 1e-8
+  )
+  .sort((left, right) => left.station - right.station)
+
+const fixedPBracket = (
+  points: PreviewSurfacePoint[],
+  fixedP: number,
+  sample: PreviewContourPoint
+): FixedPInterpolationBracket | null => {
+  const angleDeg = normalizeAngleDegrees(sample.beta * 180 / Math.PI)
+  const direction = fixedPDirectionPoints(points, angleDeg)
+  const exactTolerance = Math.max(1e-7, Math.abs(fixedP) * 1e-12)
+  const exact = direction
+    .filter((point) => Math.abs(point.P - fixedP) <= exactTolerance)
+    .sort((left, right) =>
+      (left.Mx - sample.Mx) ** 2 + (left.My - sample.My) ** 2 -
+      ((right.Mx - sample.Mx) ** 2 + (right.My - sample.My) ** 2)
+    )[0]
+  if (exact) return { below: exact, above: exact, ratio: 0, exact: true }
+
+  const candidates: Array<FixedPInterpolationBracket & { error: number }> = []
+  for (let index = 1; index < direction.length; index += 1) {
+    const first = direction[index - 1]
+    const second = direction[index]
+    if ((fixedP - first.P) * (fixedP - second.P) > 0 || Math.abs(second.P - first.P) < 1e-12) continue
+    const ratioFromFirst = (fixedP - first.P) / (second.P - first.P)
+    const mx = first.Mx + ratioFromFirst * (second.Mx - first.Mx)
+    const my = first.My + ratioFromFirst * (second.My - first.My)
+    const below = first.P <= second.P ? first : second
+    const above = first.P <= second.P ? second : first
+    candidates.push({
+      below,
+      above,
+      ratio: (fixedP - below.P) / (above.P - below.P),
+      exact: false,
+      error: (mx - sample.Mx) ** 2 + (my - sample.My) ** 2
+    })
+  }
+  const selected = candidates.sort((left, right) => left.error - right.error)[0]
+  if (!selected) return null
+  return {
+    below: selected.below,
+    above: selected.above,
+    ratio: selected.ratio,
+    exact: selected.exact
+  }
+}
+
+/**
+ * Trace every labelled Fixed-P contour row to the two authoritative surface states used by its
+ * same-direction interpolation. Consumers may display this evidence but must not search for a
+ * different bracket or recompute a parallel contour.
+ */
+export const traceFixedPContourSamples = (
+  points: PreviewSurfacePoint[],
+  fixedP: number,
+  triangles?: readonly SurfaceIndexTriangle[]
+): FixedPContourSampleTrace[] => contourStrainAngleSamples(
+  sliceFixedPContour(points, fixedP, triangles)
+).map((point) => ({ point, bracket: fixedPBracket(points, fixedP, point) }))
 
 /** Fixed-P query on the active mode's authoritative Design dataset. */
 export const sliceActiveDesignPContour = (
