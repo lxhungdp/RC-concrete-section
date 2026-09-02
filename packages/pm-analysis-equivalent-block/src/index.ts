@@ -2,6 +2,7 @@ import {
   AnalysisInputError,
   activeDesignSurfaceDataset,
   activeNominalSurfaceDataset,
+  buildCalculationAuditOriginStrainTrace,
   projectedBoundaryDepth,
   reconcileCalculationAuditResultant,
   sectionBoundaryPoints,
@@ -1167,7 +1168,7 @@ export const buildEquivalentBlockPointCalculationAudit = (
       ? [sample, { ...sample, stress: 0 }]
       : [sample]
   })
-  const depthProfile: CalculationAuditDepthProfile = {
+  const depthProfileBasis = {
     normalX: Math.cos(blockState.neutralAxisAngle),
     normalY: Math.sin(blockState.neutralAxisAngle),
     tensionEdgeProjection: nominal.diagnostics.compressionEdgeProjection - depth - (
@@ -1186,6 +1187,10 @@ export const buildEquivalentBlockPointCalculationAudit = (
     neutralAxisDepth: blockState.neutralAxisDepth,
     neutralAxisInsideSection: blockState.neutralAxisDepth <= depth,
     samples
+  }
+  const depthProfile: CalculationAuditDepthProfile = {
+    ...depthProfileBasis,
+    originStrainTrace: buildCalculationAuditOriginStrainTrace(depthProfileBasis, samples[0].strain)
   }
   return {
     kind: 'equivalent-block',

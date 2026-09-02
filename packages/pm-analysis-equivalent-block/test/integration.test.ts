@@ -222,6 +222,19 @@ test('selected-point equivalent-block audit reproduces exact clipped concrete an
   assert.equal(audit.nominalReferenceReconciliation.ok, true)
   assert.ok(audit.block.area > 0)
   assert.equal(audit.rebars.length, geometry.rebars.length)
+  const originTrace = audit.depthProfile.originStrainTrace
+  assert.equal(originTrace.kind, 'neutral-axis-depth')
+  if (originTrace.kind === 'neutral-axis-depth') {
+    assert.ok(Math.abs(
+      originTrace.neutralAxisDepthRatio * originTrace.projectedSectionDepth - originTrace.neutralAxisDepth
+    ) <= Math.max(1, originTrace.neutralAxisDepth) * 1e-12)
+    assert.ok(Math.abs(
+      originTrace.curvatureFromDepth - Math.hypot(audit.state.kx, audit.state.ky)
+    ) <= Math.max(1e-12, originTrace.curvatureFromDepth) * 1e-10)
+    assert.ok(Math.abs(
+      originTrace.calculatedE0 - audit.state.e0
+    ) <= Math.max(1e-12, Math.abs(audit.state.e0)) * 1e-10)
+  }
   const barNet = audit.rebars.reduce((sum, bar) => sum + bar.net.P, 0)
   assert.ok(Math.abs(barNet - audit.mechanicalLedger.steel.P) <= Math.max(1, Math.abs(barNet)) * 1e-12)
   assert.ok(Math.abs(audit.displayedLedger.total.P - point.P) <= Math.max(1, Math.abs(point.P)) * 1e-10)

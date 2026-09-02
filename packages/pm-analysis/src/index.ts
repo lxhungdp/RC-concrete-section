@@ -201,8 +201,26 @@ export type CalculationAuditDepthProfile = {
   neutralAxisProjection: number | null
   neutralAxisDepth: number | null
   neutralAxisInsideSection: boolean | null
+  originStrainTrace: CalculationAuditOriginStrainTrace
   samples: Array<{ depth: number; strain: number; stress: number }>
 }
+
+export type CalculationAuditOriginStrainTrace =
+  | {
+      kind: 'uniform-strain'
+      compressionEdgeStrain: number
+      calculatedE0: number
+    }
+  | {
+      kind: 'neutral-axis-depth'
+      projectedSectionDepth: number
+      neutralAxisDepthRatio: number
+      neutralAxisDepth: number
+      compressionEdgeStrain: number
+      compressionEdgeProjection: number
+      curvatureFromDepth: number
+      calculatedE0: number
+    }
 
 export type CalculationAuditReconciliation = {
   expected: Resultant
@@ -3123,6 +3141,42 @@ const concreteAuditBranch = (material: MaterialStore['concrete'], strain: number
   return { id: 'unsupported-local-law', label: 'Unsupported local concrete law' }
 }
 
+/**
+ * Auditable derivation of the strain at the declared analysis origin.
+ *
+ * The depth-profile coordinate is measured from the exact extreme compression edge. For a
+ * non-uniform compatible state, `c / D` first recovers `c`, then `kappa = epsilon_c / c`, and
+ * finally `epsilon_0 = epsilon_c - kappa u_c`, where `u_c` is the compression-edge projection
+ * measured from the analysis origin. Keeping this derivation in the owning result DTO prevents a
+ * presentation adapter from reconstructing strain-plane mechanics.
+ */
+export const buildCalculationAuditOriginStrainTrace = (
+  profile: Pick<CalculationAuditDepthProfile,
+    'projectedSectionDepth' | 'neutralAxisDepth' | 'compressionEdgeProjection'>,
+  compressionEdgeStrain: number
+): CalculationAuditOriginStrainTrace => {
+  if (profile.neutralAxisDepth === null) {
+    return {
+      kind: 'uniform-strain',
+      compressionEdgeStrain,
+      calculatedE0: compressionEdgeStrain
+    }
+  }
+  const neutralAxisDepthRatio = profile.neutralAxisDepth / profile.projectedSectionDepth
+  const neutralAxisDepth = neutralAxisDepthRatio * profile.projectedSectionDepth
+  const curvatureFromDepth = compressionEdgeStrain / neutralAxisDepth
+  return {
+    kind: 'neutral-axis-depth',
+    projectedSectionDepth: profile.projectedSectionDepth,
+    neutralAxisDepthRatio,
+    neutralAxisDepth,
+    compressionEdgeStrain,
+    compressionEdgeProjection: profile.compressionEdgeProjection,
+    curvatureFromDepth,
+    calculatedE0: compressionEdgeStrain - curvatureFromDepth * profile.compressionEdgeProjection
+  }
+}
+
 const auditDepthProfile = (
   prepared: PreparedAnalysis,
   state: StrainState
@@ -3146,7 +3200,7 @@ const auditDepthProfile = (
     const strain = state.e0 + curvature * projection
     return { depth, strain, stress: prepared.materials.concrete.stress(strain) }
   })
-  return {
+  const profile = {
     normalX,
     normalY,
     tensionEdgeProjection,
@@ -3156,6 +3210,10 @@ const auditDepthProfile = (
     neutralAxisDepth,
     neutralAxisInsideSection,
     samples
+  }
+  return {
+    ...profile,
+    originStrainTrace: buildCalculationAuditOriginStrainTrace(profile, samples[0].strain)
   }
 }
 

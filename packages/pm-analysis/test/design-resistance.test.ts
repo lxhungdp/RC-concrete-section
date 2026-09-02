@@ -25,6 +25,7 @@ import {
 } from '@pm/project'
 import {
   AnalysisInputError,
+  buildCalculationAuditOriginStrainTrace,
   buildDesignPreviewSurfaceFromPrepared,
   buildStressStrainPointCalculationAudit,
   checkLoadcaseUtilizationFromSurface,
@@ -46,6 +47,19 @@ const compactOptions = () => {
   options.directions.refinement = { type: 'fixed', probe: { stationIds: [] } }
   return options
 }
+
+test('uniform-strain audit trace derives epsilon at the origin without inventing a neutral axis', () => {
+  const trace = buildCalculationAuditOriginStrainTrace({
+    projectedSectionDepth: 700,
+    neutralAxisDepth: null,
+    compressionEdgeProjection: 350
+  }, 0.0021)
+  assert.deepEqual(trace, {
+    kind: 'uniform-strain',
+    compressionEdgeStrain: 0.0021,
+    calculatedE0: 0.0021
+  })
+})
 
 test('KDS current profile identifies the 2024 code set without misdating its resistance clauses', () => {
   const basis = createKdsBasicDesignBasis()
@@ -191,6 +205,19 @@ test('selected-point stress-strain audit reproduces every contribution and the s
   assert.equal(audit.concreteGroups.reduce((sum, group) => sum + group.count, 0), audit.mesh.points)
   assert.ok(audit.concreteLaw.parameters.some((parameter) => parameter.symbol === 'αeff'))
   assert.ok(audit.concreteLaw.parameters.some((parameter) => parameter.symbol === 'γc'))
+  const originTrace = audit.depthProfile.originStrainTrace
+  assert.equal(originTrace.kind, 'neutral-axis-depth')
+  if (originTrace.kind === 'neutral-axis-depth') {
+    assert.ok(Math.abs(
+      originTrace.neutralAxisDepthRatio * originTrace.projectedSectionDepth - originTrace.neutralAxisDepth
+    ) <= Math.max(1, originTrace.neutralAxisDepth) * 1e-12)
+    assert.ok(Math.abs(
+      originTrace.curvatureFromDepth - Math.hypot(audit.state.kx, audit.state.ky)
+    ) <= Math.max(1e-12, originTrace.curvatureFromDepth) * 1e-10)
+    assert.ok(Math.abs(
+      originTrace.calculatedE0 - audit.state.e0
+    ) <= Math.max(1e-12, Math.abs(audit.state.e0)) * 1e-10)
+  }
   const groupedConcrete = audit.concreteGroups.reduce((sum, group) => sum + group.resultant.P, 0)
   const barNet = audit.rebars.reduce((sum, bar) => sum + bar.net.P, 0)
   assert.ok(Math.abs(groupedConcrete - audit.mechanicalLedger.concrete.P) <= Math.max(1, Math.abs(groupedConcrete)) * 1e-12)

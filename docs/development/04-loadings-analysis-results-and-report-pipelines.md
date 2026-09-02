@@ -291,8 +291,10 @@ Opening the inspector sends a lazy `buildPointAudits` worker request containing 
 calculation-profile identity, selected resistance stage, and exact stored vertex or Fixed-P bracket
 vertices. `@pm/analysis` owns the stress-strain trace; `@pm/analysis-equivalent-block` owns the exact
 block trace. Each returns a serializable DTO of effective laws, formulas/provenance, compatible
-depth profile, complete grouped concrete sums, complete rebar ledger, resistance stages, and stored
-result reconciliation. Fixed-P endpoints are queried and displayed independently; the browser never
+depth profile, an owner-calculated `D -> c/D -> c -> kappa -> epsilon0` trace (or an explicit
+uniform-strain trace), complete grouped concrete sums, complete rebar ledger, resistance stages, and
+stored result reconciliation. The UI formats that trace but does not reconstruct strain-plane
+mechanics. Fixed-P endpoints are queried and displayed independently; the browser never
 assigns an invented strain state to the interpolated contour point. Closing or changing the selected
 row aborts an outstanding request.
 

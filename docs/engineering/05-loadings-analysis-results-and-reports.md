@@ -109,6 +109,14 @@ states that bracket the selected axial force, the interpolation ratio, and the r
 it must not be presented as one independently solved strain state. The inspector includes the basic
 geometry and material inputs before any derived value. It then identifies the numerical integration
 model, draws the compatible strain and concrete-stress profiles with the neutral axis, and publishes
+the origin-strain trace from exact projected depth `D`, the resulting `c/D` and `c`, the active
+extreme compression-edge strain, curvature, and edge projection before displaying `epsilon0`.
+Uniform-strain poles identify the neutral axis at infinity and derive `epsilon0` directly from the
+uniform edge strain. The inspector
+uses units in homogeneous table headers, includes explicit concrete and reinforcement sum rows, and
+shows only concrete and net reinforcement in the resultant summary. Gross steel and displaced
+concrete remain traceable in each reinforcement row and are not repeated in a redundant summary
+table. It also publishes
 the actual material-law equations, effective coefficients, source/provenance status, grouped sums of
 all concrete integration points, every reinforcement/displaced-concrete term, resistance route, and
 a scale-aware reconciliation to the stored table point. The three-point triangle mesh is summarized

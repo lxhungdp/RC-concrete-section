@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Loader2, X } from 'lucide-react'
 import {
   stationDefinitionLabel,
   type CalculationAuditConcreteGroup,
+  type CalculationAuditOriginStrainTrace,
   type CalculationAuditRebar,
   type PointCalculationAudit,
   type PreviewSurface,
@@ -31,14 +32,18 @@ type Props = {
   onClose: () => void
 }
 
-const fmt = (value: number, digits = 6) => Number.isFinite(value)
-  ? value.toLocaleString('en-US', { maximumFractionDigits: digits })
-  : '—'
-const force = (value: number) => `${fmt(value / 1000, 3)} kN`
-const moment = (value: number) => `${fmt(value / 1_000_000, 4)} kN·m`
-const strain = (value: number) => Number.isFinite(value) ? value.toExponential(6) : '—'
+const fmt = (value: number, digits = 2) => {
+  if (!Number.isFinite(value)) return '—'
+  const displayValue = Math.abs(value) < 0.5 * 10 ** -digits ? 0 : value
+  return displayValue.toLocaleString('en-US', { maximumFractionDigits: digits })
+}
+const forceValue = (value: number) => fmt(value / 1000)
+const momentValue = (value: number) => fmt(value / 1_000_000)
+const force = (value: number) => `${forceValue(value)} kN`
+const moment = (value: number) => `${momentValue(value)} kN·m`
+const strain = (value: number) => Number.isFinite(value) ? value.toExponential(4) : '—'
 
-const Fact = ({ label, children }: { label: string; children: ReactNode }) => (
+const Fact = ({ label, children }: { label: ReactNode; children: ReactNode }) => (
   <div className="pm-calc-fact"><span>{label}</span><strong>{children}</strong></div>
 )
 
@@ -50,21 +55,20 @@ const Step = ({ index, title, children }: { index: number | string; title: strin
 )
 
 const ResultantTable = ({ title, ledger }: { title: string; ledger: ResultantLedger }) => {
-  const rows: Array<[string, Resultant]> = [
+  const summaryRows: Array<[string, Resultant]> = [
     ['Concrete', ledger.concrete],
-    ['Steel gross', ledger.steelGross],
-    ['Displaced concrete', ledger.displacedConcrete],
-    ['Steel net', ledger.steel],
-    ['Total', ledger.total]
+    ['Reinforcement, net', ledger.steel]
   ]
+  const cells = (value: Resultant) => <><td>{forceValue(value.P)}</td><td>{momentValue(value.Mx)}</td><td>{momentValue(value.My)}</td></>
   return (
     <div className="pm-calc-resultant">
       <h4>{title}</h4>
       <div className="pm-calc-table-wrap"><table>
-        <thead><tr><th>Contribution</th><th>P</th><th>Mx</th><th>My</th></tr></thead>
-        <tbody>{rows.map(([label, value]) => (
-          <tr key={label}><td>{label}</td><td>{force(value.P)}</td><td>{moment(value.Mx)}</td><td>{moment(value.My)}</td></tr>
+        <thead><tr><th>Contribution</th><th>P (kN)</th><th>Mx (kN·m)</th><th>My (kN·m)</th></tr></thead>
+        <tbody>{summaryRows.map(([label, value]) => (
+          <tr key={label}><td>{label}</td>{cells(value)}</tr>
         ))}</tbody>
+        <tfoot><tr><td>Total resistance</td>{cells(ledger.total)}</tr></tfoot>
       </table></div>
     </div>
   )
@@ -130,8 +134,8 @@ const CalculationDiagram = ({ section, rebars, audit, patternId }: {
   const outsideLabel = c === null
     ? 'Uniform strain · N.A. at infinity'
     : profile.neutralAxisInsideSection
-      ? `c = ${fmt(c, 3)} mm`
-      : `N.A. outside section · c ≈ ${fmt(c, 3)} mm`
+      ? `c = ${fmt(c)} mm`
+      : `N.A. outside section · c ≈ ${fmt(c)} mm`
   const naProfileY = c === null ? null : py(Math.min(depth, Math.max(0, c)))
 
   return (
@@ -170,7 +174,7 @@ const CalculationDiagram = ({ section, rebars, audit, patternId }: {
         <line x1={stressLeft} y1={profileTop} x2={stressLeft + chartWidth} y2={profileTop} className="pm-calc-profile-edge" />
         <line x1={stressLeft} y1={profileTop + profileHeight} x2={stressLeft + chartWidth} y2={profileTop + profileHeight} className="pm-calc-profile-edge" />
         <polyline points={stressLine} className="pm-calc-stress-line" />
-        <text x={stressLeft} y="285" className="pm-calc-svg-note">{fmt(stressMin, 3)} → {fmt(stressMax, 3)} MPa</text>
+        <text x={stressLeft} y="285" className="pm-calc-svg-note">{fmt(stressMin)} → {fmt(stressMax)} MPa</text>
         {naProfileY === null ? null : (
           <g className="pm-calc-na-profile"><line x1="371" y1={naProfileY} x2="750" y2={naProfileY} /><text x="745" y={naProfileY - 4} textAnchor="end">{profile.neutralAxisInsideSection ? 'ε = 0 / N.A.' : 'N.A. estimated outside'}</text></g>
         )}
@@ -180,57 +184,114 @@ const CalculationDiagram = ({ section, rebars, audit, patternId }: {
   )
 }
 
-const MaterialLaw = ({ title, law }: { title: string; law: MaterialLawAudit }) => (
-  <div className="pm-calc-law">
-    <h4>{title}</h4>
-    {law.equations.map((equation) => <code className="pm-calc-formula" key={equation}>{equation}</code>)}
-    <div className="pm-calc-table-wrap"><table>
-      <thead><tr><th>Symbol</th><th>Parameter</th><th>Value</th><th>Unit</th><th>Derivation</th></tr></thead>
-      <tbody>{law.parameters.map((parameter, index) => (
-        <tr key={`${parameter.symbol}-${index}`}><td>{parameter.symbol}</td><td>{parameter.label}</td><td>{fmt(parameter.value, 8)}</td><td>{parameter.unit}</td><td>{parameter.derivation ?? 'input / profile value'}</td></tr>
-      ))}</tbody>
-    </table></div>
-    <p className={`pm-calc-source${law.provenance.reference ? '' : ' is-gap'}`}><b>Basis:</b> {law.provenance.document}{law.provenance.reference ? ` · ${law.provenance.reference}` : ''}. {law.provenance.note}</p>
-  </div>
-)
+const materialValue = (value: number) => {
+  if (value !== 0 && Math.abs(value) < 0.01) return strain(value)
+  return fmt(value, Math.abs(value) >= 10 ? 2 : 4)
+}
 
-const ConcreteGroups = ({ groups }: { groups: CalculationAuditConcreteGroup[] }) => (
+const materialUnitLabel = (unit: string) => {
+  const normalized = unit.trim()
+  return normalized === '' || normalized === '-' || normalized === '–' || normalized === '—' || normalized === '1'
+    ? 'dimensionless'
+    : normalized
+}
+
+const MaterialLaw = ({ title, law }: { title: string; law: MaterialLawAudit }) => {
+  const units = [...new Set(law.parameters.map((parameter) => parameter.unit))]
+  return (
+    <div className="pm-calc-law">
+      <h4>{title}</h4>
+      {law.equations.map((equation) => <code className="pm-calc-formula" key={equation}>{equation}</code>)}
+      {units.map((unit) => (
+        <div className="pm-calc-table-wrap" key={unit}><table>
+          <thead><tr><th>Symbol</th><th>Parameter</th><th>Value ({materialUnitLabel(unit)})</th><th>Derivation</th></tr></thead>
+          <tbody>{law.parameters.filter((parameter) => parameter.unit === unit).map((parameter, index) => (
+            <tr key={`${parameter.symbol}-${index}`}><td>{parameter.symbol}</td><td>{parameter.label}</td><td>{materialValue(parameter.value)}</td><td>{parameter.derivation ?? 'input / profile value'}</td></tr>
+          ))}</tbody>
+        </table></div>
+      ))}
+      <p className={`pm-calc-source${law.provenance.reference ? '' : ' is-gap'}`}><b>Basis:</b> {law.provenance.document}{law.provenance.reference ? ` · ${law.provenance.reference}` : ''}. {law.provenance.note}</p>
+    </div>
+  )
+}
+
+const OriginStrainTrace = ({ trace }: { trace: CalculationAuditOriginStrainTrace }) => {
+  if (trace.kind === 'uniform-strain') return (
+    <div className="pm-calc-derivation">
+      <h4><span className="pm-calc-math">ε₀</span> derivation</h4>
+      <dl>
+        <div><dt>Compatible state</dt><dd>Uniform strain; neutral axis at infinity</dd></div>
+        <div><dt><span className="pm-calc-math">κ</span></dt><dd>0 mm⁻¹</dd></div>
+        <div><dt>Extreme-edge strain <span className="pm-calc-math">εc</span></dt><dd>{strain(trace.compressionEdgeStrain)}</dd></div>
+        <div><dt><span className="pm-calc-math">ε₀ = εc</span></dt><dd>{strain(trace.calculatedE0)}</dd></div>
+      </dl>
+    </div>
+  )
+  return (
+    <div className="pm-calc-derivation">
+      <h4><span className="pm-calc-math">ε₀</span> derivation from the neutral-axis depth</h4>
+      <dl>
+        <div><dt>Projected section depth D</dt><dd>{fmt(trace.projectedSectionDepth)} mm</dd></div>
+        <div><dt>Depth ratio c / D</dt><dd>{fmt(trace.neutralAxisDepthRatio, 4)}</dd></div>
+        <div><dt>c = (c / D)D</dt><dd>{fmt(trace.neutralAxisDepthRatio, 4)} × {fmt(trace.projectedSectionDepth)} = {fmt(trace.neutralAxisDepth)} mm</dd></div>
+        <div><dt>Extreme compression-edge strain <span className="pm-calc-math">εc</span></dt><dd>{strain(trace.compressionEdgeStrain)}</dd></div>
+        <div><dt><span className="pm-calc-math">κ = εc / c</span></dt><dd>{strain(trace.curvatureFromDepth)} mm⁻¹</dd></div>
+        <div><dt>Compression-edge projection uc</dt><dd>{fmt(trace.compressionEdgeProjection)} mm from origin</dd></div>
+        <div><dt><span className="pm-calc-math">ε₀ = εc − κuc</span></dt><dd>{strain(trace.calculatedE0)}</dd></div>
+      </dl>
+      <p>The edge projection is measured from the declared analysis origin along the compression normal. These values are supplied by the mechanics audit DTO.</p>
+    </div>
+  )
+}
+
+const ConcreteGroups = ({ groups, pointCount, area, total }: {
+  groups: CalculationAuditConcreteGroup[]
+  pointCount: number
+  area: number
+  total: Resultant
+}) => (
   <>
     <code className="pm-calc-formula">εᵢ = ε₀ + κx·yᵢ + κy·xᵢ; σc,ᵢ = fc(εᵢ); Fc,ᵢ = σc,ᵢ·Aᵢ</code>
     <code className="pm-calc-formula">Pc = ΣFc,ᵢ; Mcx = ΣFc,ᵢ·yᵢ; Mcy = ΣFc,ᵢ·xᵢ</code>
-    <div className="pm-calc-table-wrap"><table>
-      <thead><tr><th>Material-law branch</th><th>Points</th><th>ΣA (mm²)</th><th>ε range</th><th>σ range (MPa)</th><th>ΣP</th><th>ΣMx</th><th>ΣMy</th></tr></thead>
+    <div className="pm-calc-table-wrap pm-calc-table-wrap--branches"><table className="pm-calc-branch-table">
+      <thead><tr><th>Material-law branch</th><th>Integration<br />(points / mm²)</th><th>Ranges<br />(ε / MPa)</th><th>Resultants<br />(kN / kN·m)</th></tr></thead>
       <tbody>{groups.map((group) => <tr key={group.id}>
-        <td>{group.label}</td><td>{fmt(group.count, 0)}</td><td>{fmt(group.area, 3)}</td>
-        <td>{strain(group.strainMinimum)} → {strain(group.strainMaximum)}</td>
-        <td>{fmt(group.stressMinimum, 4)} → {fmt(group.stressMaximum, 4)}</td>
-        <td>{force(group.resultant.P)}</td><td>{moment(group.resultant.Mx)}</td><td>{moment(group.resultant.My)}</td>
+        <th scope="row">{group.label}</th>
+        <td><span className="pm-calc-stack-group-title">Integration <small>(points / mm²)</small></span><span className="pm-calc-stacked-values"><span><small>Points</small><b>{fmt(group.count, 0)}</b></span><span><small>ΣA</small><b>{fmt(group.area)}</b></span></span></td>
+        <td><span className="pm-calc-stack-group-title">Ranges <small>(ε / MPa)</small></span><span className="pm-calc-stacked-values"><span><small>εmin</small><b>{strain(group.strainMinimum)}</b></span><span><small>εmax</small><b>{strain(group.strainMaximum)}</b></span><span><small>σmin</small><b>{fmt(group.stressMinimum)}</b></span><span><small>σmax</small><b>{fmt(group.stressMaximum)}</b></span></span></td>
+        <td><span className="pm-calc-stack-group-title">Resultants <small>(kN / kN·m)</small></span><span className="pm-calc-stacked-values"><span><small>ΣP</small><b>{forceValue(group.resultant.P)}</b></span><span><small>ΣMx</small><b>{momentValue(group.resultant.Mx)}</b></span><span><small>ΣMy</small><b>{momentValue(group.resultant.My)}</b></span></span></td>
       </tr>)}</tbody>
+      <tfoot><tr><th scope="row">Σ Concrete</th>
+        <td><span className="pm-calc-stack-group-title">Integration <small>(points / mm²)</small></span><span className="pm-calc-stacked-values"><span><small>Points</small><b>{fmt(pointCount, 0)}</b></span><span><small>ΣA</small><b>{fmt(area)}</b></span></span></td>
+        <td>—</td>
+        <td><span className="pm-calc-stack-group-title">Resultants <small>(kN / kN·m)</small></span><span className="pm-calc-stacked-values"><span><small>ΣP</small><b>{forceValue(total.P)}</b></span><span><small>ΣMx</small><b>{momentValue(total.Mx)}</b></span><span><small>ΣMy</small><b>{momentValue(total.My)}</b></span></span></td>
+      </tr></tfoot>
     </table></div>
     <details className="pm-calc-details"><summary>Representative integration term from each branch</summary>
       <div className="pm-calc-table-wrap"><table>
-        <thead><tr><th>Branch</th><th>x / y (mm)</th><th>A (mm²)</th><th>ε</th><th>σ (MPa)</th><th>F = σA</th><th>F·y</th><th>F·x</th></tr></thead>
+        <thead><tr><th>Branch</th><th>x / y (mm)</th><th>A (mm²)</th><th>ε</th><th>σ (MPa)</th><th>F = σA (kN)</th><th>F·y (kN·m)</th><th>F·x (kN·m)</th></tr></thead>
         <tbody>{groups.map((group) => <tr key={group.id}>
-          <td>{group.label}</td><td>{fmt(group.representative.x, 3)} / {fmt(group.representative.y, 3)}</td><td>{fmt(group.representative.area, 6)}</td>
-          <td>{strain(group.representative.strain)}</td><td>{fmt(group.representative.stress, 6)}</td><td>{force(group.representative.force)}</td>
-          <td>{moment(group.representative.Mx)}</td><td>{moment(group.representative.My)}</td>
+          <td>{group.label}</td><td>{fmt(group.representative.x)} / {fmt(group.representative.y)}</td><td>{fmt(group.representative.area)}</td>
+          <td>{strain(group.representative.strain)}</td><td>{fmt(group.representative.stress)}</td><td>{forceValue(group.representative.force)}</td>
+          <td>{momentValue(group.representative.Mx)}</td><td>{momentValue(group.representative.My)}</td>
         </tr>)}</tbody>
       </table></div>
     </details>
   </>
 )
 
-const RebarLedger = ({ bars }: { bars: CalculationAuditRebar[] }) => (
+const RebarLedger = ({ bars, total }: { bars: CalculationAuditRebar[]; total: Resultant }) => (
   <>
     <code className="pm-calc-formula">As = πd²/4; εs = ε₀ + κx·y + κy·x; Fs,net = [σs(εs) − σc,displaced(εs)]·As</code>
     <code className="pm-calc-formula">Ps = ΣFs,net; Msx = ΣFs,net·y; Msy = ΣFs,net·x</code>
     <div className="pm-calc-table-wrap"><table>
-      <thead><tr><th>Bar</th><th>x / y (mm)</th><th>d / As</th><th>εs</th><th>σs (MPa)</th><th>−σc,disp (MPa)</th><th>σnet (MPa)</th><th>Fnet</th><th>Mx</th><th>My</th></tr></thead>
+      <thead><tr><th>Bar</th><th>x (mm)</th><th>y (mm)</th><th>d (mm)</th><th>As (mm²)</th><th>εs</th><th>σs (MPa)</th><th>−σc,disp (MPa)</th><th>σnet (MPa)</th><th>Fnet (kN)</th><th>Mx (kN·m)</th><th>My (kN·m)</th></tr></thead>
       <tbody>{bars.map((bar) => <tr key={bar.id}>
-        <td>#{bar.id}</td><td>{fmt(bar.x, 3)} / {fmt(bar.y, 3)}</td><td>{fmt(bar.diameter, 3)} / {fmt(bar.area, 3)}</td>
-        <td>{strain(bar.strain)}</td><td>{fmt(bar.steelStress, 5)}</td><td>{fmt(bar.displacedConcreteStress, 5)}</td><td>{fmt(bar.netStress, 5)}</td>
-        <td>{force(bar.net.P)}</td><td>{moment(bar.net.Mx)}</td><td>{moment(bar.net.My)}</td>
+        <td>#{bar.id}</td><td>{fmt(bar.x)}</td><td>{fmt(bar.y)}</td><td>{fmt(bar.diameter)}</td><td>{fmt(bar.area)}</td>
+        <td>{strain(bar.strain)}</td><td>{fmt(bar.steelStress)}</td><td>{fmt(bar.displacedConcreteStress)}</td><td>{fmt(bar.netStress)}</td>
+        <td>{forceValue(bar.net.P)}</td><td>{momentValue(bar.net.Mx)}</td><td>{momentValue(bar.net.My)}</td>
       </tr>)}</tbody>
+      <tfoot><tr><td>Σ Rebar</td><td>—</td><td>—</td><td>—</td><td>{fmt(bars.reduce((sum, bar) => sum + bar.area, 0))}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>{forceValue(total.P)}</td><td>{momentValue(total.Mx)}</td><td>{momentValue(total.My)}</td></tr></tfoot>
     </table></div>
   </>
 )
@@ -256,17 +317,17 @@ const ResistanceTrace = ({ audit, point, designBasis }: {
       {audit.resistanceFactor === null ? (
         <code className="pm-calc-formula">Rshown = Rintegration (the active material laws already represent the selected {audit.stage} stage; no global φ is applied)</code>
       ) : (
-        <code className="pm-calc-formula">Rdesign = φ·Rnominal = {fmt(audit.resistanceFactor, 8)}·Rnominal</code>
+        <code className="pm-calc-formula">Rdesign = φ·Rnominal = {fmt(audit.resistanceFactor, 4)}·Rnominal</code>
       )}
       {audit.resistanceFactor === null ? null : <ResultantTable title="Resultants after the stored strength-reduction factor" ledger={audit.displayedLedger} />}
       {trace ? <div className="pm-calc-facts">
-        <Fact label="Classification">{trace.classification}</Fact><Fact label="Stored factor φ">{trace.factor === null ? 'material reevaluation' : fmt(trace.factor, 8)}</Fact>
+        <Fact label="Classification">{trace.classification}</Fact><Fact label="Stored factor φ">{trace.factor === null ? 'material reevaluation' : fmt(trace.factor, 4)}</Fact>
         {trace.controllingTensileStrain === null ? null : <Fact label="Controlling tensile strain">{strain(trace.controllingTensileStrain)}</Fact>}
         {trace.yieldStrain === null ? null : <Fact label="Yield strain">{strain(trace.yieldStrain)}</Fact>}
       </div> : null}
       {designBasis.format === 'designMaterialReevaluation' ? <div className="pm-calc-factor-list">
         {[...designBasis.factors.concrete.components, ...designBasis.factors.reinforcement.components].map((factor) => (
-          <span key={factor.id}><b>{factor.symbol}</b> = {fmt(factor.value, 6)} · {factor.clauseRef}</span>
+          <span key={factor.id}><b>{factor.symbol}</b> = {fmt(factor.value, 4)} · {factor.clauseRef}</span>
         ))}
       </div> : null}
       <p className="pm-calc-source"><b>Resistance basis:</b> {designBasis.identity.document} · {designBasis.identity.edition} · method {designBasis.identity.methodId}.</p>
@@ -301,27 +362,28 @@ const PhysicalAudit = ({ audit, point, title, section, rebars, designBasis, patt
     <>
       <Step index={startIndex} title={`${title}: compatible strain and stress state`}>
         <div className="pm-calc-facts">
-          <Fact label="ε0 at analysis origin">{strain(audit.state.e0)}</Fact>
+          <Fact label={<><span className="pm-calc-math">ε₀</span> at analysis origin</>}>{strain(audit.depthProfile.originStrainTrace.calculatedE0)}</Fact>
           <Fact label="κx / κy">{strain(audit.state.kx)} / {strain(audit.state.ky)} mm⁻¹</Fact>
-          <Fact label="Projected depth">{fmt(audit.depthProfile.projectedSectionDepth, 4)} mm</Fact>
-          <Fact label="Neutral-axis depth c">{audit.depthProfile.neutralAxisDepth === null ? '∞ (uniform strain)' : `${fmt(audit.depthProfile.neutralAxisDepth, 4)} mm${audit.depthProfile.neutralAxisInsideSection ? '' : ' · outside section'}`}</Fact>
+          <Fact label="Projected depth D">{fmt(audit.depthProfile.projectedSectionDepth)} mm</Fact>
+          <Fact label="Neutral-axis depth c">{audit.depthProfile.neutralAxisDepth === null ? '∞ (uniform strain)' : `${fmt(audit.depthProfile.neutralAxisDepth)} mm${audit.depthProfile.neutralAxisInsideSection ? '' : ' · outside section'}`}</Fact>
         </div>
+        <OriginStrainTrace trace={audit.depthProfile.originStrainTrace} />
         <code className="pm-calc-formula">ε(x,y) = ε₀ + κx·(y − y₀) + κy·(x − x₀)</code>
         <CalculationDiagram section={section} rebars={rebars} audit={audit} patternId={patternId} />
       </Step>
 
       <Step index={startIndex + 1} title={`${title}: concrete calculation`}>
         {audit.kind === 'stress-strain' ? (
-          <><MaterialLaw title="Concrete law and active coefficients" law={audit.concreteLaw} /><ConcreteGroups groups={audit.concreteGroups} /></>
+          <><MaterialLaw title="Concrete law and active coefficients" law={audit.concreteLaw} /><ConcreteGroups groups={audit.concreteGroups} pointCount={audit.mesh.points} area={audit.mesh.meshed.area} total={audit.mechanicalLedger.concrete} /></>
         ) : (
           <>
             <div className="pm-calc-facts">
-              <Fact label="c">{fmt(audit.block.neutralAxisDepth, 5)} mm</Fact><Fact label="β1 / depth coefficient">{fmt(audit.block.beta1, 8)}</Fact>
-              <Fact label="a = β1c">{fmt(audit.block.blockDepth, 5)} mm</Fact><Fact label="σblock">{fmt(audit.block.compressionStress, 6)} MPa</Fact>
-              <Fact label="Exact clipped area Ablock">{fmt(audit.block.area, 5)} mm²</Fact><Fact label="Block centroid x / y">{fmt(audit.block.centroidX, 5)} / {fmt(audit.block.centroidY, 5)} mm</Fact>
+              <Fact label="c">{fmt(audit.block.neutralAxisDepth)} mm</Fact><Fact label="β1 / depth coefficient">{fmt(audit.block.beta1, 4)}</Fact>
+              <Fact label="a = β1c">{fmt(audit.block.blockDepth)} mm</Fact><Fact label="σblock">{fmt(audit.block.compressionStress)} MPa</Fact>
+              <Fact label="Exact clipped area Ablock">{fmt(audit.block.area)} mm²</Fact><Fact label="Block centroid x / y">{fmt(audit.block.centroidX)} / {fmt(audit.block.centroidY)} mm</Fact>
             </div>
-            <code className="pm-calc-formula">a = β1·c = {fmt(audit.block.beta1, 8)} × {fmt(audit.block.neutralAxisDepth, 5)} = {fmt(audit.block.blockDepth, 5)} mm</code>
-            <code className="pm-calc-formula">Cc = σblock·Ablock = {fmt(audit.block.compressionStress, 6)} × {fmt(audit.block.area, 5)} = {force(audit.block.resultant.P)}</code>
+            <code className="pm-calc-formula">a = β1·c = {fmt(audit.block.beta1, 4)} × {fmt(audit.block.neutralAxisDepth)} = {fmt(audit.block.blockDepth)} mm</code>
+            <code className="pm-calc-formula">Cc = σblock·Ablock = {fmt(audit.block.compressionStress)} × {fmt(audit.block.area)} = {force(audit.block.resultant.P)}</code>
             <code className="pm-calc-formula">Mcx = Cc·ȳ = {moment(audit.block.resultant.Mx)}; Mcy = Cc·x̄ = {moment(audit.block.resultant.My)}</code>
             <p className="pm-calc-source"><b>Basis:</b> {audit.provenance.document} · {audit.provenance.concrete}. Method {audit.provenance.methodId}; {audit.provenance.verificationStatus}.</p>
           </>
@@ -329,7 +391,7 @@ const PhysicalAudit = ({ audit, point, title, section, rebars, designBasis, patt
       </Step>
 
       <Step index={startIndex + 2} title={`${title}: reinforcement and displaced concrete`}>
-        <RebarLedger bars={audit.rebars} />
+        <RebarLedger bars={audit.rebars} total={audit.mechanicalLedger.steel} />
         {audit.steelLaws.map((entry) => <details className="pm-calc-details" key={entry.materialId}><summary>Steel material {entry.materialId}: {entry.name}</summary><MaterialLaw title="Steel law and active coefficients" law={entry.law} /></details>)}
       </Step>
 
@@ -347,10 +409,10 @@ const IntegrationModel = ({ surface }: { surface: PreviewSurface }) => (
     ) : (
       <>
         <div className="pm-calc-facts">
-          <Fact label="Base cell h">{fmt(surface.mesh.cellSize, 5)} mm</Fact><Fact label="Clipped cells">{fmt(surface.mesh.cells, 0)}</Fact>
+          <Fact label="Base cell h">{fmt(surface.mesh.cellSize)} mm</Fact><Fact label="Clipped cells">{fmt(surface.mesh.cells, 0)}</Fact>
           <Fact label="Triangles">{fmt(surface.mesh.triangles, 0)}</Fact><Fact label="Gauss points">{fmt(surface.mesh.points, 0)} (= 3 per triangle)</Fact>
-          <Fact label="Exact / integrated area">{fmt(surface.mesh.exact.area, 5)} / {fmt(surface.mesh.meshed.area, 5)} mm²</Fact><Fact label="Area difference">{fmt(surface.mesh.areaError, 8)} mm²</Fact>
-          <Fact label="First-moment ΔQx / ΔQy">{fmt(surface.mesh.firstMomentXError, 8)} / {fmt(surface.mesh.firstMomentYError, 8)} mm³</Fact><Fact label="Discarded sliver area">{fmt(surface.mesh.discardedArea, 8)} mm²</Fact>
+          <Fact label="Exact / integrated area">{fmt(surface.mesh.exact.area)} / {fmt(surface.mesh.meshed.area)} mm²</Fact><Fact label="Area difference">{fmt(surface.mesh.areaError)} mm²</Fact>
+          <Fact label="First-moment ΔQx / ΔQy">{fmt(surface.mesh.firstMomentXError)} / {fmt(surface.mesh.firstMomentYError)} mm³</Fact><Fact label="Discarded sliver area">{fmt(surface.mesh.discardedArea)} mm²</Fact>
         </div>
         <code className="pm-calc-formula">Triangle rule: barycentric points (2/3, 1/6, 1/6) and permutations; each weight Ai = Atriangle/3.</code>
         <p className="pm-calc-source"><b>Numerical basis:</b> clipped-cell mesh and degree-2 triangle quadrature, docs/02-meshing-2d.md §5. The exact boundary still controls area origin, extreme fibres and section dimensions.</p>
@@ -377,7 +439,7 @@ const VerticalResult = ({ row }: { row: ChartTableVerticalRow }) => {
   const selected = row.evidence.stage === 'design' ? row.design : row.nominal
   if (!selected) return null
   return <Step index={7} title="Value shown in the Vertical table">
-    <code className="pm-calc-formula">Mβ = Mx·cosβ + My·sinβ, with β = {fmt(row.evidence.angleDeg, 5)}°</code>
+    <code className="pm-calc-formula">Mβ = Mx·cosβ + My·sinβ, with β = {fmt(row.evidence.angleDeg)}°</code>
     <div className="pm-calc-final"><Fact label={`${row.evidence.stage} P`}>{force(selected.total.P)}</Fact><Fact label={`${row.evidence.stage} Mβ`}>{moment(selected.total.M)}</Fact></div>
   </Step>
 }
@@ -389,7 +451,7 @@ const FixedPResult = ({ row, index }: { row: ChartTableFixedPRow; index: number 
     {!bracket ? <div className="pm-calc-note is-error"><AlertTriangle size={16} /><p>No same-meridian bracket is attached to this row; interpolation evidence is unavailable.</p></div> : bracket.exact ? (
       <code className="pm-calc-formula">Pselected = Pstation; Mx = {moment(sample.Mx)}; My = {moment(sample.My)}</code>
     ) : <>
-      <code className="pm-calc-formula">t = (Pselected − Pbelow)/(Pabove − Pbelow) = ({force(fixedP)} − {force(bracket.below.P)})/({force(bracket.above.P)} − {force(bracket.below.P)}) = {fmt(bracket.ratio, 9)}</code>
+      <code className="pm-calc-formula">t = (Pselected − Pbelow)/(Pabove − Pbelow) = ({force(fixedP)} − {force(bracket.below.P)})/({force(bracket.above.P)} − {force(bracket.below.P)}) = {fmt(bracket.ratio, 6)}</code>
       <code className="pm-calc-formula">Mx = Mx,below + t(Mx,above − Mx,below) = {moment(sample.Mx)}</code>
       <code className="pm-calc-formula">My = My,below + t(My,above − My,below) = {moment(sample.My)}</code>
     </>}
@@ -460,25 +522,23 @@ export function ChartCalculationDialog({ row, summary, surface, projectName, sec
       <article className="pm-calculation-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <header className="pm-calculation-dialog__header"><div>
           <div className="pm-calc-kicker">CALCULATION TRACE · {row.kind === 'vertical' ? 'VERTICAL' : 'FIXED-P'} · {stage.toUpperCase()}</div>
-          <h2 id={titleId}>{row.kind === 'vertical' ? row.criterion : `β = ${fmt(row.angleDeg, 4)}° · branch ${row.branch}`}</h2>
+          <h2 id={titleId}>{row.kind === 'vertical' ? row.criterion : `β = ${fmt(row.angleDeg)}° · branch ${row.branch}`}</h2>
           <p>Row {row.index} · trace from project inputs to the exact stored table value.</p>
         </div><button type="button" className="pm-calculation-dialog__close" aria-label="Close calculation details" onClick={onClose}><X size={18} /></button></header>
 
         <div className="pm-calculation-dialog__body">
-          <div className="pm-calc-banner"><AlertTriangle size={17} /><span>Preview calculation evidence for qualified engineering review. It is not an accepted/released result and does not cover member stability, slenderness or second-order effects.</span></div>
-
           <Step index={1} title="Basic project, section and material inputs">
             <div className="pm-calc-facts">
               <Fact label="Project / section">{projectName || 'Untitled project'} · {section.name}</Fact>
-              <Fact label="Exact net concrete area Ac">{fmt(summary.concreteArea, 4)} mm²</Fact>
-              <Fact label="Reinforcement">{summary.rebarCount} bars · As = {fmt(summary.steelArea, 4)} mm²</Fact>
-              <Fact label="Concrete input">{basicConcrete.name} · fck = {fmt(basicConcrete.fck, 4)} MPa</Fact>
+              <Fact label="Exact net concrete area Ac">{fmt(summary.concreteArea)} mm²</Fact>
+              <Fact label="Reinforcement">{summary.rebarCount} bars · As = {fmt(summary.steelArea)} mm²</Fact>
+              <Fact label="Concrete input">{basicConcrete.name} · fck = {fmt(basicConcrete.fck)} MPa</Fact>
               {surface.mechanics === 'stress-strain-integration' ? (
                 <Fact label="Concrete local law">{basicConcrete.stressStrain.type} · εcu = {strain(basicConcrete.limits.epsCu)}</Fact>
               ) : (
                 <Fact label="Equivalent-block strain input">εcu = {strain(basicConcrete.limits.epsCu)} · local fibre curve is not used</Fact>
               )}
-              <Fact label="Steel inputs">{materialStore.steel.map((steel) => `${steel.name}: fy=${fmt(steel.fy, 3)}, Es=${fmt(steel.elasticModulus, 0)} MPa`).join(' · ')}</Fact>
+              <Fact label="Steel inputs">{materialStore.steel.map((steel) => `${steel.name}: fy=${fmt(steel.fy)}, Es=${fmt(steel.elasticModulus, 0)} MPa`).join(' · ')}</Fact>
               <Fact label="Reference frame">x/y about exact net-concrete centroid; Mx=ΣF(y−y0), My=ΣF(x−x0)</Fact>
               <Fact label="Units / sign">N, mm, MPa · compression-positive P</Fact>
               <Fact label="Governing document">{designBasis.identity.document}</Fact>
@@ -498,7 +558,7 @@ export function ChartCalculationDialog({ row, summary, surface, projectName, sec
 
           {!loading && !auditError && row.kind === 'fixedP' ? <>
             <Step index={3} title="Fixed-P row definition and physical brackets">
-              <div className="pm-calc-facts"><Fact label="Selected axial force">{force(row.evidence.fixedP)}</Fact><Fact label="Meridian β / branch">{fmt(row.angleDeg, 5)}° / {row.branch}</Fact></div>
+              <div className="pm-calc-facts"><Fact label="Selected axial force">{force(row.evidence.fixedP)}</Fact><Fact label="Meridian β / branch">{fmt(row.angleDeg)}° / {row.branch}</Fact></div>
               <FixedPSchematic row={row} />
               <p className="pm-calc-caption">Fixed-P is a surface-edge intersection. The two endpoint calculations below remain separate; no unique strain state is assigned to their interpolation.</p>
             </Step>
