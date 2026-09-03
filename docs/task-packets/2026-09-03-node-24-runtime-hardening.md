@@ -3,9 +3,10 @@
 Date: 2026-09-03  
 Change class: **Class 3 — build/runtime dependency, CI execution contract, and runtime-bound
 fingerprint migration**  
-Status: runtime implementation, Node.js 24 fingerprint migration, and local gates complete;
-independent review/CI reproduction remain required; no merge, tag, deployment, or engineering-status
-promotion authorized
+Status: runtime implementation, Node.js 24 fingerprint and generated-project-fixture migration, and
+local gates complete; the first public-main CI run exposed one stale Node.js 20 fixture value;
+independent review and a green follow-up CI run remain required; no tag, deployment, or
+engineering-status promotion authorized
 
 ## Objective
 
@@ -23,6 +24,7 @@ runtime, and verify the existing engineering outputs on that exact runtime.
 - `.nvmrc`, `.npmrc`, workspace package manifests, `package-lock.json`, and the shared runtime
   guard;
 - `.github/workflows/ci.yml`;
+- the generated complex-section project fixture whose KDS derived fields are runtime-bound;
 - the repository-structure invariant, runtime/dependency ownership documentation, and this task
   packet;
 - current release-candidate evidence updated only after the exact-runtime gates execute.
@@ -48,6 +50,8 @@ runtime declarations.
 - after explicit review authorization, the capacity fingerprint is deliberately regenerated once on
   the exact supported runtime, records its Node.js/npm identity, and future verification rejects a
   baseline/runtime mismatch;
+- the complex-section project fixture is regenerated on the exact supported runtime and remains
+  byte-identical when its CI generator is rerun;
 - required tests, numerical matrices, reports, build, security, and bundle gates execute locally on
   the exact pinned runtime; any runtime-bound fingerprint movement is quantified and reviewed rather
   than silently accepted.
@@ -64,6 +68,7 @@ type/build/security failure, or bundle-budget failure.
 - exact `node --version` and `npm --version` checks after `.nvmrc` activation;
 - repository-wide active-configuration scan for Node.js 20/22 selectors;
 - `npm ci`, `npm run check:structure`, `npm run typecheck`, and the full `npm test` pipeline;
+- `npm run fixture:complex-section-json` followed by a clean diff on a second generation;
 - `npm run bench:verify`, `npm run bench:strain-sampling`,
   `npm run bench:equivalent-block`, and `npm run bench:pipelines`;
 - `npm run build`, `npm run check:web-bundle`, and `npm run check:security`.
@@ -108,6 +113,40 @@ received Node.js/npm versions before loading project tooling. The guard passes o
 Disposition: keep the shared guard at every root/workspace script and enforce that invariant from
 `check:structure`.
 
+### NV24-003 — the generated project fixture retained one Node.js 20 result bit
+
+Claim and requirements: committed project fixtures generated from derived material properties must
+be reproducible on the sole supported runtime (`ENG-MAT-002`, Gate B, Gate F).
+
+Evidence: public-main CI run 33750937719 passed the pinned-runtime check, clean install, security,
+typecheck, structure, unit, CAD, round-trip, Excel, demand-check, and PDF gates, then failed the
+byte-identity check for the complex-section fixture. A clean Node.js 24.20.0/npm 11.19.0
+reproduction changed only KDS C30 `elasticModulus`, from `28417.47528313351 MPa` to
+`28417.475283133517 MPa`. Direct evaluation of the unchanged KDS expression reproduces the first
+value on Node.js 20.19.2 and the second on Node.js 24.20.0. The absolute difference is approximately
+`7.28e-12 MPa`, one machine-precision rounding step; no formula, coefficient, tolerance, schema, or
+resistance result contract changed.
+
+Disposition: regenerate the project fixture with the pinned runtime and require a second generation
+to produce no diff. The prior fixture remains recoverable in Git history. This resolves a known
+runtime migration artifact; it does not promote the KDS profile or the fixture to normative or
+independently verified evidence.
+
+### NV24-004 — the capacity fingerprint retained unknown npm provenance
+
+Claim and requirements: the runtime-bound capacity fingerprint must identify both members of the
+supported Node.js/npm pair and reject comparison on another pair (Gate B, Gate F).
+
+Evidence: after the fixture gate was repaired, `npm run bench:verify` correctly rejected the
+committed baseline because it recorded Node.js `v24.20.0` but npm `unknown`, while the active
+verified runtime was npm `11.19.0`. With explicit review authorization, the official
+`npm run bench:record` path updated that metadata. The SHA-256 of the serialized `cases` array was
+`ac1dcfebae8169ebc23dc7f7a49f076d33d0aa9f3a804cbd15cf16a6404165e4` both before and after;
+therefore no capacity value, geometry hash, strain state, or other numerical fingerprint changed.
+
+Disposition: retain npm `11.19.0` in the baseline provenance and rerun the read-only
+`bench:verify` gate. This is a provenance correction, not an oracle-value regeneration.
+
 ## Schema/provenance/report impact
 
 This runtime-hardening slice changes no project schema, formula, design coefficient, station,
@@ -121,8 +160,12 @@ therefore full result-identity and report/build evidence is required before rele
   typecheck, 306 unit tests, 11 CAD tests, project round-trip, Excel exports, Demand Check workbook,
   PDF report, production build, web-bundle budgets, and the high/critical dependency-audit gate;
 - pass: strain-sampling, equivalent-block, and cross-model pipeline verification matrices;
+- pass: the complex-section fixture was generated twice with Node.js 24.20.0/npm 11.19.0 and was
+  byte-identical on the second generation (SHA-256
+  `80d7e320b445044061ad9411d3420e66d1d79bb2e4c0203d135f8420f879db18`);
 - pass: the regenerated fingerprint records Node.js 24.20.0/npm 11.19.0 and `bench:verify` is
-  bit-identical across 8 sections and 24 capacity quantities;
+  bit-identical across 8 sections and 24 capacity quantities; the serialized `cases` SHA-256 remains
+  `ac1dcfebae8169ebc23dc7f7a49f076d33d0aa9f3a804cbd15cf16a6404165e4`;
 - outstanding: named independent review and CI reproduction on the committed candidate.
 
 ## Out of scope

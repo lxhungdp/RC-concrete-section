@@ -296,7 +296,7 @@
         "standard": "KDS",
         "fck": 30,
         "mc": 2350,
-        "elasticModulus": 28417.47528313351,
+        "elasticModulus": 28417.475283133517,
         "stressStrain": {
           "type": "kds-parabolic",
           "eps0": 0.002,
