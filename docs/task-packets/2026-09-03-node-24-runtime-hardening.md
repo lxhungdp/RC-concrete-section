@@ -3,10 +3,10 @@
 Date: 2026-09-03  
 Change class: **Class 3 — build/runtime dependency, CI execution contract, and runtime-bound
 fingerprint migration**  
-Status: runtime implementation, Node.js 24 fingerprint and generated-project-fixture migration, and
-local gates complete; the first public-main CI run exposed one stale Node.js 20 fixture value;
-independent review and a green follow-up CI run remain required; no tag, deployment, or
-engineering-status promotion authorized
+Status: cross-platform fingerprint-policy correction and local Node.js 24 gates complete after the
+second public-main CI run exposed a same-runtime macOS/Ubuntu roundoff difference; independent
+review and a green follow-up CI run remain required; no tag, deployment, or engineering-status
+promotion authorized
 
 ## Objective
 
@@ -24,6 +24,8 @@ runtime, and verify the existing engineering outputs on that exact runtime.
 - `.nvmrc`, `.npmrc`, workspace package manifests, `package-lock.json`, and the shared runtime
   guard;
 - `.github/workflows/ci.yml`;
+- `packages/pm-analysis/bench/fingerprint-policy.ts`, the benchmark harness, its focused tests, and
+  the active capacity-fingerprint provenance;
 - the generated complex-section project fixture whose KDS derived fields are runtime-bound;
 - the repository-structure invariant, runtime/dependency ownership documentation, and this task
   packet;
@@ -50,6 +52,9 @@ runtime declarations.
 - after explicit review authorization, the capacity fingerprint is deliberately regenerated once on
   the exact supported runtime, records its Node.js/npm identity, and future verification rejects a
   baseline/runtime mismatch;
+- the v2 capacity-fingerprint policy records platform, architecture, and V8 identity; it preserves
+  bit identity on the recording environment and permits only a reviewed section-scale roundoff
+  envelope for declared resultants when comparing across platforms;
 - the complex-section project fixture is regenerated on the exact supported runtime and remains
   byte-identical when its CI generator is rerun;
 - required tests, numerical matrices, reports, build, security, and bundle gates execute locally on
@@ -63,13 +68,18 @@ dependency installation under a non-pinned runtime, a CI action that executes on
 runtime, lockfile drift, unexplained drift beyond floating-point roundoff, report/export regression,
 type/build/security failure, or bundle-budget failure.
 
+The portable fingerprint path also fails closed for any change to geometry/topology hashes, counts,
+warnings, flags, sampled strain states, unclassified numeric quantities, missing/extra cases or
+quantities, non-finite movement, or a declared resultant outside its section-scale envelope.
+
 ## Acceptance tests/oracles
 
 - exact `node --version` and `npm --version` checks after `.nvmrc` activation;
 - repository-wide active-configuration scan for Node.js 20/22 selectors;
 - `npm ci`, `npm run check:structure`, `npm run typecheck`, and the full `npm test` pipeline;
 - `npm run fixture:complex-section-json` followed by a clean diff on a second generation;
-- `npm run bench:verify`, `npm run bench:strain-sampling`,
+- focused unit tests for exact/portable policy boundaries and provenance mismatches;
+- `npm run bench:verify`, `npm run bench:verify:portable`, `npm run bench:strain-sampling`,
   `npm run bench:equivalent-block`, and `npm run bench:pipelines`;
 - `npm run build`, `npm run check:web-bundle`, and `npm run check:security`.
 
@@ -147,26 +157,89 @@ therefore no capacity value, geometry hash, strain state, or other numerical fin
 Disposition: retain npm `11.19.0` in the baseline provenance and rerun the read-only
 `bench:verify` gate. This is a provenance correction, not an oracle-value regeneration.
 
+### NV24-005 — same Node.js/npm pair is not platform-independent bit identity
+
+Claim and requirements: an active fingerprint must distinguish exact same-environment regression
+from tolerance-equivalent cross-platform reproduction and retain enough provenance to decide which
+policy applies (`DEV-ARCH-007`, `docs/08` §6, Gate B, Gate F).
+
+Evidence: public-main CI run 33753552083 executed Node.js 24.20.0/npm 11.19.0 on
+`ubuntu-latest`. The corrected project fixture and every preceding test passed. The capacity gate
+then reported seven changed resultant arrays, all in `tall-rectangle-dense`, the sole C60 fixture
+using the non-integer-exponent KDS concrete branch. The largest value-relative difference was
+`1.529e-14` at a near-zero contour ordinate. Measured against the complete section force and moment
+scales, the worst difference was `1.3984e-16`, or `0.63 * Number.EPSILON`; absolute differences were
+at most `3.7253e-9 N` and `7.6294e-6 N·mm`. Geometry hashes, strain states, flags, inverse-equilibrium
+errors, and the other seven sections were unchanged. The exact same C60 command remains
+bit-identical on the Darwin/arm64 recording environment.
+
+Interpretation: the observed scope and the `surfaceConcreteP` movement are consistent with
+platform-level rounding in the C60 `Math.pow` constitutive path, not with a changed formula,
+coefficient, mesh, station, resistance sequence, or solver. The evidence bounds the current drift;
+it does not establish unrestricted cross-platform equivalence.
+
+Disposition: adopt `capacity-fingerprint-v2`. Record Node.js, npm, V8, platform, and architecture.
+On the recording environment, require bit identity. Across platforms with the same Node.js/npm/V8
+identity, keep every structural/discrete field exact and allow only named force/moment arrays within
+`8 * Number.EPSILON * max(1, sectionScale)`, with independent force and moment scales. The observed
+maximum consumes less than one eighth of this envelope. Pin CI to `ubuntu-24.04`; do not use the
+floating `ubuntu-latest` selector.
+
+## Decision record — cross-platform capacity fingerprint
+
+Decision: preserve an exact same-environment oracle and add a narrowly typed cross-platform
+roundoff policy. The portability envelope is not reused by mechanics, convergence, demand checks,
+reports, or engineering acceptance.
+
+Alternatives rejected:
+
+- silently regenerating the complete baseline on Ubuntu, because it would make the Darwin result
+  appear to regress and would still omit the environment distinction;
+- one baseline per operating system, because parallel oracle values could drift independently;
+- applying one relative tolerance to every fingerprinted number, because near-zero resultants make
+  that metric unstable and it would weaken geometry/state invariants;
+- replacing the constitutive `Math.pow` implementation, because cross-platform bit identity alone
+  does not justify a Class 4 material-law implementation change.
+
+Engineering and package impact: no mechanics or design-code expression changes. The benchmark
+adapter owns the comparison policy and provenance; the analysis and material kernels remain
+unchanged. The change is Class 3 after the observed drift is bounded, while any future unexplained
+field or out-of-envelope result remains Class 4 until resolved.
+
+Supersession rule: replace this decision only with evidence for a tighter policy, a supported-runtime
+change, or an independently verified deterministic transcendental implementation. A green CI run
+alone is insufficient.
+
 ## Schema/provenance/report impact
 
 This runtime-hardening slice changes no project schema, formula, design coefficient, station,
-resistance surface, utilization, or report contract. The concurrent Class 4 remediation owns its
+resistance surface, utilization, or report contract. It changes only the internal benchmark
+artefact schema/provenance and comparison policy. The concurrent Class 4 remediation owns its
 separate schema/result changes and fingerprint impact. Runtime and Node.js type declarations change;
 therefore full result-identity and report/build evidence is required before release.
 
 ## Verification status
 
 - pass: exact Node.js 24.20.0/npm 11.19.0 activation, clean `npm ci`, repository structure,
-  typecheck, 306 unit tests, 11 CAD tests, project round-trip, Excel exports, Demand Check workbook,
+  typecheck, 313 unit tests, 11 CAD tests, project round-trip, Excel exports, Demand Check workbook,
   PDF report, production build, web-bundle budgets, and the high/critical dependency-audit gate;
 - pass: strain-sampling, equivalent-block, and cross-model pipeline verification matrices;
 - pass: the complex-section fixture was generated twice with Node.js 24.20.0/npm 11.19.0 and was
   byte-identical on the second generation (SHA-256
   `80d7e320b445044061ad9411d3420e66d1d79bb2e4c0203d135f8420f879db18`);
-- pass: the regenerated fingerprint records Node.js 24.20.0/npm 11.19.0 and `bench:verify` is
-  bit-identical across 8 sections and 24 capacity quantities; the serialized `cases` SHA-256 remains
-  `ac1dcfebae8169ebc23dc7f7a49f076d33d0aa9f3a804cbd15cf16a6404165e4`;
-- outstanding: named independent review and CI reproduction on the committed candidate.
+- pass: the v2 fingerprint records Node.js 24.20.0/npm 11.19.0, V8
+  13.6.233.17-node.53, and Darwin/arm64; `bench:verify` remains bit-identical across 8 sections and
+  24 capacity quantities, and the local portable path also passes;
+- pass: seven focused policy tests reject structural, state, missing-data, out-of-envelope, and V8
+  provenance drift while accepting only declared in-envelope resultants across platforms;
+- pass: the serialized `cases` SHA-256 remains
+  `ac1dcfebae8169ebc23dc7f7a49f076d33d0aa9f3a804cbd15cf16a6404165e4`, identical to the
+  pre-policy baseline, so the metadata migration changed no stored engineering value;
+- acknowledged: `npm audit --omit=dev --audit-level=high` passes while reporting two moderate
+  transitive `uuid` findings through `exceljs`; the offered automated fix is a breaking downgrade
+  and is not part of this CI correction;
+- outstanding: named independent review and CI reproduction on the committed Ubuntu 24.04
+  candidate.
 
 ## Out of scope
 

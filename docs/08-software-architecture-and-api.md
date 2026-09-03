@@ -107,7 +107,16 @@ No `console.warn` determines engineering acceptance.
 - Cache keys include normalized input, exact standard edition/amendment/national annex, `methodId`,
   resistance-profile and adapter versions, engine version, dependencies affecting numerics, and
   expanded accuracy options.
-- Results record platform/runtime information needed to investigate numeric differences.
+- Results and active regression fingerprints record the platform, architecture, Node.js, npm, and
+  V8 identities needed to investigate numeric differences.
+- A fingerprint recorded and replayed on the same declared environment is bit-identical. A
+  cross-platform regression may use the reviewed `capacity-fingerprint-v2` portability policy:
+  geometry, topology, hashes, sampled strain states, warnings, flags, counts, and unclassified
+  numeric fields remain exact; only the declared force and moment resultant arrays receive a
+  section-scale roundoff envelope of `8 * Number.EPSILON * max(1, sectionScale)`. Force and moment
+  scales are computed independently from every corresponding expected and observed resultant in
+  that section. This envelope is a regression-portability allowance, not an engineering accuracy,
+  convergence, utilization, or acceptance tolerance.
 - Do not round internal calculations; round only copied presentation values.
 
 ## 7. Concurrency and workers
@@ -177,9 +186,11 @@ falls; this is what makes surface refinement affordable at all.
 
 The material and mesh A/B figures above were remeasured on 2026-07-27 with Node 20.19.2; every
 checksum/quadrature invariant had zero delta. The full eight-section fingerprint then reported
-`IDENTICAL` over 24 capacity quantities per section. Steps 3, 5 and 6 remain open. Measurement note:
-these figures use min-of-N same-process A/B runs. On a loaded workstation, identical code measured
-back to back varied by up to a factor of two, so a single timed run is not evidence of anything.
+`IDENTICAL` over 24 capacity quantities per section on the recording environment. The active
+`capacity-fingerprint-v2` artefact retains that exact same-environment gate and separately supports
+the bounded cross-platform policy in §6. Steps 3, 5 and 6 remain open. Measurement note: these
+figures use min-of-N same-process A/B runs. On a loaded workstation, identical code measured back to
+back varied by up to a factor of two, so a single timed run is not evidence of anything.
 
 ## 9. Dependency governance
 

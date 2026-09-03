@@ -11,9 +11,10 @@
  *   tsx bench/run.ts --out before.json
  *   tsx bench/run.ts --out after.json --baseline before.json
  *
- * With `--baseline` the run prints a speed-up table and, for every fingerprinted quantity, the
- * largest relative deviation from the baseline. Anything above `--tol` (default 0: bit-identical)
- * exits non-zero.
+ * With `--baseline` the run prints a speed-up table and compares every fingerprinted quantity.
+ * `--comparison exact` (the default) requires same-environment bit identity. `--comparison
+ * portable` retains exact structural/state evidence and applies only the reviewed section-scale
+ * roundoff envelope to declared force and moment resultants.
  */
 import { spawnSync } from 'node:child_process'
 import { writeFileSync, readFileSync } from 'node:fs'
@@ -35,6 +36,17 @@ import {
   solveInversePreview,
   solveInversePreviewFromPrepared
 } from '../src/index'
+import {
+  CAPACITY_FINGERPRINT_POLICY,
+  PORTABLE_RESULTANT_NORMALIZED_LIMIT,
+  capacityFingerprintProvenanceError,
+  compareCapacityFingerprints,
+  currentCapacityFingerprintRuntime,
+  type CapacityFingerprint,
+  type CapacityFingerprintBaseline,
+  type CapacityFingerprintCase,
+  type FingerprintComparisonMode
+} from './fingerprint-policy'
 import { BENCH_CASES, type BenchCase } from './sections'
 
 type Stage = 'mesh' | 'prepare' | 'surface' | 'surfacePrepared' | 'contour' | 'inverse' | 'inversePrepared' | 'momentPlane'
@@ -52,7 +64,7 @@ type CaseReport = {
     quadraturePoints: number
     rebars: number
   }
-  fingerprint: Record<string, number[] | string>
+  fingerprint: CapacityFingerprint
 }
 
 type BenchReport = {
@@ -61,12 +73,8 @@ type BenchReport = {
   cases: CaseReport[]
 }
 
-type FingerprintBaseline = {
-  note: string
-  node: string
-  npm: string
-  cases: CaseReport[]
-}
+type BaselineCase = CapacityFingerprintCase & { timings?: CaseReport['timings'] }
+type FingerprintBaseline = Omit<CapacityFingerprintBaseline, 'cases'> & { cases: BaselineCase[] }
 
 const arg = (name: string, fallback?: string) => {
   const index = process.argv.indexOf(`--${name}`)
@@ -74,7 +82,11 @@ const arg = (name: string, fallback?: string) => {
 }
 
 const REPEATS = Number(arg('repeats', '15'))
-const TOL = Number(arg('tol', '0'))
+const comparisonArgument = arg('comparison', 'exact')
+if (comparisonArgument !== 'exact' && comparisonArgument !== 'portable') {
+  throw new Error(`Unsupported fingerprint comparison mode ${comparisonArgument}`)
+}
+const COMPARISON_MODE: FingerprintComparisonMode = comparisonArgument
 
 /** Order-sensitive FNV-1a over the exact decimal form of every coordinate. */
 const hashNumbers = (values: Iterable<number>) => {
@@ -221,82 +233,6 @@ const runCase = (benchCase: BenchCase): CaseReport => {
   }
 }
 
-const relativeDeviation = (actual: number, expected: number) => {
-  if (Object.is(actual, expected)) return 0
-  if (Number.isNaN(actual) && Number.isNaN(expected)) return 0
-  const scale = Math.max(Math.abs(expected), Math.abs(actual))
-  if (scale === 0) return 0
-  return Math.abs(actual - expected) / scale
-}
-
-type Deviation = { caseKey: string; quantity: string; relative: number; detail: string }
-
-const compareFingerprints = (before: Pick<BenchReport, 'cases'>, after: BenchReport): Deviation[] => {
-  const deviations: Deviation[] = []
-
-  for (const afterCase of after.cases) {
-    const beforeCase = before.cases.find((item) => item.key === afterCase.key)
-    if (!beforeCase) {
-      deviations.push({
-        caseKey: afterCase.key,
-        quantity: '(case)',
-        relative: Number.POSITIVE_INFINITY,
-        detail: 'missing from the baseline'
-      })
-      continue
-    }
-
-    for (const [quantity, afterValue] of Object.entries(afterCase.fingerprint)) {
-      const beforeValue = beforeCase.fingerprint[quantity]
-
-      if (typeof afterValue === 'string' || typeof beforeValue === 'string') {
-        if (afterValue !== beforeValue) {
-          deviations.push({
-            caseKey: afterCase.key,
-            quantity,
-            relative: Number.POSITIVE_INFINITY,
-            detail: `"${String(beforeValue)}" -> "${String(afterValue)}"`
-          })
-        }
-        continue
-      }
-      if (!beforeValue) {
-        deviations.push({ caseKey: afterCase.key, quantity, relative: Number.POSITIVE_INFINITY, detail: 'new quantity' })
-        continue
-      }
-      if (beforeValue.length !== afterValue.length) {
-        deviations.push({
-          caseKey: afterCase.key,
-          quantity,
-          relative: Number.POSITIVE_INFINITY,
-          detail: `length ${beforeValue.length} -> ${afterValue.length}`
-        })
-        continue
-      }
-
-      let worst = 0
-      let worstIndex = -1
-      for (let i = 0; i < afterValue.length; i++) {
-        const relative = relativeDeviation(afterValue[i], beforeValue[i])
-        if (relative > worst) {
-          worst = relative
-          worstIndex = i
-        }
-      }
-      if (worst > 0) {
-        deviations.push({
-          caseKey: afterCase.key,
-          quantity,
-          relative: worst,
-          detail: `[${worstIndex}] ${beforeValue[worstIndex]} -> ${afterValue[worstIndex]}`
-        })
-      }
-    }
-  }
-
-  return deviations.sort((a, b) => b.relative - a.relative)
-}
-
 const pad = (value: string | number, width: number, left = false) => {
   const text = String(value)
   return left ? text.padEnd(width) : text.padStart(width)
@@ -339,8 +275,12 @@ const run = () => {
     })
   }
   const npmVersion = /^npm\/([^\s]+)/u.exec(process.env.npm_config_user_agent ?? '')?.[1] ?? 'unknown'
+  const runtime = currentCapacityFingerprintRuntime(npmVersion)
 
-  console.log(`Analysis kernel benchmark — node ${report.node}, ${REPEATS} timed runs per stage\n`)
+  console.log(
+    `Analysis kernel benchmark — node ${report.node}, npm ${runtime.npm}, V8 ${runtime.v8}, ` +
+      `${runtime.platform}/${runtime.arch}, ${REPEATS} timed runs per stage\n`
+  )
   console.log(
     `${pad('case', 22, true)}${pad('Dmin', 9)}${pad('h', 8)}${pad('cells', 8)}${pad('qpts', 9)}${pad('bars', 6)}` +
       `${pad('mesh ms', 10)}${pad('surface', 10)}${pad('contour', 9)}${pad('inverse', 9)}`
@@ -385,8 +325,8 @@ const run = () => {
     // numbers the kernel produced.
     const artefact = {
       note: 'Capacity fingerprint of the analysis kernel. Regenerate only for a reviewed result-affecting change.',
-      node: report.node,
-      npm: npmVersion,
+      policy: CAPACITY_FINGERPRINT_POLICY,
+      ...runtime,
       cases: report.cases.map((item) => ({ key: item.key, size: item.size, fingerprint: item.fingerprint }))
     }
     writeFileSync(fingerprintOut, `${JSON.stringify(artefact, null, 0)}\n`, 'utf8')
@@ -403,15 +343,16 @@ const run = () => {
   if (!baselinePath) return
 
   const baseline = JSON.parse(readFileSync(baselinePath, 'utf8')) as FingerprintBaseline
-  if (baseline.node !== report.node || baseline.npm !== npmVersion) {
-    console.log(
-      `\nBaseline runtime mismatch: expected node ${report.node}, npm ${npmVersion}; ` +
-        `received node ${baseline.node ?? 'unknown'}, npm ${baseline.npm ?? 'unknown'}.`
-    )
+  const provenanceError = capacityFingerprintProvenanceError(baseline, runtime, COMPARISON_MODE)
+  if (provenanceError) {
+    console.log(`\nBaseline provenance mismatch: ${provenanceError}.`)
     process.exitCode = 1
     return
   }
-  const hasTimings = baseline.cases.every((item) => item.timings?.mesh)
+  const timedBaselineCases = baseline.cases.filter(
+    (item): item is BaselineCase & { timings: CaseReport['timings'] } => item.timings?.mesh !== undefined
+  )
+  const hasTimings = timedBaselineCases.length === baseline.cases.length
   if (!hasTimings) {
     console.log(`\nBaseline ${baselinePath} carries fingerprints only; skipping the speed-up table.`)
   }
@@ -421,14 +362,14 @@ const run = () => {
       `${pad('case', 22, true)}${pad('mesh', 20)}${pad('surface', 22)}${pad('contour', 20)}${pad('inverse', 20)}`
     )
 
-    const ratio = (label: Stage, item: CaseReport, base: CaseReport) => {
+    const ratio = (label: Stage, item: CaseReport, base: BaselineCase & { timings: CaseReport['timings'] }) => {
       const now = item.timings[label].minMs
       const then = base.timings[label].minMs
       return `${then.toFixed(1)}→${now.toFixed(1)} ${then / now >= 1 ? '×' : '÷'}${(then / now >= 1 ? then / now : now / then).toFixed(2)}`
     }
 
     for (const item of report.cases) {
-      const base = baseline.cases.find((entry) => entry.key === item.key)
+      const base = timedBaselineCases.find((entry) => entry.key === item.key)
       if (!base) continue
       console.log(
         `${pad(item.key, 22, true)}${pad(ratio('mesh', item, base), 20)}${pad(ratio('surface', item, base), 22)}` +
@@ -436,7 +377,7 @@ const run = () => {
       )
     }
 
-    const baseTotals = baseline.cases.reduce(
+    const baseTotals = timedBaselineCases.reduce(
       (sum, item) => ({
         mesh: sum.mesh + item.timings.mesh.minMs,
         surface: sum.surface + item.timings.surface.minMs
@@ -449,7 +390,7 @@ const run = () => {
     console.log(
       `  total surface ${baseTotals.surface.toFixed(1)} → ${totals.surface.toFixed(1)} ms  ×${(baseTotals.surface / totals.surface).toFixed(2)}`
     )
-    const baseWorkflow = baseline.cases.reduce(
+    const baseWorkflow = timedBaselineCases.reduce(
       (sum, item) =>
         sum +
         item.timings.surface.minMs +
@@ -464,7 +405,6 @@ const run = () => {
     )
   }
 
-  const allDeviations = compareFingerprints(baseline, report)
   // Newton's analytic tangent and tighter residual criterion intentionally move the approximate
   // inverse state closer to equilibrium. Capacity, mesh, contours, utilization and pass/fail flags
   // must remain invariant; iteration-path diagnostics are reported separately rather than falsely
@@ -476,8 +416,12 @@ const run = () => {
     'inverseIterations',
     'inverseAdmissibility'
   ])
-  const deviations = allDeviations.filter((item) => !solverDiagnostics.has(item.quantity))
-  console.log(`\nCapacity/result fidelity — tolerance ${TOL === 0 ? 'bit-identical' : TOL.toExponential(1)}\n`)
+  const deviations = compareCapacityFingerprints(baseline.cases, report.cases, COMPARISON_MODE, solverDiagnostics)
+  const violations = deviations.filter((item) => !item.allowed)
+  const policyLabel = COMPARISON_MODE === 'exact'
+    ? 'same-environment bit-identical'
+    : `cross-platform resultants ≤ ${PORTABLE_RESULTANT_NORMALIZED_LIMIT.toExponential(3)} of section scale`
+  console.log(`\nCapacity/result fidelity — ${policyLabel}\n`)
 
   if (deviations.length === 0) {
     const quantities = Object.keys(report.cases[0]?.fingerprint ?? {}).filter(
@@ -487,23 +431,26 @@ const run = () => {
   } else {
     for (const deviation of deviations.slice(0, 40)) {
       console.log(
-        `  ${pad(deviation.caseKey, 22, true)}${pad(deviation.quantity, 24, true)}` +
-          `rel=${deviation.relative.toExponential(3)}  ${deviation.detail}`
+        `  ${deviation.allowed ? 'ALLOW' : 'FAIL '} ${pad(deviation.caseKey, 22, true)}` +
+          `${pad(deviation.quantity, 24, true)}section=${deviation.sectionNormalized.toExponential(3)}  ` +
+          `value=${deviation.valueRelative.toExponential(3)}  ${deviation.detail}`
       )
     }
     if (deviations.length > 40) console.log(`  … and ${deviations.length - 40} more`)
 
-    const worst = deviations[0].relative
-    console.log(`\n  worst relative deviation: ${worst.toExponential(3)}`)
-    if (worst > TOL) {
-      console.log(`  FAIL — exceeds the ${TOL === 0 ? 'bit-identical' : TOL.toExponential(1)} tolerance.`)
+    if (violations.length > 0) {
+      console.log(`\n  FAIL — ${violations.length} fingerprint deviation(s) violate ${CAPACITY_FINGERPRINT_POLICY}.`)
       process.exitCode = 1
     } else {
-      console.log('  within tolerance.')
+      const worst = Math.max(...deviations.map((item) => item.sectionNormalized))
+      console.log(
+        `\n  PORTABLE-EQUIVALENT — ${deviations.length} resultant roundoff deviation(s); ` +
+          `worst section-normalized delta ${worst.toExponential(3)}.`
+      )
     }
   }
 
-  const equilibriumError = (item: CaseReport) => {
+  const equilibriumError = (item: Pick<CaseReport, 'key' | 'fingerprint'>) => {
     const benchCase = BENCH_CASES.find((candidate) => candidate.key === item.key)!
     const response = item.fingerprint.inverseResponse as number[]
     const forceScale = Math.max(...(item.fingerprint.surfaceP as number[]).map(Math.abs), 1)

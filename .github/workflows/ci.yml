@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
@@ -68,12 +68,12 @@ jobs:
           npm run fixture:complex-section-json
           git diff --exit-code -- "docs/examples/realistic-sections/KDS-REAL-05-complex-stress-strain.pm-project.json"
 
-      # Bit-identity gate over 8 sections x 24 capacity quantities. An optimisation, a refactor or a
-      # dependency bump that moves a single bit of capacity fails here rather than in a report.
-      # A deliberate engineering change is landed by regenerating the baseline in the same commit,
-      # so the diff shows exactly which numbers moved and why.
-      - name: Capacity fingerprint is unchanged
-        run: npm run bench:verify
+      # Cross-platform gate over 8 sections x 24 capacity quantities. Geometry, topology, sampled
+      # strain states, warnings and flags remain bit-identical. Only declared resultants may consume
+      # the reviewed section-scale IEEE-754 roundoff envelope; same-environment development runs use
+      # the exact `npm run bench:verify` gate.
+      - name: Capacity fingerprint is portable
+        run: npm run bench:verify:portable
 
       - name: P16 external comparison remains within declared tolerances
         run: npm run verify:p16
