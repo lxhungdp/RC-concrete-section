@@ -32,8 +32,8 @@ Apply this authority order:
 
 If authorities or implementation disagree, stop the affected calculation/release path, state the
 conflict, and resolve it at the highest applicable source. Never choose the value that makes a test
-pass or produces a plausible-looking result. `AUDIT-FINDINGS.md` is commit-scoped historical
-evidence, not a current release assessment.
+pass or produces a plausible-looking result. Historical audit files, when retained, are
+commit-scoped evidence rather than a current release assessment.
 
 ## 3. Read-on-Demand Map
 

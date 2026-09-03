@@ -7,6 +7,7 @@ import {
   reconcileCalculationAuditResultant,
   sectionBoundaryPoints,
   stationDefinitionLabel,
+  type AxialCapProjectionTrace,
   type DesignResistanceTrace,
   type CalculationAuditDepthProfile,
   type CalculationAuditRebar,
@@ -22,6 +23,7 @@ import {
   type SectionFieldMap,
   type StrainAdmissibility,
   type StrainState,
+  type StationDefinition,
   type SurfaceStation
 } from '@pm/analysis'
 import { ACI_318_19_PROVENANCE, createAci318Model } from '@pm/code-aci318'
@@ -60,6 +62,7 @@ import { netConcreteCentroid, type GeometryInputRebarView, type SectionGeometry 
 import {
   assertValidMaterialStore,
   describeSteelMaterialLaw,
+  effectiveSteelYieldStress,
   userBlockCompressionStress,
   type MaterialStore
 } from '@pm/materials'
@@ -459,6 +462,37 @@ const blockTrace = (
   compressionStress
 } : undefined
 
+const axialCapTrace = (
+  point: CapacitySurface['points'][number]
+): AxialCapProjectionTrace | undefined => {
+  const trace = point.axialCapTrace
+  if (!trace) return undefined
+  const convert = (source: { pointId: number; resultants: { P: number; Mx: number; My: number } }) => ({
+    pointId: `block-source-${source.pointId}`,
+    stationId: null,
+    ...source.resultants
+  })
+  return {
+    maximumAxialResistance: trace.maximumAxialResistance,
+    capRatio: trace.capRatio,
+    cap: trace.cap,
+    source: trace.source.kind === 'source-vertex'
+      ? {
+          kind: 'source-vertex',
+          point: convert(trace.source.point),
+          crossing: { ...trace.source.crossing }
+        }
+      : {
+          kind: 'edge-interpolation',
+          compressionSide: convert(trace.source.compressionSide),
+          admissibleSide: convert(trace.source.admissibleSide),
+          interpolationRatio: trace.source.interpolationRatio,
+          crossing: { ...trace.source.crossing }
+        },
+    projection: { kind: 'identity', factor: 1 }
+  }
+}
+
 const nearestStation = (
   surface: CapacitySurface,
   section: PreparedEquivalentBlockSection,
@@ -558,6 +592,7 @@ const convertSurfacePoints = (
     ),
     state,
     ledger: zeroLedger(resultants),
+    axialCapTrace: axialCapTrace(point),
     ...resultants,
     equivalentBlock: blockTrace(section, point.state, beta1, compressionStress),
     resistance: includeResistance ? resistanceTrace(point) : undefined
@@ -753,10 +788,6 @@ export const buildEquivalentBlockPreviewSurfaceFromPrepared = (
     }],
     sectionBoundaryPoints: sectionBoundaryPoints(prepared.section),
     bounds: bounds(points),
-    comparison: {
-      workbook: 'Independent exact polygon-clipping equivalent-block backend',
-      notes: ['Compression-positive; moments are reported about the net-concrete centroid.']
-    },
     mesh: {
       cellSize: 0,
       minCaliperWidth: prepared.section.characteristicLength,
@@ -978,9 +1009,27 @@ const blockAuditLedger = (
 export const buildEquivalentBlockPointCalculationAudit = (
   prepared: PreparedBlockAnalysis,
   stage: CalculationAuditStage,
-  point: PreviewSurfacePoint
+  point: PreviewSurfacePoint,
+  stationDefinition: StationDefinition | null = null
 ): PointCalculationAudit => {
   if (point.surfaceRole === 'axial-cap') {
+    const trace = point.axialCapTrace
+    if (trace) {
+      const expected = trace.source.crossing
+      return {
+        kind: 'axial-cap',
+        pointId: point.id,
+        stage,
+        trace,
+        displayedLedger: point.ledger,
+        reconciliation: reconcileCalculationAuditResultant(
+          expected,
+          point,
+          Math.max(1, Math.abs(trace.maximumAxialResistance), Math.abs(point.P)),
+          Math.max(1, Math.abs(point.Mx / Math.max(1, point.P)), Math.abs(point.My / Math.max(1, point.P)))
+        )
+      }
+    }
     return {
       kind: 'unavailable',
       pointId: point.id,
@@ -1188,9 +1237,66 @@ export const buildEquivalentBlockPointCalculationAudit = (
     neutralAxisInsideSection: blockState.neutralAxisDepth <= depth,
     samples
   }
+  const originStrainContext = (() => {
+    if (
+      stationDefinition?.kind === 'neutral-axis-depth-ratio' ||
+      stationDefinition?.kind === 'block-depth-ratio'
+    ) {
+      return {
+        kind: 'depth-ratio' as const,
+        criterionLabel: stationDefinitionLabel(stationDefinition),
+        ratio: stationDefinition.ratio
+      }
+    }
+    if (stationDefinition?.kind !== 'bar-tension-yield-ratio') {
+      return {
+        kind: 'resolved-compatible-state' as const,
+        criterionLabel: stationDefinition ? stationDefinitionLabel(stationDefinition) : null
+      }
+    }
+    const controllingBar = nominal.controllingBarId === undefined
+      ? undefined
+      : nominal.bars.find((bar) => bar.id === nominal.controllingBarId)
+    const sourceRebar = controllingBar
+      ? prepared.rebars.find((bar) => String(bar.id) === controllingBar.id)
+      : undefined
+    const steelMaterialId = sourceRebar?.steelMaterialId ?? calculationMaterials.defaults.steelMaterialId
+    const steel = calculationMaterials.steel.find((material) => material.id === steelMaterialId)
+    if (!controllingBar || controllingBar.yieldStrain === undefined || !steel) {
+      return {
+        kind: 'resolved-compatible-state' as const,
+        criterionLabel: stationDefinitionLabel(stationDefinition)
+      }
+    }
+    const effectiveYieldStress = effectiveSteelYieldStress(steel)
+    const yieldFromStress = effectiveYieldStress / steel.elasticModulus
+    const yieldStrainBasis = Math.abs(controllingBar.yieldStrain - yieldFromStress) <=
+      1e-12 * Math.max(1, Math.abs(controllingBar.yieldStrain))
+      ? 'effective-yield-stress-over-elastic-modulus' as const
+      : 'declared-material-limit' as const
+    return {
+      kind: 'controlling-bar-strain' as const,
+      criterionLabel: stationDefinitionLabel(stationDefinition),
+      ratio: stationDefinition.ratio,
+      controllingRebarId: Number(controllingBar.id),
+      steelMaterialId,
+      effectiveYieldStress,
+      elasticModulus: steel.elasticModulus,
+      yieldStrain: controllingBar.yieldStrain,
+      yieldStrainBasis,
+      requestedSteelStrain: -stationDefinition.ratio * controllingBar.yieldStrain,
+      controllingSteelStrain: controllingBar.strain,
+      controllingBarProjection: depthProfileBasis.compressionEdgeProjection - controllingBar.projectedDepth,
+      compressionEdgeToBarDepth: controllingBar.projectedDepth
+    }
+  })()
   const depthProfile: CalculationAuditDepthProfile = {
     ...depthProfileBasis,
-    originStrainTrace: buildCalculationAuditOriginStrainTrace(depthProfileBasis, samples[0].strain)
+    originStrainTrace: buildCalculationAuditOriginStrainTrace(
+      depthProfileBasis,
+      samples[0].strain,
+      originStrainContext
+    )
   }
   return {
     kind: 'equivalent-block',

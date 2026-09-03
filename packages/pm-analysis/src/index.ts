@@ -122,7 +122,7 @@ const mappedMaximum = <T>(
  *
  * `x, y` are measured from the analysis reference origin, i.e. the exact centroid of the net
  * concrete region (`docs/02` §1 step 9). `e0` is therefore the strain at that centroidal axis and
- * `Mx, My` are moments about it, which is what the reference workbook's `xc`/`yc` cells establish.
+ * `Mx, My` are moments about this declared origin.
  */
 export type StrainState = {
   e0: number
@@ -147,7 +147,7 @@ export type ResultantLedger = {
   steelGross: Resultant
   /** −fc·As at every bar (concrete replaced by the bar). */
   displacedConcrete: Resultant
-  /** steelGross + displacedConcrete — the reference-workbook "Steel" column. */
+  /** Net steel contribution: steelGross + displacedConcrete. */
   steel: Resultant
   /** concrete + steel. */
   total: Resultant
@@ -213,6 +213,8 @@ export type CalculationAuditOriginStrainTrace =
     }
   | {
       kind: 'neutral-axis-depth'
+      derivation: 'declared-depth-ratio' | 'resolved-compatible-state'
+      criterionLabel: string | null
       projectedSectionDepth: number
       neutralAxisDepthRatio: number
       neutralAxisDepth: number
@@ -220,6 +222,53 @@ export type CalculationAuditOriginStrainTrace =
       compressionEdgeProjection: number
       curvatureFromDepth: number
       calculatedE0: number
+    }
+  | {
+      kind: 'controlling-bar-strain'
+      criterionLabel: string
+      strainRatio: number
+      controllingRebarId: number
+      steelMaterialId: number
+      effectiveYieldStress: number
+      elasticModulus: number
+      yieldStrain: number
+      yieldStrainBasis: 'effective-yield-stress-over-elastic-modulus' | 'declared-material-limit'
+      requestedSteelStrain: number
+      controllingSteelStrain: number
+      strainLimitApplied: boolean
+      compressionEdgeStrain: number
+      compressionEdgeProjection: number
+      controllingBarProjection: number
+      compressionEdgeToBarDepth: number
+      neutralAxisDepth: number
+      curvatureFromCompatibility: number
+      calculatedE0: number
+    }
+
+export type CalculationAuditOriginStrainContext =
+  | {
+      kind: 'depth-ratio'
+      criterionLabel: string
+      ratio: number
+    }
+  | {
+      kind: 'controlling-bar-strain'
+      criterionLabel: string
+      ratio: number
+      controllingRebarId: number
+      steelMaterialId: number
+      effectiveYieldStress: number
+      elasticModulus: number
+      yieldStrain: number
+      yieldStrainBasis: 'effective-yield-stress-over-elastic-modulus' | 'declared-material-limit'
+      requestedSteelStrain: number
+      controllingSteelStrain: number
+      controllingBarProjection: number
+      compressionEdgeToBarDepth: number
+    }
+  | {
+      kind: 'resolved-compatible-state'
+      criterionLabel: string | null
     }
 
 export type CalculationAuditReconciliation = {
@@ -241,6 +290,15 @@ export type StressStrainPointCalculationAudit = {
   concreteLaw: MaterialLawAudit
   steelLaws: Array<{ materialId: number; name: string; law: MaterialLawAudit }>
   mesh: ConcreteMeshReport
+  concreteSummary: {
+    pointCount: number
+    area: number
+    strainMinimum: number
+    strainMaximum: number
+    stressMinimum: number
+    stressMaximum: number
+    resultant: Resultant
+  }
   concreteGroups: CalculationAuditConcreteGroup[]
   rebars: CalculationAuditRebar[]
   /** Result of the local stress integration before a global resultant factor, if any. */
@@ -298,6 +356,59 @@ export type EquivalentBlockPointCalculationAudit = {
   reconciliation: CalculationAuditReconciliation
 }
 
+export type AxialCapTracePoint = Resultant & {
+  pointId: string
+  stationId: SurfaceStationId | null
+}
+
+export type AxialCapProjectionTrace = {
+  maximumAxialResistance: number
+  capRatio: number | null
+  cap: number
+  /** Physical criterion point before the maximum-axial domain operation, when one exists. */
+  preCapPoint?: PreviewSurfacePoint
+  source:
+    | {
+        kind: 'source-vertex'
+        point: AxialCapTracePoint
+        crossing: Resultant
+      }
+    | {
+        kind: 'edge-interpolation'
+        compressionSide: AxialCapTracePoint
+        admissibleSide: AxialCapTracePoint
+        interpolationRatio: number
+        crossing: Resultant
+      }
+  projection:
+    | { kind: 'identity'; factor: 1 }
+    | {
+        kind: 'radial'
+        factor: number
+        sourceStationCoordinate: number
+        crossingStationCoordinate: number
+      }
+}
+
+export type AxialCapPointCalculationAudit = {
+  kind: 'axial-cap'
+  pointId: string
+  stage: CalculationAuditStage
+  trace: AxialCapProjectionTrace
+  preCap?: {
+    point: PreviewSurfacePoint
+    audit: StressStrainPointCalculationAudit | EquivalentBlockPointCalculationAudit
+    comparison: {
+      calculatedAxialResistance: number
+      maximumAxialResistance: number
+      selectedAxialResistance: number
+      capGoverns: boolean
+    }
+  }
+  displayedLedger: ResultantLedger
+  reconciliation: CalculationAuditReconciliation
+}
+
 export type UnavailablePointCalculationAudit = {
   kind: 'unavailable'
   pointId: string
@@ -309,6 +420,7 @@ export type UnavailablePointCalculationAudit = {
 export type PointCalculationAudit =
   | StressStrainPointCalculationAudit
   | EquivalentBlockPointCalculationAudit
+  | AxialCapPointCalculationAudit
   | UnavailablePointCalculationAudit
 
 export type PreviewSurfacePointRole =
@@ -336,6 +448,8 @@ export type PreviewSurfacePoint = Resultant & {
   state: StrainState
   ledger: ResultantLedger
   resistance?: DesignResistanceTrace
+  /** Geometric provenance for a synthetic maximum-axial-resistance face point. */
+  axialCapTrace?: AxialCapProjectionTrace
   /** Present only for a physical block state; an axial-cap face has no unique strain state. */
   equivalentBlock?: EquivalentBlockStateTrace
 }
@@ -494,10 +608,6 @@ export type PreviewSurface = {
     P: [number, number]
     Mx: [number, number]
     My: [number, number]
-  }
-  comparison: {
-    workbook: string
-    notes: string[]
   }
   mesh: ConcreteMeshReport
   /** Canonical schedule and direction grid actually used by this result. */
@@ -758,9 +868,16 @@ export type LoadcaseQuickCheckResult = {
   /** Demand after a code-prescribed minimum-eccentricity rule, when applicable. */
   codeAdjustedDemand?: LoadCombination
   minimumEccentricityMm?: number
+  utilizationDefinition: 'proportional3D'
+  /** Finite multiplier at the first Design-surface crossing; null for zero demand or no crossing. */
+  capacityMultiplier: number | null
+  /** Checked demand moment direction in action space; null when the moment vector is zero. */
+  demandMomentDirection: number | null
   utilization: number | null
   proportionalUtilization: number | null
   fixedPUtilization: number | null
+  fixedPDemandMoment: number
+  fixedPCapacityMoment: number | null
   adequate: boolean | null
   /** Three-state screening verdict; fixed-grid cases near UR=1 are deliberately indeterminate. */
   adequacy: AdequacyStatus
@@ -2540,14 +2657,6 @@ const buildPreviewSurfaceFromPreparedLegacy = (
       withinTolerance: stationWithinTolerance,
       tolerance: stationTolerance
     },
-    comparison: {
-      workbook: 'docs/examples/reference-case/source/PM-advanced (7) 2D.xlsx',
-      notes: [
-        'Reference workbook uses fck=30 MPa, ecu=0.0033, KDS parabolic concrete, Es=200000 MPa, fy=400 MPa.',
-        'Reference Summary P0 at 0 degrees: nominal P=33981.43 kN, factored P=23443.29 kN.',
-        'Reference source pure-tension endpoint: nominal P=-5790.58 kN, factored P=-5211.53 kN.'
-      ]
-    },
     warnings,
     designBasis: createDefaultDesignBasis(materialStore)
   }
@@ -3023,14 +3132,6 @@ const buildIndependentAdaptivePreviewSurface = (
       withinTolerance: stationWithinTolerance,
       tolerance: stationRefinement.tolerance
     },
-    comparison: {
-      workbook: 'docs/examples/reference-case/source/PM-advanced (7) 2D.xlsx',
-      notes: [
-        'Reference workbook uses fck=30 MPa, ecu=0.0033, KDS parabolic concrete, Es=200000 MPa, fy=400 MPa.',
-        'Reference Summary P0 at 0 degrees: nominal P=33981.43 kN, factored P=23443.29 kN.',
-        'Reference source pure-tension endpoint: nominal P=-5790.58 kN, factored P=-5211.53 kN.'
-      ]
-    },
     warnings: finalWarnings,
     designBasis: cloneDesignBasis(designBasis)
   }
@@ -3144,16 +3245,21 @@ const concreteAuditBranch = (material: MaterialStore['concrete'], strain: number
 /**
  * Auditable derivation of the strain at the declared analysis origin.
  *
- * The depth-profile coordinate is measured from the exact extreme compression edge. For a
- * non-uniform compatible state, `c / D` first recovers `c`, then `kappa = epsilon_c / c`, and
- * finally `epsilon_0 = epsilon_c - kappa u_c`, where `u_c` is the compression-edge projection
- * measured from the analysis origin. Keeping this derivation in the owning result DTO prevents a
- * presentation adapter from reconstructing strain-plane mechanics.
+ * The trace follows the criterion that actually generated the state. A declared `c / D` station
+ * recovers `c` directly from the exact projected section depth. A controlling-bar station first
+ * resolves the bar strain, then uses the exact compression-edge-to-bar depth to derive `kappa`
+ * and `c`. Other generated/adaptive states report their already-resolved compatible geometry
+ * without pretending that a `c / D` criterion created them. Keeping this derivation in the owning
+ * result DTO prevents a presentation adapter from reconstructing strain-plane mechanics.
  */
 export const buildCalculationAuditOriginStrainTrace = (
   profile: Pick<CalculationAuditDepthProfile,
     'projectedSectionDepth' | 'neutralAxisDepth' | 'compressionEdgeProjection'>,
-  compressionEdgeStrain: number
+  compressionEdgeStrain: number,
+  context: CalculationAuditOriginStrainContext = {
+    kind: 'resolved-compatible-state',
+    criterionLabel: null
+  }
 ): CalculationAuditOriginStrainTrace => {
   if (profile.neutralAxisDepth === null) {
     return {
@@ -3162,11 +3268,48 @@ export const buildCalculationAuditOriginStrainTrace = (
       calculatedE0: compressionEdgeStrain
     }
   }
-  const neutralAxisDepthRatio = profile.neutralAxisDepth / profile.projectedSectionDepth
-  const neutralAxisDepth = neutralAxisDepthRatio * profile.projectedSectionDepth
+
+  if (context.kind === 'controlling-bar-strain') {
+    const curvatureFromCompatibility =
+      (compressionEdgeStrain - context.controllingSteelStrain) /
+      context.compressionEdgeToBarDepth
+    const neutralAxisDepth = compressionEdgeStrain / curvatureFromCompatibility
+    const strainLimitApplied = Math.abs(context.controllingSteelStrain - context.requestedSteelStrain) >
+      1e-12 * Math.max(1, Math.abs(context.requestedSteelStrain))
+    return {
+      kind: 'controlling-bar-strain',
+      criterionLabel: context.criterionLabel,
+      strainRatio: context.ratio,
+      controllingRebarId: context.controllingRebarId,
+      steelMaterialId: context.steelMaterialId,
+      effectiveYieldStress: context.effectiveYieldStress,
+      elasticModulus: context.elasticModulus,
+      yieldStrain: context.yieldStrain,
+      yieldStrainBasis: context.yieldStrainBasis,
+      requestedSteelStrain: context.requestedSteelStrain,
+      controllingSteelStrain: context.controllingSteelStrain,
+      strainLimitApplied,
+      compressionEdgeStrain,
+      compressionEdgeProjection: profile.compressionEdgeProjection,
+      controllingBarProjection: context.controllingBarProjection,
+      compressionEdgeToBarDepth: context.compressionEdgeToBarDepth,
+      neutralAxisDepth,
+      curvatureFromCompatibility,
+      calculatedE0: compressionEdgeStrain - curvatureFromCompatibility * profile.compressionEdgeProjection
+    }
+  }
+
+  const neutralAxisDepthRatio = context.kind === 'depth-ratio'
+    ? context.ratio
+    : profile.neutralAxisDepth / profile.projectedSectionDepth
+  const neutralAxisDepth = context.kind === 'depth-ratio'
+    ? context.ratio * profile.projectedSectionDepth
+    : profile.neutralAxisDepth
   const curvatureFromDepth = compressionEdgeStrain / neutralAxisDepth
   return {
     kind: 'neutral-axis-depth',
+    derivation: context.kind === 'depth-ratio' ? 'declared-depth-ratio' : 'resolved-compatible-state',
+    criterionLabel: context.criterionLabel,
     projectedSectionDepth: profile.projectedSectionDepth,
     neutralAxisDepthRatio,
     neutralAxisDepth,
@@ -3179,7 +3322,10 @@ export const buildCalculationAuditOriginStrainTrace = (
 
 const auditDepthProfile = (
   prepared: PreparedAnalysis,
-  state: StrainState
+  state: StrainState,
+  beta: number,
+  stationDefinition: StationDefinition | null,
+  stationPrepared: PreparedAnalysis
 ): CalculationAuditDepthProfile => {
   const curvature = Math.hypot(state.kx, state.ky)
   const normalX = curvature > 1e-15 ? state.ky / curvature : 0
@@ -3211,9 +3357,80 @@ const auditDepthProfile = (
     neutralAxisInsideSection,
     samples
   }
+  const originStrainContext: CalculationAuditOriginStrainContext = (() => {
+    if (
+      stationDefinition?.kind === 'neutral-axis-depth-ratio' ||
+      stationDefinition?.kind === 'block-depth-ratio'
+    ) {
+      return {
+        kind: 'depth-ratio',
+        criterionLabel: stationDefinitionLabel(stationDefinition),
+        ratio: stationDefinition.ratio
+      }
+    }
+    if (stationDefinition?.kind !== 'bar-tension-yield-ratio') {
+      return {
+        kind: 'resolved-compatible-state',
+        criterionLabel: stationDefinition ? stationDefinitionLabel(stationDefinition) : null
+      }
+    }
+
+    const extents = projectedExtents(
+      stationPrepared.section,
+      beta,
+      stationPrepared.origin,
+      stationPrepared.rebars
+    )
+    const controllingRebar = stationPrepared.rebars[extents.controllingRebarIndex]
+    if (!controllingRebar) {
+      return {
+        kind: 'resolved-compatible-state',
+        criterionLabel: stationDefinitionLabel(stationDefinition)
+      }
+    }
+    const control = stationSteelControl(
+      stationPrepared.materials,
+      stationPrepared.materialStore,
+      stationPrepared.rebars,
+      stationPrepared.materialStore.defaults.steelMaterialId,
+      extents.controllingRebarIndex
+    )
+    const elasticModulus = control.definition.elasticModulus
+    const yieldFromStress = control.fyd / elasticModulus
+    const yieldStrainBasis = Math.abs(control.epsY - yieldFromStress) <=
+      1e-12 * Math.max(1, Math.abs(control.epsY))
+      ? 'effective-yield-stress-over-elastic-modulus' as const
+      : 'declared-material-limit' as const
+    const controllingBarProjection =
+      (controllingRebar.y - stationPrepared.origin.y) * Math.cos(beta) +
+      (controllingRebar.x - stationPrepared.origin.x) * Math.sin(beta)
+    const controllingSteelStrain =
+      state.e0 +
+      state.kx * (controllingRebar.y - stationPrepared.origin.y) +
+      state.ky * (controllingRebar.x - stationPrepared.origin.x)
+    return {
+      kind: 'controlling-bar-strain',
+      criterionLabel: stationDefinitionLabel(stationDefinition),
+      ratio: stationDefinition.ratio,
+      controllingRebarId: controllingRebar.id,
+      steelMaterialId: control.definition.id,
+      effectiveYieldStress: control.fyd,
+      elasticModulus,
+      yieldStrain: control.epsY,
+      yieldStrainBasis,
+      requestedSteelStrain: -stationDefinition.ratio * control.epsY,
+      controllingSteelStrain,
+      controllingBarProjection,
+      compressionEdgeToBarDepth: extents.max - controllingBarProjection
+    }
+  })()
   return {
     ...profile,
-    originStrainTrace: buildCalculationAuditOriginStrainTrace(profile, samples[0].strain)
+    originStrainTrace: buildCalculationAuditOriginStrainTrace(
+      profile,
+      samples[0].strain,
+      originStrainContext
+    )
   }
 }
 
@@ -3250,9 +3467,65 @@ export const buildStressStrainPointCalculationAudit = (
   sourceMaterials: MaterialStore,
   designBasis: DesignBasis,
   stage: CalculationAuditStage,
-  point: PreviewSurfacePoint
+  point: PreviewSurfacePoint,
+  stationDefinition: StationDefinition | null = null
 ): PointCalculationAudit => {
   if (point.surfaceRole === 'axial-cap') {
+    const trace = point.axialCapTrace
+    if (trace) {
+      const preCap = trace.preCapPoint
+        ? (() => {
+            const audit = buildStressStrainPointCalculationAudit(
+              statePrepared,
+              sourceMaterials,
+              designBasis,
+              stage,
+              trace.preCapPoint,
+              stationDefinition
+            )
+            if (audit.kind !== 'stress-strain') {
+              throw new AnalysisInputError(
+                'AUDIT_RECONCILIATION_FAILED',
+                'The retained pre-cap criterion point did not produce a physical stress-strain audit.',
+                { pointId: point.id }
+              )
+            }
+            const calculatedAxialResistance = trace.preCapPoint.ledger.total.P
+            return {
+              point: trace.preCapPoint,
+              audit,
+              comparison: {
+                calculatedAxialResistance,
+                maximumAxialResistance: trace.cap,
+                selectedAxialResistance: Math.min(calculatedAxialResistance, trace.cap),
+                capGoverns: calculatedAxialResistance > trace.cap
+              }
+            }
+          })()
+        : undefined
+      const crossing = trace.source.crossing
+      const expected = trace.projection.kind === 'radial'
+        ? {
+            P: trace.cap,
+            Mx: crossing.Mx * trace.projection.factor,
+            My: crossing.My * trace.projection.factor
+          }
+        : crossing
+      return {
+        kind: 'axial-cap',
+        pointId: point.id,
+        stage,
+        trace,
+        ...(preCap ? { preCap } : {}),
+        displayedLedger: point.ledger,
+        reconciliation: reconcileCalculationAuditResultant(
+          expected,
+          point,
+          Math.max(1, Math.abs(trace.maximumAxialResistance), Math.abs(point.P)),
+          Math.max(1, Math.abs(point.Mx / Math.max(1, point.P)), Math.abs(point.My / Math.max(1, point.P)))
+        )
+      }
+    }
     return {
       kind: 'unavailable',
       pointId: point.id,
@@ -3422,13 +3695,14 @@ export const buildStressStrainPointCalculationAudit = (
       { pointId: point.id, nominalReferenceReconciliation, reconciliation }
     )
   }
+  const concreteGroupValues = [...concreteGroups.values()]
   return {
     kind: 'stress-strain',
     pointId: point.id,
     stage,
     origin: { ...prepared.origin },
     state: { ...point.state },
-    depthProfile: auditDepthProfile(prepared, point.state),
+    depthProfile: auditDepthProfile(prepared, point.state, point.beta, stationDefinition, statePrepared),
     concreteLaw: describeConcreteMaterialLaw(calculationMaterials.concrete),
     steelLaws: calculationMaterials.steel.map((material) => ({
       materialId: material.id,
@@ -3436,7 +3710,16 @@ export const buildStressStrainPointCalculationAudit = (
       law: describeSteelMaterialLaw(material)
     })),
     mesh: { ...prepared.mesh.report },
-    concreteGroups: [...concreteGroups.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    concreteSummary: {
+      pointCount: prepared.concreteFibers.length,
+      area: prepared.mesh.report.meshed.area,
+      strainMinimum: Math.min(...concreteGroupValues.map((group) => group.strainMinimum)),
+      strainMaximum: Math.max(...concreteGroupValues.map((group) => group.strainMaximum)),
+      stressMinimum: Math.min(...concreteGroupValues.map((group) => group.stressMinimum)),
+      stressMaximum: Math.max(...concreteGroupValues.map((group) => group.stressMaximum)),
+      resultant: { ...concrete }
+    },
+    concreteGroups: concreteGroupValues.sort((left, right) => left.id.localeCompare(right.id)),
     rebars,
     mechanicalLedger,
     nominalReferenceLedger,
@@ -3566,6 +3849,28 @@ const lerpLedgerValue = (a: ResultantLedger, b: ResultantLedger, t: number): Res
   steel: lerpResultantValue(a.steel, b.steel, t),
   total: lerpResultantValue(a.total, b.total, t)
 })
+const axialCapTracePoint = (point: PreviewSurfacePoint): AxialCapTracePoint => ({
+  pointId: point.id,
+  stationId: point.stationId,
+  P: point.P,
+  Mx: point.Mx,
+  My: point.My
+})
+const axialCapPreCapPoint = (point: PreviewSurfacePoint): PreviewSurfacePoint => ({
+  ...point,
+  state: { ...point.state },
+  ledger: {
+    concrete: { ...point.ledger.concrete },
+    steelGross: { ...point.ledger.steelGross },
+    displacedConcrete: { ...point.ledger.displacedConcrete },
+    steel: { ...point.ledger.steel },
+    total: { ...point.ledger.total }
+  },
+  resistance: point.resistance
+    ? { ...point.resistance, stages: [...point.resistance.stages] }
+    : undefined,
+  axialCapTrace: undefined
+})
 const projectLedgerToAxialCap = (ledger: ResultantLedger, radialRatio: number): ResultantLedger => {
   const project = (value: Resultant): Resultant => ({
     P: value.P,
@@ -3603,6 +3908,7 @@ const applyAxialCap = (
   for (const row of rows) {
     const curve = row.curve
     let crossing: PreviewSurfacePoint | null = null
+    let crossingTrace: AxialCapProjectionTrace | null = null
     let crossingStation = 0
     for (let index = 1; index < curve.length; index++) {
       const a = curve[index - 1]
@@ -3611,11 +3917,25 @@ const applyAxialCap = (
       const t = (cap - a.P) / (b.P - a.P)
       crossingStation = lerpNumber(a.station, b.station, t)
       const ledger = lerpLedgerValue(a.ledger, b.ledger, t)
+      const crossingResultant = lerpResultantValue(a, b, t)
+      crossingTrace = {
+        maximumAxialResistance: pole,
+        capRatio: ratio,
+        cap,
+        source: {
+          kind: 'edge-interpolation',
+          compressionSide: axialCapTracePoint(a),
+          admissibleSide: axialCapTracePoint(b),
+          interpolationRatio: t,
+          crossing: crossingResultant
+        },
+        projection: { kind: 'identity', factor: 1 }
+      }
       crossing = {
         ...a,
         P: cap,
-        Mx: lerpNumber(a.Mx, b.Mx, t),
-        My: lerpNumber(a.My, b.My, t),
+        Mx: crossingResultant.Mx,
+        My: crossingResultant.My,
         state: {
           e0: lerpNumber(a.state.e0, b.state.e0, t),
           kx: lerpNumber(a.state.kx, b.state.kx, t),
@@ -3632,7 +3952,7 @@ const applyAxialCap = (
       }
       break
     }
-    if (!crossing) continue
+    if (!crossing || !crossingTrace) continue
     for (const point of curve) {
       if (point.P <= cap) continue
       // Fill, rather than merely trace, the horizontal cap face. Station zero becomes the axial
@@ -3651,6 +3971,16 @@ const applyAxialCap = (
         Mx: crossing.Mx * radialRatio,
         My: crossing.My * radialRatio,
         ledger,
+        axialCapTrace: {
+          ...crossingTrace,
+          preCapPoint: axialCapPreCapPoint(point),
+          projection: {
+            kind: 'radial',
+            factor: radialRatio,
+            sourceStationCoordinate: point.station,
+            crossingStationCoordinate: crossingStation
+          }
+        },
         resistance: resistance
           ? {
               ...resistance,
@@ -4434,6 +4764,7 @@ const checkRawLoadcaseUtilizationFromSurface = (
   const contour = sliceActiveDesignPContour(surface, loadcase.P)
   const fixedP = estimateUtilization(loadcase, contour)
   const proportional = intersectSurfaceWithDemandRay(surface, loadcase)
+  const demandMoment = demandMomentRadius(loadcase)
   const proportionalUtilization =
     proportional == null
       ? null
@@ -4453,9 +4784,15 @@ const checkRawLoadcaseUtilizationFromSurface = (
   return {
     loadcaseId: loadcase.id,
     demand: loadcase,
+    utilizationDefinition: 'proportional3D',
+    capacityMultiplier:
+      proportional && Number.isFinite(proportional.lambda) ? proportional.lambda : null,
+    demandMomentDirection: demandMoment > 1e-9 ? Math.atan2(loadcase.My, loadcase.Mx) : null,
     utilization: proportionalUtilization,
     proportionalUtilization,
     fixedPUtilization: fixedP.utilization,
+    fixedPDemandMoment: demandMoment,
+    fixedPCapacityMoment: fixedP.point?.M ?? null,
     adequate: classification.status === 'indeterminate' ? null : classification.status === 'adequate',
     adequacy: classification.status,
     utilizationInterval: classification.interval,

@@ -205,7 +205,10 @@ test('axial clipping creates a closed cap face at the exact requested force', ()
   const axialCap = fixture.compressionPole.resultants.P * 0.8
   const clipped = clipCapacitySurfaceByAxialCap(surface, axialCap)
   assert.equal(clipped.topology.closed, true)
-  assert.ok(clipped.points.some((point) => point.kind === 'axial-cap'))
+  const capPoints = clipped.points.filter((point) => point.kind === 'axial-cap')
+  assert.ok(capPoints.length > 0)
+  assert.ok(capPoints.every((point) => point.axialCapTrace?.cap === axialCap))
+  assert.ok(capPoints.every((point) => point.axialCapTrace?.maximumAxialResistance === fixture.compressionPole.resultants.P))
   close(Math.max(...clipped.points.map((point) => point.resultants.P)), axialCap, 1e-12)
   assert.ok(clipped.triangles.some((triangle) =>
     [triangle.a, triangle.b, triangle.c].every((index) => clipped.points[index].kind === 'axial-cap')

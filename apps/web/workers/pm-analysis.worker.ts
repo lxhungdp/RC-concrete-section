@@ -34,6 +34,8 @@ import {
 } from '@pm/design'
 import {
   buildChartAuditWorkbookBytes,
+  buildCalculationTraceAuditWorkbookBytes,
+  buildConcretePointAuditWorkbookBytes,
   buildDemandCheckWorkbookBytes,
   exportEquivalentBlockWorkbook,
   exportMeshAuditDxf,
@@ -304,21 +306,27 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
       const result = isEquivalentBlockAnalysisOptions(request.payload.analysisOptions)
         ? (() => {
             const prepared = preparedBlockFor(request.payload)
-            return request.payload.points.map(({ key, point }) => ({
+            return request.payload.points.map(({ key, point, stationDefinition }) => ({
               key,
-              audit: buildEquivalentBlockPointCalculationAudit(prepared, request.payload.stage, point)
+              audit: buildEquivalentBlockPointCalculationAudit(
+                prepared,
+                request.payload.stage,
+                point,
+                stationDefinition
+              )
             }))
           })()
         : (() => {
             const prepared = preparedFor({ ...request.payload, analysisOptions: request.payload.analysisOptions })
-            return request.payload.points.map(({ key, point }) => ({
+            return request.payload.points.map(({ key, point, stationDefinition }) => ({
               key,
               audit: buildStressStrainPointCalculationAudit(
                 prepared,
                 request.payload.materialStore,
                 request.payload.designBasis,
                 request.payload.stage,
-                point
+                point,
+                stationDefinition
               )
             }))
           })()
@@ -385,6 +393,32 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
         ...request.payload,
         surface: referencedSurface(request.payload)
       })
+      const result = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength
+      ) as ArrayBuffer
+      workerSelf.postMessage(
+        { type: 'success', jobId: request.jobId, requestType: request.type, result },
+        [result]
+      )
+      return
+    }
+
+    if (request.type === 'exportConcretePointAudit') {
+      const bytes = await buildConcretePointAuditWorkbookBytes(request.payload)
+      const result = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength
+      ) as ArrayBuffer
+      workerSelf.postMessage(
+        { type: 'success', jobId: request.jobId, requestType: request.type, result },
+        [result]
+      )
+      return
+    }
+
+    if (request.type === 'exportCalculationTraceAudit') {
+      const bytes = await buildCalculationTraceAuditWorkbookBytes(request.payload)
       const result = bytes.buffer.slice(
         bytes.byteOffset,
         bytes.byteOffset + bytes.byteLength

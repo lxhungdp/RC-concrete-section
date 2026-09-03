@@ -1,7 +1,5 @@
-import stressStrainKds from '../../../../docs/examples/reference-case/projects/PM-advanced (7) 2D.pm-project.json'
+import stressStrainKds from '../../../../docs/examples/realistic-sections/KDS-REAL-05-complex-stress-strain.pm-project.json'
 import stressStrainEnUmdP16 from '../../../../docs/examples/reference-case/projects/P16_Column_ULS.pm-project.json'
-import stressStrainKdsEnvico from '../../../../docs/examples/user-projects/ENVICO.pm-project.json'
-import stressStrainKdsHi from '../../../../docs/examples/user-projects/Hi.pm-project.json'
 import realisticKdsChamferedHollow from '../../../../docs/examples/realistic-sections/KDS-REAL-01-chamfered-hollow.pm-project.json'
 import realisticKdsTwoCircularVoids from '../../../../docs/examples/realistic-sections/KDS-REAL-02-chamfered-two-circular-voids.pm-project.json'
 import realisticKdsHSection from '../../../../docs/examples/realistic-sections/KDS-REAL-03-h-section.pm-project.json'
@@ -21,22 +19,10 @@ export type ProjectExample = {
  */
 export const PROJECT_EXAMPLES: readonly ProjectExample[] = [
   {
-    id: 'kds-stress-strain-reference',
+    id: 'kds-stress-strain-complex',
     label: 'Stress–strain',
-    description: 'KDS · Rectangle',
+    description: 'KDS · Complex hollow',
     document: stressStrainKds
-  },
-  {
-    id: 'kds-stress-strain-envico',
-    label: 'ENVICO',
-    description: 'KDS · Stress–strain',
-    document: stressStrainKdsEnvico
-  },
-  {
-    id: 'kds-stress-strain-hi',
-    label: 'Hi',
-    description: 'KDS · Stress–strain',
-    document: stressStrainKdsHi
   },
   {
     id: 'en-umd-p16',

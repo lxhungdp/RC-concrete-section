@@ -6,13 +6,16 @@ import type {
   PointCalculationAudit,
   PreviewSurface,
   PreviewSurfacePoint,
-  SectionFieldMap
+  SectionFieldMap,
+  StationDefinition
 } from '@pm/analysis'
 import type { DesignBasis } from '@pm/design'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
 import type {
   ChartAuditWorkbookInput,
+  CalculationTraceAuditWorkbookInput,
+  ConcretePointAuditWorkbookInput,
   DemandCheckExcelInput,
   EquivalentBlockExcelInput,
   ExcelExportInput
@@ -70,7 +73,11 @@ export type BuildSectionMeshPayload = {
 
 export type BuildPointAuditsPayload = BuildSurfacePayload & {
   stage: 'design' | 'nominal'
-  points: Array<{ key: string; point: PreviewSurfacePoint }>
+  points: Array<{
+    key: string
+    point: PreviewSurfacePoint
+    stationDefinition: StationDefinition | null
+  }>
 }
 
 export type MeshAuditExportPayload = BuildSectionMeshPayload & {
@@ -91,6 +98,10 @@ export type WorkerSurfaceReference = {
 }
 
 export type ChartAuditWorkerPayload = Omit<ChartAuditWorkbookInput, 'surface'> & WorkerSurfaceReference
+
+export type ConcretePointAuditWorkerPayload = ConcretePointAuditWorkbookInput
+
+export type CalculationTraceAuditWorkerPayload = CalculationTraceAuditWorkbookInput
 
 export type DemandCheckWorkerPayload = Omit<DemandCheckExcelInput, 'surface'> & WorkerSurfaceReference
 
@@ -120,6 +131,8 @@ export type AnalysisWorkerJob =
   | { type: 'exportExcel'; jobId: string; payload: ExcelExportInput }
   | { type: 'exportBlockExcel'; jobId: string; payload: EquivalentBlockExcelInput }
   | { type: 'exportChartAudit'; jobId: string; payload: ChartAuditWorkerPayload }
+  | { type: 'exportConcretePointAudit'; jobId: string; payload: ConcretePointAuditWorkerPayload }
+  | { type: 'exportCalculationTraceAudit'; jobId: string; payload: CalculationTraceAuditWorkerPayload }
   | { type: 'exportDemandCheck'; jobId: string; payload: DemandCheckWorkerPayload }
   | { type: 'exportPdfReport'; jobId: string; payload: ReportInput }
 
@@ -138,6 +151,8 @@ export type AnalysisWorkerResultMap = {
   exportExcel: ArrayBuffer
   exportBlockExcel: ArrayBuffer
   exportChartAudit: ArrayBuffer
+  exportConcretePointAudit: ArrayBuffer
+  exportCalculationTraceAudit: ArrayBuffer
   exportDemandCheck: ArrayBuffer
   exportPdfReport: { bytes: ArrayBuffer; fileName: string }
 }

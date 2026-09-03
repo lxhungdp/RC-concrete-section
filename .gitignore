@@ -32,6 +32,12 @@ coverage/
 .nyc_output/
 *.lcov
 
+# Generated audit / export artifacts
+outputs/
+
+# Retired local reference material (not part of the public verification set)
+data/
+
 # Caches & tooling
 .turbo/
 .cache/

@@ -1,6 +1,6 @@
 /**
- * Excel export of the nominal section calculation, laid out after
- * `docs/examples/reference-case/source/PM-advanced (7) 2D.xlsx`.
+ * Excel export of the nominal section calculation, laid out after the historical external workbook
+ * the stress-strain analysis pipeline and its current calculation-audit DTOs.
  *
  * Contract: constants are limited to input data and values the engine must own — clipped-cell mesh,
  * resolved nonlinear material inverses, configured/refined strain planes, and their integrated

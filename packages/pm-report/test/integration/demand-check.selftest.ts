@@ -255,7 +255,7 @@ const checkSourceRows = (
 
 const CASES = [
   {
-    file: 'docs/examples/reference-case/projects/PM-advanced (7) 2D.pm-project.json',
+    file: 'docs/examples/realistic-sections/KDS-REAL-05-complex-stress-strain.pm-project.json',
     label: 'stress-strain'
   },
   {

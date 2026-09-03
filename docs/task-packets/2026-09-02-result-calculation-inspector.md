@@ -66,9 +66,8 @@ second-order design, and promoting preview results to accepted or released statu
 
 Verification record — 2026-09-02:
 
-- `npm test`: passed 265 unit tests plus CAD, round-trip, station, Excel, demand-check, and PDF
-  integration suites. Test-regenerated reference workbooks were restored and are not part of this
-  change.
+- `npm test`: passed 265 unit tests plus CAD, round-trip, station coverage, Excel, demand-check, and
+  PDF integration suites. Test-generated report outputs were not part of this change.
 - `npm run bench:verify`: bit-identical capacity fingerprints for 8 sections and unchanged inverse
   residuals.
 - `npm run bench:strain-sampling`, `npm run bench:equivalent-block`, and

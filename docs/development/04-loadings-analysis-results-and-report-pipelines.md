@@ -45,14 +45,15 @@ table/import
   -> persist definition / send immutable snapshot to engine
 ```
 
-The current UI supports add/edit/delete and CSV import/export in `LoadingsPanel`, embedded in the
-Results sidebar. The current persistence helpers live in `@pm/project`; a future `@pm/loadings`
-extraction will own richer source-case validation and transformations. Results retain input order
-while using stable IDs.
+The current UI supports add/edit/delete and CSV import/export in `LoadingsPanel`, owned by the
+dedicated `Demand Check` workspace. The current persistence helpers live in `@pm/project`; a future
+`@pm/loadings` extraction will own richer source-case validation and transformations. Demand Check
+retains input order while using stable IDs.
 
-Current web UI keeps loadcase entry inside the Results sidebar rather than exposing a separate
-top-level Loadings module. This keeps the user workflow direct: add or edit Pu/Mux/Muy, click a
-loadcase row, then inspect the forward plots and lazy inverse detail in the same screen.
+The current web UI keeps simple `Pu/Mux/Muy` entry and governing checks together in `Demand Check`
+rather than exposing a separate source-load-management module. The user can edit a combination,
+open its concise trace through the dedicated row action, and switch between combinations without
+closing the dialog. `Section Results` remains the resistance-surface and chart workspace.
 
 The v1 DTO needs no `My` mechanics discriminator. The UI and worker pass the canonical component
 unchanged, and both `@pm/analysis` and `@pm/equivalent-block` use `+F*(x-x0)`. Asymmetric ledger
@@ -283,20 +284,71 @@ Results are keyed by input hash and result ID, not by the currently selected row
 Envelope-table row selection is presentation state only. The selected row carries a discriminated
 `vertical` or `fixedP` evidence object from the same package query that built its displayed values.
 React may format that evidence and draw explanatory geometry, but it must not search for different
-brackets, evaluate materials, apply factors, or reconstruct a capacity result. Changing chart
-source or resistance stage clears the selection so Vertical, Fixed-P, Design, and Nominal evidence
+brackets, evaluate materials, apply factors, or reconstruct a capacity result. The inspector header
+reuses the table's complete Vertical/Fixed-P and Design/Nominal queries and exposes every returned
+row through compact native selectors. Changing source or resistance stage resolves the same stable
+Vertical station key or Fixed-P direction/branch from the freshly queried rows. A source change
+starts at the first row of the new source. If the same criterion is absent after a stage change, the
+dialog stays open and identifies that criterion as unavailable until the user selects another one;
+it never substitutes by row index. When a query has no rows, the dialog stays open with a disabled
+Criteria selector so the user can switch back without reopening it. Vertical, Fixed-P, Design, and Nominal evidence
 cannot be mixed accidentally.
 
 Opening the inspector sends a lazy `buildPointAudits` worker request containing the applied inputs,
 calculation-profile identity, selected resistance stage, and exact stored vertex or Fixed-P bracket
-vertices. `@pm/analysis` owns the stress-strain trace; `@pm/analysis-equivalent-block` owns the exact
-block trace. Each returns a serializable DTO of effective laws, formulas/provenance, compatible
-depth profile, an owner-calculated `D -> c/D -> c -> kappa -> epsilon0` trace (or an explicit
-uniform-strain trace), complete grouped concrete sums, complete rebar ledger, resistance stages, and
-stored result reconciliation. The UI formats that trace but does not reconstruct strain-plane
-mechanics. Fixed-P endpoints are queried and displayed independently; the browser never
+vertices together with each vertex's stored station definition. `@pm/analysis` owns the stress-
+strain trace; `@pm/analysis-equivalent-block` owns the exact-block trace. Each returns a serializable
+DTO of effective laws, formulas/provenance, compatible depth profile, complete concrete/rebar
+evidence, resistance stages, and stored-result reconciliation. The origin trace is criterion-aware:
+`c/D` derives `c` from projected depth, while `epsilon_s/epsilon_y` derives the controlling steel
+strain and compression-edge-to-bar distance before calculating curvature, `c`, and `epsilon0`.
+Uniform and adaptive states retain explicit, truthful routes. The browser shows one concise
+concrete summary from the audit DTO plus one point-specific Excel action and does not reconstruct
+strain-plane or material mechanics. A separate lazy `exportConcretePointAudit` worker request
+builds one visible calculation sheet for the exact physical state: stress-strain exports list every
+mesh point and formula columns through `Pc/Mcx/Mcy`; equivalent-block exports list the exact
+clipped-polygon edges and their shoelace/resultant formulas because that mechanics route has no
+mesh. Workbook totals reproduce the summary row shown in the inspector. Nominal/reference and
+Factored/Design contribution ledgers are presented side by side in one result table rather than as
+separate tables. The modal header also exposes one lazy `exportCalculationTraceAudit` workbook.
+For a Vertical row it contains `Input`, the reused point-specific `Concrete` detail, a formula-driven
+per-bar `Steel` ledger, and `Summary`; the summary links the two detail totals and calculates the
+selected `P/Mx/My` and projected `M-beta` without displaying a stored-result comparison. A non-exact Fixed-P row exports both lower and upper
+physical-state Concrete/Steel sheet pairs, then performs the displayed interpolation by formula in
+`Summary`. It never assigns an invented strain plane to the interpolated point. The existing
+chart-audit export in the Results toolbar is unchanged. Fixed-P
+endpoints are queried and exported
+independently; the browser never
 assigns an invented strain state to the interpolated contour point. Closing or changing the selected
 row aborts an outstanding request.
+
+An axial-cap vertex is a separate audit discriminant, not an `unavailable` physical state and not a
+fabricated compatible state. The Design surface stores the cap provenance needed by the lazy audit:
+the retained physical pre-cap criterion point when the structured surface replaces one, maximum
+axial reference, cap ratio/limit, the source vertex or edge endpoints, source-edge interpolation,
+and any structured radial projection. The dialog first sends the retained point through the normal
+physical audit and reconciles its Concrete/Steel calculation; it then compares that axial result
+with the maximum permitted value and evaluates the geometric cap formulas through the selected
+stored `P/Mx/My`. The final face still has no unique material state. The complete workbook reuses
+the pre-cap Concrete/Steel builders before its `Axial Cap` sheet; a cap point without a retained
+physical criterion remains a geometric-only cap audit. The control-level Excel action shares the
+selector row and is right aligned; the obsolete “trace from project inputs” subtitle is not shown.
+For that geometric-only case, Input labels the endpoint as geometric and records strain, curvature,
+and resistance factor as unavailable rather than publishing the DTO's non-physical placeholder
+numbers as a resolved or pre-cap state.
+
+Each Demand Check row owns a dedicated calculation-trace button; the editable row itself is not a
+modal trigger. The button opens a separate loadcase calculation dialog keyed by the loadcase ID,
+not table order or name, and receives focus again after the dialog closes. Its header exposes every
+current combination through one compact selector
+and exports the selected combination through the existing `exportDemandCheck` worker route with
+that ID as the only worked-through detail. The body consumes the existing quick-check and composed
+inverse DTOs. It does not intersect the surface, calculate utilization, classify adequacy, apply
+minimum eccentricity, or solve equilibrium in React. Quick-check output therefore carries the
+declared `proportional3D` definition, finite capacity multiplier when one exists, checked demand
+moment direction, and fixed-`P` demand/capacity moment magnitudes needed to explain its stored
+ratios. While either DTO is pending or belongs to an older demand revision, the dialog stays open
+and reports that evidence as pending instead of showing stale values.
 
 ## 6. Report package
 
@@ -361,8 +413,10 @@ change produces a different key and rebuilds it.
 ## 8. Pipeline tests
 
 This is the required release test set. Current `npm test` covers the numerical packages,
-schema-v1 round trip, UI helper logic, CAD, mesh workbook, and stress-strain workbook formulas; it
-does not yet cover accepted-result hashing, PDF rendering, or true cooperative cancellation.
+schema-v1 round trip, UI helper logic, CAD, both mechanics' calculation workbooks, the demand-check
+workbook, and deterministic preview-PDF rendering/content checks. It does not yet cover
+accepted-result hashing, renderer eligibility from accepted/stale brands, or true cooperative
+cancellation.
 
 - ULS/service request types cannot be interchanged;
 - demand frame/unit transformations and round-trip invariants;
@@ -377,13 +431,17 @@ does not yet cover accepted-result hashing, PDF rendering, or true cooperative c
 
 ## 9. Delivery status and remaining order
 
-1. **Implemented preview:** Results-sidebar combinations, project round trip, analysis-option
-   validation, two independent mechanics, five selectable code calculation routes, adaptive preview
-   surfaces/checks, model-specific fields, stress-strain Excel, and mesh Excel/DXF.
+1. **Implemented preview:** dedicated `Section Results` and `Demand Check` workspaces, project round
+   trip, analysis-option validation, two independent mechanics, five selectable code calculation
+   routes, adaptive preview surfaces/checks, model-specific fields, calculation-trace workbooks for
+   both mechanics, stress-strain mesh Excel/DXF, demand-check workbook, shared `ReportModel`, and a
+   deterministic watermarked preview PDF.
 2. **Next integrity work:** confirm and test the documented parser-v1 defaults, add shared typed
    issues, canonical hashing, and
    a complete stale-state graph.
 3. **Production gates:** finish geometry/material validation gateways, accepted-result numerical
    uncertainty and topology gates, independent code-profile review, and cooperative cancellation.
-4. **Reporting:** make Results consume an immutable accepted DTO, implement the equivalent-block
-   ledger export, add a format-neutral report model, then release-tested Excel/PDF renderers.
+4. **Reporting:** make `Section Results`, `Demand Check`, and the existing report builders consume an
+   immutable accepted DTO; enforce accepted/current eligibility; attach result identity, signature,
+   approval, and rollback metadata; then qualify the existing Excel/PDF renderers for released
+   reports without weakening their Preview path.

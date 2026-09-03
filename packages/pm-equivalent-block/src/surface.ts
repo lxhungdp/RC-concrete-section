@@ -33,6 +33,30 @@ export type CapacityStation =
   | { type: 'tension-depth-ratio'; from: CapacityStation; ratio: number }
   | { type: 'adaptive-depth-interpolation'; left: CapacityStation; right: CapacityStation; ratio: number }
 
+export type CapacityAxialCapTracePoint = {
+  pointId: number
+  resultants: CapacityResultants
+}
+
+export type CapacityAxialCapTrace = {
+  maximumAxialResistance: number
+  capRatio: number | null
+  cap: number
+  source:
+    | {
+        kind: 'source-vertex'
+        point: CapacityAxialCapTracePoint
+        crossing: CapacityResultants
+      }
+    | {
+        kind: 'edge-interpolation'
+        compressionSide: CapacityAxialCapTracePoint
+        admissibleSide: CapacityAxialCapTracePoint
+        interpolationRatio: number
+        crossing: CapacityResultants
+      }
+}
+
 export type CapacitySurfacePoint = {
   id: number
   resultants: CapacityResultants
@@ -42,6 +66,7 @@ export type CapacitySurfacePoint = {
   /** Monotone neutral-axis coordinate used to stitch unequal independent rows. */
   stationCoordinate?: number
   kind: 'tension-pole' | 'state' | 'compression-pole' | 'axial-cap'
+  axialCapTrace?: CapacityAxialCapTrace
   metadata?: Record<string, unknown>
 }
 
@@ -1481,6 +1506,10 @@ export const clipCapacitySurfaceByAxialCap = (
   const points: CapacitySurfacePoint[] = []
   const oldPointMap = new Map<number, number>()
   const edgeIntersectionMap = new Map<string, number>()
+  const tracePoint = (point: CapacitySurfacePoint): CapacityAxialCapTracePoint => ({
+    pointId: point.id,
+    resultants: { ...point.resultants }
+  })
   const mappedOldPoint = (oldIndex: number) => {
     const existing = oldPointMap.get(oldIndex)
     if (existing !== undefined) return existing
@@ -1495,6 +1524,16 @@ export const clipCapacitySurfaceByAxialCap = (
         state: undefined,
         station: undefined,
         kind: 'axial-cap' as const,
+        axialCapTrace: {
+          maximumAxialResistance: maximum,
+          capRatio: Math.abs(maximum) > absoluteTolerance ? axialCap / maximum : null,
+          cap: axialCap,
+          source: {
+            kind: 'source-vertex' as const,
+            point: tracePoint(old),
+            crossing: { P: axialCap, Mx: old.resultants.Mx, My: old.resultants.My }
+          }
+        },
         metadata: {
           ...old.metadata,
           ...(old.state ? { meridianAngle: wrapAngle(old.state.neutralAxisAngle) } : {})
@@ -1514,15 +1553,30 @@ export const clipCapacitySurfaceByAxialCap = (
     const right = rightPoint.resultants
     const denominator = right.P - left.P
     const ratio = Math.abs(denominator) <= absoluteTolerance ? 0.5 : (axialCap - left.P) / denominator
+    const compressionPoint = left.P >= right.P ? leftPoint : rightPoint
+    const admissiblePoint = left.P >= right.P ? rightPoint : leftPoint
+    const crossing = {
+      P: axialCap,
+      Mx: left.Mx + (right.Mx - left.Mx) * ratio,
+      My: left.My + (right.My - left.My) * ratio
+    }
     const id = points.length
     points.push({
       id,
-      resultants: {
-        P: axialCap,
-        Mx: left.Mx + (right.Mx - left.Mx) * ratio,
-        My: left.My + (right.My - left.My) * ratio
-      },
+      resultants: crossing,
       kind: 'axial-cap',
+      axialCapTrace: {
+        maximumAxialResistance: maximum,
+        capRatio: Math.abs(maximum) > absoluteTolerance ? axialCap / maximum : null,
+        cap: axialCap,
+        source: {
+          kind: 'edge-interpolation',
+          compressionSide: tracePoint(compressionPoint),
+          admissibleSide: tracePoint(admissiblePoint),
+          interpolationRatio: compressionPoint === leftPoint ? ratio : 1 - ratio,
+          crossing
+        }
+      },
       ...(
         leftPoint.state && rightPoint.state &&
         Math.abs(Math.sin(leftPoint.state.neutralAxisAngle - rightPoint.state.neutralAxisAngle)) <= 1e-12 &&

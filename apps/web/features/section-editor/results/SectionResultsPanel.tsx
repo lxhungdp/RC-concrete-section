@@ -1,8 +1,14 @@
 'use client'
 
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
+import dynamic from 'next/dynamic'
 import { Download, Eye, EyeOff, Loader2 } from 'lucide-react'
-import type { ExactDirectionCurve, PreviewSurface } from '@pm/analysis'
+import type {
+  ExactDirectionCurve,
+  PreviewSurface,
+  PreviewSurfacePoint,
+  StationDefinition
+} from '@pm/analysis'
 import type { DesignBasis } from '@pm/design'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
@@ -16,15 +22,23 @@ import {
 } from './results-view'
 import {
   buildChartTableRows,
+  downloadCalculationTraceAuditExcel,
   downloadChartAuditExcel,
+  downloadConcretePointAuditExcel,
   formatChartTableForce,
   formatChartTableMoment,
+  resolveChartTableRowSelection,
   type ChartTableMoments,
   type ChartTableRow,
+  type ChartTableResistanceStage,
   type ChartTableSource,
   type ChartTableStageForces
 } from './chart-data-table'
-import { ChartCalculationDialog } from './ChartCalculationDialog'
+
+const ChartCalculationDialog = dynamic(
+  () => import('./ChartCalculationDialog').then((module) => module.ChartCalculationDialog),
+  { ssr: false }
+)
 
 export type SectionResultsSummary = {
   hasAppliedSection: boolean
@@ -126,11 +140,16 @@ export function SectionResultsPanel({
   loadcases
 }: Props) {
   const [source, setSource] = useState<ChartTableSource>('vertical')
-  const [resistanceStage, setResistanceStage] = useState<'design' | 'nominal'>('design')
+  const [resistanceStage, setResistanceStage] = useState<ChartTableResistanceStage>('design')
   const includeDesign = resistanceStage === 'design'
   const includeNominal = resistanceStage === 'nominal'
   const [exporting, setExporting] = useState(false)
+  const [exportingConcreteKey, setExportingConcreteKey] = useState<string | null>(null)
+  const [exportingCalculationTrace, setExportingCalculationTrace] = useState(false)
   const [selectedRow, setSelectedRow] = useState<ChartTableRow | null>(null)
+  const [calculationSelectionAnchor, setCalculationSelectionAnchor] = useState<ChartTableRow | null>(null)
+  const [calculationDialogOpen, setCalculationDialogOpen] = useState(false)
+  const [calculationExportError, setCalculationExportError] = useState<string | null>(null)
 
   const rows = useMemo(
     () =>
@@ -178,24 +197,195 @@ export function SectionResultsPanel({
     }
   }
 
+  const exportConcreteExcel = async ({
+    key,
+    label,
+    point,
+    stationDefinition
+  }: {
+    key: string
+    label: string
+    point: PreviewSurfacePoint
+    stationDefinition: StationDefinition | null
+  }) => {
+    if (!surface?.calculationProfileId || exportingConcreteKey) return
+    setExportingConcreteKey(key)
+    setCalculationExportError(null)
+    try {
+      await downloadConcretePointAuditExcel({
+        projectName,
+        sectionName: section.name,
+        calculationProfileId: surface.calculationProfileId,
+        section,
+        rebars,
+        materialStore,
+        analysisOptions: surface.analysisOptions,
+        designBasis,
+        stage: resistanceStage,
+        point,
+        stationDefinition,
+        label
+      })
+    } catch (error: unknown) {
+      setCalculationExportError(`Concrete workbook: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setExportingConcreteKey(null)
+    }
+  }
+
+  const exportCalculationTraceExcel = async () => {
+    if (!surface?.calculationProfileId || !selectedRow || exportingCalculationTrace) return
+    const states = selectedRow.kind === 'vertical'
+      ? [{
+          key: 'selected' as const,
+          label: 'Selected Vertical station',
+          point: selectedRow.evidence.point,
+          stationDefinition: selectedRow.evidence.station?.definition ?? null
+        }]
+      : selectedRow.evidence.bracket
+        ? selectedRow.evidence.bracket.exact
+          ? [{
+              key: 'below' as const,
+              label: 'Selected Fixed-P station',
+              point: selectedRow.evidence.bracket.below,
+              stationDefinition: selectedRow.evidence.belowStation?.definition ?? null
+            }]
+          : [
+              {
+                key: 'below' as const,
+                label: 'Lower Fixed-P endpoint',
+                point: selectedRow.evidence.bracket.below,
+                stationDefinition: selectedRow.evidence.belowStation?.definition ?? null
+              },
+              {
+                key: 'above' as const,
+                label: 'Upper Fixed-P endpoint',
+                point: selectedRow.evidence.bracket.above,
+                stationDefinition: selectedRow.evidence.aboveStation?.definition ?? null
+              }
+            ]
+        : []
+    if (states.length === 0) return
+    const selection = selectedRow.kind === 'vertical'
+      ? {
+          kind: 'vertical' as const,
+          rowIndex: selectedRow.index,
+          criterion: selectedRow.criterion,
+          angleDeg: selectedRow.evidence.angleDeg
+        }
+      : {
+          kind: 'fixedP' as const,
+          rowIndex: selectedRow.index,
+          angleDeg: selectedRow.angleDeg,
+          branch: selectedRow.branch,
+          fixedP: selectedRow.evidence.fixedP,
+          sample: {
+            P: selectedRow.evidence.sample.P,
+            Mx: selectedRow.evidence.sample.Mx,
+            My: selectedRow.evidence.sample.My
+          },
+          exact: selectedRow.evidence.bracket?.exact ?? false,
+          ratio: selectedRow.evidence.bracket?.ratio ?? 0
+        }
+    setExportingCalculationTrace(true)
+    setCalculationExportError(null)
+    try {
+      await downloadCalculationTraceAuditExcel({
+        projectName,
+        sectionName: section.name,
+        calculationProfileId: surface.calculationProfileId,
+        section,
+        rebars,
+        materialStore,
+        analysisOptions: surface.analysisOptions,
+        designBasis,
+        stage: selectedRow.evidence.stage,
+        selection,
+        states
+      })
+    } catch (error: unknown) {
+      setCalculationExportError(`Complete workbook: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setExportingCalculationTrace(false)
+    }
+  }
+
   useEffect(() => {
-    setSelectedRow(null)
-  }, [surface, exactDirectionCurve, fixedP, view.sliceAngle])
+    if (!calculationDialogOpen) return
+    setSelectedRow(resolveChartTableRowSelection(rows, calculationSelectionAnchor))
+  }, [calculationDialogOpen, calculationSelectionAnchor, rows])
+
+  useEffect(() => {
+    setCalculationExportError(null)
+  }, [resistanceStage, selectedRow?.key, source])
 
   const selectSource = (next: ChartTableSource) => {
+    setCalculationDialogOpen(false)
     setSelectedRow(null)
+    setCalculationSelectionAnchor(null)
     setSource(next)
   }
 
-  const selectResistanceStage = (next: 'design' | 'nominal') => {
+  const selectResistanceStage = (next: ChartTableResistanceStage) => {
+    setCalculationDialogOpen(false)
     setSelectedRow(null)
+    setCalculationSelectionAnchor(null)
     setResistanceStage(next)
+  }
+
+  const dialogRows = (
+    nextSource: ChartTableSource,
+    nextStage: ChartTableResistanceStage
+  ) => buildChartTableRows({
+    surface,
+    exactDirectionCurve,
+    source: nextSource,
+    resistanceStage: nextStage,
+    sliceAngleDeg: view.sliceAngle,
+    fixedP
+  })
+
+  const selectDialogSource = (next: ChartTableSource) => {
+    const nextRows = dialogRows(next, resistanceStage)
+    const nextRow = resolveChartTableRowSelection(
+      nextRows,
+      calculationSelectionAnchor ?? selectedRow
+    )
+    setSource(next)
+    setSelectedRow(nextRow)
+    setCalculationSelectionAnchor(nextRow)
+  }
+
+  const selectDialogResistanceStage = (next: ChartTableResistanceStage) => {
+    const nextRows = dialogRows(source, next)
+    const nextRow = resolveChartTableRowSelection(
+      nextRows,
+      calculationSelectionAnchor ?? selectedRow
+    )
+    setResistanceStage(next)
+    setSelectedRow(nextRow)
+    if (nextRow) setCalculationSelectionAnchor(nextRow)
+  }
+
+  const selectDialogRow = (key: string) => {
+    const next = rows.find((row) => row.key === key)
+    if (next) {
+      setSelectedRow(next)
+      setCalculationSelectionAnchor(next)
+    }
+  }
+
+  const openCalculationTrace = (row: ChartTableRow) => {
+    setSelectedRow(row)
+    setCalculationSelectionAnchor(row)
+    setCalculationExportError(null)
+    setCalculationDialogOpen(true)
   }
 
   const rowKeyDown = (event: KeyboardEvent<HTMLTableRowElement>, row: ChartTableRow) => {
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
-    setSelectedRow(row)
+    openCalculationTrace(row)
   }
 
   return (
@@ -368,7 +558,10 @@ export function SectionResultsPanel({
                       aria-label={`Open calculation details for row ${row.index}, beta ${fmt(row.angleDeg, 3)} degrees`}
                       aria-selected={selectedRow?.key === row.key}
                       className={selectedRow?.key === row.key ? 'is-selected' : undefined}
-                      onClick={() => setSelectedRow(row)}
+                      onClick={(event) => {
+                        event.currentTarget.focus()
+                        openCalculationTrace(row)
+                      }}
                       onKeyDown={(event) => rowKeyDown(event, row)}
                     >
                       <td>{row.index}</td>
@@ -410,7 +603,10 @@ export function SectionResultsPanel({
                       aria-label={`Open calculation details for row ${row.index}, ${row.criterion}`}
                       aria-selected={selectedRow?.key === row.key}
                       className={selectedRow?.key === row.key ? 'is-selected' : undefined}
-                      onClick={() => setSelectedRow(row)}
+                      onClick={(event) => {
+                        event.currentTarget.focus()
+                        openCalculationTrace(row)
+                      }}
                       onKeyDown={(event) => rowKeyDown(event, row)}
                     >
                       <td>{row.index}</td>
@@ -426,9 +622,12 @@ export function SectionResultsPanel({
         </div>
       </section>
 
-      {selectedRow && surface ? (
+      {calculationDialogOpen && surface ? (
         <ChartCalculationDialog
           row={selectedRow}
+          rows={rows}
+          source={source}
+          resistanceStage={resistanceStage}
           summary={summary}
           surface={surface}
           projectName={projectName}
@@ -436,7 +635,20 @@ export function SectionResultsPanel({
           rebars={rebars}
           materialStore={materialStore}
           designBasis={designBasis}
-          onClose={() => setSelectedRow(null)}
+          exportingConcreteKey={exportingConcreteKey}
+          exportingCalculationTrace={exportingCalculationTrace}
+          exportError={calculationExportError}
+          onExportConcreteExcel={exportConcreteExcel}
+          onExportCalculationTraceExcel={exportCalculationTraceExcel}
+          onSourceChange={selectDialogSource}
+          onResistanceStageChange={selectDialogResistanceStage}
+          onRowChange={selectDialogRow}
+          onClose={() => {
+            setCalculationDialogOpen(false)
+            setSelectedRow(null)
+            setCalculationSelectionAnchor(null)
+            setCalculationExportError(null)
+          }}
         />
       ) : null}
     </>

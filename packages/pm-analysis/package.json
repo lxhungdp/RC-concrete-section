@@ -7,8 +7,8 @@
   "main": "src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "scripts": {
-    "test": "tsx test/integration/analysis.selftest.ts",
-    "fixture:reference-json": "tsx test/fixtures/write-reference-case.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "fixture:complex-section-json": "tsx test/fixtures/write-complex-section.ts"
   },
   "dependencies": {
     "@pm/design": "0.1.0",

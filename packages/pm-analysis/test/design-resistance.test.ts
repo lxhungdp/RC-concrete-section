@@ -61,6 +61,24 @@ test('uniform-strain audit trace derives epsilon at the origin without inventing
   })
 })
 
+test('declared depth-ratio audit trace derives c from the criterion instead of reverse-labelling the state', () => {
+  const trace = buildCalculationAuditOriginStrainTrace({
+    projectedSectionDepth: 700,
+    neutralAxisDepth: 350,
+    compressionEdgeProjection: 350
+  }, 0.003, {
+    kind: 'depth-ratio',
+    criterionLabel: 'c/D = 0.5',
+    ratio: 0.5
+  })
+  assert.equal(trace.kind, 'neutral-axis-depth')
+  if (trace.kind !== 'neutral-axis-depth') return
+  assert.equal(trace.derivation, 'declared-depth-ratio')
+  assert.equal(trace.neutralAxisDepth, 350)
+  assert.equal(trace.curvatureFromDepth, 0.003 / 350)
+  assert.ok(Math.abs(trace.calculatedE0) <= 1e-15)
+})
+
 test('KDS current profile identifies the 2024 code set without misdating its resistance clauses', () => {
   const basis = createKdsBasicDesignBasis()
   assert.equal(basis.profileId, 'kds-2024-current-set')
@@ -175,6 +193,7 @@ test('design surface preserves IDs and pairs every uncapped design state with it
   assert.ok(capped.every((point) => point.surfaceRole === 'axial-cap'))
   assert.ok(capped.every((point) => point.stationId !== null))
   assert.ok(capped.every((point) => point.onSampledDirection === true))
+  assert.ok(capped.every((point) => point.axialCapTrace?.projection.kind === 'radial'))
   for (const point of capped) {
     const nominalAtState = surface.nominalPoints.find((item) => item.id === point.id)
     assert.deepEqual(point.state, nominalAtState?.state)
@@ -225,7 +244,60 @@ test('selected-point stress-strain audit reproduces every contribution and the s
   assert.ok(Math.abs(audit.displayedLedger.total.P - point.P) <= Math.max(1, Math.abs(point.P)) * 1e-10)
 })
 
-test('selected-point audit refuses to assign a strain calculation to a synthetic axial-cap face', () => {
+test('bar-strain station audit derives steel strain and edge-to-bar depth before c and epsilon0', () => {
+  const basis = createKdsBasicDesignBasis()
+  const sets = buildResistanceMaterialSets(materials, basis)
+  const prepared = prepareAnalysis(section, rebars, sets.stateMaterials)
+  const surface = buildDesignPreviewSurfaceFromPrepared(prepared, materials, basis, compactOptions())
+  const station = surface.stations.find((candidate) =>
+    candidate.definition.kind === 'bar-tension-yield-ratio' && candidate.definition.ratio === 1
+  )
+  assert.ok(station)
+  const point = surface.points.find((candidate) =>
+    candidate.surfaceRole === 'physical-state' && candidate.beta === 0 && candidate.stationId === station.id
+  )
+  assert.ok(point)
+
+  const audit = buildStressStrainPointCalculationAudit(
+    prepared,
+    materials,
+    basis,
+    'design',
+    point,
+    station.definition
+  )
+  assert.equal(audit.kind, 'stress-strain')
+  if (audit.kind !== 'stress-strain') return
+  const trace = audit.depthProfile.originStrainTrace
+  assert.equal(trace.kind, 'controlling-bar-strain')
+  if (trace.kind !== 'controlling-bar-strain') return
+
+  const controllingBar = rebars.reduce((current, candidate) => candidate.y < current.y ? candidate : current)
+  const compressionEdgeY = Math.max(...section.solids.flatMap((solid) => solid.outer.map((vertex) => vertex.y)))
+  const steelMaterialId = controllingBar.steelMaterialId ?? sets.stateMaterials.defaults.steelMaterialId
+  const steelMaterial = sets.stateMaterials.steel.find((candidate) => candidate.id === steelMaterialId)
+  assert.ok(steelMaterial)
+  const expectedYieldStrain = compileSteelMaterial(steelMaterial).limits.epsYield
+  assert.ok(expectedYieldStrain !== undefined)
+  const expectedSteelStrain = -expectedYieldStrain
+  const expectedDepth = compressionEdgeY - controllingBar.y
+  const compressionEdgeStrain = audit.depthProfile.samples[0].strain
+  const expectedCurvature = (compressionEdgeStrain - expectedSteelStrain) / expectedDepth
+  const expectedNeutralAxisDepth = compressionEdgeStrain / expectedCurvature
+  const tolerance = 1e-11
+
+  assert.equal(trace.controllingRebarId, controllingBar.id)
+  assert.ok(Math.abs(trace.yieldStrain - expectedYieldStrain) <= tolerance)
+  assert.ok(Math.abs(trace.controllingSteelStrain - expectedSteelStrain) <= tolerance)
+  assert.ok(Math.abs(trace.compressionEdgeToBarDepth - expectedDepth) <= tolerance)
+  assert.ok(Math.abs(trace.curvatureFromCompatibility - expectedCurvature) <= tolerance)
+  assert.ok(Math.abs(trace.neutralAxisDepth - expectedNeutralAxisDepth) <= tolerance)
+  assert.ok(Math.abs(trace.calculatedE0 - audit.state.e0) <= tolerance)
+  assert.equal(audit.concreteSummary.pointCount, audit.mesh.points)
+  assert.equal(audit.concreteSummary.resultant.P, audit.mechanicalLedger.concrete.P)
+})
+
+test('selected-point audit derives a synthetic axial-cap point from its source crossing and radial projection', () => {
   const basis = createKdsBasicDesignBasis()
   const sets = buildResistanceMaterialSets(materials, basis)
   const prepared = prepareAnalysis(section, rebars, sets.stateMaterials)
@@ -233,8 +305,33 @@ test('selected-point audit refuses to assign a strain calculation to a synthetic
   const point = surface.points.find((candidate) => candidate.surfaceRole === 'axial-cap')
   assert.ok(point)
   const audit = buildStressStrainPointCalculationAudit(prepared, materials, basis, 'design', point)
-  assert.equal(audit.kind, 'unavailable')
-  if (audit.kind === 'unavailable') assert.equal(audit.reason, 'synthetic-axial-cap')
+  assert.equal(audit.kind, 'axial-cap')
+  if (audit.kind !== 'axial-cap') return
+  assert.equal('state' in audit, false, 'a geometric cap audit must not invent a compatible strain state')
+  assert.ok(audit.preCap, 'a capped criterion row must retain its physical pre-cap calculation')
+  assert.equal(audit.preCap.audit.kind, 'stress-strain')
+  assert.equal(audit.preCap.audit.reconciliation.ok, true)
+  assert.equal(audit.preCap.comparison.capGoverns, true)
+  assert.ok(audit.preCap.comparison.calculatedAxialResistance > audit.preCap.comparison.maximumAxialResistance)
+  assert.equal(audit.preCap.comparison.maximumAxialResistance, audit.trace.cap)
+  assert.equal(audit.preCap.comparison.selectedAxialResistance, audit.trace.cap)
+  assert.equal(audit.trace.source.kind, 'edge-interpolation')
+  assert.equal(audit.trace.projection.kind, 'radial')
+  if (audit.trace.source.kind !== 'edge-interpolation' || audit.trace.projection.kind !== 'radial') return
+  const source = audit.trace.source
+  const t = (audit.trace.cap - source.compressionSide.P) /
+    (source.admissibleSide.P - source.compressionSide.P)
+  assert.ok(Math.abs(t - source.interpolationRatio) <= 1e-12)
+  const interpolate = (left: number, right: number) => left + t * (right - left)
+  assert.ok(Math.abs(interpolate(source.compressionSide.P, source.admissibleSide.P) - source.crossing.P) <= 1e-8)
+  assert.ok(Math.abs(interpolate(source.compressionSide.Mx, source.admissibleSide.Mx) - source.crossing.Mx) <= 1e-8)
+  assert.ok(Math.abs(interpolate(source.compressionSide.My, source.admissibleSide.My) - source.crossing.My) <= 1e-8)
+  const q = audit.trace.projection.sourceStationCoordinate /
+    audit.trace.projection.crossingStationCoordinate
+  assert.ok(Math.abs(q - audit.trace.projection.factor) <= 1e-12)
+  assert.ok(Math.abs(source.crossing.Mx * q - point.Mx) <= Math.max(1, Math.abs(point.Mx)) * 1e-12)
+  assert.ok(Math.abs(source.crossing.My * q - point.My) <= Math.max(1, Math.abs(point.My)) * 1e-12)
+  assert.equal(audit.reconciliation.ok, true)
 })
 
 test('design-material format reevaluates the same strain states with design material strengths', () => {
@@ -579,6 +676,14 @@ test('factored ULS utilization uses the 3D proportional demand ray', () => {
   assert.ok(Math.abs(result.proportionalUtilization - 0.5) < 0.02)
   assert.equal(result.utilization, result.proportionalUtilization)
   assert.equal(result.adequate, true)
+  assert.equal(result.utilizationDefinition, 'proportional3D')
+  assert.ok(result.capacityMultiplier != null)
+  assert.ok(Math.abs(result.capacityMultiplier * result.proportionalUtilization - 1) < 1e-12)
+  assert.equal(result.demandMomentDirection, null)
+  assert.equal(result.fixedPDemandMoment, 0)
+  assert.equal(result.fixedPCapacityMoment, null)
+  assert.ok(result.capacityPoint)
+  assert.ok(Math.abs(result.capacityPoint.P - result.capacityMultiplier * loadcase.P) < 1e-6)
 
   const compressionPole = surface.points.find((point) => point.station === 0)
   assert.ok(compressionPole)
@@ -593,4 +698,46 @@ test('factored ULS utilization uses the 3D proportional demand ray', () => {
   )
   assert.ok(compressionResult.proportionalUtilization != null)
   assert.ok(Math.abs(compressionResult.proportionalUtilization - 0.5) < 0.02)
+
+  const biaxialPoint = surface.points.find(
+    (point) => Math.abs(point.P) > 1 && Math.abs(point.Mx) > 1_000_000 && Math.abs(point.My) > 1_000_000
+  )
+  assert.ok(biaxialPoint)
+  const biaxialDemand = createLoadCombination({
+    name: 'Half biaxial resistance',
+    P: biaxialPoint.P / 2,
+    Mx: biaxialPoint.Mx / 2,
+    My: biaxialPoint.My / 2
+  })
+  const biaxialResult = checkLoadcaseUtilizationFromSurface(surface, biaxialDemand)
+  const checkedBiaxialDemand = biaxialResult.codeAdjustedDemand ?? biaxialDemand
+  assert.ok(biaxialResult.demandMomentDirection != null)
+  assert.ok(
+    Math.abs(
+      biaxialResult.demandMomentDirection - Math.atan2(checkedBiaxialDemand.My, checkedBiaxialDemand.Mx)
+    ) < 1e-12
+  )
+  assert.ok(
+    Math.abs(
+      biaxialResult.fixedPDemandMoment - Math.hypot(checkedBiaxialDemand.Mx, checkedBiaxialDemand.My)
+    ) < 1e-6
+  )
+  assert.ok(biaxialResult.fixedPUtilization != null)
+  assert.ok(biaxialResult.fixedPCapacityMoment != null)
+  assert.ok(
+    Math.abs(
+      biaxialResult.fixedPUtilization -
+      biaxialResult.fixedPDemandMoment / biaxialResult.fixedPCapacityMoment
+    ) < 1e-12
+  )
+
+  const zeroResult = checkLoadcaseUtilizationFromSurface(
+    surface,
+    createLoadCombination({ name: 'Zero demand', P: 0, Mx: 0, My: 0 })
+  )
+  assert.equal(zeroResult.proportionalUtilization, 0)
+  assert.equal(zeroResult.capacityMultiplier, null, 'the public DTO must not publish Infinity')
+  assert.equal(zeroResult.demandMomentDirection, null)
+  assert.equal(zeroResult.fixedPDemandMoment, 0)
+  assert.equal(zeroResult.fixedPCapacityMoment, null)
 })

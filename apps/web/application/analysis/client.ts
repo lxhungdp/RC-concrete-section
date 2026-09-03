@@ -10,7 +10,8 @@ import type {
   DemandCheckExcelInput,
   EquivalentBlockExcelInput,
   ExcelExportInput,
-  ChartAuditWorkbookInput
+  ChartAuditWorkbookInput,
+  CalculationTraceAuditWorkbookInput
 } from '@pm/report'
 import type { ReportInput } from '@pm/report/report-model'
 import type { SectionMeshView } from './section-mesh-view'
@@ -305,6 +306,34 @@ export const exportChartAuditWorkbookAsync = async (
       payload: { ...rest, ...workerSurfaceReference(surface) }
     },
     async () => (await loadFallback()).exportChartAuditWorkbookFallback(payload),
+    signal
+  )
+  return new Blob([result], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  })
+}
+
+export const exportConcretePointAuditWorkbookAsync = async (
+  payload: import('@pm/report').ConcretePointAuditWorkbookInput,
+  signal?: AbortSignal
+): Promise<Blob> => {
+  const result = await runWorkerOrFallback<ArrayBuffer>(
+    { type: 'exportConcretePointAudit', payload },
+    async () => (await loadFallback()).exportConcretePointAuditWorkbookFallback(payload),
+    signal
+  )
+  return new Blob([result], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  })
+}
+
+export const exportCalculationTraceAuditWorkbookAsync = async (
+  payload: CalculationTraceAuditWorkbookInput,
+  signal?: AbortSignal
+): Promise<Blob> => {
+  const result = await runWorkerOrFallback<ArrayBuffer>(
+    { type: 'exportCalculationTraceAudit', payload },
+    async () => (await loadFallback()).exportCalculationTraceAuditWorkbookFallback(payload),
     signal
   )
   return new Blob([result], {

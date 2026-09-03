@@ -8,9 +8,10 @@ factored for a declared check. The current project model persists
 reports one row per combination. If future source load cases
 are introduced, each combination retains its component case IDs and factors.
 
-The current web workflow embeds loadcase creation and editing in the Results sidebar. A separate
-top-level Loadings menu is intentionally avoided until source-load management grows beyond simple
-Pu/Mux/Muy combinations.
+The current web workflow owns loadcase creation, editing, governing checks, and check exports in the
+dedicated `Demand Check` workspace. A separate source-load-management workspace is intentionally
+avoided until component load cases and combination assembly grow beyond simple `Pu/Mux/Muy`
+combinations.
 
 `LoadCombination.My` uses the project-wide convention `My = +sum(F*(x-x0))` and needs no mechanics
 discriminator. Stress-strain and equivalent-block surfaces, demand checks, plots, and exports use the
@@ -75,10 +76,11 @@ Classification uses a numerical uncertainty interval and approved margin:
 
 ## 4. Accepted-product Results contract
 
-The current Results workspace implements preview plots, load-combination editing/checks, and
-model-specific field views. Quick checks now expose an uncertainty interval and three-state
-classification. It does not yet satisfy the immutable accepted-result identity, result history, or
-release gates required by this section.
+The current `Section Results` workspace implements preview resistance plots and model-specific
+field views. The separate `Demand Check` workspace implements load-combination editing, governing
+checks, and check exports. Quick checks expose an uncertainty interval and three-state
+classification. Neither workspace yet satisfies the immutable accepted-result identity, result
+history, or release gates required by this section.
 
 For Fixed 27 x 36 mode, the interval uses a 2% regression screening margin derived from the current
 dense-grid comparison matrix. This is not a formal error bound: any interval crossing `UR = 1` is
@@ -103,27 +105,65 @@ capacity. It provides:
 
 The Section Results envelope table is also an on-screen audit entry point. Selecting a row opens a
 stage- and source-specific calculation inspector built from the same stored point/query evidence as
-that row. A Vertical row exposes its physical criterion, compatible state, contribution ledger,
-resistance stages, and final projected ordinate. A Fixed-P row instead exposes the two surface
-states that bracket the selected axial force, the interpolation ratio, and the resulting `Mx`/`My`;
-it must not be presented as one independently solved strain state. The inspector includes the basic
+that row. Compact selectors in the inspector header expose the same complete Vertical/Fixed-P,
+Design/Nominal, and criterion choices as the envelope table without requiring the inspector to be
+closed. Selection identity is the physical Vertical criterion or Fixed-P direction/branch, never
+the displayed row ordinal. If a criterion does not survive geometric clipping into the other
+resistance stage, the inspector identifies it as unavailable until the user chooses another
+criterion; it must not silently open a different calculation.
+A Vertical physical-state row exposes its criterion, compatible state, contribution ledger,
+resistance stages, and final projected ordinate. A Vertical axial-cap row first exposes the retained
+physical calculation for its criterion, with the same compatible state and Concrete/Steel ledgers
+shown when the cap is disabled. It then compares that calculated axial resistance with the maximum
+permitted resistance and exposes the maximum-axial reference, cap ratio/limit, source edge,
+edge-interpolation ratio, radial projection, and resulting `P/Mx/My`. The final cap-face point must
+not inherit that pre-cap strain plane as if it were a unique state on the face. A Fixed-P row exposes the two surface states that bracket the selected axial
+force, the interpolation ratio, and the resulting `Mx`/`My`; it must not be presented as one
+independently solved strain state. A cap-face endpoint uses the same geometric cap audit instead of
+being reported as missing calculation evidence. The inspector includes the basic
 geometry and material inputs before any derived value. It then identifies the numerical integration
 model, draws the compatible strain and concrete-stress profiles with the neutral axis, and publishes
-the origin-strain trace from exact projected depth `D`, the resulting `c/D` and `c`, the active
-extreme compression-edge strain, curvature, and edge projection before displaying `epsilon0`.
-Uniform-strain poles identify the neutral axis at infinity and derive `epsilon0` directly from the
-uniform edge strain. The inspector
-uses units in homogeneous table headers, includes explicit concrete and reinforcement sum rows, and
-shows only concrete and net reinforcement in the resultant summary. Gross steel and displaced
-concrete remain traceable in each reinforcement row and are not repeated in a redundant summary
-table. It also publishes
-the actual material-law equations, effective coefficients, source/provenance status, grouped sums of
-all concrete integration points, every reinforcement/displaced-concrete term, resistance route, and
-a scale-aware reconciliation to the stored table point. The three-point triangle mesh is summarized
-because listing every quadrature row is not usable on screen; the grouped sums remain complete and
-the largest-force term in each material branch is exposed as a readable calculation example.
-Equivalent-block results instead publish the exact clipped polygon area and centroid, `a = beta1 c`,
-block stress, and all bar terms, and state explicitly that no concrete integration mesh is used.
+the origin-strain trace according to the criterion that generated the state. A declared `c/D`
+station derives `c` from the exact projected depth. A declared `epsilon_s/epsilon_y` station first
+establishes the applicable steel yield strain, then the signed controlling-bar strain and exact
+distance from the compression edge to that bar; compatibility then gives curvature, `c`, and
+finally `epsilon0`. Adaptive states are labelled as resolved compatible states rather than being
+misrepresented as `c/D` criteria. Uniform-strain poles identify the neutral axis at infinity and
+derive `epsilon0` directly from the uniform edge strain.
+
+The on-screen basic-input and mesh sections are concise; triangle-rule point coordinates and other
+quadrature details are not displayed there. Concrete detail shows one stage-specific summary row
+for area, integration basis, term count, and `Pc/Mcx/Mcy`, together with one point-specific
+Excel download action. For stress-strain integration, that one-sheet workbook expands the summary
+into every mesh point and the formula columns from compatible strain through concrete stress,
+force, `Pc`, `Mcx`, and `Mcy`; its totals reproduce the on-screen row. For the equivalent-block
+route, which has no mesh, the same action exports the exact clipped-polygon edge ledger and formula
+resultants. Workbook values retain full precision while display formats follow quantity semantics:
+strain and curvature use compact scientific notation, coefficients suppress trailing zeroes,
+calculated stress, force, and concrete/steel contribution columns display two decimals, and summary
+resultants show at most three decimals. Reinforcement and displaced-concrete terms remain explicit on screen. The resultant
+summary shows concrete, net reinforcement, and total resistance in one table with three
+Nominal/reference columns beside three Factored/Design columns; it retains resistance-route
+provenance and a scale-aware reconciliation to the stored point. Calculation criteria are
+presented as unfilled rows in a single formula panel, and all equations use one shared
+calculation-font and subscript contract.
+
+One Excel action in the inspector controls row exports the complete selected Calculation Trace. A
+Vertical trace contains an input/provenance sheet, the same concrete-detail calculation used by the
+section-level Concrete action, a formula-driven per-bar steel/displaced-concrete ledger, and a
+summary that assembles the two contributions and calculates the selected table value without a
+visible stored-result comparison. For a Fixed-P
+intersection, the workbook retains separate lower and upper physical-state detail sheets and
+performs the final `P/Mx/My` interpolation on the summary sheet. The interpolated row is never
+presented as having its own compatible strain state. When a selected Vertical state belongs to the
+axial-cap face and retains a physical criterion source, its workbook first includes the normal
+pre-cap Concrete/Steel sheets and then an `Axial Cap` sheet that compares the calculated axial
+resistance with the maximum permitted value and calculates the source crossing and cap projection.
+A geometric Fixed-P cap endpoint without one retained physical criterion remains an `Axial Cap`-only audit. Its Input
+sheet identifies the endpoint as geometric, leaves strain, curvature, and resistance-factor fields
+unavailable, and must not label a numerical placeholder as a physical or pre-cap state. Detail
+formulas apply the declared resistance
+route exactly once and retain the same origin, units, and signs as the on-screen audit.
 
 Detailed terms are generated lazily from the selected stored state by the owning mechanics package.
 They must reuse the stored profile, applied section, material store, mesh or exact-block evaluator,
@@ -132,8 +172,27 @@ apply resistance factors, or reconstruct resultants. If the recomputed detailed 
 the stored point within the declared scale-aware tolerance, the inspector fails closed.
 
 This inspector is review evidence for the current preview result. It does not make the result
-accepted, independently verified, code compliant, or releasable, and it must identify unavailable
-physical evidence for poles, cap faces, or failed query brackets rather than inventing it.
+accepted, independently verified, code compliant, or releasable. It must identify unavailable
+physical evidence for poles or failed query brackets rather than inventing it; cap faces are
+explicitly identified as geometric and audited through their retained pre-cap physical source when
+available, stored source crossing, and cap operation. The physical source state is evidence for the
+calculation before the cap; it is never assigned to the final face as a unique material state.
+
+The Demand Check load-combination table is a second on-screen audit entry point. A dedicated
+calculation-trace action in each row opens the concise trace for that stable loadcase ID and allows
+another loadcase to be selected without closing the dialog. Editable cells remain dedicated to
+spreadsheet-style input and never double as an implicit modal trigger. The trace first identifies
+the raw factored ULS demand and any
+code-adjusted demand such as a governing minimum-eccentricity candidate. It then shows the demand
+moment direction, the proportional 3D Design-surface ray, its capacity multiplier and boundary
+point, `UR = 1 / lambda_cap`, the numerical uncertainty interval, and the three-state decision used
+by the table. The inverse equilibrium state is shown afterward as a diagnostic, with response,
+residual, iterations, convergence, and material admissibility; it is never presented as the source
+of adequacy. The fixed-`P` moment ratio is last and is explicitly secondary. Missing ray crossings,
+stale/mismatched loadcase evidence, non-convergence, and unevaluated cap-face admissibility remain
+visible unavailable or diagnostic states rather than being replaced with fabricated values. A
+single-loadcase Excel action reuses the existing Demand Check workbook pipeline and works through
+only the selected combination in detail.
 
 Plots shall use the accepted oriented triangle mesh. A convex hull of sampled capacity points is
 prohibited because it can show non-capacity regions as valid.

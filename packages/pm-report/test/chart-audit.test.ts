@@ -27,6 +27,16 @@ import {
   chartAuditWorkbookFileName,
   type ChartAuditWorkbookInput
 } from '../src/excel/chart-audit'
+import {
+  buildConcretePointAuditWorkbook,
+  concretePointAuditWorkbookFileName,
+  type ConcretePointAuditWorkbookInput
+} from '../src/excel/concrete-point-audit'
+import {
+  buildCalculationTraceAuditWorkbook,
+  calculationTraceAuditWorkbookFileName,
+  type CalculationTraceAuditWorkbookInput
+} from '../src/excel/calculation-trace-audit'
 
 const document = referenceProjectDocument()
 const section = sectionGeometryFromGeometryInput(document.inputs.geometry)
@@ -407,7 +417,7 @@ test('vertical chart audit has four traceable sheets and formula-driven result v
   assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b])
   assert.equal(
     chartAuditWorkbookFileName(input),
-    'PM-advanced-(7)-2D-reference-case-vertical-design-beta15-audit.xlsx'
+    'KDS-complex-stress-strain-regression-example-vertical-design-beta15-audit.xlsx'
   )
 })
 
@@ -651,5 +661,409 @@ test('adaptive stations export a resolved physical criterion and derive the stra
     assert.match(result.getCell(row, 14).formula ?? '', /^K\d+-M\d+\*H\d+$/)
     assert.match(result.getCell(row, 15).formula ?? '', /COS\(RADIANS/)
     assert.match(result.getCell(row, 16).formula ?? '', /SIN\(RADIANS/)
+  }
+})
+
+test('point concrete audit exports one fibre sheet with formula totals through Pc, Mcx and Mcy', async () => {
+  const dataset = activeDesignSurfaceDataset(surface)
+  const point = dataset.points.find((item) => item.surfaceRole === 'physical-state' && item.stationId !== null)
+  assert.ok(point)
+  const station = dataset.stations.find((item) => item.id === point.stationId)
+  assert.ok(station)
+  const input: ConcretePointAuditWorkbookInput = {
+    projectName: document.meta.name,
+    sectionName: section.name,
+    calculationProfileId: document.inputs.calculationProfileId,
+    section,
+    rebars,
+    materialStore: document.inputs.materials,
+    analysisOptions,
+    designBasis: document.inputs.design,
+    stage: 'design',
+    point,
+    stationDefinition: station.definition,
+    label: station.label
+  }
+  const workbook = await buildConcretePointAuditWorkbook(input)
+  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ['Concrete'])
+  const concrete = workbook.getWorksheet('Concrete')!
+  assert.match(String(concrete.getCell('A2').value), /PREVIEW — not an accepted result or released report/)
+  assert.equal(concrete.getCell('A10').value, 'No.')
+  assert.equal(concrete.getCell('N10').value, 'Pc (kN)')
+  assert.equal(concrete.getCell('O10').value, 'Mcx (kN·m)')
+  assert.equal(concrete.getCell('P10').value, 'Mcy (kN·m)')
+  assert.equal(concrete.getCell('A4').numFmt, '0.####E+00')
+  assert.equal(concrete.getCell('D4').numFmt, '0.############')
+  assert.equal(concrete.getCell('F4').numFmt, '0.############')
+  assert.equal(concrete.getCell('I4').numFmt, '0.############')
+  assert.equal(concrete.getCell('A7').numFmt, '#,##0.00')
+  assert.match(concrete.getCell('K11').formula ?? '', /^\$A\$4\+\$B\$4\*I11\+\$C\$4\*H11$/)
+  assert.equal(concrete.getCell('K11').numFmt, '0.####E+00')
+  assert.equal(concrete.getCell('L11').numFmt, '#,##0.00')
+  assert.equal(concrete.getCell('M11').numFmt, '#,##0.00')
+  assert.equal(concrete.getCell('N11').numFmt, '#,##0.00')
+  assert.equal(concrete.getCell('O11').numFmt, '#,##0.00')
+  assert.equal(concrete.getCell('P11').numFmt, '#,##0.00')
+  assert.match(concrete.getCell('L11').formula ?? '', /IF\(/)
+  assert.equal(concrete.getCell('N11').formula, 'M11*$D$4/1000')
+  assert.match(concrete.getCell('A7').formula ?? '', /^SUM\(N11:N\d+\)$/)
+  assert.equal(concrete.getCell('A7').result, point.ledger.concrete.P / 1_000)
+  assert.equal(concretePointAuditWorkbookFileName(input).endsWith('-design-concrete.xlsx'), true)
+
+  const { readBack, engine } = await recalculateWorkbook(workbook)
+  assert.deepEqual(formulaErrors(readBack, engine), [])
+  const readBackConcrete = readBack.getWorksheet('Concrete')!
+  assert.equal(readBackConcrete.getCell('D4').numFmt, '0.############')
+  assert.equal(readBackConcrete.getCell('I4').numFmt, '0.############')
+  assert.equal(readBackConcrete.getCell('A7').numFmt, '#,##0.00')
+  const sheetId = engine.getSheetId('Concrete')!
+  const total = engine.getCellValue(engine.simpleCellAddressFromString('A7', sheetId)!)
+  assertNearEngine(Number(total), Number(concrete.getCell('A7').result), 'Concrete point Pc total')
+})
+
+test('point concrete audit exports exact clipped-block edges instead of inventing a mesh', async () => {
+  const parsed = parseProjectDocument(readFileSync(resolve(
+    process.cwd(),
+    'docs/examples/equivalent-block/KDS-EB-01-rectangle-8-bars.pm-project.json'
+  ), 'utf8'))
+  assert.ok(parsed.ok)
+  if (!parsed.ok) return
+  const blockDocument = parsed.document
+  const blockSection = sectionGeometryFromGeometryInput(blockDocument.inputs.geometry)
+  const blockRebars = geometryInputRebars(blockDocument.inputs.geometry)
+  const blockOptions = blockDocument.inputs.analysis as EquivalentBlockAnalysisOptions
+  const blockSurface = buildEquivalentBlockPreviewSurface(
+    blockDocument.inputs.calculationProfileId,
+    blockSection,
+    blockRebars,
+    blockDocument.inputs.materials,
+    blockDocument.inputs.design,
+    blockOptions
+  )
+  const dataset = activeDesignSurfaceDataset(blockSurface)
+  const point = dataset.points.find((item) => item.surfaceRole === 'physical-state' && item.stationId !== null)
+  assert.ok(point)
+  const station = dataset.stations.find((item) => item.id === point.stationId)
+  assert.ok(station)
+  const input: ConcretePointAuditWorkbookInput = {
+    projectName: blockDocument.meta.name,
+    sectionName: blockSection.name,
+    calculationProfileId: blockDocument.inputs.calculationProfileId,
+    section: blockSection,
+    rebars: blockRebars,
+    materialStore: blockDocument.inputs.materials,
+    analysisOptions: blockOptions,
+    designBasis: blockDocument.inputs.design,
+    stage: 'design',
+    point,
+    stationDefinition: station.definition,
+    label: station.label
+  }
+  const workbook = await buildConcretePointAuditWorkbook(input)
+  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ['Concrete_Block'])
+  const block = workbook.getWorksheet('Concrete_Block')!
+  assert.match(String(block.getCell('A2').value), /PREVIEW — not an accepted result or released report/)
+  assert.equal(block.getCell('A10').value, 'No.')
+  assert.equal(block.getCell('C10').value, 'Boundary')
+  assert.equal(block.getCell('M10').value, 'Pc (kN)')
+  assert.equal(block.getCell('N10').value, 'Mcx (kN·m)')
+  assert.equal(block.getCell('O10').value, 'Mcy (kN·m)')
+  assert.equal(block.getCell('A4').numFmt, '#,##0.######')
+  assert.equal(block.getCell('B4').numFmt, '0.############')
+  assert.equal(block.getCell('E4').numFmt, '0.############')
+  assert.equal(block.getCell('A7').numFmt, '#,##0.00')
+  assert.equal(block.getCell('I11').formula, 'E11*H11-G11*F11')
+  assert.equal(block.getCell('M11').numFmt, '#,##0.00')
+  assert.equal(block.getCell('N11').numFmt, '#,##0.00')
+  assert.equal(block.getCell('O11').numFmt, '#,##0.00')
+  assert.equal(block.getCell('J11').formula, 'I11/2')
+  assert.match(block.getCell('A7').formula ?? '', /^SUM\(M11:M\d+\)$/)
+
+  const { readBack, engine } = await recalculateWorkbook(workbook)
+  assert.deepEqual(formulaErrors(readBack, engine), [])
+  const readBackBlock = readBack.getWorksheet('Concrete_Block')!
+  assert.equal(readBackBlock.getCell('B4').numFmt, '0.############')
+  assert.equal(readBackBlock.getCell('A7').numFmt, '#,##0.00')
+  const sheetId = engine.getSheetId('Concrete_Block')!
+  for (const cell of ['A7', 'B7', 'C7']) {
+    const recalculated = engine.getCellValue(engine.simpleCellAddressFromString(cell, sheetId)!)
+    assertNearEngine(Number(recalculated), Number(block.getCell(cell).result), `Concrete block ${cell}`)
+  }
+})
+
+test('calculation-trace workbook reuses concrete detail and links steel into the selected Vertical result', async () => {
+  const dataset = activeDesignSurfaceDataset(surface)
+  const point = dataset.points.find((item) => item.surfaceRole === 'physical-state' && item.stationId !== null)
+  assert.ok(point)
+  const station = dataset.stations.find((item) => item.id === point.stationId)
+  assert.ok(station)
+  const input: CalculationTraceAuditWorkbookInput = {
+    projectName: document.meta.name,
+    sectionName: section.name,
+    calculationProfileId: document.inputs.calculationProfileId,
+    section,
+    rebars,
+    materialStore: document.inputs.materials,
+    analysisOptions,
+    designBasis: document.inputs.design,
+    stage: 'design',
+    selection: {
+      kind: 'vertical',
+      rowIndex: 1,
+      criterion: station.label,
+      angleDeg: point.beta * 180 / Math.PI
+    },
+    states: [{
+      key: 'selected',
+      label: 'Selected Vertical station',
+      point,
+      stationDefinition: station.definition
+    }]
+  }
+  const workbook = await buildCalculationTraceAuditWorkbook(input)
+  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ['Input', 'Concrete', 'Steel', 'Summary'])
+  const inputSheet = workbook.getWorksheet('Input')!
+  assert.notEqual(inputSheet.views[0]?.state, 'frozen')
+  const inputRows = Array.from({ length: inputSheet.rowCount }, (_, index) => index + 1)
+  const valueBeside = (label: string) => {
+    const row = inputRows.find((candidate) => inputSheet.getCell(candidate, 1).value === label)
+    assert.ok(row, `Input must contain ${label}`)
+    return inputSheet.getCell(row, 2).value
+  }
+  assert.equal(valueBeside('Artifact status'), 'PREVIEW — not an accepted result or released report')
+  assert.equal(valueBeside('Method ID'), input.designBasis.identity.methodId)
+  assert.equal(valueBeside('Profile version'), input.designBasis.identity.profileVersion)
+  assert.equal(valueBeside('Verification status'), input.designBasis.verificationStatus)
+  assert.equal(workbook.getWorksheet('Concrete')!.getCell('N10').value, 'Pc (kN)')
+  assert.equal(workbook.getWorksheet('Steel')!.getCell('N10').value, 'Ps (kN)')
+  assert.equal(workbook.getWorksheet('Steel')!.getCell('N7').formula, 'SUM(N11:N28)')
+  for (const cell of ['G11', 'I11', 'K11', 'L11', 'M11', 'N11', 'O11', 'P11']) {
+    assert.equal(workbook.getWorksheet('Steel')!.getCell(cell).numFmt, '#,##0.00')
+  }
+  assert.equal(workbook.getWorksheet('Summary')!.getCell('E6').formula, "'Concrete'!$A$7")
+  assert.equal(workbook.getWorksheet('Summary')!.getCell('E7').formula, "'Steel'!$N$7")
+  assert.equal(workbook.getWorksheet('Summary')!.getCell('E6').numFmt, '#,##0.###')
+  assert.equal(workbook.getWorksheet('Summary')!.getCell('G8').numFmt, '#,##0.###')
+  assert.equal(workbook.getWorksheet('Summary')!.getCell('A10').value, null)
+  assert.equal(workbook.getWorksheet('Summary')!.getCell('C12').value, null)
+  assert.equal(calculationTraceAuditWorkbookFileName(input).endsWith('-design-calculation-trace.xlsx'), true)
+
+  const { readBack, engine } = await recalculateWorkbook(workbook)
+  assert.deepEqual(formulaErrors(readBack, engine), [])
+  const summaryId = engine.getSheetId('Summary')!
+  for (const [cell, expected] of [
+    ['E8', point.P / 1_000],
+    ['F8', point.Mx / 1_000_000],
+    ['G8', point.My / 1_000_000]
+  ] as const) {
+    const actual = engine.getCellValue(engine.simpleCellAddressFromString(cell, summaryId)!)
+    assertNearEngine(Number(actual), expected, `Calculation trace Vertical ${cell}`)
+  }
+})
+
+test('calculation-trace workbook derives a Vertical axial-cap row from its source crossing and projection', async () => {
+  const dataset = activeDesignSurfaceDataset(surface)
+  const point = dataset.points.find((item) => item.surfaceRole === 'axial-cap' && item.axialCapTrace !== undefined)
+  assert.ok(point)
+  const station = dataset.stations.find((item) => item.id === point.stationId) ?? null
+  const angleDeg = point.beta * 180 / Math.PI
+  const input: CalculationTraceAuditWorkbookInput = {
+    projectName: document.meta.name,
+    sectionName: section.name,
+    calculationProfileId: document.inputs.calculationProfileId,
+    section,
+    rebars,
+    materialStore: document.inputs.materials,
+    analysisOptions,
+    designBasis: document.inputs.design,
+    stage: 'design',
+    selection: {
+      kind: 'vertical',
+      rowIndex: 1,
+      criterion: 'Maximum axial cap',
+      angleDeg
+    },
+    states: [{
+      key: 'selected',
+      label: 'Selected Vertical cap point',
+      point,
+      stationDefinition: station?.definition ?? null
+    }]
+  }
+  const workbook = await buildCalculationTraceAuditWorkbook(input)
+  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ['Input', 'Concrete', 'Steel', 'Axial Cap', 'Summary'])
+  const cap = workbook.getWorksheet('Axial Cap')!
+  assert.equal(cap.getCell('C5').formula, 'A5*B5')
+  assert.equal(cap.getCell('B9').formula, "'Concrete'!$A$7+'Steel'!$N$7")
+  assert.equal(cap.getCell('C9').formula, '$C$5')
+  assert.equal(cap.getCell('D9').formula, 'MIN(B9,C9)')
+  assert.equal(cap.getCell('B15').formula, '($C$5-B13)/(B14-B13)')
+  assert.equal(cap.getCell('B19').formula, '$C$5')
+  const summary = workbook.getWorksheet('Summary')!
+  assert.equal(summary.getCell('E6').formula, "'Concrete'!$A$7")
+  assert.equal(summary.getCell('E7').formula, "'Steel'!$N$7")
+  assert.equal(summary.getCell('E9').formula, "'Axial Cap'!$B$19")
+
+  const { readBack, engine } = await recalculateWorkbook(workbook)
+  assert.deepEqual(formulaErrors(readBack, engine), [])
+  const summaryId = engine.getSheetId('Summary')!
+  const expectedM = point.Mx * Math.cos(angleDeg * Math.PI / 180) + point.My * Math.sin(angleDeg * Math.PI / 180)
+  for (const [cell, expected] of [
+    ['E9', point.P / 1_000],
+    ['F9', point.Mx / 1_000_000],
+    ['G9', point.My / 1_000_000],
+    ['B14', point.P / 1_000],
+    ['B15', expectedM / 1_000_000]
+  ] as const) {
+    const actual = engine.getCellValue(engine.simpleCellAddressFromString(cell, summaryId)!)
+    assertNearEngine(Number(actual), expected, `Calculation trace axial cap ${cell}`)
+  }
+})
+
+test('calculation-trace workbook identifies a geometric-only cap endpoint without publishing placeholder strain values', async () => {
+  const parsed = parseProjectDocument(readFileSync(resolve(
+    process.cwd(),
+    'docs/examples/equivalent-block/KDS-EB-01-rectangle-8-bars.pm-project.json'
+  ), 'utf8'))
+  assert.ok(parsed.ok)
+  if (!parsed.ok) return
+  const blockDocument = parsed.document
+  const blockSection = sectionGeometryFromGeometryInput(blockDocument.inputs.geometry)
+  const blockRebars = geometryInputRebars(blockDocument.inputs.geometry)
+  const blockOptions = blockDocument.inputs.analysis as EquivalentBlockAnalysisOptions
+  const blockSurface = buildEquivalentBlockPreviewSurface(
+    blockDocument.inputs.calculationProfileId,
+    blockSection,
+    blockRebars,
+    blockDocument.inputs.materials,
+    blockDocument.inputs.design,
+    blockOptions
+  )
+  const capPoint = activeDesignSurfaceDataset(blockSurface).points.find((point) =>
+    point.surfaceRole === 'axial-cap'
+    && point.axialCapTrace !== undefined
+    && point.axialCapTrace.preCapPoint === undefined
+  )
+  assert.ok(capPoint)
+  const input: CalculationTraceAuditWorkbookInput = {
+    projectName: blockDocument.meta.name,
+    sectionName: blockSection.name,
+    calculationProfileId: blockDocument.inputs.calculationProfileId,
+    section: blockSection,
+    rebars: blockRebars,
+    materialStore: blockDocument.inputs.materials,
+    analysisOptions: blockOptions,
+    designBasis: blockDocument.inputs.design,
+    stage: 'design',
+    selection: {
+      kind: 'vertical',
+      rowIndex: 1,
+      criterion: 'Geometric axial cap',
+      angleDeg: capPoint.beta * 180 / Math.PI
+    },
+    states: [{
+      key: 'selected',
+      label: 'Selected cap endpoint',
+      point: capPoint,
+      stationDefinition: null
+    }]
+  }
+  const workbook = await buildCalculationTraceAuditWorkbook(input)
+  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ['Input', 'Axial Cap', 'Summary'])
+  const inputSheet = workbook.getWorksheet('Input')!
+  const stateRow = Array.from({ length: inputSheet.rowCount }, (_, index) => index + 1)
+    .find((row) => inputSheet.getCell(row, 1).value === 'selected')
+  assert.ok(stateRow)
+  assert.match(String(inputSheet.getCell(stateRow, 2).value), /geometric axial-cap endpoint/)
+  assert.equal(inputSheet.getCell(stateRow, 4).value, 'No unique physical state')
+  for (const column of [5, 6, 7, 8]) {
+    assert.equal(inputSheet.getCell(stateRow, column).value, 'N/A')
+  }
+  const inputText = inputSheet.getSheetValues().flat().map(String).join(' ')
+  assert.doesNotMatch(inputText, /pre-cap source/)
+})
+
+test('calculation-trace workbook keeps both Fixed-P endpoint ledgers and interpolates their summary', async () => {
+  const parsed = parseProjectDocument(readFileSync(resolve(
+    process.cwd(),
+    'docs/examples/equivalent-block/KDS-EB-01-rectangle-8-bars.pm-project.json'
+  ), 'utf8'))
+  assert.ok(parsed.ok)
+  if (!parsed.ok) return
+  const blockDocument = parsed.document
+  const blockSection = sectionGeometryFromGeometryInput(blockDocument.inputs.geometry)
+  const blockRebars = geometryInputRebars(blockDocument.inputs.geometry)
+  const blockOptions = blockDocument.inputs.analysis as EquivalentBlockAnalysisOptions
+  const blockSurface = buildEquivalentBlockPreviewSurface(
+    blockDocument.inputs.calculationProfileId,
+    blockSection,
+    blockRebars,
+    blockDocument.inputs.materials,
+    blockDocument.inputs.design,
+    blockOptions
+  )
+  const dataset = activeDesignSurfaceDataset(blockSurface)
+  const seed = dataset.points.find((point) => point.surfaceRole === 'physical-state' && point.stationId !== null)
+  assert.ok(seed)
+  const meridian = dataset.points
+    .filter((point) => point.surfaceRole === 'physical-state' && point.stationId !== null && Math.abs(point.beta - seed.beta) < 1e-12)
+    .sort((left, right) => left.station - right.station)
+  const pairIndex = meridian.findIndex((point, index) => index + 1 < meridian.length && Math.abs(point.P - meridian[index + 1]!.P) > 1e-6)
+  assert.ok(pairIndex >= 0)
+  const below = meridian[pairIndex]!
+  const above = meridian[pairIndex + 1]!
+  const belowStation = dataset.stations.find((station) => station.id === below.stationId)
+  const aboveStation = dataset.stations.find((station) => station.id === above.stationId)
+  assert.ok(belowStation)
+  assert.ok(aboveStation)
+  const ratio = 0.37
+  const interpolate = (low: number, high: number) => low + ratio * (high - low)
+  const sample = {
+    P: interpolate(below.P, above.P),
+    Mx: interpolate(below.Mx, above.Mx),
+    My: interpolate(below.My, above.My)
+  }
+  const input: CalculationTraceAuditWorkbookInput = {
+    projectName: blockDocument.meta.name,
+    sectionName: blockSection.name,
+    calculationProfileId: blockDocument.inputs.calculationProfileId,
+    section: blockSection,
+    rebars: blockRebars,
+    materialStore: blockDocument.inputs.materials,
+    analysisOptions: blockOptions,
+    designBasis: blockDocument.inputs.design,
+    stage: 'design',
+    selection: {
+      kind: 'fixedP',
+      rowIndex: 1,
+      angleDeg: below.beta * 180 / Math.PI,
+      branch: 1,
+      fixedP: sample.P,
+      sample,
+      exact: false,
+      ratio
+    },
+    states: [
+      { key: 'below', label: 'Lower Fixed-P endpoint', point: below, stationDefinition: belowStation.definition },
+      { key: 'above', label: 'Upper Fixed-P endpoint', point: above, stationDefinition: aboveStation.definition }
+    ]
+  }
+  const workbook = await buildCalculationTraceAuditWorkbook(input)
+  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), [
+    'Input', 'Concrete Below', 'Steel Below', 'Concrete Above', 'Steel Above', 'Summary'
+  ])
+  assert.equal(workbook.getWorksheet('Concrete Below')!.getCell('M10').value, 'Pc (kN)')
+  assert.equal(workbook.getWorksheet('Steel Above')!.getCell('N10').value, 'Ps (kN)')
+
+  const { readBack, engine } = await recalculateWorkbook(workbook)
+  assert.deepEqual(formulaErrors(readBack, engine), [])
+  const summaryId = engine.getSheetId('Summary')!
+  for (const [cell, expected] of [
+    ['B21', sample.P / 1_000],
+    ['B22', sample.Mx / 1_000_000],
+    ['B23', sample.My / 1_000_000]
+  ] as const) {
+    const actual = engine.getCellValue(engine.simpleCellAddressFromString(cell, summaryId)!)
+    assertNearEngine(Number(actual), expected, `Calculation trace Fixed-P ${cell}`)
   }
 })

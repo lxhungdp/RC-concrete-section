@@ -1,27 +1,43 @@
 'use client'
 
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
-import { AlertTriangle, CheckCircle2, Loader2, X } from 'lucide-react'
+import { useEffect, useId, useMemo, useState } from 'react'
+import { AlertTriangle, CheckCircle2, Download, Loader2 } from 'lucide-react'
 import {
   stationDefinitionLabel,
-  type CalculationAuditConcreteGroup,
+  type AxialCapPointCalculationAudit,
   type CalculationAuditOriginStrainTrace,
   type CalculationAuditRebar,
   type PointCalculationAudit,
   type PreviewSurface,
   type PreviewSurfacePoint,
   type Resultant,
-  type ResultantLedger
+  type ResultantLedger,
+  type StationDefinition
 } from '@pm/analysis'
 import type { DesignBasis } from '@pm/design'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialLawAudit, MaterialStore } from '@pm/materials'
 import { buildPointAuditsAsync, isAnalysisAbort } from '../../../application/analysis/client'
-import type { ChartTableFixedPRow, ChartTableRow, ChartTableVerticalRow } from './chart-data-table'
+import type {
+  ChartTableFixedPRow,
+  ChartTableResistanceStage,
+  ChartTableRow,
+  ChartTableSource,
+  ChartTableVerticalRow
+} from './chart-data-table'
+import { CalculationDialogFrame, Fact, Formula, FormulaPanel, Step } from './CalculationDialogFrame'
+
+type PhysicalPointCalculationAudit = Exclude<
+  PointCalculationAudit,
+  { kind: 'unavailable' } | { kind: 'axial-cap' }
+>
 
 type Summary = { concreteArea: number; steelArea: number; rebarCount: number }
 type Props = {
-  row: ChartTableRow
+  row: ChartTableRow | null
+  rows: readonly ChartTableRow[]
+  source: ChartTableSource
+  resistanceStage: ChartTableResistanceStage
   summary: Summary
   surface: PreviewSurface
   projectName: string
@@ -29,6 +45,19 @@ type Props = {
   rebars: GeometryInputRebarView[]
   materialStore: MaterialStore
   designBasis: DesignBasis
+  exportingConcreteKey: string | null
+  exportingCalculationTrace: boolean
+  exportError: string | null
+  onExportConcreteExcel: (request: {
+    key: string
+    label: string
+    point: PreviewSurfacePoint
+    stationDefinition: StationDefinition | null
+  }) => Promise<void>
+  onExportCalculationTraceExcel: () => Promise<void>
+  onSourceChange: (source: ChartTableSource) => void
+  onResistanceStageChange: (stage: ChartTableResistanceStage) => void
+  onRowChange: (key: string) => void
   onClose: () => void
 }
 
@@ -43,34 +72,54 @@ const force = (value: number) => `${forceValue(value)} kN`
 const moment = (value: number) => `${momentValue(value)} kN·m`
 const strain = (value: number) => Number.isFinite(value) ? value.toExponential(4) : '—'
 
-const Fact = ({ label, children }: { label: ReactNode; children: ReactNode }) => (
-  <div className="pm-calc-fact"><span>{label}</span><strong>{children}</strong></div>
-)
-
-const Step = ({ index, title, children }: { index: number | string; title: string; children: ReactNode }) => (
-  <section className="pm-calc-step">
-    <div className="pm-calc-step__heading"><span>{index}</span><h3>{title}</h3></div>
-    <div className="pm-calc-step__body">{children}</div>
-  </section>
-)
-
-const ResultantTable = ({ title, ledger }: { title: string; ledger: ResultantLedger }) => {
+const ResultantComparisonTable = ({ nominal, factored }: {
+  nominal: ResultantLedger
+  factored: ResultantLedger | null
+}) => {
   const summaryRows: Array<[string, Resultant]> = [
-    ['Concrete', ledger.concrete],
-    ['Reinforcement, net', ledger.steel]
+    ['Concrete', nominal.concrete],
+    ['Reinforcement, net', nominal.steel]
   ]
   const cells = (value: Resultant) => <><td>{forceValue(value.P)}</td><td>{momentValue(value.Mx)}</td><td>{momentValue(value.My)}</td></>
+  const factoredRows = factored ? [factored.concrete, factored.steel] : [null, null]
+  const factoredCells = (value: Resultant | null) => value
+    ? cells(value)
+    : <><td>—</td><td>—</td><td>—</td></>
   return (
-    <div className="pm-calc-resultant">
-      <h4>{title}</h4>
-      <div className="pm-calc-table-wrap"><table>
-        <thead><tr><th>Contribution</th><th>P (kN)</th><th>Mx (kN·m)</th><th>My (kN·m)</th></tr></thead>
-        <tbody>{summaryRows.map(([label, value]) => (
-          <tr key={label}><td>{label}</td>{cells(value)}</tr>
+    <div className="pm-calc-table-wrap"><table className="pm-calc-resultant-comparison">
+      <thead>
+        <tr><th rowSpan={2}>Contribution</th><th colSpan={3}>Nominal / reference</th><th colSpan={3}>Factored / Design</th></tr>
+        <tr><th>P (kN)</th><th>Mx (kN·m)</th><th>My (kN·m)</th><th>P (kN)</th><th>Mx (kN·m)</th><th>My (kN·m)</th></tr>
+      </thead>
+      <tbody>{summaryRows.map(([label, value], index) => (
+          <tr key={label}><td>{label}</td>{cells(value)}{factoredCells(factoredRows[index] ?? null)}</tr>
         ))}</tbody>
-        <tfoot><tr><td>Total resistance</td>{cells(ledger.total)}</tr></tfoot>
+      <tfoot><tr><td>Total resistance</td>{cells(nominal.total)}{factoredCells(factored?.total ?? null)}</tr></tfoot>
+    </table></div>
+  )
+}
+
+const ConcreteSummary = ({ audit }: {
+  audit: PhysicalPointCalculationAudit
+}) => {
+  const resultant = audit.displayedLedger.concrete
+  const isStressStrain = audit.kind === 'stress-strain'
+  return (
+    <>
+      <div className="pm-calc-table-wrap"><table className="pm-calc-concrete-summary">
+        <thead><tr>
+          <th>Concrete basis</th><th>Detailed terms</th><th>Area (mm²)</th>
+          <th>Pc (kN)</th><th>Mcx (kN·m)</th><th>Mcy (kN·m)</th>
+        </tr></thead>
+        <tbody><tr>
+          <td>{isStressStrain ? 'Stress–strain mesh' : 'Equivalent block'}</td>
+          <td>{isStressStrain ? `${fmt(audit.concreteSummary.pointCount, 0)} points` : 'Exact polygon'}</td>
+          <td>{fmt(isStressStrain ? audit.concreteSummary.area : audit.block.area)}</td>
+          <td>{forceValue(resultant.P)}</td><td>{momentValue(resultant.Mx)}</td><td>{momentValue(resultant.My)}</td>
+        </tr></tbody>
       </table></div>
-    </div>
+      <p className="pm-calc-caption">The Excel audit expands this summary into the detailed concrete terms and formulas that produce these stage-specific resultants.</p>
+    </>
   )
 }
 
@@ -87,7 +136,7 @@ const sectionBounds = (section: SectionGeometry, rebars: GeometryInputRebarView[
 const CalculationDiagram = ({ section, rebars, audit, patternId }: {
   section: SectionGeometry
   rebars: GeometryInputRebarView[]
-  audit: Exclude<PointCalculationAudit, { kind: 'unavailable' }>
+  audit: PhysicalPointCalculationAudit
   patternId: string
 }) => {
   const bounds = sectionBounds(section, rebars)
@@ -201,7 +250,9 @@ const MaterialLaw = ({ title, law }: { title: string; law: MaterialLawAudit }) =
   return (
     <div className="pm-calc-law">
       <h4>{title}</h4>
-      {law.equations.map((equation) => <code className="pm-calc-formula" key={equation}>{equation}</code>)}
+      <FormulaPanel>
+        {law.equations.map((equation) => <Formula key={equation}><span className="pm-calc-math">{equation}</span></Formula>)}
+      </FormulaPanel>
       {units.map((unit) => (
         <div className="pm-calc-table-wrap" key={unit}><table>
           <thead><tr><th>Symbol</th><th>Parameter</th><th>Value ({materialUnitLabel(unit)})</th><th>Derivation</th></tr></thead>
@@ -218,72 +269,59 @@ const MaterialLaw = ({ title, law }: { title: string; law: MaterialLawAudit }) =
 const OriginStrainTrace = ({ trace }: { trace: CalculationAuditOriginStrainTrace }) => {
   if (trace.kind === 'uniform-strain') return (
     <div className="pm-calc-derivation">
-      <h4><span className="pm-calc-math">ε₀</span> derivation</h4>
-      <dl>
-        <div><dt>Compatible state</dt><dd>Uniform strain; neutral axis at infinity</dd></div>
-        <div><dt><span className="pm-calc-math">κ</span></dt><dd>0 mm⁻¹</dd></div>
-        <div><dt>Extreme-edge strain <span className="pm-calc-math">εc</span></dt><dd>{strain(trace.compressionEdgeStrain)}</dd></div>
-        <div><dt><span className="pm-calc-math">ε₀ = εc</span></dt><dd>{strain(trace.calculatedE0)}</dd></div>
-      </dl>
+      <h4>Compatible strain derivation</h4>
+      <FormulaPanel><Formula><span className="pm-calc-math">κ = 0; c = ∞; ε₀ = εc = {strain(trace.calculatedE0)}</span></Formula></FormulaPanel>
     </div>
   )
+
+  if (trace.kind === 'controlling-bar-strain') return (
+    <div className="pm-calc-derivation">
+      <h4>Criterion → steel strain → neutral-axis depth</h4>
+      <FormulaPanel>
+        <Formula><span className="pm-calc-math">
+          {trace.yieldStrainBasis === 'effective-yield-stress-over-elastic-modulus'
+            ? <>εy = fy,eff / Es = {fmt(trace.effectiveYieldStress)} / {fmt(trace.elasticModulus, 0)} = {strain(trace.yieldStrain)}</>
+            : <>εy = {strain(trace.yieldStrain)} (declared material yield-strain limit)</>}
+          {'; '}εs,req = −({fmt(trace.strainRatio, 4)})εy = {strain(trace.requestedSteelStrain)}
+          {trace.strainLimitApplied
+            ? <>; εs = {strain(trace.controllingSteelStrain)} after the material strain limit</>
+            : <>; εs = εs,req</>}
+        </span></Formula>
+        <Formula><span className="pm-calc-math">
+          d = uc − us = {fmt(trace.compressionEdgeProjection)} − ({fmt(trace.controllingBarProjection)}) = {fmt(trace.compressionEdgeToBarDepth)} mm
+        </span></Formula>
+        <Formula><span className="pm-calc-math">
+          κ = (εc − εs) / d = {strain(trace.curvatureFromCompatibility)} mm⁻¹; c = εc / κ = {fmt(trace.neutralAxisDepth)} mm
+        </span></Formula>
+        <Formula><span className="pm-calc-math">
+          ε₀ = εc − κuc = {strain(trace.calculatedE0)}
+        </span></Formula>
+      </FormulaPanel>
+      <p>Criterion {trace.criterionLabel}; controlling bar #{trace.controllingRebarId}, steel material {trace.steelMaterialId}. Tension strain is negative under the compression-positive convention.</p>
+      {trace.strainLimitApplied ? <p className="is-warning">The requested εs = {strain(trace.requestedSteelStrain)} was limited by the bar material domain; the equations above use the applied strain.</p> : null}
+    </div>
+  )
+
+  const criterion = trace.derivation === 'declared-depth-ratio'
+    ? `${trace.criterionLabel ?? `c/D = ${fmt(trace.neutralAxisDepthRatio, 4)}`}; c = (${fmt(trace.neutralAxisDepthRatio, 4)})D = ${fmt(trace.neutralAxisDepth)} mm`
+    : `Resolved compatible state; c = uc − uNA = ${fmt(trace.neutralAxisDepth)} mm`
   return (
     <div className="pm-calc-derivation">
-      <h4><span className="pm-calc-math">ε₀</span> derivation from the neutral-axis depth</h4>
-      <dl>
-        <div><dt>Projected section depth D</dt><dd>{fmt(trace.projectedSectionDepth)} mm</dd></div>
-        <div><dt>Depth ratio c / D</dt><dd>{fmt(trace.neutralAxisDepthRatio, 4)}</dd></div>
-        <div><dt>c = (c / D)D</dt><dd>{fmt(trace.neutralAxisDepthRatio, 4)} × {fmt(trace.projectedSectionDepth)} = {fmt(trace.neutralAxisDepth)} mm</dd></div>
-        <div><dt>Extreme compression-edge strain <span className="pm-calc-math">εc</span></dt><dd>{strain(trace.compressionEdgeStrain)}</dd></div>
-        <div><dt><span className="pm-calc-math">κ = εc / c</span></dt><dd>{strain(trace.curvatureFromDepth)} mm⁻¹</dd></div>
-        <div><dt>Compression-edge projection uc</dt><dd>{fmt(trace.compressionEdgeProjection)} mm from origin</dd></div>
-        <div><dt><span className="pm-calc-math">ε₀ = εc − κuc</span></dt><dd>{strain(trace.calculatedE0)}</dd></div>
-      </dl>
-      <p>The edge projection is measured from the declared analysis origin along the compression normal. These values are supplied by the mechanics audit DTO.</p>
+      <h4>{trace.derivation === 'declared-depth-ratio' ? 'Depth criterion → neutral-axis depth' : 'Resolved compatible strain state'}</h4>
+      <FormulaPanel>
+        <Formula><span className="pm-calc-math">D = {fmt(trace.projectedSectionDepth)} mm; {criterion}</span></Formula>
+        <Formula><span className="pm-calc-math">κ = εc / c = {strain(trace.curvatureFromDepth)} mm⁻¹; ε₀ = εc − κuc = {strain(trace.calculatedE0)}</span></Formula>
+      </FormulaPanel>
     </div>
   )
 }
 
-const ConcreteGroups = ({ groups, pointCount, area, total }: {
-  groups: CalculationAuditConcreteGroup[]
-  pointCount: number
-  area: number
-  total: Resultant
-}) => (
-  <>
-    <code className="pm-calc-formula">εᵢ = ε₀ + κx·yᵢ + κy·xᵢ; σc,ᵢ = fc(εᵢ); Fc,ᵢ = σc,ᵢ·Aᵢ</code>
-    <code className="pm-calc-formula">Pc = ΣFc,ᵢ; Mcx = ΣFc,ᵢ·yᵢ; Mcy = ΣFc,ᵢ·xᵢ</code>
-    <div className="pm-calc-table-wrap pm-calc-table-wrap--branches"><table className="pm-calc-branch-table">
-      <thead><tr><th>Material-law branch</th><th>Integration<br />(points / mm²)</th><th>Ranges<br />(ε / MPa)</th><th>Resultants<br />(kN / kN·m)</th></tr></thead>
-      <tbody>{groups.map((group) => <tr key={group.id}>
-        <th scope="row">{group.label}</th>
-        <td><span className="pm-calc-stack-group-title">Integration <small>(points / mm²)</small></span><span className="pm-calc-stacked-values"><span><small>Points</small><b>{fmt(group.count, 0)}</b></span><span><small>ΣA</small><b>{fmt(group.area)}</b></span></span></td>
-        <td><span className="pm-calc-stack-group-title">Ranges <small>(ε / MPa)</small></span><span className="pm-calc-stacked-values"><span><small>εmin</small><b>{strain(group.strainMinimum)}</b></span><span><small>εmax</small><b>{strain(group.strainMaximum)}</b></span><span><small>σmin</small><b>{fmt(group.stressMinimum)}</b></span><span><small>σmax</small><b>{fmt(group.stressMaximum)}</b></span></span></td>
-        <td><span className="pm-calc-stack-group-title">Resultants <small>(kN / kN·m)</small></span><span className="pm-calc-stacked-values"><span><small>ΣP</small><b>{forceValue(group.resultant.P)}</b></span><span><small>ΣMx</small><b>{momentValue(group.resultant.Mx)}</b></span><span><small>ΣMy</small><b>{momentValue(group.resultant.My)}</b></span></span></td>
-      </tr>)}</tbody>
-      <tfoot><tr><th scope="row">Σ Concrete</th>
-        <td><span className="pm-calc-stack-group-title">Integration <small>(points / mm²)</small></span><span className="pm-calc-stacked-values"><span><small>Points</small><b>{fmt(pointCount, 0)}</b></span><span><small>ΣA</small><b>{fmt(area)}</b></span></span></td>
-        <td>—</td>
-        <td><span className="pm-calc-stack-group-title">Resultants <small>(kN / kN·m)</small></span><span className="pm-calc-stacked-values"><span><small>ΣP</small><b>{forceValue(total.P)}</b></span><span><small>ΣMx</small><b>{momentValue(total.Mx)}</b></span><span><small>ΣMy</small><b>{momentValue(total.My)}</b></span></span></td>
-      </tr></tfoot>
-    </table></div>
-    <details className="pm-calc-details"><summary>Representative integration term from each branch</summary>
-      <div className="pm-calc-table-wrap"><table>
-        <thead><tr><th>Branch</th><th>x / y (mm)</th><th>A (mm²)</th><th>ε</th><th>σ (MPa)</th><th>F = σA (kN)</th><th>F·y (kN·m)</th><th>F·x (kN·m)</th></tr></thead>
-        <tbody>{groups.map((group) => <tr key={group.id}>
-          <td>{group.label}</td><td>{fmt(group.representative.x)} / {fmt(group.representative.y)}</td><td>{fmt(group.representative.area)}</td>
-          <td>{strain(group.representative.strain)}</td><td>{fmt(group.representative.stress)}</td><td>{forceValue(group.representative.force)}</td>
-          <td>{momentValue(group.representative.Mx)}</td><td>{momentValue(group.representative.My)}</td>
-        </tr>)}</tbody>
-      </table></div>
-    </details>
-  </>
-)
-
 const RebarLedger = ({ bars, total }: { bars: CalculationAuditRebar[]; total: Resultant }) => (
   <>
-    <code className="pm-calc-formula">As = πd²/4; εs = ε₀ + κx·y + κy·x; Fs,net = [σs(εs) − σc,displaced(εs)]·As</code>
-    <code className="pm-calc-formula">Ps = ΣFs,net; Msx = ΣFs,net·y; Msy = ΣFs,net·x</code>
+    <FormulaPanel>
+      <Formula><span className="pm-calc-math">As = πd²/4; εs = ε₀ + κx·y + κy·x; Fs,net = [σs(εs) − σc,displaced(εs)]·As</span></Formula>
+      <Formula><span className="pm-calc-math">Ps = ΣFs,net; Msx = ΣFs,net·y; Msy = ΣFs,net·x</span></Formula>
+    </FormulaPanel>
     <div className="pm-calc-table-wrap"><table>
       <thead><tr><th>Bar</th><th>x (mm)</th><th>y (mm)</th><th>d (mm)</th><th>As (mm²)</th><th>εs</th><th>σs (MPa)</th><th>−σc,disp (MPa)</th><th>σnet (MPa)</th><th>Fnet (kN)</th><th>Mx (kN·m)</th><th>My (kN·m)</th></tr></thead>
       <tbody>{bars.map((bar) => <tr key={bar.id}>
@@ -297,29 +335,24 @@ const RebarLedger = ({ bars, total }: { bars: CalculationAuditRebar[]; total: Re
 )
 
 const ResistanceTrace = ({ audit, point, designBasis }: {
-  audit: Exclude<PointCalculationAudit, { kind: 'unavailable' }>
+  audit: PhysicalPointCalculationAudit
   point: PreviewSurfacePoint
   designBasis: DesignBasis
 }) => {
   const trace = point.resistance
   const materialReevaluation = audit.stage === 'design' && designBasis.format === 'designMaterialReevaluation'
+  const factored = audit.stage === 'design' ? audit.displayedLedger : null
   return (
     <>
+      <ResultantComparisonTable nominal={audit.nominalReferenceLedger} factored={factored} />
       {materialReevaluation ? (
-        <>
-          <ResultantTable title="Nominal/reference resultants at the same compatible state" ledger={audit.nominalReferenceLedger} />
-          <code className="pm-calc-formula">Rnominal = ΣR evaluated with the reference material laws retained by the Design point</code>
-          <ResultantTable title="Design resultants after material-law reevaluation" ledger={audit.mechanicalLedger} />
-        </>
+        <FormulaPanel><Formula><span className="pm-calc-math">RDesign = ΣR evaluated at the same compatible state with the declared Design material laws</span></Formula></FormulaPanel>
+      ) : audit.resistanceFactor === null ? (
+        <FormulaPanel><Formula><span className="pm-calc-math">Rshown = Rintegration (the active material laws already represent the selected {audit.stage} stage; no global φ is applied)</span></Formula></FormulaPanel>
       ) : (
-        <ResultantTable title={audit.resistanceFactor === null ? 'Integrated resultants used by the selected stage' : 'Nominal/reference resultants before φ'} ledger={audit.mechanicalLedger} />
+        <FormulaPanel><Formula><span className="pm-calc-math">Rdesign = φ·Rnominal = {fmt(audit.resistanceFactor, 4)}·Rnominal</span></Formula></FormulaPanel>
       )}
-      {audit.resistanceFactor === null ? (
-        <code className="pm-calc-formula">Rshown = Rintegration (the active material laws already represent the selected {audit.stage} stage; no global φ is applied)</code>
-      ) : (
-        <code className="pm-calc-formula">Rdesign = φ·Rnominal = {fmt(audit.resistanceFactor, 4)}·Rnominal</code>
-      )}
-      {audit.resistanceFactor === null ? null : <ResultantTable title="Resultants after the stored strength-reduction factor" ledger={audit.displayedLedger} />}
+      {audit.stage === 'nominal' ? <p className="pm-calc-caption">Factored / Design columns are intentionally unavailable while the table is in Nominal mode.</p> : null}
       {trace ? <div className="pm-calc-facts">
         <Fact label="Classification">{trace.classification}</Fact><Fact label="Stored factor φ">{trace.factor === null ? 'material reevaluation' : fmt(trace.factor, 4)}</Fact>
         {trace.controllingTensileStrain === null ? null : <Fact label="Controlling tensile strain">{strain(trace.controllingTensileStrain)}</Fact>}
@@ -343,20 +376,119 @@ const ResistanceTrace = ({ audit, point, designBasis }: {
   )
 }
 
-const PhysicalAudit = ({ audit, point, title, section, rebars, designBasis, patternId, startIndex = 3 }: {
+const AxialCapAudit = ({
+  audit,
+  stationDefinition,
+  title,
+  startIndex
+}: {
+  audit: AxialCapPointCalculationAudit
+  stationDefinition: StationDefinition | null
+  title: string
+  startIndex: number
+}) => {
+  const { trace } = audit
+  const comparison = audit.preCap?.comparison
+  const source = trace.source
+  const crossing = source.crossing
+  const capRatio = trace.capRatio === null ? '—' : fmt(trace.capRatio, 6)
+  const sourceRows = source.kind === 'source-vertex'
+    ? [['Source vertex', source.point] as const]
+    : [
+        ['Compression-side endpoint', source.compressionSide] as const,
+        ['Admissible-side endpoint', source.admissibleSide] as const
+      ]
+  return (
+    <Step index={startIndex} title={`${title}: maximum axial-force check`}>
+      <div className="pm-calc-facts">
+        {comparison ? <Fact label="Calculated P before limit">{force(comparison.calculatedAxialResistance)}</Fact> : null}
+        <Fact label="Uncapped maximum P">{force(trace.maximumAxialResistance)}</Fact>
+        <Fact label="Cap ratio">{capRatio}</Fact>
+        <Fact label="Maximum permitted Pmax">{force(trace.cap)}</Fact>
+        {comparison ? <Fact label="Selection">{comparison.capGoverns ? 'Pmax governs' : 'Calculated P retained'}</Fact> : null}
+        <Fact label="Construction">{trace.projection.kind === 'radial' ? 'Edge crossing + radial projection' : source.kind === 'edge-interpolation' ? 'Edge crossing' : 'Exact source vertex'}</Fact>
+      </div>
+      <FormulaPanel>
+        <Formula><span className="pm-calc-math">
+          {trace.capRatio === null
+            ? <>Pmax = {force(trace.cap)} (the source surface has no nonzero scalar reference for a ratio)</>
+            : <>Pmax = αcap·Puncapped,max = {capRatio}·{force(trace.maximumAxialResistance)} = {force(trace.cap)}</>}
+        </span></Formula>
+        {comparison ? <Formula><span className="pm-calc-math">
+          Pselected = min(Pcalculated, Pmax) = min({force(comparison.calculatedAxialResistance)}, {force(comparison.maximumAxialResistance)}) = {force(comparison.selectedAxialResistance)}; {comparison.capGoverns ? 'Pmax governs' : 'Pcalculated is retained'}
+        </span></Formula> : null}
+        {source.kind === 'edge-interpolation' ? <>
+          <Formula><span className="pm-calc-math">t = (Pmax − Pcompression)/(Padmissible − Pcompression) = {fmt(source.interpolationRatio, 8)}</span></Formula>
+          <Formula><span className="pm-calc-math">Rcross = Rcompression + t(Radmissible − Rcompression) = ({force(crossing.P)}, {moment(crossing.Mx)}, {moment(crossing.My)})</span></Formula>
+        </> : <Formula><span className="pm-calc-math">Rcross = Rsource = ({force(crossing.P)}, {moment(crossing.Mx)}, {moment(crossing.My)})</span></Formula>}
+        {trace.projection.kind === 'radial' ? <>
+          <Formula><span className="pm-calc-math">q = sring / scross = {fmt(trace.projection.sourceStationCoordinate, 6)} / {fmt(trace.projection.crossingStationCoordinate, 6)} = {fmt(trace.projection.factor, 8)}</span></Formula>
+          <Formula><span className="pm-calc-math">Rcap = (Pcap, q·Mx,cross, q·My,cross) = ({force(audit.displayedLedger.total.P)}, {moment(audit.displayedLedger.total.Mx)}, {moment(audit.displayedLedger.total.My)})</span></Formula>
+        </> : <Formula><span className="pm-calc-math">Rcap = Rcross = ({force(audit.displayedLedger.total.P)}, {moment(audit.displayedLedger.total.Mx)}, {moment(audit.displayedLedger.total.My)})</span></Formula>}
+      </FormulaPanel>
+      <div className="pm-calc-table-wrap"><table>
+        <thead><tr><th>Cap source</th><th>P (kN)</th><th>Mx (kN·m)</th><th>My (kN·m)</th></tr></thead>
+        <tbody>
+          {sourceRows.map(([label, point]) => <tr key={label}><td>{label}</td><td>{forceValue(point.P)}</td><td>{momentValue(point.Mx)}</td><td>{momentValue(point.My)}</td></tr>)}
+          <tr><td>Crossing at Pcap</td><td>{forceValue(crossing.P)}</td><td>{momentValue(crossing.Mx)}</td><td>{momentValue(crossing.My)}</td></tr>
+        </tbody>
+        <tfoot><tr><td>Stored cap point</td><td>{forceValue(audit.displayedLedger.total.P)}</td><td>{momentValue(audit.displayedLedger.total.Mx)}</td><td>{momentValue(audit.displayedLedger.total.My)}</td></tr></tfoot>
+      </table></div>
+      <p className="pm-calc-caption">
+        {stationDefinition
+          ? `${stationDefinitionLabel(stationDefinition)} identifies the structured cap ring; it does not supply a physical strain plane after the cap operation.`
+          : 'This point belongs to the geometric cap face and therefore has no unique compatible strain plane.'}
+      </p>
+      <div className={`pm-calc-note${audit.reconciliation.ok ? '' : ' is-error'}`}>
+        {audit.reconciliation.ok ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+        <p><b>Cap-result reconciliation:</b> max normalized Δ = {audit.reconciliation.relativeMaximum.toExponential(3)} (limit {audit.reconciliation.tolerance.toExponential(1)}). The cap equations {audit.reconciliation.ok ? 'reproduce' : 'do not reproduce'} the point used by the table.</p>
+      </div>
+    </Step>
+  )
+}
+
+const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, section, rebars, designBasis, patternId, exportingConcreteKey, onExportConcreteExcel, startIndex = 3 }: {
   audit: PointCalculationAudit
   point: PreviewSurfacePoint
+  stationDefinition: StationDefinition | null
+  exportKey: string
   title: string
   section: SectionGeometry
   rebars: GeometryInputRebarView[]
   designBasis: DesignBasis
   patternId: string
+  exportingConcreteKey: string | null
+  onExportConcreteExcel: Props['onExportConcreteExcel']
   startIndex?: number
 }) => {
   if (audit.kind === 'unavailable') return (
     <Step index={startIndex} title={`${title}: physical calculation evidence`}>
       <div className="pm-calc-note is-error"><AlertTriangle size={16} /><p>{audit.message}</p></div>
     </Step>
+  )
+  if (audit.kind === 'axial-cap') return (
+    <>
+      {audit.preCap ? <PhysicalAudit
+        audit={audit.preCap.audit}
+        point={audit.preCap.point}
+        stationDefinition={stationDefinition}
+        exportKey={`${exportKey}-pre-cap`}
+        title={`${title} · before maximum-P limit`}
+        section={section}
+        rebars={rebars}
+        designBasis={designBasis}
+        patternId={`${patternId}-pre-cap`}
+        exportingConcreteKey={exportingConcreteKey}
+        onExportConcreteExcel={onExportConcreteExcel}
+        startIndex={startIndex}
+      /> : null}
+      <AxialCapAudit
+        audit={audit}
+        stationDefinition={stationDefinition}
+        title={title}
+        startIndex={startIndex + (audit.preCap ? 4 : 0)}
+      />
+    </>
   )
   return (
     <>
@@ -368,30 +500,39 @@ const PhysicalAudit = ({ audit, point, title, section, rebars, designBasis, patt
           <Fact label="Neutral-axis depth c">{audit.depthProfile.neutralAxisDepth === null ? '∞ (uniform strain)' : `${fmt(audit.depthProfile.neutralAxisDepth)} mm${audit.depthProfile.neutralAxisInsideSection ? '' : ' · outside section'}`}</Fact>
         </div>
         <OriginStrainTrace trace={audit.depthProfile.originStrainTrace} />
-        <code className="pm-calc-formula">ε(x,y) = ε₀ + κx·(y − y₀) + κy·(x − x₀)</code>
+        <FormulaPanel><Formula><span className="pm-calc-math">ε(x,y) = ε₀ + κx·(y − y₀) + κy·(x − x₀)</span></Formula></FormulaPanel>
         <CalculationDiagram section={section} rebars={rebars} audit={audit} patternId={patternId} />
       </Step>
 
-      <Step index={startIndex + 1} title={`${title}: concrete calculation`}>
-        {audit.kind === 'stress-strain' ? (
-          <><MaterialLaw title="Concrete law and active coefficients" law={audit.concreteLaw} /><ConcreteGroups groups={audit.concreteGroups} pointCount={audit.mesh.points} area={audit.mesh.meshed.area} total={audit.mechanicalLedger.concrete} /></>
-        ) : (
-          <>
-            <div className="pm-calc-facts">
-              <Fact label="c">{fmt(audit.block.neutralAxisDepth)} mm</Fact><Fact label="β1 / depth coefficient">{fmt(audit.block.beta1, 4)}</Fact>
-              <Fact label="a = β1c">{fmt(audit.block.blockDepth)} mm</Fact><Fact label="σblock">{fmt(audit.block.compressionStress)} MPa</Fact>
-              <Fact label="Exact clipped area Ablock">{fmt(audit.block.area)} mm²</Fact><Fact label="Block centroid x / y">{fmt(audit.block.centroidX)} / {fmt(audit.block.centroidY)} mm</Fact>
-            </div>
-            <code className="pm-calc-formula">a = β1·c = {fmt(audit.block.beta1, 4)} × {fmt(audit.block.neutralAxisDepth)} = {fmt(audit.block.blockDepth)} mm</code>
-            <code className="pm-calc-formula">Cc = σblock·Ablock = {fmt(audit.block.compressionStress)} × {fmt(audit.block.area)} = {force(audit.block.resultant.P)}</code>
-            <code className="pm-calc-formula">Mcx = Cc·ȳ = {moment(audit.block.resultant.Mx)}; Mcy = Cc·x̄ = {moment(audit.block.resultant.My)}</code>
-            <p className="pm-calc-source"><b>Basis:</b> {audit.provenance.document} · {audit.provenance.concrete}. Method {audit.provenance.methodId}; {audit.provenance.verificationStatus}.</p>
-          </>
-        )}
+      <Step
+        index={startIndex + 1}
+        title={`${title}: concrete detail`}
+        action={<button
+          type="button"
+          className="pm-calc-excel-button"
+          disabled={exportingConcreteKey !== null}
+          onClick={() => void onExportConcreteExcel({
+            key: exportKey,
+            label: title,
+            point,
+            stationDefinition
+          })}
+          title={audit.kind === 'stress-strain'
+            ? 'Download every concrete mesh point and its Pc, Mcx and Mcy formulas'
+            : 'Download the exact clipped-block edge calculation'}
+        >
+          <span>Excel</span>
+          {exportingConcreteKey === exportKey
+            ? <Loader2 size={15} className="pm-spin" />
+            : <Download size={15} />}
+        </button>}
+      >
+        <ConcreteSummary audit={audit} />
       </Step>
 
       <Step index={startIndex + 2} title={`${title}: reinforcement and displaced concrete`}>
         <RebarLedger bars={audit.rebars} total={audit.mechanicalLedger.steel} />
+        <p className="pm-calc-caption">These bar rows are the mechanics-stage net reinforcement ledger. The final comparison table is authoritative for the Nominal/reference and displayed Design resultants and applies any global resultant factor exactly once.</p>
         {audit.steelLaws.map((entry) => <details className="pm-calc-details" key={entry.materialId}><summary>Steel material {entry.materialId}: {entry.name}</summary><MaterialLaw title="Steel law and active coefficients" law={entry.law} /></details>)}
       </Step>
 
@@ -402,20 +543,19 @@ const PhysicalAudit = ({ audit, point, title, section, rebars, designBasis, patt
   )
 }
 
-const IntegrationModel = ({ surface }: { surface: PreviewSurface }) => (
-  <Step index={2} title="Integration model / geometry evidence">
+const IntegrationModel = ({ surface, geometricCap }: { surface: PreviewSurface; geometricCap: boolean }) => (
+  <Step index={2} title="Mesh / integration summary">
     {surface.mechanics === 'equivalent-rectangular-block' ? (
       <div className="pm-calc-note"><CheckCircle2 size={16} /><p><b>Exact block clipping.</b> No concrete fibre mesh is used. The physical section and holes are clipped against the active block half-plane; its exact polygon area and centroid are shown in the point calculation below.</p></div>
     ) : (
       <>
         <div className="pm-calc-facts">
           <Fact label="Base cell h">{fmt(surface.mesh.cellSize)} mm</Fact><Fact label="Clipped cells">{fmt(surface.mesh.cells, 0)}</Fact>
-          <Fact label="Triangles">{fmt(surface.mesh.triangles, 0)}</Fact><Fact label="Gauss points">{fmt(surface.mesh.points, 0)} (= 3 per triangle)</Fact>
           <Fact label="Exact / integrated area">{fmt(surface.mesh.exact.area)} / {fmt(surface.mesh.meshed.area)} mm²</Fact><Fact label="Area difference">{fmt(surface.mesh.areaError)} mm²</Fact>
-          <Fact label="First-moment ΔQx / ΔQy">{fmt(surface.mesh.firstMomentXError)} / {fmt(surface.mesh.firstMomentYError)} mm³</Fact><Fact label="Discarded sliver area">{fmt(surface.mesh.discardedArea)} mm²</Fact>
         </div>
-        <code className="pm-calc-formula">Triangle rule: barycentric points (2/3, 1/6, 1/6) and permutations; each weight Ai = Atriangle/3.</code>
-        <p className="pm-calc-source"><b>Numerical basis:</b> clipped-cell mesh and degree-2 triangle quadrature, docs/02-meshing-2d.md §5. The exact boundary still controls area origin, extreme fibres and section dimensions.</p>
+        <p className="pm-calc-caption">The exact boundary remains authoritative for section properties and extreme fibres. {geometricCap
+          ? 'The retained physical criterion state is integrated in full below; the final cap face is then audited through its source crossing without inventing another strain state.'
+          : 'Detailed integration points are available in the Excel audit.'}</p>
       </>
     )}
   </Step>
@@ -435,11 +575,17 @@ const FixedPSchematic = ({ row }: { row: ChartTableFixedPRow }) => {
   )
 }
 
-const VerticalResult = ({ row }: { row: ChartTableVerticalRow }) => {
+const calculationAuditStepCount = (audit: PointCalculationAudit | undefined) => {
+  if (!audit || audit.kind === 'unavailable') return 1
+  if (audit.kind === 'axial-cap') return audit.preCap ? 5 : 1
+  return 4
+}
+
+const VerticalResult = ({ row, index }: { row: ChartTableVerticalRow; index: number }) => {
   const selected = row.evidence.stage === 'design' ? row.design : row.nominal
   if (!selected) return null
-  return <Step index={7} title="Value shown in the Vertical table">
-    <code className="pm-calc-formula">Mβ = Mx·cosβ + My·sinβ, with β = {fmt(row.evidence.angleDeg)}°</code>
+  return <Step index={index} title="Value shown in the Vertical table">
+    <FormulaPanel><Formula><span className="pm-calc-math">Mβ = Mx·cosβ + My·sinβ, with β = {fmt(row.evidence.angleDeg)}°</span></Formula></FormulaPanel>
     <div className="pm-calc-final"><Fact label={`${row.evidence.stage} P`}>{force(selected.total.P)}</Fact><Fact label={`${row.evidence.stage} Mβ`}>{moment(selected.total.M)}</Fact></div>
   </Step>
 }
@@ -449,31 +595,36 @@ const FixedPResult = ({ row, index }: { row: ChartTableFixedPRow; index: number 
   const selected = stage === 'design' ? row.design : row.nominal
   return <Step index={index} title="Fixed-P interpolation and value shown in the table">
     {!bracket ? <div className="pm-calc-note is-error"><AlertTriangle size={16} /><p>No same-meridian bracket is attached to this row; interpolation evidence is unavailable.</p></div> : bracket.exact ? (
-      <code className="pm-calc-formula">Pselected = Pstation; Mx = {moment(sample.Mx)}; My = {moment(sample.My)}</code>
+      <FormulaPanel><Formula><span className="pm-calc-math">Pselected = Pstation; Mx = {moment(sample.Mx)}; My = {moment(sample.My)}</span></Formula></FormulaPanel>
     ) : <>
-      <code className="pm-calc-formula">t = (Pselected − Pbelow)/(Pabove − Pbelow) = ({force(fixedP)} − {force(bracket.below.P)})/({force(bracket.above.P)} − {force(bracket.below.P)}) = {fmt(bracket.ratio, 6)}</code>
-      <code className="pm-calc-formula">Mx = Mx,below + t(Mx,above − Mx,below) = {moment(sample.Mx)}</code>
-      <code className="pm-calc-formula">My = My,below + t(My,above − My,below) = {moment(sample.My)}</code>
+      <FormulaPanel>
+        <Formula><span className="pm-calc-math">t = (Pselected − Pbelow)/(Pabove − Pbelow) = ({force(fixedP)} − {force(bracket.below.P)})/({force(bracket.above.P)} − {force(bracket.below.P)}) = {fmt(bracket.ratio, 6)}</span></Formula>
+        <Formula><span className="pm-calc-math">Mx = Mx,below + t(Mx,above − Mx,below) = {moment(sample.Mx)}</span></Formula>
+        <Formula><span className="pm-calc-math">My = My,below + t(My,above − My,below) = {moment(sample.My)}</span></Formula>
+      </FormulaPanel>
     </>}
     {selected ? <div className="pm-calc-final"><Fact label={`${stage} P`}>{force(sample.P)}</Fact><Fact label={`${stage} Mx`}>{moment(selected.Mx)}</Fact><Fact label={`${stage} My`}>{moment(selected.My)}</Fact></div> : null}
-    <p className="pm-calc-caption">This interpolated contour point has no invented strain plane. Its lower and upper physical states are audited independently above.</p>
+    <p className="pm-calc-caption">This contour point has no invented strain plane. Each endpoint is audited independently above; a cap-face endpoint is traced through its stored geometric cap construction.</p>
   </Step>
 }
 
-export function ChartCalculationDialog({ row, summary, surface, projectName, section, rebars, materialStore, designBasis, onClose }: Props) {
-  const titleId = useId()
+export function ChartCalculationDialog({ row, rows, source, resistanceStage, summary, surface, projectName, section, rebars, materialStore, designBasis, exportingConcreteKey, exportingCalculationTrace, exportError, onExportConcreteExcel, onExportCalculationTraceExcel, onSourceChange, onResistanceStageChange, onRowChange, onClose }: Props) {
   const patternId = useId().replace(/:/g, '')
-  const stage = row.evidence.stage
+  const stage = row?.evidence.stage ?? resistanceStage
   const [audits, setAudits] = useState<Map<string, PointCalculationAudit>>(new Map())
   const [auditError, setAuditError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const requestedPoints = useMemo(() => {
-    if (row.kind === 'vertical') return [{ key: 'selected', point: row.evidence.point }]
+    if (!row) return []
+    if (row.kind === 'vertical') return [{ key: 'selected', point: row.evidence.point, stationDefinition: row.evidence.station?.definition ?? null }]
     const bracket = row.evidence.bracket
     if (!bracket) return []
     return bracket.exact
-      ? [{ key: 'below', point: bracket.below }]
-      : [{ key: 'below', point: bracket.below }, { key: 'above', point: bracket.above }]
+      ? [{ key: 'below', point: bracket.below, stationDefinition: row.evidence.belowStation?.definition ?? null }]
+      : [
+          { key: 'below', point: bracket.below, stationDefinition: row.evidence.belowStation?.definition ?? null },
+          { key: 'above', point: bracket.above, stationDefinition: row.evidence.aboveStation?.definition ?? null }
+        ]
   }, [row])
 
   useEffect(() => {
@@ -510,64 +661,116 @@ export function ChartCalculationDialog({ row, summary, surface, projectName, sec
     return () => controller.abort()
   }, [designBasis, materialStore, rebars, requestedPoints, section, stage, surface.analysisOptions, surface.calculationProfileId])
 
-  useEffect(() => {
-    const keydown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
-    window.addEventListener('keydown', keydown)
-    return () => window.removeEventListener('keydown', keydown)
-  }, [onClose])
-
   const basicConcrete = materialStore.concrete
+  const selectedAudit = audits.get('selected')
+  const belowAudit = audits.get('below')
+  const aboveAudit = audits.get('above')
+  const belowStartIndex = 4
+  const aboveStartIndex = belowStartIndex + calculationAuditStepCount(belowAudit)
+  const fixedPResultIndex = aboveStartIndex + (row?.kind === 'fixedP' && !row.evidence.bracket?.exact
+    ? calculationAuditStepCount(aboveAudit)
+    : 0)
   return (
-    <div className="pm-calculation-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <article className="pm-calculation-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <header className="pm-calculation-dialog__header"><div>
-          <div className="pm-calc-kicker">CALCULATION TRACE · {row.kind === 'vertical' ? 'VERTICAL' : 'FIXED-P'} · {stage.toUpperCase()}</div>
-          <h2 id={titleId}>{row.kind === 'vertical' ? row.criterion : `β = ${fmt(row.angleDeg)}° · branch ${row.branch}`}</h2>
-          <p>Row {row.index} · trace from project inputs to the exact stored table value.</p>
-        </div><button type="button" className="pm-calculation-dialog__close" aria-label="Close calculation details" onClick={onClose}><X size={18} /></button></header>
-
-        <div className="pm-calculation-dialog__body">
-          <Step index={1} title="Basic project, section and material inputs">
+    <CalculationDialogFrame
+      title="CALCULATION TRACE"
+      closeLabel="Close calculation details"
+      bodyKey={`${stage}-${row?.key ?? 'empty'}`}
+      onClose={onClose}
+      controls={<div className="pm-calculation-dialog__selectors" aria-label="Calculation trace selection">
+            <label className="pm-calculation-dialog__selector">
+              <span>View</span>
+              <select
+                aria-label="Calculation trace view"
+                value={source}
+                onChange={(event) => onSourceChange(event.target.value as ChartTableSource)}
+              >
+                <option value="vertical">Vertical</option>
+                <option value="fixedP">Fixed-P</option>
+              </select>
+            </label>
+            <label className="pm-calculation-dialog__selector">
+              <span>Stage</span>
+              <select
+                aria-label="Calculation trace resistance stage"
+                value={resistanceStage}
+                onChange={(event) => onResistanceStageChange(event.target.value as ChartTableResistanceStage)}
+              >
+                <option value="design">Design</option>
+                <option value="nominal">Nominal</option>
+              </select>
+            </label>
+            <label className="pm-calculation-dialog__selector pm-calculation-dialog__selector--row">
+              <span>Criteria</span>
+              <select
+                aria-label="Calculation trace criteria"
+                value={row?.key ?? ''}
+                disabled={rows.length === 0}
+                onChange={(event) => onRowChange(event.target.value)}
+              >
+                {rows.length === 0 ? <option value="">No criteria available</option> : null}
+                {rows.length > 0 && !row ? <option value="" disabled>Selected criterion unavailable in this stage</option> : null}
+                {rows.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.kind === 'vertical'
+                      ? `${option.index}. ${option.criterion}`
+                      : `${option.index}. β ${fmt(option.angleDeg, 3)}° · branch ${option.branch}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="pm-calc-excel-button pm-calc-excel-button--report"
+              disabled={exportingCalculationTrace || requestedPoints.length === 0 || !surface.calculationProfileId}
+              onClick={() => void onExportCalculationTraceExcel()}
+              title="Download the complete formula-linked audit for this selected result row"
+            >
+              <span>Excel</span>
+              {exportingCalculationTrace ? <Loader2 size={15} className="pm-spin" /> : <Download size={15} />}
+            </button>
+          </div>}
+    >
+          {exportError ? <div className="pm-calc-note is-error" role="alert"><AlertTriangle size={16} /><p><b>Export failed:</b> {exportError}</p></div> : null}
+          {!row ? (
+            <div className="pm-calc-note is-warning"><AlertTriangle size={16} /><p>{rows.length === 0
+              ? 'No calculation criteria are available for the selected View and Stage. The dialog remains open so another selection can be made.'
+              : 'The selected criterion is not present in this resistance stage after geometric surface processing. Choose another criterion or switch back to restore the previous selection; no different calculation has been substituted.'}</p></div>
+          ) : <>
+          <Step index={1} title="Basic inputs">
             <div className="pm-calc-facts">
               <Fact label="Project / section">{projectName || 'Untitled project'} · {section.name}</Fact>
-              <Fact label="Exact net concrete area Ac">{fmt(summary.concreteArea)} mm²</Fact>
-              <Fact label="Reinforcement">{summary.rebarCount} bars · As = {fmt(summary.steelArea)} mm²</Fact>
-              <Fact label="Concrete input">{basicConcrete.name} · fck = {fmt(basicConcrete.fck)} MPa</Fact>
+              <Fact label="Section">Ac = {fmt(summary.concreteArea)} mm² · {summary.rebarCount} bars · As = {fmt(summary.steelArea)} mm²</Fact>
               {surface.mechanics === 'stress-strain-integration' ? (
-                <Fact label="Concrete local law">{basicConcrete.stressStrain.type} · εcu = {strain(basicConcrete.limits.epsCu)}</Fact>
+                <Fact label="Concrete">{basicConcrete.name} · fck = {fmt(basicConcrete.fck)} MPa · {basicConcrete.stressStrain.type} · εcu = {strain(basicConcrete.limits.epsCu)}</Fact>
               ) : (
-                <Fact label="Equivalent-block strain input">εcu = {strain(basicConcrete.limits.epsCu)} · local fibre curve is not used</Fact>
+                <Fact label="Concrete">{basicConcrete.name} · fck = {fmt(basicConcrete.fck)} MPa · equivalent block · εcu = {strain(basicConcrete.limits.epsCu)}</Fact>
               )}
-              <Fact label="Steel inputs">{materialStore.steel.map((steel) => `${steel.name}: fy=${fmt(steel.fy)}, Es=${fmt(steel.elasticModulus, 0)} MPa`).join(' · ')}</Fact>
-              <Fact label="Reference frame">x/y about exact net-concrete centroid; Mx=ΣF(y−y0), My=ΣF(x−x0)</Fact>
-              <Fact label="Units / sign">N, mm, MPa · compression-positive P</Fact>
-              <Fact label="Governing document">{designBasis.identity.document}</Fact>
-              <Fact label="Edition / method">{designBasis.identity.edition} · {designBasis.identity.methodId}</Fact>
+              <Fact label="Steel">{materialStore.steel.map((steel) => `${steel.name}: fy=${fmt(steel.fy)}, Es=${fmt(steel.elasticModulus, 0)} MPa`).join(' · ')}</Fact>
+              <Fact label="Design basis">{designBasis.identity.document.split(' · ')[0]}</Fact>
             </div>
           </Step>
 
-          <IntegrationModel surface={surface} />
+          <IntegrationModel surface={surface} geometricCap={requestedPoints.some((item) => item.point.surfaceRole === 'axial-cap')} />
 
           {loading ? <div className="pm-calc-loading"><Loader2 size={17} className="pm-spin" /><span>Re-evaluating the selected stored state in the analysis worker and reconciling every contribution…</span></div> : null}
           {auditError ? <div className="pm-calc-note is-error"><AlertTriangle size={16} /><p><b>Blocking audit failure:</b> {auditError}</p></div> : null}
 
-          {!loading && !auditError && row.kind === 'vertical' && audits.get('selected') ? <>
-            <PhysicalAudit audit={audits.get('selected')!} point={row.evidence.point} title="Selected Vertical station" section={section} rebars={rebars} designBasis={designBasis} patternId={`${patternId}-vertical`} />
-            <VerticalResult row={row} />
+          {!loading && !auditError && row.kind === 'vertical' && selectedAudit ? <>
+            <PhysicalAudit audit={selectedAudit} point={row.evidence.point} stationDefinition={row.evidence.station?.definition ?? null} exportKey="selected" title="Selected Vertical station" section={section} rebars={rebars} designBasis={designBasis} patternId={`${patternId}-vertical`} exportingConcreteKey={exportingConcreteKey} onExportConcreteExcel={onExportConcreteExcel} />
+            <VerticalResult row={row} index={3 + calculationAuditStepCount(selectedAudit)} />
           </> : null}
 
           {!loading && !auditError && row.kind === 'fixedP' ? <>
-            <Step index={3} title="Fixed-P row definition and physical brackets">
+            <Step index={3} title="Fixed-P row definition and source brackets">
               <div className="pm-calc-facts"><Fact label="Selected axial force">{force(row.evidence.fixedP)}</Fact><Fact label="Meridian β / branch">{fmt(row.angleDeg)}° / {row.branch}</Fact></div>
               <FixedPSchematic row={row} />
-              <p className="pm-calc-caption">Fixed-P is a surface-edge intersection. The two endpoint calculations below remain separate; no unique strain state is assigned to their interpolation.</p>
+              <p className="pm-calc-caption">Fixed-P is a surface-edge intersection. Its endpoint traces remain separate; physical endpoints show their compatible state, while cap-face endpoints show the exact geometric cap operation.</p>
             </Step>
-            {row.evidence.bracket && audits.get('below') ? <PhysicalAudit audit={audits.get('below')!} point={row.evidence.bracket.below} title={`Lower endpoint · ${row.evidence.belowStation ? stationDefinitionLabel(row.evidence.belowStation.definition) : row.evidence.bracket.below.stationId ?? 'physical state'}`} section={section} rebars={rebars} designBasis={designBasis} patternId={`${patternId}-below`} startIndex={4} /> : null}
-            {row.evidence.bracket && !row.evidence.bracket.exact && audits.get('above') ? <PhysicalAudit audit={audits.get('above')!} point={row.evidence.bracket.above} title={`Upper endpoint · ${row.evidence.aboveStation ? stationDefinitionLabel(row.evidence.aboveStation.definition) : row.evidence.bracket.above.stationId ?? 'physical state'}`} section={section} rebars={rebars} designBasis={designBasis} patternId={`${patternId}-above`} startIndex={8} /> : null}
-            <FixedPResult row={row} index={row.evidence.bracket?.exact ? 8 : 12} />
+            {row.evidence.bracket && belowAudit ? <PhysicalAudit audit={belowAudit} point={row.evidence.bracket.below} stationDefinition={row.evidence.belowStation?.definition ?? null} exportKey="below" title={`Lower endpoint · ${row.evidence.belowStation ? stationDefinitionLabel(row.evidence.belowStation.definition) : row.evidence.bracket.below.stationId ?? 'physical state'}`} section={section} rebars={rebars} designBasis={designBasis} patternId={`${patternId}-below`} exportingConcreteKey={exportingConcreteKey} onExportConcreteExcel={onExportConcreteExcel} startIndex={belowStartIndex} /> : null}
+            {row.evidence.bracket && !row.evidence.bracket.exact && aboveAudit ? <PhysicalAudit audit={aboveAudit} point={row.evidence.bracket.above} stationDefinition={row.evidence.aboveStation?.definition ?? null} exportKey="above" title={`Upper endpoint · ${row.evidence.aboveStation ? stationDefinitionLabel(row.evidence.aboveStation.definition) : row.evidence.bracket.above.stationId ?? 'physical state'}`} section={section} rebars={rebars} designBasis={designBasis} patternId={`${patternId}-above`} exportingConcreteKey={exportingConcreteKey} onExportConcreteExcel={onExportConcreteExcel} startIndex={aboveStartIndex} /> : null}
+            <FixedPResult row={row} index={fixedPResultIndex} />
           </> : null}
-        </div>
-      </article>
-    </div>
+          </>}
+    </CalculationDialogFrame>
   )
 }

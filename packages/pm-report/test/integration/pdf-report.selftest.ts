@@ -9,7 +9,7 @@
  * Run: npm run test:pdf-report
  */
 import assert from 'node:assert/strict'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
 import { buildResistanceMaterialSets } from '@pm/design'
@@ -28,14 +28,14 @@ import { buildEquivalentBlockPreviewSurface } from '@pm/analysis-equivalent-bloc
 import { buildColumnReportModel } from '../../src/model/report-model'
 import { columnReportFileName, renderColumnReport } from '../../src/pdf/column-report'
 
-const OUT_DIR = resolve(process.cwd(), 'docs/examples/reference-case/generated')
+const OUT_DIR = resolve(process.cwd(), 'outputs/report-selftest/pdf')
 const UNICODE_FONT = new Uint8Array(readFileSync(
   resolve(process.cwd(), 'apps/web/public/fonts/PMReportUnicode-Regular.ttf')
 ))
 
 const CASES = [
   {
-    file: 'docs/examples/reference-case/projects/PM-advanced (7) 2D.pm-project.json',
+    file: 'docs/examples/realistic-sections/KDS-REAL-05-complex-stress-strain.pm-project.json',
     label: 'stress-strain',
     archive: true,
     rebindTo: null
@@ -53,7 +53,7 @@ const CASES = [
     rebindTo: 'as-3600-2018-amd2-equivalent-block' as const
   },
   {
-    file: 'docs/examples/reference-case/projects/PM-advanced (7) 2D.pm-project.json',
+    file: 'docs/examples/realistic-sections/KDS-REAL-05-complex-stress-strain.pm-project.json',
     label: 'en-1992-preview',
     archive: false,
     rebindTo: 'en-1992-1-1-2004-stress-strain' as const
@@ -327,6 +327,7 @@ const runCase = async (
 }
 
 const run = async () => {
+  mkdirSync(OUT_DIR, { recursive: true })
   for (const testCase of CASES) {
     await runCase(testCase.file, testCase.label, testCase.archive, testCase.rebindTo)
   }

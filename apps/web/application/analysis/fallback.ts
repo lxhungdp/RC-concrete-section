@@ -29,12 +29,16 @@ import {
 import { buildResistanceMaterialSets, createDefaultDesignBasis, type DesignBasis } from '@pm/design'
 import {
   buildChartAuditWorkbookBytes,
+  buildCalculationTraceAuditWorkbookBytes,
+  buildConcretePointAuditWorkbookBytes,
   buildDemandCheckWorkbookBytes,
   exportEquivalentBlockWorkbook,
   exportMeshAuditDxf,
   exportMeshAuditWorkbook,
   exportSectionWorkbook,
   type ChartAuditWorkbookInput,
+  type CalculationTraceAuditWorkbookInput,
+  type ConcretePointAuditWorkbookInput,
   type DemandCheckExcelInput,
   type EquivalentBlockExcelInput,
   type ExcelExportInput
@@ -173,20 +177,21 @@ export const buildSectionMeshFallback = (payload: BuildSectionMeshPayload): Sect
 export const buildPointAuditsFallback = (payload: BuildPointAuditsPayload) => {
   if (isEquivalentBlockAnalysisOptions(payload.analysisOptions)) {
     const prepared = blockFor(payload)
-    return payload.points.map(({ key, point }) => ({
+    return payload.points.map(({ key, point, stationDefinition }) => ({
       key,
-      audit: buildEquivalentBlockPointCalculationAudit(prepared, payload.stage, point)
+      audit: buildEquivalentBlockPointCalculationAudit(prepared, payload.stage, point, stationDefinition)
     }))
   }
   const prepared = preparedFor({ ...payload, analysisOptions: payload.analysisOptions })
-  return payload.points.map(({ key, point }) => ({
+  return payload.points.map(({ key, point, stationDefinition }) => ({
     key,
     audit: buildStressStrainPointCalculationAudit(
       prepared,
       payload.materialStore,
       payload.designBasis,
       payload.stage,
-      point
+      point,
+      stationDefinition
     )
   }))
 }
@@ -220,6 +225,14 @@ const exactArrayBuffer = (bytes: Uint8Array): ArrayBuffer =>
 export const exportChartAuditWorkbookFallback = async (
   payload: ChartAuditWorkbookInput
 ): Promise<ArrayBuffer> => exactArrayBuffer(await buildChartAuditWorkbookBytes(payload))
+
+export const exportConcretePointAuditWorkbookFallback = async (
+  payload: ConcretePointAuditWorkbookInput
+): Promise<ArrayBuffer> => exactArrayBuffer(await buildConcretePointAuditWorkbookBytes(payload))
+
+export const exportCalculationTraceAuditWorkbookFallback = async (
+  payload: CalculationTraceAuditWorkbookInput
+): Promise<ArrayBuffer> => exactArrayBuffer(await buildCalculationTraceAuditWorkbookBytes(payload))
 
 export const exportDemandCheckWorkbookFallback = async (
   payload: DemandCheckExcelInput

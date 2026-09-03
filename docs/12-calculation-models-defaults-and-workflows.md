@@ -105,8 +105,12 @@ All profiles use `unified-27-v2`:
 Here `D` is the projected full section depth in the active direction. `εₛ` is the tensile-strain
 magnitude at the controlling longitudinal bar and `εy` is that bar material's yield strain. The
 schedule deliberately contains no automatically inserted strength-reduction transition point.
-Design and nominal resistance use the same 27 fixed states. The five additional values around the
-high-curvature yield range are fixed criteria, not adaptive results.
+Design and nominal resistance evaluate the same 27 fixed states before any geometric maximum-
+axial-resistance clipping. The five additional values around the high-curvature yield range are
+fixed criteria, not adaptive results. A clipped Design surface can replace or remove high-
+compression vertices from its published topology; that operation does not change the fixed-state
+schedule. Presentation must preserve station identity across resistance stages and must never
+substitute another displayed row merely because it has the same ordinal position.
 
 ### 2.2 Direction default
 
@@ -259,7 +263,12 @@ equilibrium proof.
 When a physical state exists, admissibility evaluates maximum concrete compression and every bar
 strain against the actual code/material limits. Declared steel `eps_u` bounds surface construction
 and is enforced by the inverse result. An axial-cap face has no unique compatible strain state, so it
-is explicitly marked `evaluated=false` rather than assigned a fabricated `eps_c=eps_cu` check.
+is explicitly marked `evaluated=false` rather than assigned a fabricated `eps_c=eps_cu` check. A
+selected structured criterion that is replaced by the cap retains its physical pre-cap point for a
+normal material/ledger audit and explicit comparison with the maximum permitted axial resistance.
+The selected cap result then remains auditable through its stored maximum-axial limit, source
+vertex/edge, edge interpolation, and cap-face projection. Those geometric equations reproduce
+`P/Mx/My` without assigning the retained pre-cap material state to the final cap face.
 
 The worker caches the immutable core Design surface by profile, geometry, rebars, materials,
 DesignBasis, and analysis options. Load combinations are deliberately absent from that key, so a

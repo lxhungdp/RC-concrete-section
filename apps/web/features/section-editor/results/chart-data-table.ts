@@ -15,8 +15,16 @@ import {
   type ResultantLedger,
   type SurfaceStation
 } from '@pm/analysis'
-import type { ChartAuditWorkbookInput } from '@pm/report'
-import { exportChartAuditWorkbookAsync } from '../../../application/analysis/client'
+import type {
+  CalculationTraceAuditWorkbookInput,
+  ChartAuditWorkbookInput,
+  ConcretePointAuditWorkbookInput
+} from '@pm/report'
+import {
+  exportCalculationTraceAuditWorkbookAsync,
+  exportChartAuditWorkbookAsync,
+  exportConcretePointAuditWorkbookAsync
+} from '../../../application/analysis/client'
 
 export type ChartTableSource = 'vertical' | 'fixedP'
 export type ChartTableResistanceStage = 'design' | 'nominal'
@@ -77,6 +85,29 @@ export type ChartTableFixedPRow = {
 }
 
 export type ChartTableRow = ChartTableVerticalRow | ChartTableFixedPRow
+
+/**
+ * Keep the calculation inspector open when its table source or resistance stage changes. Selection
+ * identity is semantic: a Vertical station key, or a Fixed-P direction/branch. Ordinal row numbers
+ * are presentation only and must never select a different calculation when cap clipping changes the
+ * row count. A source change deliberately starts at the first row of the new source.
+ */
+export const resolveChartTableRowSelection = (
+  rows: readonly ChartTableRow[],
+  current: ChartTableRow | null
+): ChartTableRow | null => {
+  if (rows.length === 0) return null
+  if (!current) return rows[0] ?? null
+  if (rows[0]?.kind !== current.kind) return rows[0] ?? null
+  if (current.kind === 'vertical') {
+    return rows.find((row) => row.kind === 'vertical' && row.key === current.key) ?? null
+  }
+  return rows.find((row) =>
+    row.kind === 'fixedP'
+    && row.directionId === current.directionId
+    && row.branch === current.branch
+  ) ?? null
+}
 
 const kn = (value: number) => value / 1000
 const knm = (value: number) => value / 1_000_000
@@ -142,14 +173,15 @@ const collectVertical = (
       existing.evidence = evidence
       continue
     }
+    const stationLabel = stationDefinitionLabel(
+      station?.definition ??
+      { kind: 'block-adaptive', label: 'Adaptive midpoint' }
+    )
     drafts.set(key, {
       kind: 'vertical',
       key,
       sort: point.station,
-      criterion: stationDefinitionLabel(
-        station?.definition ??
-        { kind: 'block-adaptive', label: 'Adaptive midpoint' }
-      ),
+      criterion: stationLabel,
       design: stage === 'design' ? forces : null,
       nominal: stage === 'nominal' ? forces : null,
       evidence
@@ -426,6 +458,32 @@ export const downloadChartAuditExcel = async (
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = input.fileName ?? chartAuditWorkbookFileName(input)
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+export const downloadConcretePointAuditExcel = async (
+  input: ConcretePointAuditWorkbookInput & { fileName?: string }
+) => {
+  const blob = await exportConcretePointAuditWorkbookAsync(input)
+  const { concretePointAuditWorkbookFileName } = await import('@pm/report')
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = input.fileName ?? concretePointAuditWorkbookFileName(input)
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+export const downloadCalculationTraceAuditExcel = async (
+  input: CalculationTraceAuditWorkbookInput & { fileName?: string }
+) => {
+  const blob = await exportCalculationTraceAuditWorkbookAsync(input)
+  const { calculationTraceAuditWorkbookFileName } = await import('@pm/report')
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = input.fileName ?? calculationTraceAuditWorkbookFileName(input)
   anchor.click()
   URL.revokeObjectURL(url)
 }

@@ -2705,22 +2705,72 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 }
 
 .pm-side-panel .pm-loadcase-table col.pm-col-load {
-  width: 18%;
+  width: 56px;
 }
 
 .pm-side-panel .pm-loadcase-table col.pm-col-ur {
-  width: 14%;
+  width: 36px;
 }
 
+.pm-side-panel .pm-loadcase-table col.pm-col-detail,
 .pm-side-panel .pm-loadcase-table col.pm-col-action {
-  width: 30px;
+  width: 22px;
+}
+
+/* Keep the narrow Check panel useful: spend width on data, not nested cell gutters. */
+.pm-side-panel .pm-loadcase-units {
+  align-self: flex-end;
+  margin-top: -4px;
+  margin-bottom: -6px;
+  color: var(--sp-text-3);
+  font-size: var(--sp-fs-1);
+  font-weight: 500;
+  line-height: 1;
+}
+
+.pm-side-panel .pm-panel-section .pm-loadcase-table-wrap {
+  margin-right: calc(0px - var(--sp-5, 14px));
+  margin-left: calc(0px - var(--sp-5, 14px));
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+}
+
+.pm-side-panel .pm-loadcase-table th {
+  padding-right: 2px;
+  padding-left: 2px;
+}
+
+.pm-side-panel .pm-loadcase-table td {
+  padding: 1px;
+}
+
+.pm-side-panel .pm-loadcase-table td:first-child {
+  padding-left: 3px;
+}
+
+.pm-side-panel .pm-loadcase-table input {
+  padding-right: 3px;
+  padding-left: 3px;
 }
 
 .pm-side-panel .pm-loadcase-table th.pm-col-ur,
 .pm-side-panel .pm-loadcase-table td.pm-col-ur,
+.pm-side-panel .pm-loadcase-table th.pm-col-detail,
+.pm-side-panel .pm-loadcase-table td.pm-col-detail,
 .pm-side-panel .pm-loadcase-table th.pm-col-action,
 .pm-side-panel .pm-loadcase-table td.pm-col-action {
   text-align: center;
+}
+
+.pm-side-panel .pm-loadcase-actions {
+  gap: 0;
+}
+
+.pm-side-panel .pm-loadcase-actions .pm-table-icon-btn {
+  width: 20px;
+  height: 20px;
+  margin: 0;
 }
 
 .pm-side-panel .pm-design-select-wrap svg {

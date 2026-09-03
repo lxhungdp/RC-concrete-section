@@ -94,7 +94,6 @@ import {
   isAnalysisAbort
 } from '../../application/analysis/client'
 import { ExcelExportError, demandCheckWorkbookFileName } from '@pm/report'
-import { LoadingsPanel } from './loadings/LoadingsPanel'
 import { CalculationBasisToolbar } from './CalculationBasisToolbar'
 import { PROJECT_EXAMPLES, type ProjectExample } from './project-examples'
 import {
@@ -134,6 +133,21 @@ const EquivalentBlockGeometryWorkspace = dynamic(
     loading: () => <WorkspaceLoading title="Loading the equivalent block view…" charts={1} />
   }
 )
+
+const SectionResultsPanel = dynamic(
+  () => import('./results/SectionResultsPanel').then((module) => module.SectionResultsPanel),
+  { ssr: false }
+)
+
+const LoadingsPanel = dynamic(
+  () => import('./loadings/LoadingsPanel').then((module) => module.LoadingsPanel),
+  { ssr: false }
+)
+
+const LoadcaseCalculationDialog = dynamic(
+  () => import('./results/LoadcaseCalculationDialog').then((module) => module.LoadcaseCalculationDialog),
+  { ssr: false }
+)
 import { AnalysisOptionsPanel } from './analysis/AnalysisOptionsPanel'
 import { MaterialPanel } from './materials/MaterialPanel'
 import { RebarPanel } from './geometry/RebarPanel'
@@ -146,13 +160,18 @@ import {
   decodeProjectSharePayload,
   projectSharePayloadFromHash
 } from './project/project-share'
-import { SectionResultsPanel, type SectionResultsSummary } from './results/SectionResultsPanel'
+import type { SectionResultsSummary } from './results/SectionResultsPanel'
 import {
   createDemandCheckView,
   createSectionResultsView,
   type DemandCheckView,
   type SectionResultsView
 } from './results/results-view'
+import {
+  currentLoadcaseEvidence,
+  currentLoadcaseEvidenceMap,
+  sameLoadcaseDemand
+} from './results/loadcase-calculation-trace'
 import {
   downloadRebarWorkbook,
   downloadSectionWorkbook,
@@ -283,13 +302,6 @@ const formatNumber = (value: number, digits = 1) =>
 
 const normalizeAngleDeg = (degrees: number) => ((degrees % 360) + 360) % 360
 
-const sameLoadcaseDemand = (left: LoadCombination, right: LoadCombination) =>
-  left.id === right.id &&
-  left.P === right.P &&
-  left.Mx === right.Mx &&
-  left.My === right.My &&
-  left.actionBasis === right.actionBasis
-
 const copyTextToClipboard = async (value: string): Promise<void> => {
   if (navigator.clipboard?.writeText) {
     try {
@@ -311,6 +323,15 @@ const copyTextToClipboard = async (value: string): Promise<void> => {
   const copied = window.document.execCommand('copy')
   textArea.remove()
   if (!copied) throw new Error('The project link could not be copied to the clipboard.')
+}
+
+const downloadBlob = (blob: Blob, fileName: string) => {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = fileName
+  anchor.click()
+  URL.revokeObjectURL(url)
 }
 
 const eventPoint = (event: React.PointerEvent<SVGSVGElement> | React.WheelEvent<SVGSVGElement>, svg: SVGSVGElement) => {
@@ -652,6 +673,9 @@ export function SectionDrawingClient() {
     createDefaultDesignBasis(createDefaultMaterialStore())
   )
   const [selectedLoadcaseId, setSelectedLoadcaseId] = useState<number | null>(null)
+  const [calculationLoadcaseId, setCalculationLoadcaseId] = useState<number | null>(null)
+  const [calculationExporting, setCalculationExporting] = useState(false)
+  const [calculationExportError, setCalculationExportError] = useState<string | null>(null)
   const [reportDetailIds, setReportDetailIds] = useState<number[]>([])
   const [reportState, setReportState] = useState<'idle' | 'working' | 'error'>('idle')
   const [reportMessage, setReportMessage] = useState('')
@@ -793,22 +817,32 @@ export function SectionDrawingClient() {
       selectedLoadcase
     ]
   )
-  const fallbackChartSnapshot =
-    lastResolvedChartSnapshot &&
-    loadingsInput.combinations.some((item) => item.id === lastResolvedChartSnapshot.loadcase.id)
-      ? lastResolvedChartSnapshot
-      : null
-  const chartSnapshot = selectedResolvedChartSnapshot ?? fallbackChartSnapshot
-  const chartLoadcaseId = chartSnapshot?.loadcase.id ?? selectedLoadcaseId
-  const chartLoadcases = useMemo(() => {
-    if (!chartSnapshot) return loadingsInput.combinations
-    return loadingsInput.combinations.map((loadcase) =>
-      loadcase.id === chartSnapshot.loadcase.id &&
-      !sameLoadcaseDemand(loadcase, chartSnapshot.loadcase)
-        ? chartSnapshot.loadcase
-        : loadcase
-    )
-  }, [chartSnapshot, loadingsInput.combinations])
+  // A loadcase transition must never borrow the previous row's completed solver frame. The last
+  // snapshot is retained only to keep one analysis revision internally consistent while its own
+  // geometry/material inputs are being invalidated.
+  const chartSnapshot = selectedResolvedChartSnapshot
+  const chartLoadcaseId = selectedLoadcaseId
+  const calculationLoadcase = calculationLoadcaseId === null
+    ? null
+    : loadingsInput.combinations.find((item) => item.id === calculationLoadcaseId) ?? null
+  const calculationCheckCandidate = calculationLoadcaseId === null
+    ? null
+    : quickChecksById[calculationLoadcaseId] ?? null
+  const calculationCheck = currentLoadcaseEvidence(calculationLoadcase, calculationCheckCandidate)
+  const calculationInverseCandidate = calculationLoadcaseId === null
+    ? null
+    : inverseResults[calculationLoadcaseId] ?? null
+  const calculationInverse = currentLoadcaseEvidence(calculationLoadcase, calculationInverseCandidate)
+  const currentQuickChecksById = useMemo(
+    () => currentLoadcaseEvidenceMap(loadingsInput.combinations, quickChecksById),
+    [loadingsInput.combinations, quickChecksById]
+  )
+
+  useEffect(() => {
+    if (activeModule === 'demand' && (calculationLoadcaseId === null || calculationLoadcase)) return
+    setCalculationLoadcaseId(null)
+    setCalculationExportError(null)
+  }, [activeModule, calculationLoadcase, calculationLoadcaseId])
 
   useEffect(() => {
     if (selectedResolvedChartSnapshot) {
@@ -818,10 +852,13 @@ export function SectionDrawingClient() {
       ) {
         setLastResolvedChartSnapshot(selectedResolvedChartSnapshot)
       }
-    } else if (lastResolvedChartSnapshot && !fallbackChartSnapshot) {
+    } else if (
+      lastResolvedChartSnapshot &&
+      !loadingsInput.combinations.some((item) => item.id === lastResolvedChartSnapshot.loadcase.id)
+    ) {
       setLastResolvedChartSnapshot(null)
     }
-  }, [fallbackChartSnapshot, lastResolvedChartSnapshot, selectedResolvedChartSnapshot])
+  }, [lastResolvedChartSnapshot, loadingsInput.combinations, selectedResolvedChartSnapshot])
 
   const changeCalculationProfile = (profileId: CalculationProfileId) => {
     setCalculationProfileId(profileId)
@@ -1214,6 +1251,18 @@ export function SectionDrawingClient() {
       })
   }
 
+  const openLoadcaseCalculation = (loadcase: LoadCombination) => {
+    setCalculationLoadcaseId(loadcase.id)
+    setCalculationExportError(null)
+    calculateInverseForLoadcase(loadcase)
+  }
+
+  const changeCalculationLoadcase = (id: number) => {
+    const loadcase = loadingsInput.combinations.find((item) => item.id === id)
+    if (!loadcase) return
+    openLoadcaseCalculation(loadcase)
+  }
+
   /**
    * Build the PDF from the surface already on screen.
    *
@@ -1243,12 +1292,7 @@ export function SectionDrawingClient() {
         loadcases: loadingsInput.combinations,
         detailLoadcaseIds: reportDetailIds
       })
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = fileName
-      anchor.click()
-      URL.revokeObjectURL(url)
+      downloadBlob(blob, fileName)
       setReportState('idle')
       setReportMessage(`Saved ${fileName}`)
     } catch (error) {
@@ -1291,12 +1335,7 @@ export function SectionDrawingClient() {
       const blob = await exportDemandCheckWorkbookAsync(payload)
       const fileName = demandCheckWorkbookFileName(payload)
 
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = fileName
-      anchor.click()
-      URL.revokeObjectURL(url)
+      downloadBlob(blob, fileName)
       setExcelState('idle')
       setExcelMessage(`Saved ${fileName}`)
     } catch (error) {
@@ -1306,6 +1345,43 @@ export function SectionDrawingClient() {
           ? error.message
           : `Export failed: ${error instanceof Error ? error.message : String(error)}`
       )
+    }
+  }
+
+  /** Reuse the Demand Check workbook owner, working through only the dialog's active combination. */
+  const exportCalculationLoadcaseExcel = async () => {
+    if (!resultSurface || !hasAppliedSection || !calculationLoadcase) {
+      setCalculationExportError('Build the current Design surface and select a loadcase before exporting Excel.')
+      return
+    }
+    const profileId = resultSurface.calculationProfileId ?? calculationProfileId
+    setCalculationExporting(true)
+    setCalculationExportError(null)
+    try {
+      const payload = {
+        projectName: projectMeta.name || appliedGeometryInput.name || 'Column project',
+        projectInformation: projectMeta.information,
+        sectionName: finalSection.name,
+        calculationProfileId: profileId,
+        section: finalSection,
+        rebars,
+        materialStore,
+        designBasis,
+        analysisOptions: resultSurface.analysisOptions,
+        surface: resultSurface,
+        loadcases: [calculationLoadcase],
+        detailLoadcaseIds: [calculationLoadcase.id]
+      }
+      const blob = await exportDemandCheckWorkbookAsync(payload)
+      downloadBlob(blob, demandCheckWorkbookFileName(payload))
+    } catch (error) {
+      setCalculationExportError(
+        error instanceof ExcelExportError
+          ? error.message
+          : `Export failed: ${error instanceof Error ? error.message : String(error)}`
+      )
+    } finally {
+      setCalculationExporting(false)
     }
   }
 
@@ -1968,12 +2044,7 @@ export function SectionDrawingClient() {
     })
 
     const blob = new Blob([serializeProjectDocument(document)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const anchor = window.document.createElement('a')
-    anchor.href = url
-    anchor.download = projectDocumentFileName(document)
-    anchor.click()
-    URL.revokeObjectURL(url)
+    downloadBlob(blob, projectDocumentFileName(document))
   }
 
   const shareCurrentProject = async () => {
@@ -3269,7 +3340,7 @@ export function SectionDrawingClient() {
             <LoadingsPanel
               input={loadingsInput}
               selectedLoadcaseId={selectedLoadcaseId}
-              checksById={quickChecksById}
+              checksById={currentQuickChecksById}
               onSelectLoadcase={(id) => {
                 if (id == null) {
                   setSelectedLoadcaseId(null)
@@ -3277,6 +3348,7 @@ export function SectionDrawingClient() {
                 }
                 runInverseForLoadcase(id)
               }}
+              onActivateLoadcase={openLoadcaseCalculation}
               onDemandChanged={(loadcase) => {
                 setInverseResults((current) => {
                   if (!(loadcase.id in current)) return current
@@ -3325,7 +3397,7 @@ export function SectionDrawingClient() {
             rebars={activeModule === 'demand' ? chartSnapshot?.rebars ?? rebars : rebars}
             materialStore={activeModule === 'demand' ? chartSnapshot?.materialStore ?? materialStore : materialStore}
             designBasis={activeModule === 'demand' ? chartSnapshot?.designBasis ?? designBasis : designBasis}
-            loadcases={activeModule === 'demand' ? chartLoadcases : loadingsInput.combinations}
+            loadcases={loadingsInput.combinations}
             projectName={projectMeta.name || appliedGeometryInput.name || 'Column project'}
             selectedLoadcaseId={activeModule === 'demand' ? chartLoadcaseId : selectedLoadcaseId}
             inverseResult={activeModule === 'demand'
@@ -3533,6 +3605,27 @@ export function SectionDrawingClient() {
         </>
         )}
       </section>
+
+      {activeModule === 'demand' && calculationLoadcase && resultSurface ? (
+        <LoadcaseCalculationDialog
+          projectName={projectMeta.name || appliedGeometryInput.name || 'Column project'}
+          sectionName={finalSection.name}
+          loadcase={calculationLoadcase}
+          loadcases={loadingsInput.combinations}
+          check={calculationCheck}
+          inverseResult={calculationInverse}
+          surface={resultSurface}
+          designBasis={designBasis}
+          exporting={calculationExporting}
+          exportError={calculationExportError}
+          onLoadcaseChange={changeCalculationLoadcase}
+          onExportExcel={exportCalculationLoadcaseExcel}
+          onClose={() => {
+            setCalculationLoadcaseId(null)
+            setCalculationExportError(null)
+          }}
+        />
+      ) : null}
 
     </main>
   )

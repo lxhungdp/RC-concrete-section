@@ -14,7 +14,7 @@
  * Run: npm run test:excel-block
  */
 import assert from 'node:assert/strict'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { HyperFormula } from 'hyperformula'
 import ExcelJS from 'exceljs'
@@ -35,17 +35,17 @@ import type { NominalBlockEvaluation } from '@pm/equivalent-block'
 import { createKdsAppendixDesignBasis } from '@pm/design'
 import { buildEquivalentBlockWorkbook, equivalentBlockWorkbookFileName } from '../../src/excel/equivalent-block'
 
-const OUT_DIR = resolve(process.cwd(), 'docs/examples/reference-case/generated')
+const OUT_DIR = resolve(process.cwd(), 'outputs/report-selftest/equivalent-block')
 
 /**
- * The first case is deliberately the project the stress-strain workbook is generated from, rebound
- * to the KDS block profile. Same geometry, same characteristic strengths, same factored demand, one
- * workbook per mechanics — which is what makes the two files comparable at all. It is the only case
- * archived under `docs/examples/reference-case/generated`; the rest exercise topology and are not kept.
+ * The first case is the neutral complex stress-strain fixture rebound to the KDS block profile.
+ * Same geometry, characteristic strengths, and factored demand exercise one workbook per mechanics
+ * without treating an external workbook as an oracle. It is the only case
+ * written under the ignored `outputs/report-selftest` tree; the rest exercise topology and are not kept.
  */
 const CASES = [
   {
-    file: 'docs/examples/reference-case/projects/PM-advanced (7) 2D.pm-project.json',
+    file: 'docs/examples/realistic-sections/KDS-REAL-05-complex-stress-strain.pm-project.json',
     rebindTo: 'kds-142020-equivalent-block' as const,
     thetaDeg: 15,
     archive: true,
@@ -332,6 +332,7 @@ const runCase = async (
 }
 
 const run = async () => {
+  mkdirSync(OUT_DIR, { recursive: true })
   for (const testCase of CASES) {
     await runCase(testCase.file, testCase.thetaDeg, testCase.rebindTo, testCase.archive, testCase.appendix)
   }

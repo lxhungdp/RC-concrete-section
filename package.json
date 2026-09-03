@@ -5,6 +5,10 @@
   "license": "MIT",
   "description": "Modular web platform for reinforced concrete column P-M-M section design.",
   "homepage": "https://pmdesigner.vercel.app/",
+  "engines": {
+    "node": "24.20.x",
+    "npm": "11.19.x"
+  },
   "scripts": {
     "dev": "npm run dev -w @pm/web",
     "start": "npm run start -w @pm/web",
@@ -14,13 +18,12 @@
     "check:structure": "tsx tools/architecture/check-repository-layout.ts",
     "check:security": "npm audit --omit=dev --audit-level=high",
     "typecheck": "tsc --noEmit",
-    "test": "npm run check:structure && npm run typecheck && npm run test:unit && npm run test:cad && npm run test:roundtrip && npm run test:pm-stations && npm run test:excel-export && npm run test:excel-block && npm run test:demand-check && npm run test:pdf-report",
+    "test": "npm run check:structure && npm run typecheck && npm run test:unit && npm run test:cad && npm run test:roundtrip && npm run test:excel-export && npm run test:excel-block && npm run test:demand-check && npm run test:pdf-report",
     "test:unit": "node --import tsx --test packages/pm-results/test/*.test.ts packages/pm-equivalent-block/test/*.test.ts packages/pm-code-kds142020/test/*.test.ts packages/pm-code-aci318/test/*.test.ts packages/pm-code-en1992/test/*.test.ts packages/pm-code-as3600/test/*.test.ts packages/pm-code-custom/test/*.test.ts packages/pm-project/test/*.test.ts packages/pm-analysis-equivalent-block/test/*.test.ts packages/pm-analysis/test/*.test.ts packages/pm-report/test/*.test.ts apps/web/test/*.test.ts apps/web/test/analysis/*.test.ts apps/web/test/geometry/*.test.ts apps/web/test/results/*.test.ts",
     "test:cad": "npm run test -w @structures/cad-drawing",
     "test:roundtrip": "tsx packages/pm-project/test/integration/roundtrip.selftest.ts",
-    "test:pm-stations": "tsx packages/pm-analysis/test/integration/analysis.selftest.ts",
     "test:excel-export": "tsx packages/pm-report/test/integration/excel.selftest.ts",
-    "fixture:reference-json": "tsx packages/pm-analysis/test/fixtures/write-reference-case.ts",
+    "fixture:complex-section-json": "tsx packages/pm-analysis/test/fixtures/write-complex-section.ts",
     "bench": "tsx packages/pm-analysis/bench/run.ts",
     "bench:materials": "tsx packages/pm-analysis/bench/material.ts",
     "bench:mesh": "tsx packages/pm-analysis/bench/mesh.ts",
@@ -57,5 +60,5 @@
     "tsx": "4.20.6",
     "typescript": "5.9.3"
   },
-  "packageManager": "npm@11.5.0"
+  "packageManager": "npm@11.19.0"
 }

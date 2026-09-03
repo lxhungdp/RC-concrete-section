@@ -1,11 +1,8 @@
 /**
- * Reference verification case, transcribed from `docs/examples/reference-case/source/PM-advanced (7) 2D.xlsx`.
+ * Deterministic complex-section fixture for software regression and invariant tests.
  *
- * Sheet `2D (15deg)` rows 28-42 supply the geometry and bars; sheet `Input` supplies the materials;
- * sheet `Newton` A4:D6 supplies the demand that sits exactly on the 15-degree capacity surface.
- *
- * One definition feeds both the station selftest and the exported project JSON, so the file a user
- * imports is provably the same section the tests verify.
+ * This fixture is not an external comparison oracle and makes no engineering-validation claim.
+ * One definition feeds both automated tests and the importable public example so they cannot drift.
  */
 import type { GeometryInput, GeometryInputRebar, Point2 } from '@pm/geometry'
 import { createKdsConcrete, createKdsRebarSteel, type MaterialStore } from '@pm/materials'
@@ -23,7 +20,7 @@ const KNM = 1e6
 const ringFrom = (firstId: number, coords: Array<[number, number]>): Point2[] =>
   coords.map(([x, y], index) => ({ id: firstId + index, x, y }))
 
-/** Sheet `2D (15deg)` rows 28-29 — outer boundary, 1500 x 1200 with 200 mm chamfers. */
+/** Outer boundary: 1500 x 1200 with 200 mm chamfers. */
 const OUTER = ringFrom(1, [
   [-550, 600],
   [550, 600],
@@ -35,7 +32,7 @@ const OUTER = ringFrom(1, [
   [-750, 400]
 ])
 
-/** Sheet `2D (15deg)` rows 32-33 — left void. */
+/** Left void. */
 const HOLE_1 = ringFrom(101, [
   [-450, 400],
   [-250, 400],
@@ -47,7 +44,7 @@ const HOLE_1 = ringFrom(101, [
   [-550, 300]
 ])
 
-/** Sheet `2D (15deg)` rows 36-37 — right void. */
+/** Right void. */
 const HOLE_2 = ringFrom(201, [
   [250, 400],
   [450, 400],
@@ -59,7 +56,7 @@ const HOLE_2 = ringFrom(201, [
   [150, 300]
 ])
 
-/** Sheet `2D (15deg)` rows 40-42 — 18 x D32. */
+/** Symmetric 18 x D32 reinforcement layout. */
 const REBAR_POSITIONS: Array<[number, number]> = [
   [-400, 530],
   [-200, 530],
@@ -93,7 +90,7 @@ export const REFERENCE_NET_AREA = 1120000
 
 export const referenceGeometryInput = (): GeometryInput => ({
   id: 1,
-  name: 'PM-advanced (7) 2D — 1500x1200 chamfered section, two voids',
+  name: 'KDS complex stress-strain — 1500x1200 chamfered section, two voids',
   outers: [
     {
       id: 1,
@@ -107,31 +104,30 @@ export const referenceGeometryInput = (): GeometryInput => ({
   rebars: REBARS.map((rebar) => ({ ...rebar }))
 })
 
-/** Sheet `Input`: fck 30 MPa, epsCu 0.0033, eps0 0.002, n 2, alpha 0.85, Es 200000, fy 400. */
+/** KDS C30 concrete and SD400 reinforcement used by the current preview profile. */
 export const referenceMaterialStore = (): MaterialStore => ({
   strainSign: 'compression-positive',
-  concrete: createKdsConcrete({ name: 'KDS C30 (workbook Input)', fck: 30 }),
-  steel: [createKdsRebarSteel({ id: 1, name: 'SD400 (workbook Input)', fy: 400, elasticModulus: 200000 })],
+  concrete: createKdsConcrete({ name: 'KDS C30', fck: 30 }),
+  steel: [createKdsRebarSteel({ id: 1, name: 'SD400', fy: 400, elasticModulus: 200000 })],
   defaults: { steelMaterialId: 1 }
 })
 
 /**
- * Demand cases. `ULS-1` is the sheet `Newton` demand, which equals the nominal P5 station at
- * 15 degrees, so a correct engine must report utilization 1.0 and recover
- * `eps0 = 1.5186813783709277e-3`, `kx = 2.3834429019879034e-6`, `ky = 6.386416007933503e-7`.
+ * Deterministic factored load combinations for current preview checks. They are regression inputs,
+ * not externally certified capacity points.
  */
 export const referenceLoadings = (): LoadingsInput => ({
   combinations: [
     createLoadCombination({
       id: 1,
-      name: 'ULS-1 workbook Newton demand (on the 15 deg surface)',
+      name: 'ULS-1 high axial biaxial demand',
       P: 24942.922102452183 * KN,
       Mx: 3714.165943842699 * KNM,
       My: 1431.7807276950741 * KNM
     }),
     createLoadCombination({
       id: 2,
-      name: 'ULS-2 same axial, half moment (inside)',
+      name: 'ULS-2 same axial, half moment',
       P: 24942.922102452183 * KN,
       Mx: 1857.0829719213495 * KNM,
       My: 715.890363847537 * KNM
@@ -153,15 +149,15 @@ export const referenceProjectDocument = (): PmProjectDocument =>
     loadings: referenceLoadings(),
     meta: {
       id: 1,
-      name: 'PM-advanced (7) 2D reference case',
+      name: 'KDS complex stress-strain regression example',
       information: {
-        client: 'Reference verification',
+        client: 'Public software example',
         company: 'P-M Column Designer',
         designedBy: 'Engineering example',
-        checkedBy: 'Independent review',
+        checkedBy: 'Unverified preview',
         address: 'Seoul, Korea',
-        date: '2026-07-23'
+        date: '2026-09-03'
       },
-      createdAt: '2026-07-23T00:00:00.000Z'
+      createdAt: '2026-09-03T00:00:00.000Z'
     }
   })

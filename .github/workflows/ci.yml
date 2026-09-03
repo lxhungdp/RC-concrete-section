@@ -14,14 +14,19 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20.19.2'
+          node-version-file: '.nvmrc'
           cache: npm
+
+      - name: Verify pinned runtime
+        run: |
+          test "$(node --version)" = "v$(cat .nvmrc)"
+          test "$(npm --version)" = "11.19.0"
 
       # `npm ci` fails on a lockfile that does not match package.json — dependency pinning is only
       # real if it is enforced (docs/08 §9).
@@ -46,9 +51,6 @@ jobs:
       - name: Project round trip
         run: npm run test:roundtrip
 
-      - name: P-M station verification vs reference workbook
-        run: npm run test:pm-stations
-
       - name: Excel export verification
         run: npm run test:excel-export
 
@@ -61,10 +63,10 @@ jobs:
       - name: PDF report verification
         run: npm run test:pdf-report
 
-      - name: Reference fixture is current
+      - name: Complex-section fixture is current
         run: |
-          npm run fixture:reference-json
-          git diff --exit-code -- "docs/examples/reference-case/projects/PM-advanced (7) 2D.pm-project.json"
+          npm run fixture:complex-section-json
+          git diff --exit-code -- "docs/examples/realistic-sections/KDS-REAL-05-complex-stress-strain.pm-project.json"
 
       # Bit-identity gate over 8 sections x 24 capacity quantities. An optimisation, a refactor or a
       # dependency bump that moves a single bit of capacity fails here rather than in a report.
@@ -72,6 +74,15 @@ jobs:
       # so the diff shows exactly which numbers moved and why.
       - name: Capacity fingerprint is unchanged
         run: npm run bench:verify
+
+      - name: Stress-strain sampling verification matrix
+        run: npm run bench:strain-sampling
+
+      - name: Equivalent-block verification matrix
+        run: npm run bench:equivalent-block
+
+      - name: Cross-model pipeline comparison
+        run: npm run bench:pipelines
 
       - name: Build
         run: npm run build

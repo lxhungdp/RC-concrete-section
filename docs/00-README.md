@@ -53,7 +53,7 @@ Current UI note:
 
 ## 3. Current Implementation Status
 
-As of 2026-08-05:
+As of 2026-09-03:
 
 - Geometry editor, material editor, rebar input, project JSON round trip, Results preview plots, and
   loadcase entry are implemented as **preview** capability.

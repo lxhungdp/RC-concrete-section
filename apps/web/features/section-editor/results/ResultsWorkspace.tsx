@@ -54,6 +54,11 @@ import {
   isMeridianOrParallelEdge,
   triangulatePlanarPolygon
 } from './surface-plot-geometry'
+import {
+  currentLoadcaseEvidence,
+  currentLoadcaseFrame,
+  sameLoadcaseDemand
+} from './loadcase-calculation-trace'
 
 type ResultsViewMode = 'overview' | 'loadcase'
 type ResultsTheme = 'light' | 'dark'
@@ -347,6 +352,13 @@ const StaleBanner = () => (
   </div>
 )
 
+const LoadcaseUpdatingBanner = ({ name }: { name: string }) => (
+  <div className="pm-results-stale" role="status">
+    <Loader2 size={13} className="pm-spin" />
+    <span>Updating {name} — the previous solver result is hidden.</span>
+  </div>
+)
+
 export function ResultsWorkspace({
   theme,
   ready,
@@ -374,7 +386,6 @@ export function ResultsWorkspace({
   const [fieldSnapshot, setFieldSnapshot] = useState<{
     map: SectionFieldMap
     result: InversePreviewResult
-    loadcases: LoadCombination[]
     selectedLoadcaseId: number
     surface: PreviewSurface
     section: SectionGeometry
@@ -383,12 +394,15 @@ export function ResultsWorkspace({
     designBasis: DesignBasis
     exactCurve: ExactDirectionCurve | null
   } | null>(null)
-  const requestedLoadcasesRef = useRef(requestedLoadcases)
-  requestedLoadcasesRef.current = requestedLoadcases
-  const displayFieldSnapshot = viewMode === 'loadcase' ? fieldSnapshot : null
-  const loadcases = displayFieldSnapshot?.loadcases ?? requestedLoadcases
-  const selectedLoadcaseId = displayFieldSnapshot?.selectedLoadcaseId ?? requestedLoadcaseId
-  const inverseResult = displayFieldSnapshot?.result ?? requestedInverseResult
+  const requestedSelectedLoadcase = requestedLoadcases.find((item) => item.id === requestedLoadcaseId) ?? null
+  const requestedIsLoadcaseMode = viewMode === 'loadcase' && requestedSelectedLoadcase != null
+  const currentInverseResult = currentLoadcaseEvidence(requestedSelectedLoadcase, requestedInverseResult)
+  const displayFieldSnapshot = viewMode === 'loadcase'
+    ? currentLoadcaseFrame(requestedSelectedLoadcase, currentInverseResult, requestedSurface, fieldSnapshot)
+    : null
+  const loadcases = requestedLoadcases
+  const selectedLoadcaseId = requestedLoadcaseId
+  const inverseResult = displayFieldSnapshot?.result ?? (currentInverseResult?.ok === false ? currentInverseResult : null)
   const fieldMap = displayFieldSnapshot?.map ?? null
   const surface = displayFieldSnapshot?.surface ?? requestedSurface
   const section = displayFieldSnapshot?.section ?? requestedSection
@@ -419,10 +433,11 @@ export function ResultsWorkspace({
     [plotPalette.text]
   )
 
-  const requestedSelectedLoadcase = requestedLoadcases.find((item) => item.id === requestedLoadcaseId) ?? null
-  const requestedIsLoadcaseMode = viewMode === 'loadcase' && requestedSelectedLoadcase != null
   const selectedLoadcase = loadcases.find((item) => item.id === selectedLoadcaseId) ?? null
   const isLoadcaseMode = viewMode === 'loadcase' && selectedLoadcase != null
+  const loadcaseUpdating = requestedIsLoadcaseMode && (
+    !currentInverseResult || (currentInverseResult.ok && !displayFieldSnapshot)
+  )
   const equilibriumBeta = useMemo(() => {
     if (!isLoadcaseMode || !inverseResult?.ok || !inverseResult.admissibility.evaluated) return null
     return strainGradientDirection(inverseResult.state)
@@ -434,9 +449,16 @@ export function ResultsWorkspace({
       setFieldMapWorking(false)
       return
     }
-    // Keep the previous completed field visible while the newly selected loadcase is solving.
-    // Clearing here caused an off/on cycle, followed by another cycle when the new map arrived.
-    if (!requestedInverseResult || requestedLoadcaseId == null) return
+    // A previous frame is deliberately hidden until the selected loadcase has one complete,
+    // internally consistent inverse/field/exact-curve revision.
+    if (
+      !requestedInverseResult ||
+      requestedLoadcaseId == null ||
+      !sameLoadcaseDemand(requestedInverseResult.demand, requestedSelectedLoadcase)
+    ) {
+      setFieldMapWorking(true)
+      return
+    }
     if (!requestedInverseResult.ok) {
       setFieldSnapshot(null)
       setFieldMapWorking(false)
@@ -483,7 +505,6 @@ export function ResultsWorkspace({
         setFieldSnapshot({
           map,
           result: requestedInverseResult,
-          loadcases: requestedLoadcasesRef.current,
           selectedLoadcaseId: requestedLoadcaseId,
           surface: requestedSurface,
           section: requestedSection,
@@ -508,27 +529,10 @@ export function ResultsWorkspace({
     requestedLoadcaseId,
     requestedMaterialStore,
     requestedRebars,
+    requestedSelectedLoadcase,
     requestedSection,
     requestedSurface
   ])
-
-  // Non-demand edits (for example a loadcase name) do not need another field-map build. Keep the
-  // committed field frame and refresh only the accompanying loadcase list.
-  useEffect(() => {
-    if (
-      !fieldSnapshot ||
-      fieldSnapshot.result !== requestedInverseResult ||
-      fieldSnapshot.selectedLoadcaseId !== requestedLoadcaseId ||
-      fieldSnapshot.loadcases === requestedLoadcases
-    ) return
-    setFieldSnapshot((current) =>
-      current &&
-      current.result === requestedInverseResult &&
-      current.selectedLoadcaseId === requestedLoadcaseId
-        ? { ...current, loadcases: requestedLoadcases }
-        : current
-    )
-  }, [fieldSnapshot, requestedInverseResult, requestedLoadcaseId, requestedLoadcases])
 
   useEffect(() => {
     exactController.current?.abort()
@@ -1775,12 +1779,17 @@ export function ResultsWorkspace({
   }
 
   if (isLoadcaseMode && selectedLoadcase) {
+    const demandWorking = busy || loadcaseUpdating
     return (
       <section
-        className={`pm-results-stage pm-results-stage--charts-only${busy ? ' is-recalculating' : ''}`}
-        aria-busy={busy}
+        className={`pm-results-stage pm-results-stage--charts-only${demandWorking ? ' is-recalculating' : ''}`}
+        aria-busy={demandWorking}
       >
-        {busy ? <StaleBanner /> : null}
+        {busy
+          ? <StaleBanner />
+          : loadcaseUpdating
+            ? <LoadcaseUpdatingBanner name={selectedLoadcase.name} />
+            : null}
         <div
           className={`pm-results-grid pm-results-grid--dynamic primary-${demandView.primaryChart} count-${
             Object.values(demandView.visibleCharts).filter(Boolean).length
@@ -1789,7 +1798,7 @@ export function ResultsWorkspace({
           {renderChartShell({
             id: 'heatmap',
             title: 'Section field',
-            meta: inverseResult ? solverStatus(inverseResult).label : 'Solving…',
+            meta: inverseResult ? solverStatus(inverseResult).label : 'Updating…',
             primary: demandView.primaryChart === 'heatmap',
             visible: demandView.visibleCharts.heatmap,
             onMakePrimary: () => onDemandViewChange({ primaryChart: 'heatmap' }),
@@ -2034,21 +2043,21 @@ export function ResultsWorkspace({
                 </article>
               </div>
             ) : null,
-            children: fieldSnapshot ? (
+            children: displayFieldSnapshot ? (
               <SectionFieldChart
-                fieldMap={fieldSnapshot.map}
+                fieldMap={displayFieldSnapshot.map}
                 section={section}
                 fieldMode={demandView.fieldMode}
-                state={fieldSnapshot.result.state}
-                Mx={fieldSnapshot.result.demand.Mx}
-                My={fieldSnapshot.result.demand.My}
+                state={displayFieldSnapshot.result.state}
+                Mx={displayFieldSnapshot.result.demand.Mx}
+                My={displayFieldSnapshot.result.demand.My}
                 showNeutralAxis={demandView.showNeutralAxis}
                 showMoments={demandView.showMoments}
                 includeRebar={demandView.includeRebar}
               />
             ) : (
               <div className="pm-results-plot-placeholder">
-                {fieldMapWorking ? 'Field map is calculating...' : 'Inverse solution is calculating...'}
+                {fieldMapWorking ? `Updating ${selectedLoadcase.name}...` : 'Inverse solution is unavailable.'}
               </div>
             )
           })}

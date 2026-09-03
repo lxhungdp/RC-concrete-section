@@ -10,7 +10,7 @@ import {
   type NominalBlockEvaluation
 } from '@pm/equivalent-block'
 import { geometryInputRebars, sectionGeometryFromGeometryInput, type GeometryInput } from '@pm/geometry'
-import { createDefaultMaterialStore } from '@pm/materials'
+import { compileSteelMaterial, createDefaultMaterialStore } from '@pm/materials'
 import { createKdsAppendixDesignBasis } from '@pm/design'
 import {
   applyCalculationProfileToMaterials,
@@ -247,12 +247,77 @@ test('selected-point equivalent-block audit reproduces exact clipped concrete an
   assert.match(audit.provenance.concrete, /KDS 14 20 20:2022/)
 })
 
+test('selected-point equivalent-block audit reproduces an axial-cap edge crossing without inventing a block state', () => {
+  const { prepared, options } = build('kds-142020-equivalent-block')
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+  const point = surface.points.find((candidate) =>
+    candidate.surfaceRole === 'axial-cap' && candidate.axialCapTrace?.source.kind === 'edge-interpolation'
+  )
+  assert.ok(point)
+  const audit = buildEquivalentBlockPointCalculationAudit(prepared, 'design', point)
+  assert.equal(audit.kind, 'axial-cap')
+  if (audit.kind !== 'axial-cap' || audit.trace.source.kind !== 'edge-interpolation') return
+  assert.equal('state' in audit, false, 'a cap-face audit must not invent a neutral-axis state')
+  const source = audit.trace.source
+  const t = (audit.trace.cap - source.compressionSide.P) /
+    (source.admissibleSide.P - source.compressionSide.P)
+  assert.ok(Math.abs(t - source.interpolationRatio) <= 1e-12)
+  const interpolate = (left: number, right: number) => left + t * (right - left)
+  assert.ok(Math.abs(interpolate(source.compressionSide.P, source.admissibleSide.P) - point.P) <= 1e-8)
+  assert.ok(Math.abs(interpolate(source.compressionSide.Mx, source.admissibleSide.Mx) - point.Mx) <= 1e-8)
+  assert.ok(Math.abs(interpolate(source.compressionSide.My, source.admissibleSide.My) - point.My) <= 1e-8)
+  assert.equal(audit.trace.projection.kind, 'identity')
+  assert.equal(audit.reconciliation.ok, true)
+})
+
+test('equivalent-block bar-strain audit follows yield strain, controlling depth, then compatibility', () => {
+  const { materials, prepared, options } = build('kds-142020-equivalent-block')
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+  const station = surface.stations.find((candidate) =>
+    candidate.definition.kind === 'bar-tension-yield-ratio' && candidate.definition.ratio === 1
+  )
+  assert.ok(station)
+  const point = surface.points.find((candidate) =>
+    candidate.surfaceRole === 'physical-state' && candidate.beta === 0 && candidate.stationId === station.id
+  )
+  assert.ok(point)
+
+  const audit = buildEquivalentBlockPointCalculationAudit(prepared, 'design', point, station.definition)
+  assert.equal(audit.kind, 'equivalent-block')
+  if (audit.kind !== 'equivalent-block') return
+  const trace = audit.depthProfile.originStrainTrace
+  assert.equal(trace.kind, 'controlling-bar-strain')
+  if (trace.kind !== 'controlling-bar-strain') return
+
+  const controllingBar = geometry.rebars.reduce((current, candidate) => candidate.y < current.y ? candidate : current)
+  const compressionEdgeY = Math.max(...geometry.outers.flatMap((outer) => outer.points.map((vertex) => vertex.y)))
+  const steelMaterialId = controllingBar.steelMaterialId ?? materials.defaults.steelMaterialId
+  const steelMaterial = materials.steel.find((candidate) => candidate.id === steelMaterialId)
+  assert.ok(steelMaterial)
+  const expectedYieldStrain = compileSteelMaterial(steelMaterial).limits.epsYield
+  assert.ok(expectedYieldStrain !== undefined)
+  const expectedSteelStrain = -expectedYieldStrain
+  const expectedDepth = compressionEdgeY - controllingBar.y
+  const compressionEdgeStrain = audit.depthProfile.samples[0].strain
+  const expectedCurvature = (compressionEdgeStrain - expectedSteelStrain) / expectedDepth
+  const expectedNeutralAxisDepth = compressionEdgeStrain / expectedCurvature
+  const tolerance = 1e-11
+
+  assert.equal(trace.controllingRebarId, controllingBar.id)
+  assert.ok(Math.abs(trace.yieldStrain - expectedYieldStrain) <= tolerance)
+  assert.ok(Math.abs(trace.controllingSteelStrain - expectedSteelStrain) <= tolerance)
+  assert.ok(Math.abs(trace.compressionEdgeToBarDepth - expectedDepth) <= tolerance)
+  assert.ok(Math.abs(trace.curvatureFromCompatibility - expectedCurvature) <= tolerance)
+  assert.ok(Math.abs(trace.neutralAxisDepth - expectedNeutralAxisDepth) <= tolerance)
+  assert.ok(Math.abs(trace.calculatedE0 - audit.state.e0) <= tolerance)
+})
+
 test('KDS block cardinal slices do not weld the axial cap to the tension pole', () => {
   const parsed = parseProjectDocument(readFileSync(
-    resolve(process.cwd(), 'docs/examples/reference-case/projects/PM-advanced (7) 2D.pm-project.json'),
+    resolve(process.cwd(), 'docs/examples/realistic-sections/KDS-REAL-05-complex-stress-strain.pm-project.json'),
     'utf8'
   ))
-  assert.ok(parsed.ok, 'PM-advanced (7) 2D fixture must parse')
+  assert.ok(parsed.ok, 'complex stress-strain fixture must parse')
   if (!parsed.ok) return
 
   const profileId = 'kds-142020-equivalent-block' as const
@@ -268,7 +333,7 @@ test('KDS block cardinal slices do not weld the axial cap to the tension pole', 
     design
   )
   const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
-  assertCardinalSlicesHaveNoCapToTensionChord(surface, 'KDS PM-advanced (7) 2D')
+  assertCardinalSlicesHaveNoCapToTensionChord(surface, 'KDS complex stress-strain fixture')
 })
 
 test('equivalent-block example projects parse and solve with their shipped production options', () => {
@@ -308,12 +373,12 @@ test('equivalent-block example projects parse and solve with their shipped produ
   }
 })
 
-test('realistic section example projects parse and solve with their shipped production options', () => {
+test('realistic equivalent-block examples parse and solve with their shipped production options', () => {
   const directory = resolve(process.cwd(), 'docs/examples/realistic-sections')
   const files = readdirSync(directory)
-    .filter((file) => /^(KDS|ACI)-REAL-\d{2}-.+\.pm-project\.json$/.test(file))
+    .filter((file) => /^(KDS|ACI)-REAL-0[1-4]-.+\.pm-project\.json$/.test(file))
     .sort()
-  assert.equal(files.length, 4, 'the realistic UI set must contain four replacement examples')
+  assert.equal(files.length, 4, 'the realistic equivalent-block set must contain four examples')
 
   for (const file of files) {
     const parsed = parseProjectDocument(readFileSync(resolve(directory, file), 'utf8'))

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { Download, Plus, Upload, X } from 'lucide-react'
+import { CircleArrowRight, Download, Plus, Upload, X } from 'lucide-react'
 import type { LoadcaseQuickCheckResult } from '@pm/analysis'
 import { createLoadCombination, type LoadCombination, type LoadingsInput } from '@pm/project'
 import { downloadLoadcaseWorkbook, importLoadcaseWorkbook } from './loadcase-xlsx'
@@ -110,7 +110,7 @@ export function LoadingsPanel({
       combinations.map((item) => item.id)
     )
     onChange({ ...input, combinations: [...combinations, next] })
-    activateCombination(next)
+    onSelectLoadcase(next.id)
   }
 
   const removeCombination = (id: number) => {
@@ -180,10 +180,14 @@ export function LoadingsPanel({
           />
         </div>
       </div>
+      <div className="pm-loadcase-units" aria-label="Load units">
+        kN, kNm
+      </div>
       <div className="pm-loadcase-table-wrap">
         <table className="pm-loadcase-table">
           <colgroup>
             <col className="pm-col-name" />
+            <col className="pm-col-detail" />
             <col className="pm-col-load" />
             <col className="pm-col-load" />
             <col className="pm-col-load" />
@@ -193,31 +197,20 @@ export function LoadingsPanel({
           <thead>
             <tr>
               <th>Name</th>
-              <th>
-                Pu
-                <br />
-                kN
-              </th>
-              <th>
-                Mux
-                <br />
-                kNm
-              </th>
-              <th>
-                Muy
-                <br />
-                kNm
-              </th>
+              <th className="pm-col-detail" aria-label="Calculation details" />
+              <th>Pu</th>
+              <th>Mux</th>
+              <th>Muy</th>
               <th className="pm-col-ur" title="Three-dimensional proportional utilization ratio">
                 UR
               </th>
-              <th className="pm-col-action" aria-label="Remove" />
+              <th className="pm-col-action" aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
             {combinations.length === 0 && (
               <tr>
-                <td colSpan={6} className="pm-rebar-empty">
+                <td colSpan={7} className="pm-rebar-empty">
                   Add loadcases Pu, Mux, Muy.
                 </td>
               </tr>
@@ -236,7 +229,6 @@ export function LoadingsPanel({
                 <tr
                   key={item.id}
                   className={selectedLoadcaseId === item.id ? 'is-selected' : ''}
-                  onClick={() => activateCombination(item)}
                 >
                   <td>
                     <SpreadsheetInput
@@ -244,6 +236,20 @@ export function LoadingsPanel({
                       ariaLabel={`Loadcase ${item.id} name`}
                       onCommit={(value) => updateCombination(item.id, { name: value })}
                     />
+                  </td>
+                  <td className="pm-col-detail">
+                    <button
+                      type="button"
+                      className="pm-table-icon-btn"
+                      title="Open calculation trace"
+                      aria-label={`Open calculation trace for ${item.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        activateCombination(item)
+                      }}
+                    >
+                      <CircleArrowRight size={15} />
+                    </button>
                   </td>
                   <td>
                     <SpreadsheetInput

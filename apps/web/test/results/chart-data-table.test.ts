@@ -22,7 +22,10 @@ import {
  * Keep the light synthetic fixtures above for table semantics, then use one real capped surface
  * below to guard the many-points-at-one-beta identity that originally regressed.
  */
-import { buildChartTableRows } from '../../features/section-editor/results/chart-data-table'
+import {
+  buildChartTableRows,
+  resolveChartTableRowSelection
+} from '../../features/section-editor/results/chart-data-table'
 
 const normalizeAngleDeg = (degrees: number) => ((degrees % 360) + 360) % 360
 
@@ -119,6 +122,68 @@ test('fixed-P table selects exactly one resistance stage from the fixed surface 
     assert.equal(row.design, null)
     assert.equal(row.evidence.stage, 'nominal')
   }
+})
+
+test('calculation trace selection stays on the matching semantic identity across source and stage changes', () => {
+  const designVertical = buildChartTableRows({
+    surface,
+    source: 'vertical',
+    resistanceStage: 'design',
+    sliceAngleDeg: 0,
+    fixedP: 0
+  })
+  const nominalVertical = buildChartTableRows({
+    surface,
+    source: 'vertical',
+    resistanceStage: 'nominal',
+    sliceAngleDeg: 0,
+    fixedP: 0
+  })
+  const designFixedP = buildChartTableRows({
+    surface,
+    source: 'fixedP',
+    resistanceStage: 'design',
+    sliceAngleDeg: 0,
+    fixedP: 0
+  })
+  const nominalFixedP = buildChartTableRows({
+    surface,
+    source: 'fixedP',
+    resistanceStage: 'nominal',
+    sliceAngleDeg: 0,
+    fixedP: 0
+  })
+
+  const verticalCurrent = designVertical[1] ?? null
+  const verticalNext = resolveChartTableRowSelection(nominalVertical, verticalCurrent)
+  assert.equal(verticalNext?.key, verticalCurrent?.key)
+  assert.equal(verticalNext?.evidence.stage, 'nominal')
+
+  const fixedCurrent = designFixedP[2] ?? null
+  const fixedNext = resolveChartTableRowSelection(nominalFixedP, fixedCurrent)
+  assert.equal(fixedNext?.kind, 'fixedP')
+  assert.equal(fixedNext?.kind === 'fixedP' ? fixedNext.directionId : null, fixedCurrent?.kind === 'fixedP' ? fixedCurrent.directionId : null)
+  assert.equal(fixedNext?.kind === 'fixedP' ? fixedNext.branch : null, fixedCurrent?.kind === 'fixedP' ? fixedCurrent.branch : null)
+  assert.equal(fixedNext?.evidence.stage, 'nominal')
+
+  const changedSource = resolveChartTableRowSelection(designFixedP, verticalCurrent)
+  assert.equal(changedSource?.key, designFixedP[0]?.key)
+  assert.equal(resolveChartTableRowSelection([], verticalCurrent), null)
+})
+
+test('calculation trace selection fails closed when cap clipping removes the selected criterion', () => {
+  const designVertical = buildChartTableRows({
+    surface,
+    source: 'vertical',
+    resistanceStage: 'design',
+    sliceAngleDeg: 0,
+    fixedP: 0
+  })
+  const current = designVertical[1] ?? null
+  assert.ok(current)
+  const replacementAtSameOrdinal = designVertical.filter((row) => row.key !== current.key)
+
+  assert.equal(resolveChartTableRowSelection(replacementAtSameOrdinal, current), null)
 })
 
 test('fixed-P row evidence reconstructs the displayed sample from its authoritative bracket', () => {
@@ -305,6 +370,40 @@ test('the vertical table attaches singleton equivalent-block poles to every dire
   )
 })
 
+test('the vertical table keeps the concise station label for an axial-cap point', () => {
+  const beta = Math.PI / 2
+  const cappedMiddle = {
+    ...point(beta, 1, 0, 10, 'station-1'),
+    surfaceRole: 'axial-cap' as const
+  }
+  const cappedSurface = {
+    ...surface,
+    designFixed: {
+      points: [
+        point(beta, 0, 1, 0, 'pure-compression'),
+        cappedMiddle,
+        point(beta, 2, -1, 0, 'pure-tension')
+      ],
+      directions: [beta],
+      stations
+    }
+  } as PreviewSurface
+
+  const table = buildChartTableRows({
+    surface: cappedSurface,
+    source: 'vertical',
+    resistanceStage: 'design',
+    sliceAngleDeg: 90,
+    fixedP: 0
+  })
+
+  const capRow = table.find((row) => row.kind === 'vertical' && row.evidence.point.surfaceRole === 'axial-cap')
+  assert.ok(capRow)
+  assert.equal(capRow.kind, 'vertical')
+  if (capRow.kind !== 'vertical') return
+  assert.equal(capRow.criterion, 'εₛ/εy = 1')
+})
+
 test('synthetic cap vertices are chart topology, not station-table rows', () => {
   const beta = 17.35 * Math.PI / 180
   const cap = {
@@ -344,7 +443,7 @@ test('synthetic cap vertices are chart topology, not station-table rows', () => 
 
 test('fixed-P table preserves every Pmax contour branch instead of overwriting equal-beta rows', () => {
   const parsed = parseProjectDocument(readFileSync(
-    resolve(process.cwd(), 'docs/examples/reference-case/projects/PM-advanced (7) 2D.pm-project.json'),
+    resolve(process.cwd(), 'docs/examples/realistic-sections/KDS-REAL-05-complex-stress-strain.pm-project.json'),
     'utf8'
   ))
   assert.ok(parsed.ok)
