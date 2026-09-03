@@ -38,19 +38,28 @@ const rootPackagePath = resolve(root, 'package.json')
 const rootPackage = JSON.parse(readFileSync(rootPackagePath, 'utf8')) as PackageManifest
 const nvmVersion = readFileSync(resolve(root, '.nvmrc'), 'utf8').trim()
 const npmVersion = /^npm@(.+)$/u.exec(rootPackage.packageManager ?? '')?.[1]
+const nodeMajor = /^(24)\.\d+\.\d+$/u.exec(nvmVersion)?.[1]
+const npmMajor = /^(11)\.\d+\.\d+$/u.exec(npmVersion ?? '')?.[1]
+const supportedNodeLine = nodeMajor ? `${nodeMajor}.x` : undefined
+const supportedNpmLine = npmMajor ? `${npmMajor}.x` : undefined
 
-if (!/^24\.\d+\.\d+$/u.test(nvmVersion)) {
-  issues.push('.nvmrc: the supported runtime must be an exact Node.js 24 version')
-}
-if (rootPackage.engines?.node !== nvmVersion || rootPackage.devEngines?.runtime?.version !== nvmVersion) {
-  issues.push('package.json: engines.node and devEngines.runtime.version must exactly match .nvmrc')
+if (!nodeMajor) {
+  issues.push('.nvmrc: the preferred development/CI runtime must be an exact Node.js 24 version')
 }
 if (
-  !npmVersion ||
-  rootPackage.engines?.npm !== npmVersion ||
-  rootPackage.devEngines?.packageManager?.version !== npmVersion
+  !supportedNodeLine ||
+  rootPackage.engines?.node !== supportedNodeLine ||
+  rootPackage.devEngines?.runtime?.version !== supportedNodeLine
 ) {
-  issues.push('package.json: engines.npm and devEngines.packageManager.version must exactly match packageManager')
+  issues.push('package.json: engines.node and devEngines.runtime.version must declare the Node.js 24.x line')
+}
+if (
+  !npmMajor ||
+  !supportedNpmLine ||
+  rootPackage.engines?.npm !== supportedNpmLine ||
+  rootPackage.devEngines?.packageManager?.version !== supportedNpmLine
+) {
+  issues.push('package.json: engines.npm and devEngines.packageManager.version must declare the npm 11.x line')
 }
 if (
   rootPackage.devEngines?.runtime?.name !== 'node' ||
@@ -58,7 +67,7 @@ if (
   rootPackage.devEngines?.packageManager?.name !== 'npm' ||
   rootPackage.devEngines.packageManager.onFail !== 'error'
 ) {
-  issues.push('package.json: devEngines must fail closed for the declared Node.js and npm versions')
+  issues.push('package.json: devEngines must fail closed for the declared Node.js and npm major lines')
 }
 if (readFileSync(resolve(root, '.npmrc'), 'utf8').trim() !== 'engine-strict=true') {
   issues.push('.npmrc: engine-strict=true is required')

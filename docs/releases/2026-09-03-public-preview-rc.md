@@ -15,7 +15,8 @@ Version target: `0.1.0` public Preview.
 - Removal of generated, private, obsolete, and non-portable repository artifacts.
 - Removal of obsolete workbook-derived audit claims; the retained complex section is explicitly a
   neutral software-regression input, not an external verification oracle.
-- Owner-document synchronization and a supported Node.js 24.20.0/npm 11.19.0 CI contract.
+- Owner-document synchronization, a supported Node.js 24.x/npm 11.x execution contract, and an
+  exact Node.js 24.20.0/npm 11.19.0 CI reference pair.
 - Fail-closed Fixed equivalent-block adequacy, kernel-owned three-state report verdicts, shared
   polygon/rebar validation, explicit user-curve clamp policy, and compensated stress-strain sums.
 

@@ -147,15 +147,15 @@ engineering builds. Record license, numerical role, assumptions, wrapper, securi
 regression coverage. A lockfile alone does not make a floating manifest an intentional dependency
 policy.
 
-The public-preview build and CI runtime is Node.js `24.20.0` LTS with its bundled npm `11.19.0`, as
-listed by the official Node.js download archive (accessed 2026-09-03):
-`https://nodejs.org/en/download/archive/v24`. `.nvmrc`, the root package
-`engines`/`devEngines`/`packageManager` metadata, the repository `.npmrc` strict-engine policy, and
-CI must identify and enforce that same runtime. CI actions must themselves use the Node.js 24
-action runtime. Node/npm do not define an engineering coefficient,
-but a runtime change can alter parsing, floating-point execution paths, bundling, or report bytes;
-therefore it is Class 3 until the bit-identity, numerical-matrix, workbook/PDF, build, security, and
-bundle gates pass on the pinned runtime.
+The supported public-preview execution line is Node.js `24.x` with npm `11.x`. Root
+`engines`/`devEngines`, the repository `.npmrc` strict-engine policy, and the shared runtime guard
+reject Node.js 20/22 and npm 10/12 while permitting compatible patch releases selected by a managed
+deployment platform. `.nvmrc` and `packageManager` retain the preferred reference pair Node.js
+`24.20.0`/npm `11.19.0`; CI verifies that exact pair so numerical and generated-artifact evidence is
+reproducible. CI actions must themselves use the Node.js 24 action runtime. Node/npm do not define
+an engineering coefficient, but a runtime change can alter parsing, floating-point execution paths,
+bundling, or report bytes; therefore evidence produced on another patch must record its runtime and
+pass the applicable portability, numerical-matrix, workbook/PDF, build, security, and bundle gates.
 
 Numerically relevant dependency updates receive change classification and full affected regression,
 not automatic merge after type checking alone.

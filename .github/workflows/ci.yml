@@ -23,7 +23,9 @@ jobs:
           node-version-file: '.nvmrc'
           cache: npm
 
-      - name: Verify pinned runtime
+      # Deployment accepts compatible Node.js 24.x/npm 11.x patch releases. CI deliberately keeps
+      # one exact reference pair so numerical and generated-artifact evidence remains reproducible.
+      - name: Verify reference runtime
         run: |
           test "$(node --version)" = "v$(cat .nvmrc)"
           test "$(npm --version)" = "11.19.0"

@@ -8,6 +8,11 @@ second public-main CI run exposed a same-runtime macOS/Ubuntu roundoff differenc
 review and a green follow-up CI run remain required; no tag, deployment, or engineering-status
 promotion authorized
 
+Supersession note (2026-09-04): the exact universal runtime constraint recorded below is historical
+evidence for this migration. The active deployment contract is now Node.js `24.x`/npm `11.x`, with
+the exact pair retained only as the development/CI reference runtime; see
+[`2026-09-04-node-24-deployment-compatibility.md`](2026-09-04-node-24-deployment-compatibility.md).
+
 ## Objective
 
 Make Node.js 24.20.0 with npm 11.19.0 the only supported project development, test, build, and CI
