@@ -1,6 +1,7 @@
 # Public Preview Release Candidate — 2026-09-03
 
-Status: **local release candidate; not committed, merged, tagged, deployed, accepted, or released**
+Status: **base candidate committed on `dev/27stations` at `c154513`; current audit remediation is
+uncommitted; nothing is merged, tagged, deployed, accepted, or released**
 
 Version target: `0.1.0` public Preview.
 
@@ -29,6 +30,7 @@ analysis pipeline. Accepted-result and released-report contracts remain unimplem
 - full test suite: pass (281 unit tests, 11 CAD tests, project round-trip, station, both Excel paths,
   Demand Check workbook, and PDF report);
 - capacity fingerprint: bit-identical for 8 sections x 24 quantities;
+- package-owned material-law ordinate tests and the read-only P16 external comparison pass;
 - stress-strain, equivalent-block, and cross-model pipeline matrices: pass;
 - production build and web-bundle budgets: pass;
 - production dependency audit: zero high/critical vulnerabilities; two documented moderate findings;

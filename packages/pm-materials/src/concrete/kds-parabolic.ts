@@ -9,6 +9,18 @@ export type KdsParabolicParams = {
   peak: number
 }
 
+/**
+ * Constitutive evaluation outside the declared compression domain is a zero-stress continuation
+ * used only to keep rejected Newton trial states finite. Capacity states and accepted inverse
+ * results are checked independently against `epsCompressionUltimate`; this continuation must not
+ * be interpreted as post-crushing resistance or as an admissible material state.
+ */
+const carriesCompressionStress = (strain: number, epsCu: number) =>
+  strain > 0 && strain <= epsCu
+
+const carriesParabolicTangent = (strain: number, eps0: number, epsCu: number) =>
+  carriesCompressionStress(strain, epsCu) && strain < eps0
+
 export const resolveKdsParabolicParams = (material: ConcreteMaterial): KdsParabolicParams => {
   const model = material.stressStrain.type === 'kds-parabolic' ? material.stressStrain : null
   const eps0 = positiveOr(model?.eps0 ?? material.limits.eps0, 0.002)
@@ -26,7 +38,7 @@ export const resolveKdsParabolicParams = (material: ConcreteMaterial): KdsParabo
 }
 
 export const stressKdsParabolicFrom = (params: KdsParabolicParams, strain: number) => {
-  if (strain <= 0 || strain > params.epsCu) return 0
+  if (!carriesCompressionStress(strain, params.epsCu)) return 0
   if (strain <= params.eps0) {
     return params.peak * (1 - Math.pow(1 - strain / params.eps0, params.n))
   }
@@ -34,7 +46,7 @@ export const stressKdsParabolicFrom = (params: KdsParabolicParams, strain: numbe
 }
 
 export const tangentKdsParabolicFrom = (params: KdsParabolicParams, strain: number) => {
-  if (strain <= 0 || strain >= params.eps0 || strain > params.epsCu) return 0
+  if (!carriesParabolicTangent(strain, params.eps0, params.epsCu)) return 0
   return (
     (params.peak * params.n * Math.pow(Math.max(0, 1 - strain / params.eps0), params.n - 1)) /
     params.eps0
@@ -50,7 +62,7 @@ export const compileKdsParabolicConcrete = (material: ConcreteMaterial): Compile
   const stress =
     params.n === 2
       ? (strain: number) => {
-          if (strain <= 0 || strain > params.epsCu) return 0
+          if (!carriesCompressionStress(strain, params.epsCu)) return 0
           if (strain <= params.eps0) {
             const remainder = 1 - strain / params.eps0
             return params.peak * (1 - remainder * remainder)
@@ -61,7 +73,7 @@ export const compileKdsParabolicConcrete = (material: ConcreteMaterial): Compile
   const tangent =
     params.n === 2
       ? (strain: number) => {
-          if (strain <= 0 || strain >= params.eps0 || strain > params.epsCu) return 0
+          if (!carriesParabolicTangent(strain, params.eps0, params.epsCu)) return 0
           return (2 * params.peak * (1 - strain / params.eps0)) / params.eps0
         }
       : (strain: number) => tangentKdsParabolicFrom(params, strain)

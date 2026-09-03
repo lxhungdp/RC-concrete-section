@@ -12,7 +12,7 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 | Project | every persisted calculation contract is v1; canonical exports contain profile, geometry, materials, factored loadings, model-specific options, and DesignBasis; exact canonical round trip; documented parser-v1 defaults | accepted-result artifact and signed release metadata |
 | Profile selection | one Materials selection atomically binds KDS stress-strain, KDS block, ACI block, or either `Custom` mechanics and defaults; the profile table is the single owner of mechanics/material-standard/resistance-profile coherence | add only edition-scoped profiles with independent review evidence |
 | Geometry | multiple solids/holes, rebars, exact properties, clipping, triangle/quadrature mesh | complete production topology/cover acceptance UX |
-| Materials | persisted concrete/steel definitions, shared physics validator, compiled stress/tangent laws, material support gates | finish independent curve verification for every declared scope |
+| Materials | persisted concrete/steel definitions, shared physics validator, compiled stress/tangent laws, material support gates, and package-owned ordinate tests for every implemented law | finish authority-derived clause verification for every declared scope |
 | Stress-strain kernel | prepared mesh, shared 27-state default, 36 fixed directions, full fields, inverse Newton | accepted-result numerical-uncertainty gate and larger independent oracle set |
 | Equivalent-block kernel | shared fixed 27-state schedule, standard-independent exact clipping, forward evaluator, exact-refined inverse solvers, rupture/admissibility, block field | independent clause calculations and additional commercial cross-checks |
 | KDS block adapter | KDS 14 20 20 parameter table, `a=beta1 c`, block stress, KDS phi transition and axial cap | named structural-code review and release status above draft |
@@ -81,10 +81,14 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 
 ## 4. Numerical evidence for the unified station default
 
-The permanent `bench:strain-sampling` harness uses five structural geometries and holds the shared
-27 stations constant while comparing fixed direction sampling with a dense
-direction reference. Cross-model tests additionally assert the exact criterion list, both poles,
-all four equivalent-block profiles, workbook export, schema parsing, and surface/inverse reuse.
+The permanent `bench:strain-sampling` harness uses five structural geometries and compares the
+shared fixed 27 x 36 surface with a 144-direction, independently station-refined reference. It
+checks every non-cap reference vertex, reports signed under/over prediction, and fails on the
+declared empirical regression envelope. The separate read-only P16 gate compares exact fixed-P
+anchors with a committed external UMD transcription and records the understood pure-compression
+endpoint-definition difference. Cross-model tests additionally assert the exact criterion list,
+both poles, all four equivalent-block profiles, workbook export, schema parsing, and
+surface/inverse reuse.
 
 ## 5. Current P0 blockers before engineering release
 

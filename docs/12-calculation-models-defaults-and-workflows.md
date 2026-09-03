@@ -277,14 +277,23 @@ batch reuses one surface; changing any resistance-domain input invalidates it.
 ## 6. Verification and benchmark evidence
 
 `npm run bench:strain-sampling` compares the fixed stress-strain dataset against a 144-direction
-reference. `npm run bench:pipelines` does the same cross-model check with a dense equivalent-block
-reference. Both production candidates preserve the canonical 27 × 36 grid exactly. The denser
-reference is benchmark-only and does not change application results.
+reference whose meridians are also independently station-refined. Every non-cap reference vertex is
+checked, and signed under-prediction and over-prediction are reported separately.
+`npm run bench:pipelines` performs the corresponding cross-model check with a dense
+equivalent-block reference. Both production candidates preserve the canonical 27 × 36 grid exactly.
+The denser references are benchmark-only and do not change application results.
 
-Each benchmark run prints its own fixed-grid differences and ray-hit rates; measured values are not
-copied into this document because they depend on the case matrix and runtime revision. Acceptance
-requires a 100% ray-hit rate. No resistance-factor or material-factor transition station is
+The stress-strain gate requires a 100% ray-hit rate, a converged reference-station refinement, and
+keeps the current five-fixture regression envelope below 4.0% under-prediction and 0.5%
+over-prediction. These rounded limits preserve measured Preview behaviour; they are not a
+design-code acceptance tolerance or a proof of one-sided conservatism. The task packet records the
+per-fixture measurements and runtime. No resistance-factor or material-factor transition station is
 inserted dynamically.
+
+`npm run verify:p16` is a read-only CI comparison against the committed UMD transcription. It gates
+the exact fixed-P flexural anchors at 0.05% relative agreement and separately reconstructs the UMD
+pure-compression endpoint by saturating reinforcement at `fyd`. That reconstruction explains the
+otherwise 1.23% pole difference without changing the engine's compatible uniform-strain endpoint.
 
 The production-faithful `bench:equivalent-block` matrix adds KDS and ACI versions of rectangle,
 hollow, L-shaped, and disconnected-island sections. It uses the same fixed 27 stations, verifies

@@ -50,6 +50,12 @@ User curves require strictly increasing finite strain coordinates, explicit inte
 extrapolation/rupture policy, and deterministic one-sided tangent behavior at kinks. Invalid curves
 do not fall back to a default law in an engineering calculation.
 
+Closed-form concrete evaluators return zero stress after their declared ultimate compression strain
+only as a finite diagnostic continuation for rejected Newton trial states and field inspection. It
+is not a post-crushing resistance branch. Surface construction and inverse acceptance separately
+enforce the material strain limit; a state outside that domain cannot be accepted merely because
+the continuation returned a finite stress.
+
 ## 4. Concrete model distinction
 
 A stress-strain law and an equivalent rectangular block are not interchangeable:

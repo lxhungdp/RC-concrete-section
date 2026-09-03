@@ -75,6 +75,9 @@ jobs:
       - name: Capacity fingerprint is unchanged
         run: npm run bench:verify
 
+      - name: P16 external comparison remains within declared tolerances
+        run: npm run verify:p16
+
       - name: Stress-strain sampling verification matrix
         run: npm run bench:strain-sampling
 

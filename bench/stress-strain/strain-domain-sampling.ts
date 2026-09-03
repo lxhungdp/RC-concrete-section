@@ -7,6 +7,7 @@ import {
 import { createKdsBasicDesignBasis } from '@pm/design'
 import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
 import {
+  ADAPTIVE_MAX_PASSES,
   createDefaultAnalysisOptions,
   type AnalysisOptions
 } from '@pm/project'
@@ -27,13 +28,42 @@ const fixed = (options: AnalysisOptions, directions: number): AnalysisOptions =>
   return result
 }
 
-/** The shared 27-station schedule and 144 fixed angles form the directional benchmark reference. */
+/**
+ * Empirical regression envelope for the fixed 27 x 36 Preview surface against the independently
+ * refined benchmark surface. These are not design-code acceptance tolerances and do not promote a
+ * Preview result; they prevent the measured fixture envelope from silently getting worse.
+ */
+const MAX_UNDER_PREDICTION = 0.04
+const MAX_OVER_PREDICTION = 0.005
+
+/**
+ * The benchmark reference densifies the direction lattice to 144 and independently refines each
+ * meridian's station schedule. Holding the same 27 stations here would make the harness
+ * structurally unable to detect meridian discretisation error.
+ */
 const referenceOptions = (): AnalysisOptions => {
-  return fixed(createDefaultAnalysisOptions(), 144)
+  const result = fixed(createDefaultAnalysisOptions(), 144)
+  result.samplingMode = 'adaptive'
+  result.stations.refinement = {
+    type: 'adaptive',
+    tolerance: 0.0025,
+    maxPasses: ADAPTIVE_MAX_PASSES,
+    maxStations: 72
+  }
+  result.directions.refinement = {
+    type: 'adaptive',
+    tolerance: 0.0025,
+    // `samplingMode` is one coherent mode. Zero direction passes retain the already dense fixed
+    // 144-direction lattice while allowing the station refiner to operate independently.
+    maxPasses: 0,
+    maxDirections: 144,
+    probe: 'all'
+  }
+  return result
 }
 
-const relative = (actual: number, expected: number) =>
-  Math.abs(actual - expected) / Math.max(1, Math.abs(expected))
+const signedRelative = (actual: number, expected: number) =>
+  (actual - expected) / Math.max(1, Math.abs(expected))
 
 const reports: Array<Record<string, string | number | boolean>> = []
 const failures: string[] = []
@@ -49,9 +79,7 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
     design,
     referenceOptions()
   ))
-  const available = reference.value.points.filter((point) => !point.isAxialCap)
-  const stride = Math.max(1, Math.floor(available.length / 96))
-  const samples = available.filter((_, index) => index % stride === 0).slice(0, 96)
+  const samples = reference.value.points.filter((point) => !point.isAxialCap)
 
   const candidates = [
     { name: 'unified-27x36-fixed', options: fixed(createDefaultAnalysisOptions(), 36) }
@@ -64,15 +92,21 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
       design,
       candidate.options
     ))
-    let maxRayError = 0
+    let maxUnderPrediction = 0
+    let maxOverPrediction = 0
     let hits = 0
+    let rays = 0
+    const expectedLambda = 1 / 0.7
     for (const point of samples) {
       const demand = { P: 0.7 * point.P, Mx: 0.7 * point.Mx, My: 0.7 * point.My }
       if (Math.hypot(demand.P, demand.Mx, demand.My) < 1e-9) continue
+      rays += 1
       const hit = intersectSurfaceWithDemandRay(built.value, demand)
       if (!hit) continue
       hits += 1
-      maxRayError = Math.max(maxRayError, relative(hit.lambda, 1 / 0.7))
+      const error = signedRelative(hit.lambda, expectedLambda)
+      maxUnderPrediction = Math.max(maxUnderPrediction, -error)
+      maxOverPrediction = Math.max(maxOverPrediction, error)
     }
     const report = {
       case: fixture.key,
@@ -81,14 +115,32 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
       points: built.value.points.length,
       directions: built.value.directions.length,
       stations: built.value.stations.length,
-      maxRayError,
-      rayHitRate: hits / Math.max(1, samples.length),
-      directionWithinTolerance: built.value.directionError.withinTolerance,
-      stationWithinTolerance: built.value.stationError.withinTolerance,
+      referencePoints: samples.length,
+      referenceStations: reference.value.stations.length,
+      maxUnderPrediction,
+      maxOverPrediction,
+      maxAbsoluteRayError: Math.max(maxUnderPrediction, maxOverPrediction),
+      rayHitRate: hits / Math.max(1, rays),
+      referenceStationWithinTolerance: reference.value.stationError.withinTolerance,
       referenceMs: reference.ms
     }
     reports.push(report)
-    if (hits !== samples.length) failures.push(`${fixture.key}/${candidate.name}: missing ray intersections`)
+    if (hits !== rays) failures.push(`${fixture.key}/${candidate.name}: missing ${rays - hits} of ${rays} ray intersections`)
+    if (!reference.value.stationError.withinTolerance) {
+      failures.push(`${fixture.key}: refined station reference did not reach its requested tolerance`)
+    }
+    if (maxUnderPrediction > MAX_UNDER_PREDICTION) {
+      failures.push(
+        `${fixture.key}/${candidate.name}: ${(100 * maxUnderPrediction).toFixed(3)}% under-prediction exceeds ` +
+        `${(100 * MAX_UNDER_PREDICTION).toFixed(3)}% regression envelope`
+      )
+    }
+    if (maxOverPrediction > MAX_OVER_PREDICTION) {
+      failures.push(
+        `${fixture.key}/${candidate.name}: ${(100 * maxOverPrediction).toFixed(3)}% over-prediction exceeds ` +
+        `${(100 * MAX_OVER_PREDICTION).toFixed(3)}% regression envelope`
+      )
+    }
   }
 }
 
@@ -99,9 +151,11 @@ console.table(reports.map((item) => ({
   points: item.points,
   dirs: item.directions,
   stations: item.stations,
-  'max ray error': `${(100 * Number(item.maxRayError)).toFixed(3)}%`,
-  'direction ok': item.directionWithinTolerance,
-  'station ok': item.stationWithinTolerance
+  'reference points': item.referencePoints,
+  'reference stations': item.referenceStations,
+  'max under': `${(100 * Number(item.maxUnderPrediction)).toFixed(3)}%`,
+  'max over': `${(100 * Number(item.maxOverPrediction)).toFixed(3)}%`,
+  'reference station ok': item.referenceStationWithinTolerance
 })))
 console.log(JSON.stringify({ generatedAt: new Date().toISOString(), reports, failures }, null, 2))
 if (failures.length > 0) throw new Error(`Strain-domain sampling verification failed:\n${failures.join('\n')}`)

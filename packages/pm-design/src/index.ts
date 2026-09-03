@@ -811,6 +811,7 @@ export type DesignProfileGuidance = {
 const KDS_142010_KCSC_URL = 'https://www.kcsc.re.kr/standardCode/viewer/KDS%2014%2020%2010:2022-01-11'
 const KDS_142020_KCSC_URL = 'https://www.kcsc.re.kr/standardCode/viewer/KDS%2014%2020%2020:2022-01-11'
 const JRC_EC2_URL = 'https://eurocodes.jrc.ec.europa.eu/EN-Eurocodes/eurocode-2-design-concrete-structures'
+const STANDARDS_AUSTRALIA_AS3600_URL = 'https://www.standards.org.au/news/revised-document-to-help-industry-prepare-for-earthquakes'
 
 export const designProfileGuidance = (profileId: DesignProfileId): DesignProfileGuidance => {
   if (profileId === 'kds-142020-2022-appendix-material-factors') {
@@ -841,7 +842,7 @@ export const designProfileGuidance = (profileId: DesignProfileId): DesignProfile
       referenceCurve:
         'Reference uses characteristic strengths and is supplied for audit and comparison; EC2 design verification is based on the Design curve.',
       designCurve:
-        'Design preserves elastic modulus and characteristic-strength-dependent strain parameters while replacing the concrete and steel strength ordinates.',
+        'Design preserves elastic modulus and characteristic-strength-dependent strain parameters while replacing the concrete and steel strength ordinates. This Preview applies no minimum-eccentricity adjustment or axial cap; their applicability remains an unresolved clause-review gate.',
       doNotCombine:
         'Do not add an ACI/KDS-style global strength-reduction factor unless an explicitly selected EN edition or National Annex requires another stage.',
       references: [
@@ -849,6 +850,25 @@ export const designProfileGuidance = (profileId: DesignProfileId): DesignProfile
         { document: 'EN 1992-1-1:2004', clause: '3.1.6–3.1.7 and Table 3.1', subject: 'Concrete design strength and stress-strain laws', url: JRC_EC2_URL },
         { document: 'EN 1992-1-1:2004', clause: '3.2.7–3.2.8', subject: 'Reinforcement design stress-strain laws', url: JRC_EC2_URL }
       ]
+    }
+  }
+  if (profileId === 'as-3600-2018-amd2') {
+    return {
+      title: 'AS 3600 capacity-factor preview',
+      summary:
+        'Nominal equivalent-block resultants are multiplied by the action/state-dependent capacity factor implemented for the AS 3600:2018 Amendments 1–2 Preview.',
+      referenceCurve:
+        'Nominal is the unreduced section-capacity curve from the AS equivalent rectangular block and compatible reinforcement response.',
+      designCurve:
+        'Design applies the Preview capacity-factor mapping. Minimum eccentricity, member slenderness, section-shape reductions and reinforcement/detailing compliance are not applied and remain release blockers.',
+      doNotCombine:
+        'Do not add ACI/KDS axial caps or strain-based phi transitions. This profile stays draft until the purchased standard is reviewed clause by clause and independently verified.',
+      references: [{
+        document: 'AS 3600:2018 incorporating Amendments 1 and 2',
+        clause: 'Preview provenance; exact clauses require licensed review',
+        subject: 'Edition identity and companion commentary',
+        url: STANDARDS_AUSTRALIA_AS3600_URL
+      }]
     }
   }
   if (profileId === 'kds-2024-current-set' || profileId === 'kds-basic-2021-2022') {

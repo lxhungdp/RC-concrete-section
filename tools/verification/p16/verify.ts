@@ -60,6 +60,15 @@ const ROOT = process.cwd()
 const SOURCE = resolve(ROOT, 'docs/examples/reference-case/source/P16_Column_ULS_R _260730_콘크리트 커브 추가수정.md')
 const PROJECT_OUT = resolve(ROOT, 'docs/examples/reference-case/projects/P16_Column_ULS.pm-project.json')
 const RESULT_OUT = resolve(ROOT, 'docs/examples/reference-case/expected/P16_umd-vs-engine.json')
+const UPDATE_EXPECTED = process.argv.includes('--update')
+
+/**
+ * Numeric drift tolerance for the committed engine evidence across the pinned runtime. This is a
+ * regression tolerance, not the external-program agreement criterion below.
+ */
+const REGRESSION_RELATIVE_TOLERANCE = 1e-9
+const EXTERNAL_FLEXURAL_RELATIVE_TOLERANCE = 5e-4
+const POLE_RECONSTRUCTION_RELATIVE_TOLERANCE = 5e-5
 
 const KN = 1e3
 const KNM = 1e6
@@ -385,8 +394,7 @@ const document = createProjectDocument({
 document.meta.updatedAt = '2026-08-12T00:00:00.000Z'
 const parsedDocument = parseProjectDocument(document)
 if (!parsedDocument.ok) throw new Error(`Generated UMD project is not importable: ${parsedDocument.error}`)
-mkdirSync(dirname(PROJECT_OUT), { recursive: true })
-writeFileSync(PROJECT_OUT, `${serializeProjectDocument(parsedDocument.document)}\n`, 'utf8')
+const projectText = `${serializeProjectDocument(parsedDocument.document)}\n`
 
 // ---------------------------------------------------------------- run the engine
 const PREPARED = prepareAnalysis(SECTION, REBARS, MATERIALS)
@@ -398,6 +406,18 @@ const FYD = MATERIALS.steel[0].fy / (MATERIALS.steel[0].factors?.gammaS ?? 1)
 const surface24 = buildPreviewSurface(SECTION, REBARS, MATERIALS, {}, withDirections(24))
 const surface96 = buildPreviewSurface(SECTION, REBARS, MATERIALS, {}, withDirections(96))
 const surface360 = buildPreviewSurface(SECTION, REBARS, MATERIALS, {}, withDirections(360))
+
+const compressionPoint = surface24.nominalPoints.find((point) => point.stationId === 'pure-compression')
+if (!compressionPoint) throw new Error('The P16 comparison surface has no pure-compression pole.')
+const compressionLedger = evaluatePreparedState(PREPARED, compressionPoint.state)
+const reinforcementArea = REBARS.reduce((sum, bar) => sum + Math.PI * bar.dia * bar.dia / 4, 0)
+const saturatedSteelGrossP = reinforcementArea * FYD
+const saturatedSteelReconstructionP =
+  compressionLedger.concrete.P + compressionLedger.displacedConcrete.P + saturatedSteelGrossP
+const umdCompressionP = DETAILS.sectionLimits['Max. compressive strain']?.N
+if (!(typeof umdCompressionP === 'number' && Number.isFinite(umdCompressionP))) {
+  throw new Error('The UMD source has no finite pure-compression limit.')
+}
 
 /** UMD strain plane -> engine strain state. Curvature 1/m -> 1/mm; eax is already centroidal. */
 const engineState = (plane: { eax: number; kyy: number; kzz: number }): StrainState => ({
@@ -748,7 +768,7 @@ const result = {
   meta: {
     source: 'docs/examples/reference-case/source/P16_Column_ULS_R _260730_콘크리트 커브 추가수정.md',
     projectInput: 'docs/examples/reference-case/projects/P16_Column_ULS.pm-project.json',
-    generatedAt: new Date().toISOString(),
+    generatedAt: document.meta.updatedAt,
     strainDomain: surface24.strainDomain,
     designBasisNote:
       'UMD material curves are already design-level (gmc,ULS = 1.000 with a 27.62 MPa plateau, fyd = fy/1.111). ' +
@@ -767,16 +787,128 @@ const result = {
     warnings: PREPARED.mesh.report.warnings
   },
   umdSectionLimits: DETAILS.sectionLimits,
+  pureCompressionDecomposition: {
+    engineCompatibleState: {
+      uniformStrain: compressionPoint.state.e0,
+      concreteGrossP: compressionLedger.concrete.P * N_TO_KN,
+      displacedConcreteP: compressionLedger.displacedConcrete.P * N_TO_KN,
+      reinforcementArea,
+      reinforcementStress: STEEL.stress(compressionPoint.state.e0),
+      steelGrossP: compressionLedger.steelGross.P * N_TO_KN,
+      totalP: compressionLedger.total.P * N_TO_KN
+    },
+    umdSaturatedSteelReconstruction: {
+      concreteGrossP: compressionLedger.concrete.P * N_TO_KN,
+      displacedConcreteP: compressionLedger.displacedConcrete.P * N_TO_KN,
+      reinforcementArea,
+      reinforcementStress: FYD,
+      steelGrossP: saturatedSteelGrossP * N_TO_KN,
+      totalP: saturatedSteelReconstructionP * N_TO_KN,
+      umdReportedP: umdCompressionP,
+      reconstructionMinusUmdP: saturatedSteelReconstructionP * N_TO_KN - umdCompressionP
+    },
+    interpretation:
+      'The engine pure-compression pole is a compatible uniform strain state at the concrete peak ' +
+      'strain 0.0021, so reinforcement remains elastic at 420 MPa. Replacing only that steel ' +
+      'ordinate with fyd reconstructs the UMD maximum-compression value within source-report ' +
+      'rounding. The two poles therefore represent different endpoint definitions; no engine ' +
+      'capacity correction is applied.'
+  },
   surfaces: [surfaceSummary(surface24, '24-direction comparison grid'), surfaceSummary(surface96, '96 directions'), surfaceSummary(surface360, '360 directions')],
   cases,
   concretePoints,
   rebarPoints
 }
 
-writeFileSync(RESULT_OUT, `${JSON.stringify(result, null, 1)}\n`, 'utf8')
+const resultText = `${JSON.stringify(result, null, 1)}\n`
+
+const relativeError = (actual: number, expected: number) =>
+  Math.abs(actual - expected) / Math.max(1, Math.abs(expected))
+
+const assertClose = (label: string, actual: number, expected: number, tolerance: number) => {
+  const error = relativeError(actual, expected)
+  if (!Number.isFinite(actual) || !Number.isFinite(expected) || error > tolerance) {
+    throw new Error(`${label}: ${actual} differs from ${expected} by ${(100 * error).toPrecision(6)}% (limit ${(100 * tolerance).toPrecision(6)}%).`)
+  }
+}
+
+const readExpected = () => JSON.parse(readFileSync(RESULT_OUT, 'utf8')) as unknown
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/** Compare the complete committed oracle, not a hand-picked subset of its fields. */
+const verifyCommittedRegression = (actual: unknown, expected: unknown, path = 'p16') => {
+  if (typeof actual === 'number' && typeof expected === 'number') {
+    assertClose(path, actual, expected, REGRESSION_RELATIVE_TOLERANCE)
+    return
+  }
+  if (Array.isArray(actual) && Array.isArray(expected)) {
+    if (actual.length !== expected.length) {
+      throw new Error(`${path}: array length ${actual.length} differs from ${expected.length}.`)
+    }
+    for (let index = 0; index < actual.length; index += 1) {
+      verifyCommittedRegression(actual[index], expected[index], `${path}[${index}]`)
+    }
+    return
+  }
+  if (isRecord(actual) && isRecord(expected)) {
+    const actualKeys = Object.keys(actual).sort()
+    const expectedKeys = Object.keys(expected).sort()
+    if (actualKeys.join('\0') !== expectedKeys.join('\0')) {
+      throw new Error(`${path}: object keys differ; review and use --update only after approval.`)
+    }
+    for (const key of actualKeys) {
+      verifyCommittedRegression(actual[key], expected[key], `${path}.${key}`)
+    }
+    return
+  }
+  if (!Object.is(actual, expected)) {
+    throw new Error(`${path}: ${JSON.stringify(actual)} differs from ${JSON.stringify(expected)}.`)
+  }
+}
+
+const verifyExternalAgreement = () => {
+  for (const item of result.cases) {
+    const exact = item.engineCapacity.exact
+    if (!exact) throw new Error(`P16 case ${item.id}: exact flexural capacity is missing.`)
+    assertClose(
+      `P16 case ${item.id}: exact Mu versus UMD`,
+      exact.Mu,
+      item.umd.Mu,
+      EXTERNAL_FLEXURAL_RELATIVE_TOLERANCE
+    )
+  }
+  assertClose(
+    'P16 pure-tension pole versus UMD',
+    result.surfaces[0]!.poles.pureTension.P,
+    result.umdSectionLimits['Max. tensile strain']!.N,
+    EXTERNAL_FLEXURAL_RELATIVE_TOLERANCE
+  )
+  assertClose(
+    'P16 saturated-steel pure-compression reconstruction versus UMD',
+    result.pureCompressionDecomposition.umdSaturatedSteelReconstruction.totalP,
+    result.pureCompressionDecomposition.umdSaturatedSteelReconstruction.umdReportedP,
+    POLE_RECONSTRUCTION_RELATIVE_TOLERANCE
+  )
+}
+
+if (UPDATE_EXPECTED) {
+  mkdirSync(dirname(PROJECT_OUT), { recursive: true })
+  writeFileSync(PROJECT_OUT, projectText, 'utf8')
+  writeFileSync(RESULT_OUT, resultText, 'utf8')
+} else {
+  const committedProject = readFileSync(PROJECT_OUT, 'utf8')
+  if (committedProject !== projectText) {
+    throw new Error('P16 project fixture is stale; review the change and run verify.ts --update explicitly.')
+  }
+  verifyCommittedRegression(JSON.parse(resultText) as unknown, readExpected())
+}
+verifyExternalAgreement()
 
 console.log(`project input  -> ${PROJECT_OUT}`)
 console.log(`comparison     -> ${RESULT_OUT}`)
+console.log(`mode           : ${UPDATE_EXPECTED ? 'update committed fixtures' : 'read-only verification'}`)
 console.log(`mesh           : ${PREPARED.mesh.report.cells} cells, ${PREPARED.mesh.report.points} integration points, h = ${PREPARED.mesh.report.cellSize.toFixed(2)} mm`)
 console.log(`origin         : (${ORIGIN.x}, ${ORIGIN.y})  fyd = ${FYD.toFixed(3)} MPa`)
 for (const surface of result.surfaces) {

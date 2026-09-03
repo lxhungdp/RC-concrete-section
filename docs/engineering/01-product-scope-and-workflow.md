@@ -70,10 +70,20 @@ The first verified analysis release may intentionally restrict the input capabil
 concrete region with holes. The editor and project format can support multiple regions earlier, but
 the analysis must reject unsupported topology with a typed blocking issue.
 
+The current project schema and UI are SI-only. Geometry is entered in millimetres, material stress
+in MPa, displayed actions in kN/kNm, and the internal resultant contract is N/N-mm. There is no
+persisted unit-system selector and no implicit kip/in conversion at an input, calculation, or report
+boundary.
+
 ## 4. Excluded until separately specified and verified
 
 - member slenderness, second-order effects, frame stability, and buckling;
 - shear, torsion, anchorage, confinement behavior beyond an explicit resistance-profile option;
+- code-specific minimum/maximum longitudinal-reinforcement ratios, bar spacing, full bar-cover
+  compliance, and other reinforcement detailing checks;
+- a minimum-eccentricity rule unless the selected resistance profile explicitly declares and traces
+  one; the EN 1992 and AS 3600 Preview profiles currently declare none and must not be read as having
+  completed that member/section applicability review;
 - creep magnification, fire, fatigue, cyclic degradation, durability, and construction stages;
 - prestressing, FRP, composite structural shapes, bond slip, local bar buckling, or non-planar strain
   fields;

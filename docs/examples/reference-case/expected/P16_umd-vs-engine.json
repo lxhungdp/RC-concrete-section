@@ -2,7 +2,7 @@
  "meta": {
   "source": "docs/examples/reference-case/source/P16_Column_ULS_R _260730_콘크리트 커브 추가수정.md",
   "projectInput": "docs/examples/reference-case/projects/P16_Column_ULS.pm-project.json",
-  "generatedAt": "2026-08-11T22:53:58.739Z",
+  "generatedAt": "2026-08-12T00:00:00.000Z",
   "strainDomain": "concrete-pivot-ultimate",
   "designBasisNote": "UMD material curves are already design-level (gmc,ULS = 1.000 with a 27.62 MPa plateau, fyd = fy/1.111). This engine is therefore run at NOMINAL level on those same curves, so both sides are the same resistance level.",
   "fyd": 450.04500450045003,
@@ -33,6 +33,28 @@
    "N": -121300,
    "M": 2.028e-11
   }
+ },
+ "pureCompressionDecomposition": {
+  "engineCompatibleState": {
+   "uniformStrain": 0.0021,
+   "concreteGrossP": 545771.2000000002,
+   "displacedConcreteP": -7443.371829902875,
+   "reinforcementArea": 269492.1010102393,
+   "reinforcementStress": 420,
+   "steelGrossP": 113186.68242429997,
+   "totalP": 651514.5105943972
+  },
+  "umdSaturatedSteelReconstruction": {
+   "concreteGrossP": 545771.2000000002,
+   "displacedConcreteP": -7443.371829902875,
+   "reinforcementArea": 269492.1010102393,
+   "reinforcementStress": 450.04500450045003,
+   "steelGrossP": 121283.57381198888,
+   "totalP": 659611.4019820861,
+   "umdReportedP": 659600,
+   "reconstructionMinusUmdP": 11.401982086128555
+  },
+  "interpretation": "The engine pure-compression pole is a compatible uniform strain state at the concrete peak strain 0.0021, so reinforcement remains elastic at 420 MPa. Replacing only that steel ordinate with fyd reconstructs the UMD maximum-compression value within source-report rounding. The two poles therefore represent different endpoint definitions; no engine capacity correction is applied."
  },
  "surfaces": [
   {
