@@ -16,6 +16,6 @@
     "@pm/code-kds142020": "0.1.0"
   },
   "scripts": {
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node ../../tools/runtime/check-runtime.mjs && node --import tsx --test test/*.test.ts"
   }
 }

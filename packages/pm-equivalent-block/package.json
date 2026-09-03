@@ -9,10 +9,11 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "node --import tsx --test test/*.test.ts",
-    "bench": "tsx ../../bench/equivalent-block/run.ts"
+    "test": "node ../../tools/runtime/check-runtime.mjs && node --import tsx --test test/*.test.ts",
+    "bench": "node ../../tools/runtime/check-runtime.mjs && tsx ../../bench/equivalent-block/run.ts"
   },
   "dependencies": {
+    "@pm/geometry": "0.1.0",
     "@pm/stations": "0.1.0"
   }
 }

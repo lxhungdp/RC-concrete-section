@@ -300,7 +300,7 @@ const runCase = async (
   check('β1', namedValue('beta_1'), prepared.model.blockLaw.depthFactor, 1e-12)
   check('εcu', namedValue('ecu'), prepared.model.blockLaw.extremeCompressionStrain, 1e-12)
 
-  console.log('== 8. Capacity-ray residual and fail-closed verdict ==')
+  console.log('== 8. Capacity-ray residual and kernel-owned verdict ==')
   const residualRow = findLabelRow('Equilibrium', 'relative residual')
   const capacityResidual = cellValue('Equilibrium', `C${residualRow}`)
   pass(
@@ -318,16 +318,21 @@ const runCase = async (
   const convergenceRow = findLabelRow('Design_Check', 'solver converged')
   const admissibilityRow = findLabelRow('Design_Check', 'strain admissible')
   const verdictRow = findLabelRow('Design_Check', 'verdict')
+  const kernelVerdict = cellText('Design_Check', `C${verdictRow}`)
+  pass(
+    'Fixed equivalent-block verdict is indeterminate without a validated screening bound',
+    kernelVerdict === 'INDETERMINATE'
+  )
   engine.setCellContents({ sheet: designSheetId, row: convergenceRow - 1, col: 2 }, [['no']])
   pass(
-    'verdict refuses a non-converged solve even when utilization is numeric',
-    cellText('Design_Check', `C${verdictRow}`).startsWith('NOT CHECKED - solver did not converge')
+    'editing inverse convergence cannot replace the kernel adequacy decision',
+    cellText('Design_Check', `C${verdictRow}`) === kernelVerdict
   )
   engine.setCellContents({ sheet: designSheetId, row: convergenceRow - 1, col: 2 }, [['yes']])
   engine.setCellContents({ sheet: designSheetId, row: admissibilityRow - 1, col: 2 }, [['no']])
   pass(
-    'verdict refuses a strain-inadmissible state even when utilization is below one',
-    cellText('Design_Check', `C${verdictRow}`).startsWith('NOT CHECKED - strain state is not admissible')
+    'editing inverse admissibility cannot replace the kernel adequacy decision',
+    cellText('Design_Check', `C${verdictRow}`) === kernelVerdict
   )
 }
 

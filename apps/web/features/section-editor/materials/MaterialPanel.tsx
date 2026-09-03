@@ -70,6 +70,7 @@ const steelModelDefaults = (
       stressStrain: {
         type: 'user-curve',
         interpolation: 'linear',
+        extrapolation: 'clamp',
         points: [
           { strain: -epsU, stress: -material.fy },
           { strain: -epsY, stress: -material.fy },

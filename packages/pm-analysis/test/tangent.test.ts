@@ -67,6 +67,7 @@ checkMaterialTangent(
     stressStrain: {
       type: 'user-curve',
       interpolation: 'linear',
+      extrapolation: 'clamp',
       zeroTension: true,
       points: [
         { strain: 0, stress: 0 },
@@ -96,6 +97,7 @@ checkMaterialTangent(
     stressStrain: {
       type: 'user-curve',
       interpolation: 'linear',
+      extrapolation: 'clamp',
       points: [
         { strain: -0.02, stress: -460 },
         { strain: -0.002, stress: -400 },
@@ -135,6 +137,28 @@ test('section consistent tangent predicts all three resultant derivatives', () =
     const analytic = tangent[row].reduce((sum, value, column) => sum + value * direction[column], 0)
     relativeClose(analytic, finiteDifference, 2e-6, `${key} directional derivative`)
   })
+})
+
+test('forward resultants and tangents are stable when integration fibers are reversed', () => {
+  const section = sectionGeometryFromGeometryInput(document.inputs.geometry)
+  const rebars = geometryInputRebars(document.inputs.geometry)
+  const prepared = prepareAnalysis(section, rebars, document.inputs.materials)
+  const reversed = { ...prepared, fibers: [...prepared.fibers].reverse() }
+  const state = { e0: 0.0007, kx: 8e-7, ky: -6e-7 }
+  const direct = evaluatePreparedStateWithTangent(prepared, state)
+  const reordered = evaluatePreparedStateWithTangent(reversed, state)
+
+  for (const key of ['P', 'Mx', 'My'] as const) {
+    relativeClose(reordered.ledger.total[key], direct.ledger.total[key], 2e-15, `${key} reordered`)
+  }
+  direct.tangent.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
+    relativeClose(
+      reordered.tangent[rowIndex][columnIndex],
+      value,
+      2e-15,
+      `J[${rowIndex},${columnIndex}] reordered`
+    )
+  }))
 })
 
 // Compile-time guards: the spread-based fixtures above must remain valid concrete/steel definitions.

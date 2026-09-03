@@ -6,6 +6,7 @@ import {
   sectionCentroid,
   signedPolygonArea,
   summarizeSection,
+  validatePolygonSection,
   type Point2,
   type SectionGeometry
 } from '../src/index'
@@ -35,6 +36,91 @@ test('multi-solid area and centroid with an off-centre hole match the closed for
   close(summary.centroid.y, 1.2)
   close(sectionCentroid(geometry).x, 4.76)
   close(sectionCentroid(geometry).y, 1.2)
+})
+
+test('shared topology gate rejects self-intersections and boundary-crossing bar disks', () => {
+  const bowTie = validatePolygonSection({
+    solids: [{
+      outer: [
+        { x: 0, y: 0 },
+        { x: 100, y: 100 },
+        { x: 0, y: 100 },
+        { x: 100, y: 0 }
+      ],
+      holes: []
+    }]
+  })
+  assert.ok(bowTie.some((issue) => issue.code === 'SELF_INTERSECTING_RING'))
+
+  const boundaryBar = validatePolygonSection({
+    solids: [{
+      outer: [
+        { x: -50, y: -50 },
+        { x: 50, y: -50 },
+        { x: 50, y: 50 },
+        { x: -50, y: 50 }
+      ],
+      holes: []
+    }],
+    rebars: [{ id: 1, x: 49, y: 0, dia: 20 }]
+  })
+  assert.ok(boundaryBar.some((issue) => issue.code === 'REBAR_CROSSES_BOUNDARY'))
+})
+
+test('shared reinforcement gate rejects overlapping circular bars', () => {
+  const issues = validatePolygonSection({
+    solids: [{
+      outer: [
+        { x: -100, y: -100 },
+        { x: 100, y: -100 },
+        { x: 100, y: 100 },
+        { x: -100, y: 100 }
+      ],
+      holes: []
+    }],
+    rebars: [
+      { id: 1, x: 0, y: 0, dia: 20 },
+      { id: 2, x: 15, y: 0, dia: 20 }
+    ]
+  })
+  assert.ok(issues.some((issue) => issue.code === 'REBAR_OVERLAP'))
+})
+
+test('shared topology gate is translation-stable and detects a solid crossing another solid hole', () => {
+  const offset = 1e12
+  const translated = validatePolygonSection({
+    solids: [{
+      outer: [
+        { x: offset, y: offset },
+        { x: offset + 10, y: offset },
+        { x: offset + 10, y: offset + 8 },
+        { x: offset, y: offset + 8 }
+      ],
+      holes: []
+    }],
+    rebars: [{ id: 1, x: offset + 5, y: offset + 4, dia: 2 }]
+  })
+  assert.deepEqual(translated, [])
+
+  const crossingHole = validatePolygonSection({
+    solids: [
+      {
+        outer: [
+          { x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }
+        ],
+        holes: [[
+          { x: 30, y: 30 }, { x: 70, y: 30 }, { x: 70, y: 70 }, { x: 30, y: 70 }
+        ]]
+      },
+      {
+        outer: [
+          { x: 40, y: 40 }, { x: 80, y: 40 }, { x: 80, y: 60 }, { x: 40, y: 60 }
+        ],
+        holes: []
+      }
+    ]
+  })
+  assert.ok(crossingHole.some((issue) => issue.code === 'SOLID_INTERSECTION'))
 })
 
 test('triangle/quadrature mesh conserves area for deterministic perturbed polygons', () => {
@@ -86,4 +172,3 @@ test('three-point triangle rule integrates a degree-2 polynomial exactly', () =>
   const expected = 1 / 12 + 2 / 24 + 3 / 12 + 4 / 6 + 5 / 6 + 6 / 2
   close(integrated, expected, 1e-12)
 })
-

@@ -623,6 +623,7 @@ const run = async () => {
         type: 'user-curve',
         points: curve((strain) => kdsConcrete.stress(strain), -0.001, 0.006, 141),
         interpolation: 'linear',
+        extrapolation: 'clamp',
         zeroTension: true
       }
     },
@@ -634,7 +635,8 @@ const run = async () => {
         stressStrain: {
           type: 'user-curve',
           points: curve((strain) => kdsSteel.stress(strain), -0.06, 0.06, 241),
-          interpolation: 'linear'
+          interpolation: 'linear',
+          extrapolation: 'clamp'
         }
       }
     ]

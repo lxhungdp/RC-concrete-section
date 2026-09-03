@@ -241,11 +241,15 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
         if (blockSurfaceCache?.key !== key) {
           blockSurfaceCache = { key, core }
         }
-        const result = solveEquivalentBlockDemandFromPrepared(
+        const inverse = solveEquivalentBlockDemandFromPrepared(
           prepared,
           analysisOptions,
           loadcase,
           core
+        )
+        const result = applyDesignCheckToInverse(
+          inverse,
+          checkLoadcaseUtilizationFromSurface(surface, loadcase)
         )
         workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
         return

@@ -1,5 +1,6 @@
 import {
   analysisInputKey,
+  applyDesignCheckToInverse,
   buildDesignPreviewSurfaceFromPrepared,
   buildExactDirectionCurveFromPrepared,
   buildStressStrainPointCalculationAudit,
@@ -140,7 +141,10 @@ export const checkLoadcasesFallback = (payload: CheckLoadcasesPayload): Loadcase
 
 export const checkLoadcaseFallback = (payload: CheckLoadcasePayload): InversePreviewResult => {
   if (isEquivalentBlockAnalysisOptions(payload.surface.analysisOptions)) {
-    return solveEquivalentBlockDemandFromPrepared(blockFor(payload), payload.surface.analysisOptions, payload.loadcase)
+    return applyDesignCheckToInverse(
+      solveEquivalentBlockDemandFromPrepared(blockFor(payload), payload.surface.analysisOptions, payload.loadcase),
+      checkLoadcaseUtilizationFromSurface(payload.surface, payload.loadcase)
+    )
   }
   const contour = sliceActiveDesignPContour(payload.surface, payload.loadcase.P)
   const designCheck = checkLoadcaseUtilizationFromSurface(payload.surface, payload.loadcase)
@@ -150,14 +154,7 @@ export const checkLoadcaseFallback = (payload: CheckLoadcasePayload): InversePre
     contour,
     codeAdjustedDemandOfCheck(designCheck)
   )
-  return {
-    ...inverse,
-    utilization: designCheck.proportionalUtilization,
-    proportionalUtilization: designCheck.proportionalUtilization,
-    fixedPUtilization: designCheck.fixedPUtilization,
-    designCapacityPoint: designCheck.capacityPoint,
-    resistance: designCheck.resistance
-  }
+  return applyDesignCheckToInverse(inverse, designCheck)
 }
 
 export const buildSectionFieldMapFallback = (payload: BuildFieldMapPayload): SectionFieldMap => {

@@ -56,8 +56,10 @@
     "next-env.d.ts",
     "apps/**/*.ts",
     "apps/**/*.tsx",
+    "bench/**/*.ts",
     "packages/**/*.ts",
     "packages/**/*.tsx",
+    "tools/**/*.ts",
     ".next/types/**/*.ts"
   ],
   "exclude": ["node_modules"]

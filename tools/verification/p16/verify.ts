@@ -307,7 +307,7 @@ const materialStore = (): MaterialStore => ({
     fck: 50,
     mc: 2400,
     elasticModulus: 37280,
-    stressStrain: { type: 'user-curve', points: CURVE.map((point) => ({ ...point })), interpolation: 'linear', zeroTension: true },
+    stressStrain: { type: 'user-curve', points: CURVE.map((point) => ({ ...point })), interpolation: 'linear', extrapolation: 'clamp', zeroTension: true },
     limits: { eps0: 0.0021, epsCu: 0.0032, ignoreTension: true },
     factors: { gammaC: 1 }
   },

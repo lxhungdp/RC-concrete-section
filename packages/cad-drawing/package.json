@@ -21,7 +21,7 @@
   ],
   "license": "MIT",
   "scripts": {
-    "test": "ava --concurrency 4"
+    "test": "node ../../tools/runtime/check-runtime.mjs && ava --concurrency 4"
   },
   "dependencies": {
     "@jscad/regl-renderer": "2.6.15",

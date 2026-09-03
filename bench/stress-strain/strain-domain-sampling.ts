@@ -79,7 +79,7 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
     design,
     referenceOptions()
   ))
-  const samples = reference.value.points.filter((point) => !point.isAxialCap)
+  const samples = reference.value.points.filter((point) => point.surfaceRole !== 'axial-cap')
 
   const candidates = [
     { name: 'unified-27x36-fixed', options: fixed(createDefaultAnalysisOptions(), 36) }

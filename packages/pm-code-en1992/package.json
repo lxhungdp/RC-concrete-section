@@ -9,6 +9,6 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node ../../tools/runtime/check-runtime.mjs && node --import tsx --test test/*.test.ts"
   }
 }

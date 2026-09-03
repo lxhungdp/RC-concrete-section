@@ -82,11 +82,13 @@ checks, and check exports. Quick checks expose an uncertainty interval and three
 classification. Neither workspace yet satisfies the immutable accepted-result identity, result
 history, or release gates required by this section.
 
-For Fixed 27 x 36 mode, the interval uses a 2% regression screening margin derived from the current
-dense-grid comparison matrix. This is not a formal error bound: any interval crossing `UR = 1` is
-`indeterminate` and the UI instructs the user to rerun with Adaptive sampling. Adaptive mode uses
-its returned station/direction error evidence and is indeterminate if either refinement did not
-converge.
+For stress-strain Fixed 27 x 36 mode, the interval uses a 2% regression screening margin derived
+from that mechanics' current dense-grid comparison matrix. It is not a formal error bound: any
+interval crossing `UR = 1` is `indeterminate` and the UI instructs the user to rerun with Adaptive
+sampling. The equivalent-block Fixed matrix has demonstrated a larger unsafe ray over-prediction,
+so that mechanics has no approved Fixed screening interval and must return `indeterminate` rather
+than borrow the stress-strain margin. Adaptive mode uses its returned station/direction error
+evidence and is indeterminate if either refinement did not converge.
 
 The Results module consumes an immutable result DTO; it does not recalculate material factors or
 capacity. It provides:

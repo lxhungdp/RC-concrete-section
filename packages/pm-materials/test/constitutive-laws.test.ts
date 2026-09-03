@@ -171,14 +171,14 @@ test('user concrete and steel curves interpolate independently and clamp outside
     { strain: 0.004, stress: 24 }
   ]
   const concreteLaw = compileConcreteUserCurve(concrete({
-    type: 'user-curve', interpolation: 'linear', zeroTension: true, points: points.slice(1)
+    type: 'user-curve', interpolation: 'linear', extrapolation: 'clamp', zeroTension: true, points: points.slice(1)
   }, { factors: { resistanceScale: 0.8 }, limits: { epsCu: 0.004, ignoreTension: true } }))
   close(concreteLaw.stress(-0.001), 0)
   close(concreteLaw.stress(0.001), 8)
   close(concreteLaw.stress(0.003), 17.6)
   close(concreteLaw.stress(0.01), 19.2)
 
-  const steelLaw = compileSteelUserCurve(steel({ type: 'user-curve', interpolation: 'linear', points }))
+  const steelLaw = compileSteelUserCurve(steel({ type: 'user-curve', interpolation: 'linear', extrapolation: 'clamp', points }))
   close(steelLaw.stress(-0.02), -300)
   close(steelLaw.stress(-0.005), -150)
   close(steelLaw.stress(0.001), 10)
@@ -186,3 +186,30 @@ test('user concrete and steel curves interpolate independently and clamp outside
   close(steelLaw.stress(0.01), 24)
 })
 
+test('user-curve compilers reject non-increasing ordinates instead of silently sorting them', () => {
+  assert.throws(
+    () => compileConcreteUserCurve(concrete({
+      type: 'user-curve',
+      interpolation: 'linear',
+      extrapolation: 'clamp',
+      points: [
+        { strain: 0, stress: 0 },
+        { strain: 0.003, stress: 24 },
+        { strain: 0.002, stress: 20 }
+      ]
+    })),
+    /strictly increasing/
+  )
+
+  const unsupportedPolicy = concrete({
+    type: 'user-curve',
+    interpolation: 'linear',
+    extrapolation: 'clamp',
+    points: [{ strain: 0, stress: 0 }, { strain: 0.003, stress: 24 }]
+  })
+  ;(unsupportedPolicy.stressStrain as { extrapolation: string }).extrapolation = 'linear'
+  assert.throws(
+    () => compileConcreteUserCurve(unsupportedPolicy),
+    /clamp extrapolation/
+  )
+})

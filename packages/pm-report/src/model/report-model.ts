@@ -170,10 +170,16 @@ export type CombinationRow = {
   myKnm: number
   thetaDeg: number
   utilization: number | null
+  utilizationInterval: {
+    lower: number | null
+    upper: number | null
+    relativeUncertainty: number | null
+    evidence: string
+  } | null
   fixedPUtilization: number | null
   phi: number | null
   classification: string
-  verdict: 'adequate' | 'inadequate' | 'not-checked'
+  verdict: 'adequate' | 'inadequate' | 'indeterminate' | 'not-checked'
   note: string
 }
 
@@ -468,15 +474,10 @@ const directMeridianCurve = (curve: ExactDirectionCurve): InteractionCurve => {
   }
 }
 
-const verdictOf = (utilization: number | null, converged: boolean, admissible: boolean): CombinationRow['verdict'] => {
-  if (!converged || utilization === null) return 'not-checked'
-  if (!admissible) return 'not-checked'
-  return utilization <= 1 ? 'adequate' : 'inadequate'
-}
+const verdictOf = (result: InversePreviewResult | null): CombinationRow['verdict'] =>
+  result?.designCheck.evaluated ? result.designCheck.adequacy : 'not-checked'
 
 const combinationRow = (loadcase: LoadCombination, result: InversePreviewResult | null): CombinationRow => {
-  const converged = result?.converged ?? false
-  const admissible = result ? result.admissibility.evaluated === false || result.admissibility.ok : false
   return {
     id: loadcase.id,
     name: loadcase.name,
@@ -488,10 +489,13 @@ const combinationRow = (loadcase: LoadCombination, result: InversePreviewResult 
         ? 0
         : deg(Math.atan2(loadcase.My, loadcase.Mx)),
     utilization: result?.utilization ?? null,
+    utilizationInterval: result?.designCheck.evaluated
+      ? { ...result.designCheck.utilizationInterval }
+      : null,
     fixedPUtilization: result?.fixedPUtilization ?? null,
     phi: result?.resistance?.factor ?? null,
     classification: result?.resistance?.classification ?? '—',
-    verdict: verdictOf(result?.utilization ?? null, converged, admissible),
+    verdict: verdictOf(result),
     note: result?.message ?? 'Not solved.'
   }
 }
@@ -822,8 +826,19 @@ const basicsFor = (
     ['φ', row.phi === null ? '—' : fmt(row.phi, 4)],
     ['Classification', row.classification],
     ['Utilization UR', row.utilization === null ? '—' : fmt(row.utilization, 4)],
+    ['UR screening interval', row.utilizationInterval === null ||
+      row.utilizationInterval.lower === null || row.utilizationInterval.upper === null
+      ? 'unavailable'
+      : `${fmt(row.utilizationInterval.lower, 4)} – ${fmt(row.utilizationInterval.upper, 4)}`],
+    ['Uncertainty evidence', row.utilizationInterval?.evidence ?? 'not evaluated'],
     ['Fixed-P ratio', row.fixedPUtilization === null ? '—' : fmt(row.fixedPUtilization, 4)],
-    ['Verdict', row.verdict === 'adequate' ? 'ADEQUATE' : row.verdict === 'inadequate' ? 'INADEQUATE' : 'NOT CHECKED']
+    ['Verdict', row.verdict === 'adequate'
+      ? 'ADEQUATE'
+      : row.verdict === 'inadequate'
+        ? 'INADEQUATE'
+        : row.verdict === 'indeterminate'
+          ? 'INDETERMINATE'
+          : 'NOT CHECKED']
   ]
 }
 

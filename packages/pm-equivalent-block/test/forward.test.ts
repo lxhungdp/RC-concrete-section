@@ -205,4 +205,11 @@ test('invalid self-intersections and rebars in voids are rejected', () => {
     })),
     (error: unknown) => error instanceof EquivalentBlockInputError && error.code === 'INVALID_REBAR'
   )
+  assert.throws(
+    () => prepareEquivalentBlockSection(section({
+      solids: [{ outer: rectangle(100, 100) }],
+      rebars: [{ id: 'crossing', x: 49, y: 0, area: Math.PI * 10 ** 2, steelLawId: 'steel' }]
+    })),
+    (error: unknown) => error instanceof EquivalentBlockInputError && error.code === 'INVALID_REBAR'
+  )
 })

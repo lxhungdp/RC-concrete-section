@@ -7,6 +7,7 @@ import {
   type PreparedEquivalentBlockSection,
   type PreparedPolygonSolid
 } from './types'
+import { validatePolygonSection } from '@pm/geometry'
 
 const BASE_TOLERANCE = 1e-10
 
@@ -220,6 +221,19 @@ export const prepareEquivalentBlockSection = (
   }
   if (!finitePoint(input.referencePoint) || input.solids.length === 0) {
     throw new EquivalentBlockInputError('INVALID_GEOMETRY', 'A finite reference point and at least one concrete solid are required.')
+  }
+
+  const geometryIssues = validatePolygonSection({
+    solids: input.solids.map((solid) => ({ outer: solid.outer, holes: solid.holes ?? [] })),
+    rebars: input.rebars
+  })
+  if (geometryIssues.length > 0) {
+    const rebarOnly = geometryIssues.every((issue) =>
+      issue.code === 'INVALID_REBAR' || issue.code.startsWith('REBAR_'))
+    throw new EquivalentBlockInputError(
+      rebarOnly ? 'INVALID_REBAR' : 'INVALID_GEOMETRY',
+      geometryIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; ')
+    )
   }
 
   const rawPoints = input.solids.flatMap((solid) => [solid.outer, ...(solid.holes ?? [])]).flat()

@@ -223,6 +223,7 @@ test('fₛ/fyd is inverted against the compiled nonlinear steel law, not approxi
     stressStrain: {
       type: 'user-curve',
       interpolation: 'linear',
+      extrapolation: 'clamp',
       points: [
         { strain: -0.05, stress: -400 },
         { strain: -0.002, stress: -400 },
@@ -260,6 +261,7 @@ test('an ambiguous nonmonotone tensile steel branch is rejected', () => {
     stressStrain: {
       type: 'user-curve',
       interpolation: 'linear',
+      extrapolation: 'clamp',
       points: [
         { strain: -0.05, stress: -400 },
         { strain: -0.002, stress: -400 },

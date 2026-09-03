@@ -16,29 +16,38 @@ Version target: `0.1.0` public Preview.
 - Removal of obsolete workbook-derived audit claims; the retained complex section is explicitly a
   neutral software-regression input, not an external verification oracle.
 - Owner-document synchronization and a supported Node.js 24.20.0/npm 11.19.0 CI contract.
+- Fail-closed Fixed equivalent-block adequacy, kernel-owned three-state report verdicts, shared
+  polygon/rebar validation, explicit user-curve clamp policy, and compensated stress-strain sums.
 
 ## Engineering impact
 
-This candidate does not change project persistence, geometry/material equations, design-code
-coefficients, stations, resistance surfaces, utilization definitions, or calculation precision.
-The new quick-check evidence is explanatory Preview provenance for values already owned by the
-analysis pipeline. Accepted-result and released-report contracts remain unimplemented.
+This candidate does not change design-code coefficients, station definitions, or the physical
+stress-strain/equivalent-block formulae. It does tighten project input acceptance and canonical
+user-curve persistence, changes Fixed equivalent-block verdicts to `indeterminate` without a
+validated uncertainty bound, and uses compensated accumulation in the stress-strain kernel. The
+quick-check decision is now kernel-owned and copied by PDF/Excel. Accepted-result and
+released-report contracts remain unimplemented.
 
 ## Local evidence
 
 - structure/type/focused tests: pass;
-- full test suite: pass (281 unit tests, 11 CAD tests, project round-trip, station, both Excel paths,
+- full test suite: pass (306 unit tests, 11 CAD tests, project round-trip, station, both Excel paths,
   Demand Check workbook, and PDF report);
-- capacity fingerprint: bit-identical for 8 sections x 24 quantities;
-- package-owned material-law ordinate tests and the read-only P16 external comparison pass;
+- capacity fingerprint: regenerated with explicit Node.js 24.20.0/npm 11.19.0 provenance after
+  compensated-summation and invalid benchmark-fixture review; `bench:verify` is bit-identical over
+  8 sections x 24 capacity quantities;
+- package-owned material-law ordinate tests and the read-only P16 external comparison pass; P16
+  regeneration changed 2,899 numeric values by at most `9.61e-9` relatively and `0.00255 N·mm`
+  absolutely, consistent with the reviewed accumulation change;
 - stress-strain, equivalent-block, and cross-model pipeline matrices: pass;
 - production build and web-bundle budgets: pass;
 - production dependency audit: zero high/critical vulnerabilities; two documented moderate findings;
 - production browser smoke: Demand Check edit/switch/modal behavior passes with no console warning or
   error.
 
-The local host provides Node.js 22.22.2. The exact pinned Node.js 24.20.0/npm 11.19.0 run is therefore
-an unexecuted pull-request CI gate, not locally inferred evidence.
+The exact pinned Node.js 24.20.0/npm 11.19.0 runtime produced the evidence above. Promotion remains
+blocked until the runtime/result changes are independently reviewed and the CI job reproduces the
+local result.
 
 ## Promotion gates
 

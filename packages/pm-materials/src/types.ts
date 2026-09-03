@@ -73,6 +73,7 @@ export type ConcreteStressStrainModel =
       type: 'user-curve'
       points: StressStrainPoint[]
       interpolation: 'linear'
+      extrapolation: 'clamp'
       zeroTension?: boolean
     }
   /**
@@ -118,6 +119,7 @@ export type SteelStressStrainModel =
       type: 'user-curve'
       points: StressStrainPoint[]
       interpolation: 'linear'
+      extrapolation: 'clamp'
     }
 
 export type StressStrainPoint = {

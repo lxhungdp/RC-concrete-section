@@ -61,6 +61,7 @@ const responseStatus = (inverse: InversePreviewResult) => {
 
 const uncertaintyLabel = (evidence: LoadcaseQuickCheckResult['utilizationInterval']['evidence']) => {
   if (evidence === 'fixed-grid-screening-margin') return 'Fixed-grid screening margin'
+  if (evidence === 'fixed-grid-no-validated-bound') return 'No validated Fixed-grid bound'
   if (evidence === 'adaptive-sampling-estimate') return 'Adaptive sampling estimate'
   return 'Missing capacity intersection'
 }

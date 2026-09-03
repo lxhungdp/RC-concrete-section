@@ -578,6 +578,86 @@ test('ACI default keeps one independent 27-by-36 fixed grid and solves a practic
   assert.ok(inverse.equivalentBlock)
 })
 
+test('ACI L-section Fixed grid fails closed on a reproduced unsafe ray over-prediction', () => {
+  const profileId = 'aci-318-19-22-equivalent-block' as const
+  const defaults = createDefaultMaterialStore()
+  const materials = applyCalculationProfileToMaterials({
+    ...defaults,
+    concrete: { ...defaults.concrete, fck: 40 },
+    steel: defaults.steel.map((steel) => ({ ...steel, fy: 420 }))
+  }, profileId)
+  const design = createDesignBasisForCalculationProfile(profileId)
+  const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
+  const diameterForArea400 = Math.sqrt(1_600 / Math.PI)
+  const lSection: GeometryInput = {
+    id: 91,
+    name: 'ACI fixed-grid unsafe-ray regression',
+    outers: [{
+      id: 91,
+      points: [
+        { id: 911, x: -300, y: -250 }, { id: 912, x: 300, y: -250 },
+        { id: 913, x: 300, y: -50 }, { id: 914, x: -50, y: -50 },
+        { id: 915, x: -50, y: 300 }, { id: 916, x: -300, y: 300 }
+      ],
+      holes: []
+    }],
+    rebars: [
+      [-250, -200], [0, -200], [250, -200], [-250, 0],
+      [-250, 250], [-100, -100], [100, -100], [-100, 100]
+    ].map(([x, y], index) => ({
+      id: 920 + index,
+      x,
+      y,
+      dia: diameterForArea400,
+      steelMaterialId: 1
+    }))
+  }
+  const prepared = prepareBlockAnalysis(
+    profileId,
+    sectionGeometryFromGeometryInput(lSection),
+    geometryInputRebars(lSection),
+    materials,
+    design
+  )
+  const core = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options, core)
+  const exactState = {
+    neutralAxisAngle: 2 * Math.PI * 50 / 80 + 0.017,
+    neutralAxisDepth: 0.30 * prepared.section.characteristicLength
+  }
+  const exact = prepared.model.bindDesignEvaluator(prepared.section)(exactState).resultants
+  const seedDemand = {
+    id: 91,
+    name: 'Fixed-grid unsafe ray',
+    actionBasis: 'factoredULS' as const,
+    P: exact.P / 1.25,
+    Mx: exact.Mx / 1.25,
+    My: exact.My / 1.25
+  }
+  const seedCheck = checkLoadcaseUtilizationFromSurface(surface, seedDemand)
+  assert.ok(seedCheck.proportionalUtilization)
+  // The production adapter uses the section reference point, so this ray is the product-space
+  // counterpart of the core harness's 0.979616/1.001 audit ray rather than the same coordinates.
+  const demandScale = 0.981 / seedCheck.proportionalUtilization
+  const demand = {
+    ...seedDemand,
+    P: seedDemand.P * demandScale,
+    Mx: seedDemand.Mx * demandScale,
+    My: seedDemand.My * demandScale
+  }
+  const check = checkLoadcaseUtilizationFromSurface(surface, demand)
+  const inverse = solveEquivalentBlockDemandFromPrepared(prepared, options, demand, core)
+
+  assert.ok(Math.abs((check.proportionalUtilization ?? 0) - 0.981) < 1e-9)
+  assert.ok(
+    (inverse.inverseProportionalUtilization ?? 0) > 1,
+    `exact refined UR ${inverse.inverseProportionalUtilization} must expose the unsafe Fixed-grid over-prediction`
+  )
+  assert.ok(Math.abs((inverse.inverseProportionalUtilization ?? 0) - 1.001) < 5e-4)
+  assert.equal(check.adequacy, 'indeterminate')
+  assert.equal(check.utilizationInterval.evidence, 'fixed-grid-no-validated-bound')
+})
+
 test('an exact equivalent-block direction uses only fixed stations on the requested meridian', () => {
   const profileId = 'aci-318-19-22-equivalent-block' as const
   const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
@@ -764,6 +844,13 @@ test('KDS Appendix block route reevaluates materials, uses eps_c0, omits phi/cap
     'the loadcase table and the inverse must resolve the same governing principal axis'
   )
   assert.deepEqual(check.codeAdjustedDemand, solved.codeAdjustedDemand)
+  assert.equal(
+    check.adequacy,
+    'indeterminate',
+    'Fixed equivalent-block checks fail closed until that mechanics has a validated screening bound'
+  )
+  assert.equal(check.utilizationInterval.evidence, 'fixed-grid-no-validated-bound')
+  assert.equal(check.utilizationInterval.relativeUncertainty, null)
 })
 
 /**

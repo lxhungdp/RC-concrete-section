@@ -301,6 +301,11 @@ closed topology and station/direction convergence, compares faceted rays with ex
 checks direct fixed-axial roots. It does not insert resistance-transition stations. Surface
 reuse for multiple load combinations remains part of the measured workflow.
 
+That matrix has demonstrated an unsafe Fixed-grid ray over-prediction larger than the 2% envelope
+measured for stress-strain sampling. Fixed equivalent-block checks therefore remain
+`indeterminate`; only converged Adaptive evidence can provide a mechanics-specific screening
+interval. The benchmark must gate any future proposed Fixed bound before that policy changes.
+
 The benchmark is a regression gate, not design-code validation. Code validation still requires
 independent clause calculations, analytical sections, commercial-program comparisons with matched
 assumptions, and signed review evidence.

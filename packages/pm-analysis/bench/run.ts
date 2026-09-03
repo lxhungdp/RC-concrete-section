@@ -61,6 +61,13 @@ type BenchReport = {
   cases: CaseReport[]
 }
 
+type FingerprintBaseline = {
+  note: string
+  node: string
+  npm: string
+  cases: CaseReport[]
+}
+
 const arg = (name: string, fallback?: string) => {
   const index = process.argv.indexOf(`--${name}`)
   return index >= 0 && process.argv[index + 1] ? process.argv[index + 1] : fallback
@@ -128,10 +135,16 @@ const runCase = (benchCase: BenchCase): CaseReport => {
   const inverseResult = inverse.value
   // Path order and the repeated closing vertex are topology, not new capacity values. Normalize
   // the connected paths to the legacy point-set order so this fingerprint still catches any
-  // numerical movement of an intersection without flagging the corrected traversal itself.
+  // numerical movement of an intersection without flagging the corrected traversal itself. Treat
+  // axial ordinates that differ only at floating-point roundoff as one sorting bucket; otherwise a
+  // symmetric +/-M pair can swap solely because compensated summation changes the last bit of P.
+  const momentPlaneForceBucket = Math.max(...points.map((point) => Math.abs(point.P)), 1) * 1e-12
   const momentPlanePoints = momentPlane.value
     .flatMap((path) => (path.closed ? path.points.slice(0, -1) : path.points))
-    .sort((a, b) => b.P - a.P || a.M - b.M)
+    .sort((a, b) =>
+      Math.round(b.P / momentPlaneForceBucket) - Math.round(a.P / momentPlaneForceBucket) ||
+      a.M - b.M ||
+      b.P - a.P)
 
   const fingerprint: CaseReport['fingerprint'] = {
     origin: [origin.x, origin.y],
@@ -218,7 +231,7 @@ const relativeDeviation = (actual: number, expected: number) => {
 
 type Deviation = { caseKey: string; quantity: string; relative: number; detail: string }
 
-const compareFingerprints = (before: BenchReport, after: BenchReport): Deviation[] => {
+const compareFingerprints = (before: Pick<BenchReport, 'cases'>, after: BenchReport): Deviation[] => {
   const deviations: Deviation[] = []
 
   for (const afterCase of after.cases) {
@@ -325,6 +338,7 @@ const run = () => {
       return runCaseInChildProcess(benchCase.key)
     })
   }
+  const npmVersion = /^npm\/([^\s]+)/u.exec(process.env.npm_config_user_agent ?? '')?.[1] ?? 'unknown'
 
   console.log(`Analysis kernel benchmark — node ${report.node}, ${REPEATS} timed runs per stage\n`)
   console.log(
@@ -370,7 +384,9 @@ const run = () => {
     // Timings are machine specific and would churn the diff on every run; the gate only needs the
     // numbers the kernel produced.
     const artefact = {
-      note: 'Capacity fingerprint of the analysis kernel. Regenerate with `npm run bench:record`.',
+      note: 'Capacity fingerprint of the analysis kernel. Regenerate only for a reviewed result-affecting change.',
+      node: report.node,
+      npm: npmVersion,
       cases: report.cases.map((item) => ({ key: item.key, size: item.size, fingerprint: item.fingerprint }))
     }
     writeFileSync(fingerprintOut, `${JSON.stringify(artefact, null, 0)}\n`, 'utf8')
@@ -386,58 +402,66 @@ const run = () => {
   const baselinePath = arg('baseline')
   if (!baselinePath) return
 
-  const baseline = JSON.parse(readFileSync(baselinePath, 'utf8')) as BenchReport
+  const baseline = JSON.parse(readFileSync(baselinePath, 'utf8')) as FingerprintBaseline
+  if (baseline.node !== report.node || baseline.npm !== npmVersion) {
+    console.log(
+      `\nBaseline runtime mismatch: expected node ${report.node}, npm ${npmVersion}; ` +
+        `received node ${baseline.node ?? 'unknown'}, npm ${baseline.npm ?? 'unknown'}.`
+    )
+    process.exitCode = 1
+    return
+  }
   const hasTimings = baseline.cases.every((item) => item.timings?.mesh)
   if (!hasTimings) {
     console.log(`\nBaseline ${baselinePath} carries fingerprints only; skipping the speed-up table.`)
   }
   if (hasTimings) {
-  console.log(`\nSpeed-up vs ${baselinePath} (min-of-N, higher is better)\n`)
-  console.log(
-    `${pad('case', 22, true)}${pad('mesh', 20)}${pad('surface', 22)}${pad('contour', 20)}${pad('inverse', 20)}`
-  )
-
-  const ratio = (label: Stage, item: CaseReport, base: CaseReport) => {
-    const now = item.timings[label].minMs
-    const then = base.timings[label].minMs
-    return `${then.toFixed(1)}→${now.toFixed(1)} ${then / now >= 1 ? '×' : '÷'}${(then / now >= 1 ? then / now : now / then).toFixed(2)}`
-  }
-
-  for (const item of report.cases) {
-    const base = baseline.cases.find((entry) => entry.key === item.key)
-    if (!base) continue
+    console.log(`\nSpeed-up vs ${baselinePath} (min-of-N, higher is better)\n`)
     console.log(
-      `${pad(item.key, 22, true)}${pad(ratio('mesh', item, base), 20)}${pad(ratio('surface', item, base), 22)}` +
-        `${pad(ratio('contour', item, base), 20)}${pad(ratio('inverse', item, base), 20)}`
+      `${pad('case', 22, true)}${pad('mesh', 20)}${pad('surface', 22)}${pad('contour', 20)}${pad('inverse', 20)}`
     )
-  }
 
-  const baseTotals = baseline.cases.reduce(
-    (sum, item) => ({
-      mesh: sum.mesh + item.timings.mesh.minMs,
-      surface: sum.surface + item.timings.surface.minMs
-    }),
-    { mesh: 0, surface: 0 }
-  )
-  console.log(
-    `\n  total mesh    ${baseTotals.mesh.toFixed(1)} → ${totals.mesh.toFixed(1)} ms  ×${(baseTotals.mesh / totals.mesh).toFixed(2)}`
-  )
-  console.log(
-    `  total surface ${baseTotals.surface.toFixed(1)} → ${totals.surface.toFixed(1)} ms  ×${(baseTotals.surface / totals.surface).toFixed(2)}`
-  )
-  const baseWorkflow = baseline.cases.reduce(
-    (sum, item) =>
-      sum +
-      item.timings.surface.minMs +
-      item.timings.contour.minMs +
-      item.timings.inverse.minMs,
-    0
-  )
-  console.log(
-    `  end-to-end    ${baseWorkflow.toFixed(1)} → ${preparedWorkflow.toFixed(1)} ms  ×${(
-      baseWorkflow / preparedWorkflow
-    ).toFixed(2)} (surface + contour + one inverse solve)`
-  )
+    const ratio = (label: Stage, item: CaseReport, base: CaseReport) => {
+      const now = item.timings[label].minMs
+      const then = base.timings[label].minMs
+      return `${then.toFixed(1)}→${now.toFixed(1)} ${then / now >= 1 ? '×' : '÷'}${(then / now >= 1 ? then / now : now / then).toFixed(2)}`
+    }
+
+    for (const item of report.cases) {
+      const base = baseline.cases.find((entry) => entry.key === item.key)
+      if (!base) continue
+      console.log(
+        `${pad(item.key, 22, true)}${pad(ratio('mesh', item, base), 20)}${pad(ratio('surface', item, base), 22)}` +
+          `${pad(ratio('contour', item, base), 20)}${pad(ratio('inverse', item, base), 20)}`
+      )
+    }
+
+    const baseTotals = baseline.cases.reduce(
+      (sum, item) => ({
+        mesh: sum.mesh + item.timings.mesh.minMs,
+        surface: sum.surface + item.timings.surface.minMs
+      }),
+      { mesh: 0, surface: 0 }
+    )
+    console.log(
+      `\n  total mesh    ${baseTotals.mesh.toFixed(1)} → ${totals.mesh.toFixed(1)} ms  ×${(baseTotals.mesh / totals.mesh).toFixed(2)}`
+    )
+    console.log(
+      `  total surface ${baseTotals.surface.toFixed(1)} → ${totals.surface.toFixed(1)} ms  ×${(baseTotals.surface / totals.surface).toFixed(2)}`
+    )
+    const baseWorkflow = baseline.cases.reduce(
+      (sum, item) =>
+        sum +
+        item.timings.surface.minMs +
+        item.timings.contour.minMs +
+        item.timings.inverse.minMs,
+      0
+    )
+    console.log(
+      `  end-to-end    ${baseWorkflow.toFixed(1)} → ${preparedWorkflow.toFixed(1)} ms  ×${(
+        baseWorkflow / preparedWorkflow
+      ).toFixed(2)} (surface + contour + one inverse solve)`
+    )
   }
 
   const allDeviations = compareFingerprints(baseline, report)

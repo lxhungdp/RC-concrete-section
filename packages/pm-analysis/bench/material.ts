@@ -80,7 +80,7 @@ const interpolateWithPerCallSort = (strain: number) => {
 const userCurve: ConcreteMaterial = {
   ...concrete,
   standard: 'CUSTOM',
-  stressStrain: { type: 'user-curve', interpolation: 'linear', zeroTension: true, points }
+  stressStrain: { type: 'user-curve', interpolation: 'linear', extrapolation: 'clamp', zeroTension: true, points }
 }
 compare(
   'user curve (13 points)',

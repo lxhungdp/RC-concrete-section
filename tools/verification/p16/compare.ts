@@ -15,7 +15,12 @@ import {
   serializeProjectDocument
 } from '@pm/project'
 import { createEn1992DesignBasis, setMaterialFactorComponentValue } from '@pm/design'
-import type { GeometryInput, GeometryInputRebar } from '@pm/geometry'
+import {
+  geometryInputRebars,
+  sectionGeometryFromGeometryInput,
+  type GeometryInput,
+  type GeometryInputRebar
+} from '@pm/geometry'
 import type { MaterialStore, StressStrainPoint } from '@pm/materials'
 
 const root = process.cwd()
@@ -275,6 +280,7 @@ const materials: MaterialStore = {
     stressStrain: {
       type: 'user-curve',
       interpolation: 'linear',
+      extrapolation: 'clamp',
       zeroTension: true,
       points: parseConcreteCurve()
     },
@@ -333,13 +339,8 @@ if (!parsedProject.ok) throw new Error(`Generated UMD project is not importable:
 const inputPath = path.join(outputDir, 'P16_Column_ULS_R_UMD_input.pm-project.json')
 fs.writeFileSync(inputPath, serializeProjectDocument(parsedProject.document))
 
-const section = {
-  solids: geometry.outers.map((outer) => ({
-    outer: outer.points,
-    holes: outer.holes.map((hole) => hole.points)
-  }))
-}
-const rebars = geometry.rebars
+const section = sectionGeometryFromGeometryInput(geometry)
+const rebars = geometryInputRebars(geometry)
 
 const meshOptions = {
   seedDivisions: analysis.mesh.sizing.type === 'automatic' ? analysis.mesh.sizing.seedDivisions : undefined,

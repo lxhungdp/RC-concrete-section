@@ -2,6 +2,7 @@ export type AdequacyStatus = 'adequate' | 'inadequate' | 'indeterminate'
 
 export type UtilizationEvidence =
   | 'fixed-grid-screening-margin'
+  | 'fixed-grid-no-validated-bound'
   | 'adaptive-sampling-estimate'
   | 'missing-capacity-intersection'
 
@@ -18,7 +19,8 @@ export type UtilizationClassification = {
 }
 
 /**
- * Regression envelope for the fixed 27 x 36 preview grid against the denser audit grid.
+ * Stress-strain regression envelope for the fixed 27 x 36 preview grid against its denser audit
+ * grid. Equivalent-block Fixed checks must not use this mechanics-specific value.
  *
  * This is a screening margin, not a mathematical discretization bound. Any demand whose interval
  * crosses UR=1 is intentionally indeterminate and should be rerun with Adaptive sampling.

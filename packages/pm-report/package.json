@@ -11,7 +11,7 @@
     "./report-model": "./src/report-model.ts"
   },
   "scripts": {
-    "test": "tsx test/integration/excel.selftest.ts"
+    "test": "node ../../tools/runtime/check-runtime.mjs && tsx test/integration/excel.selftest.ts"
   },
   "dependencies": {
     "@pm/analysis": "0.1.0",

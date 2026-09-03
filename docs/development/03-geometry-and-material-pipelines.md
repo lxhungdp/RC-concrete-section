@@ -35,9 +35,10 @@ boundaries exist. This draft/applied separation is correct and shall be preserve
 | section geometry | area/centroid/perimeter summaries | editor display/basic warnings |
 | section + pattern parameters | `generateRebarsForSection` | proposed bar locations |
 
-These outputs are `implemented/preview`. `summarizeSection().isValid` is not the production geometry
-gate because it does not establish self-intersection, hole containment, region overlap, bar disk
-containment, cover/spacing, or scale-aware topology validity.
+These outputs are `implemented/preview`. `summarizeSection().isValid` remains an editor summary, not
+the analysis gate. `validateGeometryInput`/`validatePolygonSection` now provide the shared
+scale-aware topology, full circular-bar disk, and overlap gate used by project import and both
+mechanics; code-specific cover/clear-spacing and persisted multi-region bar assignment remain open.
 
 ## 2. Target geometry package pipeline
 
@@ -88,9 +89,9 @@ settings with separate provenance.
 
 | Priority | Current behavior | Required change |
 |---|---|---|
-| blocking | only basic summary warnings | add complete typed schema/topology/normalization validators |
+| partial | shared typed topology and circular-bar validation now block parser and mechanics input | finish deterministic normalization, persisted parent mapping, and resource-count policy |
 | blocking | point IDs/outer IDs can collide or be regenerated without a cross-reference report | enforce namespaces and source-to-normalized ID mapping |
-| blocking | bars can lie outside, in holes, overlap, or reference deleted steel | validate full bar disk and all foreign keys |
+| partial | full disks/outside/holes/overlap and steel foreign keys are blocked | add code-specific cover/clear-spacing and persisted parent-region policy |
 | blocking | quick `cover` semantics are ambiguous | replace with declared cover/centerline contract and post-validation |
 | high | simple inward offset is unreliable for concave/hole geometry | use a robust offset adapter or limit generator scope explicitly |
 | high | top/bottom/side generators use bounding boxes | clip/validate proposals or restrict to verified rectangular scope |
@@ -151,7 +152,8 @@ This is a useful package boundary, but the current compiler is not an analysis a
 
 - unknown/default branches silently choose a model;
 - `positiveOr` substitutes fallback engineering values;
-- user curves are sorted/clamped without strict breakpoint/extrapolation validation;
+- user curves now reject non-increasing breakpoints and record the supported clamp policy; broader
+  rupture/extrapolation families remain unimplemented;
 - tangents often use a fixed numerical difference;
 - admissibility, breakpoints, contribution components, model version, and typed issues are absent;
 - stress beyond concrete ultimate strain can silently become zero;

@@ -149,8 +149,10 @@ policy.
 
 The public-preview build and CI runtime is Node.js `24.20.0` LTS with its bundled npm `11.19.0`, as
 listed by the official Node.js download archive (accessed 2026-09-03):
-`https://nodejs.org/en/download/archive/v24`. `.nvmrc`, the root package engines/package-manager
-metadata, and CI must identify that same runtime. Node/npm do not define an engineering coefficient,
+`https://nodejs.org/en/download/archive/v24`. `.nvmrc`, the root package
+`engines`/`devEngines`/`packageManager` metadata, the repository `.npmrc` strict-engine policy, and
+CI must identify and enforce that same runtime. CI actions must themselves use the Node.js 24
+action runtime. Node/npm do not define an engineering coefficient,
 but a runtime change can alter parsing, floating-point execution paths, bundling, or report bytes;
 therefore it is Class 3 until the bit-identity, numerical-matrix, workbook/PDF, build, security, and
 bundle gates pass on the pinned runtime.

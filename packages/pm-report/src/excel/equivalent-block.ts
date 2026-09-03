@@ -49,8 +49,10 @@ import {
 } from '@pm/analysis-equivalent-block'
 import type { NominalBlockEvaluation } from '@pm/equivalent-block'
 import {
+  applyDesignCheckToInverse,
   activeDesignDirectionPoints,
   activeDesignSurfaceDataset,
+  checkLoadcaseUtilizationFromSurface,
   intersectFixedPContourWithMomentRay,
   sliceFixedPContour,
   sliceMomentPlane
@@ -226,7 +228,10 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   )
   const engineBoundary = intersectFixedPContourWithMomentRay(engineContour, thetaLoad)
   const demand = input.loadcase
-    ? solveEquivalentBlockDemandFromPrepared(prepared, input.analysisOptions, input.loadcase, designSurfaceCore)
+    ? applyDesignCheckToInverse(
+        solveEquivalentBlockDemandFromPrepared(prepared, input.analysisOptions, input.loadcase, designSurfaceCore),
+        checkLoadcaseUtilizationFromSurface(surface, input.loadcase)
+      )
     : null
 
   const workbook = await createWorkbook()
@@ -1047,12 +1052,21 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
       ['Mny*', nominal.resultants.My / 1e6, 'kN·m'],
       ['εt,ctrl', nominal.controllingTensileStrain, '-', `controlling bar ${nominal.controllingBarId ?? 'n/a'}`],
       ['φ*', phi, '-', String(designEval.metadata?.classification ?? '')],
-      ['utilization (governing ray)', demand.utilization ?? 'not found', '-', 'factored demand against the design surface'],
+      [
+        'inverse proportional utilization',
+        demand.inverseProportionalUtilization ?? 'not found',
+        '-',
+        'exact capacity-ray diagnostic from the inverse solver; not the governing adequacy value'
+      ],
       [
         'capacity load factor λ',
-        demand.utilization !== null && demand.utilization > 0 ? 1 / demand.utilization : 'not found',
+        demand.inverseProportionalUtilization !== null &&
+        demand.inverseProportionalUtilization !== undefined &&
+        demand.inverseProportionalUtilization > 0
+          ? 1 / demand.inverseProportionalUtilization
+          : 'not found',
         '-',
-        'boundary capacity = λ × factored demand; utilization = 1/λ'
+        'boundary capacity = λ × factored demand; inverse proportional utilization = 1/λ'
       ],
       ['axial cap governed', demand.resistance?.axialCapApplied ? 'yes' : 'no', '']
     ]
@@ -1140,14 +1154,21 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   if (!input.loadcase) {
     checkSheet.getCell(checkRow, 2).value = 'No load combination selected.'
   } else {
-    const utilizationRow = checkRow + 3
-    const convergenceRow = utilizationRow + 2
-    const admissibilityRow = utilizationRow + 3
     const rows: Array<[string, number | string, string, string?]> = [
       ['Pu', input.loadcase.P / 1e3, 'kN'],
       ['Mux', input.loadcase.Mx / 1e6, 'kN·m'],
       ['Muy', input.loadcase.My / 1e6, 'kN·m'],
       ['governing utilization', demand?.utilization ?? 'no intersection', '-', 'proportional 3D ray against the design surface'],
+      ['kernel adequacy', demand?.designCheck.evaluated
+        ? demand.designCheck.adequacy.toUpperCase()
+        : 'NOT CHECKED', '', 'three-state decision copied from the kernel'],
+      ['UR interval', demand?.designCheck.evaluated &&
+        demand.designCheck.utilizationInterval.lower !== null &&
+        demand.designCheck.utilizationInterval.upper !== null
+        ? `${demand.designCheck.utilizationInterval.lower.toFixed(6)} – ${demand.designCheck.utilizationInterval.upper.toFixed(6)}`
+        : 'unavailable', '', demand?.designCheck.evaluated
+          ? demand.designCheck.utilizationInterval.evidence
+          : 'the governing Design-surface check was not composed'],
       ['fixed-P utilization', demand?.fixedPUtilization ?? 'n/a', '-', 'secondary diagnostic at constant axial force'],
       ['solver converged', demand?.converged ? 'yes' : 'no', ''],
       [
@@ -1174,10 +1195,12 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     }
     checkSheet.getCell(checkRow + 1, 2).value = 'verdict'
     checkSheet.getCell(checkRow + 1, 2).font = { bold: true }
-    checkSheet.getCell(checkRow + 1, 3).value = {
-      formula: `IF(C${convergenceRow}<>"yes","NOT CHECKED - solver did not converge",IF(C${admissibilityRow}<>"yes","NOT CHECKED - strain state is not admissible",IF(NOT(ISNUMBER(C${utilizationRow})),"NOT CHECKED - no intersection",IF(C${utilizationRow}<=1,"ADEQUATE - factored demand is inside the design surface","INADEQUATE - factored demand exceeds the design surface"))))`
-    }
+    checkSheet.getCell(checkRow + 1, 3).value = demand?.designCheck.evaluated
+      ? demand.designCheck.adequacy.toUpperCase()
+      : 'NOT CHECKED'
     checkSheet.getCell(checkRow + 1, 3).font = { bold: true }
+    noteCell(checkSheet, checkRow + 1, 5,
+      'Copied from the kernel uncertainty-aware decision; inverse convergence and strain admissibility are diagnostics, not the adequacy rule.')
     noteCell(checkSheet, checkRow + 3, 2,
       'Preview output. It is not an accepted design result and must not be released as a design report.')
     checkSheet.mergeCells(checkRow + 3, 2, checkRow + 3, 5)

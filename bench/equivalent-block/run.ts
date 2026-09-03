@@ -189,6 +189,9 @@ for (const { standard, model } of models) {
     let maxRefinedError = 0
     let maxResidual = 0
     let maxSurfaceToRefinedError = 0
+    let worstSurfaceToRefinedSample = -1
+    let worstSurfaceLoadFactor = Number.NaN
+    let worstRefinedLoadFactor = Number.NaN
     let capFaceSolutions = 0
     const inverseCount = 12
     const inverseMs = timeLoop(inverseCount, (index) => {
@@ -203,10 +206,16 @@ for (const { standard, model } of models) {
         return
       }
       maxRefinedError = Math.max(maxRefinedError, relativeError(solved.loadFactor!, sample.expectedFactor))
-      maxSurfaceToRefinedError = Math.max(
-        maxSurfaceToRefinedError,
-        relativeError(solved.surfaceIntersection!.loadFactor, solved.loadFactor!)
+      const surfaceToRefinedError = relativeError(
+        solved.surfaceIntersection!.loadFactor,
+        solved.loadFactor!
       )
+      if (surfaceToRefinedError > maxSurfaceToRefinedError) {
+        maxSurfaceToRefinedError = surfaceToRefinedError
+        worstSurfaceToRefinedSample = index * 5
+        worstSurfaceLoadFactor = solved.surfaceIntersection!.loadFactor
+        worstRefinedLoadFactor = solved.loadFactor!
+      }
       maxResidual = Math.max(maxResidual, solved.residualNorm ?? 0)
     })
 
@@ -260,6 +269,9 @@ for (const { standard, model } of models) {
       inverseMsPerSolve: inverseMs / inverseCount,
       maxBranchFactorDrift: maxRefinedError,
       maxSurfaceToRefinedError,
+      worstSurfaceToRefinedSample,
+      worstSurfaceLoadFactor,
+      worstRefinedLoadFactor,
       maxRefinedResidual: maxResidual,
       capFaceSolutions,
       fixedMs,

@@ -5,6 +5,7 @@ const root = process.cwd()
 const issues: string[] = []
 const codeRoots = ['apps', 'packages', 'tools', 'bench']
 const sourceExtensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])
+const runtimeGuard = 'node ../../tools/runtime/check-runtime.mjs && '
 
 const normalized = (path: string) => path.replace(/\\/g, '/')
 const extension = (path: string) => {
@@ -19,6 +20,77 @@ const walk = (directory: string, visit: (path: string, isDirectory: boolean) => 
     const isDirectory = statSync(path).isDirectory()
     visit(path, isDirectory)
     if (isDirectory) walk(path, visit)
+  }
+}
+
+type PackageManifest = {
+  scripts?: Readonly<Record<string, string>>
+  engines?: Readonly<Record<string, string>>
+  devEngines?: {
+    runtime?: { name?: string; version?: string; onFail?: string }
+    packageManager?: { name?: string; version?: string; onFail?: string }
+  }
+  devDependencies?: Readonly<Record<string, string>>
+  packageManager?: string
+}
+
+const rootPackagePath = resolve(root, 'package.json')
+const rootPackage = JSON.parse(readFileSync(rootPackagePath, 'utf8')) as PackageManifest
+const nvmVersion = readFileSync(resolve(root, '.nvmrc'), 'utf8').trim()
+const npmVersion = /^npm@(.+)$/u.exec(rootPackage.packageManager ?? '')?.[1]
+
+if (!/^24\.\d+\.\d+$/u.test(nvmVersion)) {
+  issues.push('.nvmrc: the supported runtime must be an exact Node.js 24 version')
+}
+if (rootPackage.engines?.node !== nvmVersion || rootPackage.devEngines?.runtime?.version !== nvmVersion) {
+  issues.push('package.json: engines.node and devEngines.runtime.version must exactly match .nvmrc')
+}
+if (
+  !npmVersion ||
+  rootPackage.engines?.npm !== npmVersion ||
+  rootPackage.devEngines?.packageManager?.version !== npmVersion
+) {
+  issues.push('package.json: engines.npm and devEngines.packageManager.version must exactly match packageManager')
+}
+if (
+  rootPackage.devEngines?.runtime?.name !== 'node' ||
+  rootPackage.devEngines.runtime.onFail !== 'error' ||
+  rootPackage.devEngines?.packageManager?.name !== 'npm' ||
+  rootPackage.devEngines.packageManager.onFail !== 'error'
+) {
+  issues.push('package.json: devEngines must fail closed for the declared Node.js and npm versions')
+}
+if (readFileSync(resolve(root, '.npmrc'), 'utf8').trim() !== 'engine-strict=true') {
+  issues.push('.npmrc: engine-strict=true is required')
+}
+if (!rootPackage.devDependencies?.['@types/node']?.startsWith('24.')) {
+  issues.push('package.json: @types/node must target Node.js 24')
+}
+for (const [name, command] of Object.entries(rootPackage.scripts ?? {})) {
+  if (name === 'check:runtime') {
+    if (command !== 'node tools/runtime/check-runtime.mjs') {
+      issues.push('package.json: check:runtime must invoke the shared runtime guard directly')
+    }
+  } else if (!command.startsWith('npm run check:runtime && ')) {
+    issues.push(`package.json: script "${name}" must run check:runtime first`)
+  }
+}
+
+for (const workspaceRoot of ['apps', 'packages']) {
+  const directory = resolve(root, workspaceRoot)
+  for (const entry of readdirSync(directory)) {
+    const path = resolve(directory, entry, 'package.json')
+    if (!existsSync(path)) continue
+    const projectPath = normalized(relative(root, path))
+    const manifest = JSON.parse(readFileSync(path, 'utf8')) as PackageManifest
+    if (manifest.devDependencies?.['@types/node'] && !manifest.devDependencies['@types/node'].startsWith('24.')) {
+      issues.push(`${projectPath}: @types/node must target Node.js 24`)
+    }
+    for (const [name, command] of Object.entries(manifest.scripts ?? {})) {
+      if (!command.startsWith(runtimeGuard)) {
+        issues.push(`${projectPath}: script "${name}" must invoke the shared runtime guard first`)
+      }
+    }
   }
 }
 

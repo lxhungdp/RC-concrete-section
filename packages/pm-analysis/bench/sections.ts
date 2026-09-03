@@ -100,7 +100,7 @@ const userCurveMaterials = (): MaterialStore => {
       ...base.concrete,
       name: 'Tabulated C30',
       standard: 'CUSTOM',
-      stressStrain: { type: 'user-curve', interpolation: 'linear', zeroTension: true, points }
+      stressStrain: { type: 'user-curve', interpolation: 'linear', extrapolation: 'clamp', zeroTension: true, points }
     }
   }
 }
@@ -220,7 +220,8 @@ const buildCases = (): BenchCase[] => {
       bars(
         [
           ...Array.from({ length: 7 }, (_, i) => [-720 + i * 240, -720] as [number, number]),
-          ...Array.from({ length: 4 }, (_, i) => [720, -720 + i * 140] as [number, number]),
+          // Keep the right-leg bars clear of both the bottom-corner bar and the re-entrant edge.
+          ...Array.from({ length: 4 }, (_, i) => [720, -620 + i * 90] as [number, number]),
           ...Array.from({ length: 5 }, (_, i) => [-360 - i * 0 + i * 0, -380 + i * 240] as [number, number]),
           ...Array.from({ length: 6 }, (_, i) => [-720, 720 - i * 240] as [number, number])
         ],

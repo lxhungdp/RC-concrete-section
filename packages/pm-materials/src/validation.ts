@@ -18,15 +18,16 @@ const curveIssues = (points: readonly StressStrainPoint[], path: string): Materi
     return issues
   }
 
-  const strains = new Set<number>()
   points.forEach((point, index) => {
     if (!Number.isFinite(point.strain) || !Number.isFinite(point.stress)) {
       issues.push({ path: `${path}[${index}]`, message: 'strain and stress must be finite' })
     }
-    if (strains.has(point.strain)) {
-      issues.push({ path: `${path}[${index}].strain`, message: 'duplicate strain ordinates are not permitted' })
+    if (index > 0 && Number.isFinite(point.strain) && !(point.strain > points[index - 1].strain)) {
+      issues.push({
+        path: `${path}[${index}].strain`,
+        message: 'must be strictly greater than the preceding strain ordinate'
+      })
     }
-    strains.add(point.strain)
   })
   return issues
 }
@@ -103,6 +104,12 @@ export const materialStoreIssues = (store: MaterialStore): MaterialValidationIss
       break
     case 'user-curve':
       issues.push(...curveIssues(model.points, `${modelPath}.points`))
+      if (model.interpolation !== 'linear') {
+        issues.push({ path: `${modelPath}.interpolation`, message: 'must be linear' })
+      }
+      if (model.extrapolation !== 'clamp') {
+        issues.push({ path: `${modelPath}.extrapolation`, message: 'must be clamp' })
+      }
       break
     default:
       issues.push({
@@ -147,6 +154,12 @@ export const materialStoreIssues = (store: MaterialStore): MaterialValidationIss
     }
     if (steel.stressStrain.type === 'user-curve') {
       issues.push(...curveIssues(steel.stressStrain.points, `${path}.stressStrain.points`))
+      if (steel.stressStrain.interpolation !== 'linear') {
+        issues.push({ path: `${path}.stressStrain.interpolation`, message: 'must be linear' })
+      }
+      if (steel.stressStrain.extrapolation !== 'clamp') {
+        issues.push({ path: `${path}.stressStrain.extrapolation`, message: 'must be clamp' })
+      }
     }
   })
 

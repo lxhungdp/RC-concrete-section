@@ -59,10 +59,31 @@ test('raising the budget deliberately lets the same section through', () => {
 
 test('an empty concrete region is rejected instead of integrating nothing', () => {
   const empty: SectionGeometry = { id: 1, name: 'empty', solids: [] }
-  const thrown = captureThrow(() => buildPreviewSurface(empty, rebars, materials))
+  const thrown = captureThrow(() => buildPreviewSurface(empty, [], materials))
 
   assert.ok(thrown instanceof AnalysisInputError, `expected AnalysisInputError, got ${thrown}`)
   assert.equal(thrown.code, 'EMPTY_CONCRETE_SECTION')
+})
+
+test('a bar whose centre is inside but whose disk crosses the boundary is rejected', () => {
+  const square: SectionGeometry = {
+    id: 1,
+    name: 'bar disk gate',
+    solids: [{ outer: [
+      { id: 1, x: -50, y: -50 },
+      { id: 2, x: 50, y: -50 },
+      { id: 3, x: 50, y: 50 },
+      { id: 4, x: -50, y: 50 }
+    ], holes: [] }]
+  }
+  const thrown = captureThrow(() => buildPreviewSurface(
+    square,
+    [{ id: 99, x: 49, y: 0, dia: 20, steelMaterialId: materials.defaults.steelMaterialId, solidIndex: 0 }],
+    materials
+  ))
+  assert.ok(thrown instanceof AnalysisInputError, `expected AnalysisInputError, got ${thrown}`)
+  assert.equal(thrown.code, 'INVALID_REBAR')
+  assert.match(thrown.message, /disk crosses or touches/)
 })
 
 test('a degenerate zero-area outline is rejected', () => {
@@ -71,7 +92,7 @@ test('a degenerate zero-area outline is rejected', () => {
     name: 'collinear',
     solids: [{ outer: [{ id: 1, x: 0, y: 0 }, { id: 2, x: 100, y: 0 }, { id: 3, x: 200, y: 0 }], holes: [] }]
   }
-  const thrown = captureThrow(() => buildPreviewSurface(sliver, rebars, materials))
+  const thrown = captureThrow(() => buildPreviewSurface(sliver, [], materials))
   assert.ok(thrown instanceof AnalysisInputError, `expected AnalysisInputError, got ${thrown}`)
-  assert.equal(thrown.code, 'EMPTY_CONCRETE_SECTION')
+  assert.equal(thrown.code, 'INVALID_GEOMETRY')
 })

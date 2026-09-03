@@ -130,8 +130,12 @@ approximation and any diameter/gradient warning are recorded in the result.
 ## 6. Current capability and acceptance
 
 The existing `@pm/geometry` implementation is `implemented/preview`: it provides primitives,
-polygon boolean composition, area/centroid summaries, editor-to-input adapters, and rebar generators.
-It does not yet implement the complete validation/normalization/integration contract above.
+polygon boolean composition, area/centroid summaries, editor-to-input adapters, rebar generators,
+and one shared fail-closed validator used by project import and both mechanics. That validator
+checks simple/nested/disjoint topology, identity, full circular-bar disk containment, and bar
+overlap with a section-scale tolerance. It does not yet implement the complete normalization,
+persisted multi-region bar-parent, code-specific cover/clear-spacing, or accepted integration
+contract above.
 
 Before geometry can enter accepted analysis, all of these gates must pass:
 

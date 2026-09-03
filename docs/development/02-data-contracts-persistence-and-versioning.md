@@ -27,6 +27,8 @@ applies these documented defaults/repairs:
 - omitted concrete density receives `2350 kg/m3`;
 - an invalid default steel-material ID is warned and replaced by the first steel material on open;
 - unknown extra object properties are not globally rejected.
+- an omitted legacy user-curve `extrapolation` field is normalized to the previous `clamp`
+  behaviour; canonical exports write the field explicitly.
 
 These are parser-v1 rules, not compatibility with another project version. New project exports
 write all canonical fields explicitly. Changing any of these rules requires fixture and round-trip
@@ -217,6 +219,10 @@ Parsing is a boundary operation:
 - validate model/profile consistency before running a numerical kernel;
 - return warnings only for conditions that remain mathematically defined; never repair a value that
   changes resistance.
+
+Every canonical concrete or steel `user-curve` records `interpolation: 'linear'` and
+`extrapolation: 'clamp'`. Its strain coordinates are finite and strictly increasing in persisted
+order; the parser and compiler reject reordered or repeated ordinates instead of sorting them.
 
 The round-trip test serializes and parses schema v1 and requires exact equality of analysis/profile/
 design inputs. Separate tests cover both mechanics and the code-aware transition rule.

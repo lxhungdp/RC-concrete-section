@@ -11,7 +11,7 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 |---|---|---|
 | Project | every persisted calculation contract is v1; canonical exports contain profile, geometry, materials, factored loadings, model-specific options, and DesignBasis; exact canonical round trip; documented parser-v1 defaults | accepted-result artifact and signed release metadata |
 | Profile selection | one Materials selection atomically binds KDS stress-strain, KDS block, ACI block, or either `Custom` mechanics and defaults; the profile table is the single owner of mechanics/material-standard/resistance-profile coherence | add only edition-scoped profiles with independent review evidence |
-| Geometry | multiple solids/holes, rebars, exact properties, clipping, triangle/quadrature mesh | complete production topology/cover acceptance UX |
+| Geometry | multiple solids/holes, shared fail-closed topology and circular-bar disk/overlap gate, exact properties, clipping, triangle/quadrature mesh | persisted multi-region bar parent, code-specific cover/spacing, normalization and complete acceptance UX |
 | Materials | persisted concrete/steel definitions, shared physics validator, compiled stress/tangent laws, material support gates, and package-owned ordinate tests for every implemented law | finish authority-derived clause verification for every declared scope |
 | Stress-strain kernel | prepared mesh, shared 27-state default, 36 fixed directions, full fields, inverse Newton | accepted-result numerical-uncertainty gate and larger independent oracle set |
 | Equivalent-block kernel | shared fixed 27-state schedule, standard-independent exact clipping, forward evaluator, exact-refined inverse solvers, rupture/admissibility, block field | independent clause calculations and additional commercial cross-checks |
@@ -30,9 +30,10 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
   fail closed, while the ACI calculation profile routes to the implemented equivalent-block adapter.
 - Missing steel references, empty concrete, mesh resource excess, and failed mesh self-checks are
   typed fatal errors.
-- Both mechanics reject nonphysical material definitions. Stress-strain preparation rejects a bar
-  whose centre is outside concrete or inside a void, matching the equivalent-block gate. Full
-  cover/bar-disc containment remains a separate geometry/detailing rule.
+- Both mechanics reject nonphysical material definitions. Project import and both preparation paths
+  share the same simple/nested/disjoint topology and full circular-bar disk/overlap gate.
+  Code-specific cover/clear-spacing and persisted multi-region parent assignment remain separate
+  geometry/detailing rules.
 - KDS runtime and project parsing reject nonprestressing `fy > 600 MPa`; KDS table models stop at
   `fck = 90 MPa` unless a documented modified user stress-strain model is selected.
 - Every mechanics/profile now reads the same `unified-27-v2` station schedule and uses 36 fixed
@@ -45,9 +46,10 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 - Nominal resistance, Design resistance, and factored Demand are different DTO stages and UI terms.
 - KDS `P0` is now a code reference point; the high-strength flexural surface closes on its
   eta-reduced physical compression limit, eliminating an unsupported interpolation band.
-- Fixed 27 x 36 checks use the `@pm/results` two-percent screening interval and expose adequate,
-  indeterminate, and inadequate states; Adaptive checks fail indeterminate without converged error
-  evidence.
+- Fixed 27 x 36 stress-strain checks use that mechanics' `@pm/results` two-percent screening
+  interval. Fixed equivalent-block checks fail closed as indeterminate because its measured unsafe
+  over-prediction exceeds that borrowed envelope. Adaptive checks fail indeterminate without
+  converged error evidence.
 - Next production/dev builds use the Webpack worker pipeline because the current Turbopack route
   emitted the worker TypeScript as media. Loadcase checks reuse a worker-owned surface handle rather
   than cloning the multi-megabyte surface back to the worker.
@@ -62,6 +64,10 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 - Both result surfaces declare their `mechanics`, so a consumer never re-derives it from a method id.
 - The governing design check is composed onto an inverse state in one place, so a second consumer
   cannot publish the fixed-P diagnostic where the governing utilization belongs.
+- PDF and Excel copy the composed three-state decision and uncertainty interval; they no longer
+  create a second `UR <= 1` adequacy rule.
+- Stress-strain force, moment, contribution-ledger, and tangent reductions use compensated sums,
+  with a fiber-order regression test.
 
 ## 3. Consistency hazards found by the documentation audit
 

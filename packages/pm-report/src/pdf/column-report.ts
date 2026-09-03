@@ -725,19 +725,26 @@ export const renderColumnReport = (
       row.phi === null ? '—' : num(row.phi, 3),
       row.classification,
       row.utilization === null ? '—' : num(row.utilization, 3),
-      row.verdict === 'adequate' ? 'ADEQUATE' : row.verdict === 'inadequate' ? 'INADEQUATE' : 'NOT CHECKED'
+      row.verdict === 'adequate'
+        ? 'ADEQUATE'
+        : row.verdict === 'inadequate'
+          ? 'INADEQUATE'
+          : row.verdict === 'indeterminate'
+            ? 'INDETERMINATE'
+            : 'NOT CHECKED'
     ]),
     rowColor: (index) => {
       const row = model.combinations[index]
       if (row.verdict === 'inadequate') return REPORT_COLORS.bad
-      if (row.verdict === 'not-checked') return REPORT_COLORS.warn
+      if (row.verdict === 'not-checked' || row.verdict === 'indeterminate') return REPORT_COLORS.warn
       return undefined
     }
   })
   doc.paragraph(
     'UR is the governing proportional utilization: the factored demand vector scaled until it meets the Design surface. A fixed-axial ratio is reported per combination in its detail section and is a secondary diagnostic only.'
   )
-  const notChecked = model.combinations.filter((row) => row.verdict === 'not-checked')
+  const notChecked = model.combinations.filter((row) =>
+    row.verdict === 'not-checked' || row.verdict === 'indeterminate')
   for (const row of notChecked) {
     doc.paragraph(`${row.name}: ${row.note}`, { color: REPORT_COLORS.warn, size: 7 })
   }
@@ -751,7 +758,13 @@ export const renderColumnReport = (
           ? REPORT_COLORS.bad
           : REPORT_COLORS.warn
     doc.paragraph(
-      `${detail.row.verdict === 'adequate' ? 'ADEQUATE' : detail.row.verdict === 'inadequate' ? 'INADEQUATE' : 'NOT CHECKED'}` +
+      `${detail.row.verdict === 'adequate'
+        ? 'ADEQUATE'
+        : detail.row.verdict === 'inadequate'
+          ? 'INADEQUATE'
+          : detail.row.verdict === 'indeterminate'
+            ? 'INDETERMINATE'
+            : 'NOT CHECKED'}` +
         `   ·   utilization ${detail.row.utilization === null ? '—' : num(detail.row.utilization, 4)}` +
         `   ·   fixed-P diagnostic ${detail.row.fixedPUtilization === null ? '—' : num(detail.row.fixedPUtilization, 4)}`,
       { color, size: 9, font: HELVETICA_BOLD }

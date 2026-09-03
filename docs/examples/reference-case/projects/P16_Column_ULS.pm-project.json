@@ -2986,6 +2986,7 @@
             }
           ],
           "interpolation": "linear",
+          "extrapolation": "clamp",
           "zeroTension": true
         },
         "limits": {

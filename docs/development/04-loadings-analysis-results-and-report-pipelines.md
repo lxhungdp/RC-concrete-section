@@ -181,6 +181,12 @@ The accepted ULS DTO includes normalized inputs/provenance, nominal and design s
 checks, numerical evidence, scope, warnings, and exact stage history. Plot/view-model adapters copy
 or reference values; they never call material or resistance evaluators.
 
+The current Preview inverse DTO distinguishes its equilibrium/capacity-ray diagnostic from a
+composed Design-surface check. Once composed, it carries the governing three-state `adequacy` and
+`utilizationInterval`. The web worker, fallback path, PDF model, general demand workbook, and block
+workbook consume that decision. A report format does not infer adequacy from `UR <= 1`, inverse
+convergence, or strain admissibility.
+
 ### Result queries
 
 - per-combination summary/detail;

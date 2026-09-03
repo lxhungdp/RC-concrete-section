@@ -50,6 +50,11 @@ User curves require strictly increasing finite strain coordinates, explicit inte
 extrapolation/rupture policy, and deterministic one-sided tangent behavior at kinks. Invalid curves
 do not fall back to a default law in an engineering calculation.
 
+The current schema-v1 user-curve implementation supports linear interpolation with explicit
+`extrapolation: 'clamp'`. The parser normalizes a missing legacy field to that pre-existing policy;
+canonical definitions record it. Both validation and direct compilation reject non-increasing
+points instead of sorting them.
+
 Closed-form concrete evaluators return zero stress after their declared ultimate compression strain
 only as a finite diagnostic continuation for rejected Newton trial states and field inspection. It
 is not a post-crushing resistance branch. Surface construction and inverse acceptance separately

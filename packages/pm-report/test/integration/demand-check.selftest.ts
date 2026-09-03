@@ -479,9 +479,23 @@ const runCase = async (relativePath: string, label: string) => {
         : typeof sheetUr === 'number' && near(sheetUr, reportUr, 1e-12, 1e-12)
     if (!agrees) mismatches += 1
     if (summary.getCell(row, 2).value !== combination.name) mismatches += 1
+    const reportVerdict = combination.verdict === 'not-checked'
+      ? 'NOT CHECKED'
+      : combination.verdict.toUpperCase()
+    if (summary.getCell(row, 11).value !== reportVerdict) mismatches += 1
   })
-  pass('every combination has the same name and utilization in both formats', mismatches === 0,
+  pass('every combination has the same name, utilization and kernel verdict in both formats', mismatches === 0,
     `${mismatches} mismatch(es) over ${model.combinations.length} combinations`)
+  if (isEquivalentBlockProfileId(profileId) && analysisOptions.samplingMode === 'fixed') {
+    pass(
+      'Fixed equivalent-block reports remain indeterminate without a validated screening bound',
+      model.combinations.every((combination) =>
+        combination.verdict === 'indeterminate' &&
+        combination.utilizationInterval?.evidence === 'fixed-grid-no-validated-bound'),
+      model.combinations.map((combination) =>
+        `${combination.name}:${combination.verdict}/${combination.utilizationInterval?.evidence}`).join(' | ')
+    )
+  }
 
   console.log('== 6. Partial selection ==')
   const firstOnly = await buildDemandCheckWorkbook({ ...input, detailLoadcaseIds: [loadcases[0].id] })

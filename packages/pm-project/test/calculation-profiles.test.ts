@@ -115,17 +115,97 @@ test('project parser rejects nonphysical material ordinates and rebar diameter',
   duplicateCurve.inputs.materials.steel[0].stressStrain = {
     type: 'user-curve',
     interpolation: 'linear',
+    extrapolation: 'clamp',
     points: [{ strain: 0, stress: 0 }, { strain: 0, stress: 100 }]
   }
   const curveResult = parseProjectDocument(duplicateCurve)
   assert.equal(curveResult.ok, false)
-  if (!curveResult.ok) assert.match(curveResult.error, /duplicate strain/)
+  if (!curveResult.ok) assert.match(curveResult.error, /strictly greater than the preceding strain/)
+
+  const unsortedCurve = structuredClone(base)
+  unsortedCurve.inputs.materials.steel[0].stressStrain = {
+    type: 'user-curve',
+    interpolation: 'linear',
+    extrapolation: 'clamp',
+    points: [{ strain: 0, stress: 0 }, { strain: -0.002, stress: -400 }]
+  }
+  const unsortedCurveResult = parseProjectDocument(unsortedCurve)
+  assert.equal(unsortedCurveResult.ok, false)
+  if (!unsortedCurveResult.ok) assert.match(unsortedCurveResult.error, /strictly greater than the preceding strain/)
 
   const invalidBar = structuredClone(base)
   invalidBar.inputs.geometry.rebars.push({ id: 1, dia: 0, x: 0, y: 0, steelMaterialId: 1 })
   const barResult = parseProjectDocument(invalidBar)
   assert.equal(barResult.ok, false)
   if (!barResult.ok) assert.match(barResult.error, /dia must be positive/)
+})
+
+test('project parser rejects self-intersecting topology and a boundary-crossing bar disk', () => {
+  const base = createProjectDocument({
+    geometry: {
+      id: 1,
+      name: 'Geometry validation',
+      outers: [{
+        id: 1,
+        points: [
+          { id: 1, x: -50, y: -50 },
+          { id: 2, x: 50, y: -50 },
+          { id: 3, x: 50, y: 50 },
+          { id: 4, x: -50, y: 50 }
+        ],
+        holes: []
+      }],
+      rebars: []
+    },
+    materials: createDefaultMaterialStore()
+  })
+  const bowTie = structuredClone(base)
+  bowTie.inputs.geometry.outers[0].points = [
+    { id: 1, x: -50, y: -50 },
+    { id: 2, x: 50, y: 50 },
+    { id: 3, x: -50, y: 50 },
+    { id: 4, x: 50, y: -50 }
+  ]
+  const topology = parseProjectDocument(bowTie)
+  assert.equal(topology.ok, false)
+  if (!topology.ok) assert.match(topology.error, /simple, non-self-intersecting ring/)
+
+  const crossing = structuredClone(base)
+  crossing.inputs.geometry.rebars.push({
+    id: 1,
+    dia: 20,
+    x: 49,
+    y: 0,
+    steelMaterialId: crossing.inputs.materials.defaults.steelMaterialId
+  })
+  const bar = parseProjectDocument(crossing)
+  assert.equal(bar.ok, false)
+  if (!bar.ok) assert.match(bar.error, /disk crosses or touches/)
+})
+
+test('schema-v1 parser normalizes the legacy implicit user-curve clamp policy explicitly', () => {
+  const document = createProjectDocument({
+    geometry: createEmptyGeometryInput({ id: 1, name: 'Legacy curve policy' }),
+    materials: createDefaultMaterialStore()
+  })
+  const legacy = structuredClone(document) as unknown as {
+    inputs: { materials: { steel: Array<{ stressStrain: Record<string, unknown> }> } }
+  }
+  legacy.inputs.materials.steel[0].stressStrain = {
+    type: 'user-curve',
+    interpolation: 'linear',
+    points: [
+      { strain: -0.002, stress: -400 },
+      { strain: 0, stress: 0 },
+      { strain: 0.002, stress: 400 }
+    ]
+  }
+  const parsed = parseProjectDocument(legacy)
+  assert.equal(parsed.ok, true, parsed.ok ? 'legacy curve parsed' : parsed.error)
+  if (!parsed.ok) return
+  const model = parsed.document.inputs.materials.steel[0].stressStrain
+  assert.equal(model.type, 'user-curve')
+  if (model.type === 'user-curve') assert.equal(model.extrapolation, 'clamp')
 })
 
 test('KDS parser enforces reinforcement and concrete applicability limits', () => {

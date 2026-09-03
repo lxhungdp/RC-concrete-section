@@ -397,6 +397,7 @@ const seedFibreConcrete = (material: ConcreteMaterial): ConcreteMaterial['stress
   return {
     type: 'user-curve',
     interpolation: 'linear',
+    extrapolation: 'clamp',
     zeroTension: material.limits.ignoreTension,
     points: [
       { strain: 0, stress: 0 },
@@ -536,6 +537,7 @@ const userCurveFromConcrete = (material: ConcreteMaterial): ConcreteMaterial['st
   return {
     type: 'user-curve',
     interpolation: 'linear',
+    extrapolation: 'clamp',
     zeroTension: material.limits.ignoreTension,
     points: [
       { strain: 0, stress: 0 },

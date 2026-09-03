@@ -1,7 +1,7 @@
 import {
   buildConcreteMesh,
   netConcreteCentroid,
-  rebarCenterInConcrete,
+  validatePolygonSection,
   type ConcreteMesh,
   type ConcreteMeshOptions,
   type ConcreteMeshReport,
@@ -68,6 +68,7 @@ export type AnalysisErrorCode =
   | 'MESH_RESOURCE_LIMIT'
   | 'INVALID_ANALYSIS_OPTIONS'
   | 'MESH_NOT_VERIFIED'
+  | 'INVALID_GEOMETRY'
   | 'INVALID_MATERIAL'
   | 'INVALID_REBAR'
   | 'AUDIT_RECONCILIATION_FAILED'
@@ -854,7 +855,17 @@ export type InversePreviewResult = {
   iterations: number
   utilization: number | null
   proportionalUtilization?: number | null
+  /** Exact inverse/capacity-ray ratio used only to reconcile that diagnostic response. */
+  inverseProportionalUtilization?: number | null
   fixedPUtilization?: number | null
+  /** Governing Design-surface decision composed after the inverse diagnostic has been solved. */
+  designCheck:
+    | { evaluated: false }
+    | {
+        evaluated: true
+        adequacy: AdequacyStatus
+        utilizationInterval: UtilizationInterval
+      }
   designCapacityPoint?: Resultant | null
   resistance?: DesignResistanceTrace | null
   equivalentBlock?: EquivalentBlockStateTrace | null
@@ -1342,6 +1353,27 @@ const assertUsableMesh = (mesh: ConcreteMesh) => {
   }
 }
 
+const assertValidSectionGeometry = (
+  section: SectionGeometry,
+  rebars: GeometryInputRebarView[]
+) => {
+  const geometryIssues = validatePolygonSection({ solids: section.solids, rebars })
+  if (geometryIssues.length === 0) return
+  const rebarOnly = geometryIssues.every((issue) =>
+    issue.code === 'INVALID_REBAR' || issue.code.startsWith('REBAR_'))
+  const rebarIds = rebarOnly
+    ? [...new Set(geometryIssues.flatMap((issue) => {
+        const match = /^rebars\[(\d+)\]/u.exec(issue.path)
+        return match ? [rebars[Number(match[1])]?.id].filter((id): id is number => id !== undefined) : []
+      }))]
+    : undefined
+  throw new AnalysisInputError(
+    rebarOnly ? 'INVALID_REBAR' : 'INVALID_GEOMETRY',
+    geometryIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '),
+    { issues: geometryIssues, rebarIds }
+  )
+}
+
 export const prepareAnalysisFromMesh = (
   section: SectionGeometry,
   rebars: GeometryInputRebarView[],
@@ -1349,15 +1381,8 @@ export const prepareAnalysisFromMesh = (
   mesh: ConcreteMesh,
   origin: AnalysisOrigin = originFromMesh(mesh)
 ): PreparedAnalysis => {
+  assertValidSectionGeometry(section, rebars)
   assertUsableMesh(mesh)
-  const invalidRebars = rebars.filter((bar) => !rebarCenterInConcrete(bar, section))
-  if (invalidRebars.length > 0) {
-    throw new AnalysisInputError(
-      'INVALID_REBAR',
-      `Rebar ${invalidRebars.map((bar) => bar.id).join(', ')} has a centre outside the concrete or inside a void.`,
-      { rebarIds: invalidRebars.map((bar) => bar.id) }
-    )
-  }
   const materials = resolveAnalysisMaterials(materialStore, rebars)
   const concreteFibers = concreteFibersFromMesh(mesh, origin)
   const rebarFibers = buildRebarFibers(rebars, origin, materials, materialStore.defaults.steelMaterialId)
@@ -1402,44 +1427,100 @@ export const prepareAnalysis = (
   materialStore: MaterialStore,
   meshOptions: ConcreteMeshOptions = {},
   origin?: AnalysisOrigin
-): PreparedAnalysis =>
-  prepareAnalysisFromMesh(section, rebars, materialStore, buildConcreteMesh(section, meshOptions), origin)
+): PreparedAnalysis => {
+  assertValidSectionGeometry(section, rebars)
+  return prepareAnalysisFromMesh(section, rebars, materialStore, buildConcreteMesh(section, meshOptions), origin)
+}
 
 const strainAt = (state: StrainState, fiber: Pick<Fiber, 'x' | 'y'>) =>
   state.e0 + state.kx * fiber.y + state.ky * fiber.x
 
 const zeroResultant = (): Resultant => ({ P: 0, Mx: 0, My: 0 })
 
-const accumulate = (target: Resultant, force: number, fiber: Pick<Fiber, 'x' | 'y'>) => {
-  target.P += force
-  target.Mx += force * fiber.y
-  target.My += force * fiber.x
+/** Neumaier accumulation retains low-order terms when large positive and negative contributions cancel. */
+class CompensatedScalar {
+  private sum = 0
+  private correction = 0
+
+  add(value: number) {
+    const next = this.sum + value
+    this.correction += Math.abs(this.sum) >= Math.abs(value)
+      ? (this.sum - next) + value
+      : (value - next) + this.sum
+    this.sum = next
+  }
+
+  value() {
+    return this.sum + this.correction
+  }
+}
+
+class CompensatedResultant {
+  private readonly p = new CompensatedScalar()
+  private readonly mx = new CompensatedScalar()
+  private readonly my = new CompensatedScalar()
+
+  add(force: number, fiber: Pick<Fiber, 'x' | 'y'>) {
+    this.p.add(force)
+    this.mx.add(force * fiber.y)
+    this.my.add(force * fiber.x)
+  }
+
+  finish(): Resultant {
+    return { P: this.p.value(), Mx: this.mx.value(), My: this.my.value() }
+  }
+}
+
+const assertFiniteMaterialEvaluation = (
+  value: number,
+  quantity: 'stress' | 'tangent',
+  fiber: Fiber
+) => {
+  if (Number.isFinite(value)) return
+  throw new AnalysisInputError(
+    'INVALID_MATERIAL',
+    `Material ${quantity} is non-finite at a ${fiber.kind} integration point.`,
+    { quantity, fiberKind: fiber.kind, rebarId: fiber.kind === 'rebar' ? fiber.rebarId : undefined }
+  )
+}
+
+const compensatedPair = (left: number, right: number) => {
+  const sum = new CompensatedScalar()
+  sum.add(left)
+  sum.add(right)
+  return sum.value()
 }
 
 const addResultant = (a: Resultant, b: Resultant): Resultant => ({
-  P: a.P + b.P,
-  Mx: a.Mx + b.Mx,
-  My: a.My + b.My
+  P: compensatedPair(a.P, b.P),
+  Mx: compensatedPair(a.Mx, b.Mx),
+  My: compensatedPair(a.My, b.My)
 })
 
 const evaluate = (fibers: Fiber[], materials: AnalysisMaterials, state: StrainState): ResultantLedger => {
-  const concrete = zeroResultant()
-  const steelGross = zeroResultant()
-  const displacedConcrete = zeroResultant()
+  const concreteSum = new CompensatedResultant()
+  const steelGrossSum = new CompensatedResultant()
+  const displacedConcreteSum = new CompensatedResultant()
 
   for (const fiber of fibers) {
     const strain = strainAt(state, fiber)
     const concreteStress = materials.concrete.stress(strain)
+    assertFiniteMaterialEvaluation(concreteStress, 'stress', fiber)
 
     if (fiber.kind !== 'rebar') {
-      accumulate(concrete, concreteStress * fiber.area, fiber)
+      concreteSum.add(concreteStress * fiber.area, fiber)
       continue
     }
 
-    accumulate(steelGross, fiber.steel.stress(strain) * fiber.area, fiber)
-    accumulate(displacedConcrete, -concreteStress * fiber.area, fiber)
+    const steelStress = fiber.steel.stress(strain)
+    assertFiniteMaterialEvaluation(steelStress, 'stress', fiber)
+    steelGrossSum.add(steelStress * fiber.area, fiber)
+    displacedConcreteSum.add(-concreteStress * fiber.area, fiber)
   }
 
+  const concrete = concreteSum.finish()
+  const steelGross = steelGrossSum.finish()
+  const displacedConcrete = displacedConcreteSum.finish()
   const steel = addResultant(steelGross, displacedConcrete)
   return { concrete, steelGross, displacedConcrete, steel, total: addResultant(concrete, steel) }
 }
@@ -1455,39 +1536,44 @@ const evaluateWithTangent = (
   materials: AnalysisMaterials,
   state: StrainState
 ): { ledger: ResultantLedger; tangent: ResultantTangent } => {
-  const concrete = zeroResultant()
-  const steelGross = zeroResultant()
-  const displacedConcrete = zeroResultant()
-  let j00 = 0
-  let j01 = 0
-  let j02 = 0
-  let j11 = 0
-  let j12 = 0
-  let j22 = 0
+  const concreteSum = new CompensatedResultant()
+  const steelGrossSum = new CompensatedResultant()
+  const displacedConcreteSum = new CompensatedResultant()
+  const tangentSums = Array.from({ length: 6 }, () => new CompensatedScalar())
 
   for (const fiber of fibers) {
     const strain = strainAt(state, fiber)
     const concreteStress = materials.concrete.stress(strain)
     let tangent = materials.concrete.tangent(strain)
+    assertFiniteMaterialEvaluation(concreteStress, 'stress', fiber)
+    assertFiniteMaterialEvaluation(tangent, 'tangent', fiber)
 
     if (fiber.kind !== 'rebar') {
-      accumulate(concrete, concreteStress * fiber.area, fiber)
+      concreteSum.add(concreteStress * fiber.area, fiber)
     } else {
-      accumulate(steelGross, fiber.steel.stress(strain) * fiber.area, fiber)
-      accumulate(displacedConcrete, -concreteStress * fiber.area, fiber)
+      const steelStress = fiber.steel.stress(strain)
+      const steelTangent = fiber.steel.tangent(strain)
+      assertFiniteMaterialEvaluation(steelStress, 'stress', fiber)
+      assertFiniteMaterialEvaluation(steelTangent, 'tangent', fiber)
+      steelGrossSum.add(steelStress * fiber.area, fiber)
+      displacedConcreteSum.add(-concreteStress * fiber.area, fiber)
       // Embedded-bar contribution is fs*As - fc*As, so its consistent tangent is Es_t - Ec_t.
-      tangent = fiber.steel.tangent(strain) - tangent
+      tangent = steelTangent - tangent
     }
 
     const ta = tangent * fiber.area
-    j00 += ta
-    j01 += ta * fiber.y
-    j02 += ta * fiber.x
-    j11 += ta * fiber.y * fiber.y
-    j12 += ta * fiber.x * fiber.y
-    j22 += ta * fiber.x * fiber.x
+    tangentSums[0].add(ta)
+    tangentSums[1].add(ta * fiber.y)
+    tangentSums[2].add(ta * fiber.x)
+    tangentSums[3].add(ta * fiber.y * fiber.y)
+    tangentSums[4].add(ta * fiber.x * fiber.y)
+    tangentSums[5].add(ta * fiber.x * fiber.x)
   }
 
+  const concrete = concreteSum.finish()
+  const steelGross = steelGrossSum.finish()
+  const displacedConcrete = displacedConcreteSum.finish()
+  const [j00, j01, j02, j11, j12, j22] = tangentSums.map((sum) => sum.value())
   const steel = addResultant(steelGross, displacedConcrete)
   return {
     ledger: { concrete, steelGross, displacedConcrete, steel, total: addResultant(concrete, steel) },
@@ -3559,7 +3645,8 @@ export const buildStressStrainPointCalculationAudit = (
         statePrepared.origin
       )
   const concreteGroups = new Map<string, CalculationAuditConcreteGroup>()
-  const concrete = zeroResultant()
+  const concreteGroupSums = new Map<string, CompensatedResultant>()
+  const concreteSum = new CompensatedResultant()
   for (const fiber of prepared.concreteFibers) {
     const fiberStrain = strainAt(point.state, fiber)
     const stress = prepared.materials.concrete.stress(fiberStrain)
@@ -3577,8 +3664,14 @@ export const buildStressStrainPointCalculationAudit = (
     if (Object.values(term).some((value) => !Number.isFinite(value))) {
       throw new AnalysisInputError('AUDIT_RECONCILIATION_FAILED', 'A concrete audit term is non-finite.', { pointId: point.id })
     }
-    accumulate(concrete, force, fiber)
+    concreteSum.add(force, fiber)
     const branch = concreteAuditBranch(calculationMaterials.concrete, fiberStrain)
+    let branchSum = concreteGroupSums.get(branch.id)
+    if (!branchSum) {
+      branchSum = new CompensatedResultant()
+      concreteGroupSums.set(branch.id, branchSum)
+    }
+    branchSum.add(force, fiber)
     const current = concreteGroups.get(branch.id)
     if (!current) {
       concreteGroups.set(branch.id, {
@@ -3589,7 +3682,7 @@ export const buildStressStrainPointCalculationAudit = (
         strainMaximum: fiberStrain,
         stressMinimum: stress,
         stressMaximum: stress,
-        resultant: { P: force, Mx: term.Mx, My: term.My },
+        resultant: zeroResultant(),
         representative: term
       })
       continue
@@ -3600,12 +3693,16 @@ export const buildStressStrainPointCalculationAudit = (
     current.strainMaximum = Math.max(current.strainMaximum, fiberStrain)
     current.stressMinimum = Math.min(current.stressMinimum, stress)
     current.stressMaximum = Math.max(current.stressMaximum, stress)
-    accumulate(current.resultant, force, fiber)
     if (Math.abs(force) > Math.abs(current.representative.force)) current.representative = term
   }
+  for (const [branchId, branchSum] of concreteGroupSums) {
+    const group = concreteGroups.get(branchId)
+    if (group) group.resultant = branchSum.finish()
+  }
+  const concrete = concreteSum.finish()
 
-  const steelGross = zeroResultant()
-  const displacedConcrete = zeroResultant()
+  const steelGrossSum = new CompensatedResultant()
+  const displacedConcreteSum = new CompensatedResultant()
   const rebars: CalculationAuditRebar[] = prepared.rebarFibers.map((fiber) => {
     const source = prepared.rebars.find((bar) => bar.id === fiber.rebarId)
     if (!source) {
@@ -3620,8 +3717,8 @@ export const buildStressStrainPointCalculationAudit = (
     const gross = { P: grossForce, Mx: grossForce * fiber.y, My: grossForce * fiber.x }
     const displaced = { P: displacedForce, Mx: displacedForce * fiber.y, My: displacedForce * fiber.x }
     const net = addResultant(gross, displaced)
-    accumulate(steelGross, grossForce, fiber)
-    accumulate(displacedConcrete, displacedForce, fiber)
+    steelGrossSum.add(grossForce, fiber)
+    displacedConcreteSum.add(displacedForce, fiber)
     return {
       id: source.id,
       diameter: source.dia,
@@ -3642,6 +3739,8 @@ export const buildStressStrainPointCalculationAudit = (
       net
     }
   })
+  const steelGross = steelGrossSum.finish()
+  const displacedConcrete = displacedConcreteSum.finish()
   const steel = addResultant(steelGross, displacedConcrete)
   const mechanicalLedger = {
     concrete,
@@ -4776,10 +4875,23 @@ const checkRawLoadcaseUtilizationFromSurface = (
   const adaptiveUncertainty = adaptiveConverged
     ? Math.max(surface.directionError.maxRelativeComponent, surface.stationError.maxRelative)
     : null
+  const equivalentBlock =
+    surface.mechanics === 'equivalent-rectangular-block' ||
+    surface.analysisOptions.methodId === 'equivalent-block-surface-v1'
+  const relativeUncertainty = adaptive
+    ? adaptiveUncertainty
+    : equivalentBlock
+      ? null
+      : FIXED_GRID_SCREENING_RELATIVE_UNCERTAINTY
+  const evidence = adaptive
+    ? 'adaptive-sampling-estimate'
+    : equivalentBlock
+      ? 'fixed-grid-no-validated-bound'
+      : 'fixed-grid-screening-margin'
   const classification = classifyUtilization(
     proportionalUtilization,
-    adaptive ? adaptiveUncertainty : FIXED_GRID_SCREENING_RELATIVE_UNCERTAINTY,
-    adaptive ? 'adaptive-sampling-estimate' : 'fixed-grid-screening-margin'
+    relativeUncertainty,
+    evidence
   )
   return {
     loadcaseId: loadcase.id,
@@ -4802,7 +4914,9 @@ const checkRawLoadcaseUtilizationFromSurface = (
     message:
       proportionalUtilization == null
         ? 'No proportional demand-ray crossing was found on the design-resistance surface.'
-        : 'Factored ULS demand checked against the 3D design-resistance surface; fixed-P UR is secondary.'
+        : !adaptive && equivalentBlock
+          ? 'Factored ULS demand intersected the Fixed equivalent-block Design surface, but no validated Fixed-grid uncertainty bound exists; the verdict is indeterminate. Use Adaptive sampling for a measured estimate.'
+          : 'Factored ULS demand checked against the 3D design-resistance surface; fixed-P UR is secondary.'
   }
 }
 
@@ -4886,8 +5000,13 @@ export const applyDesignCheckToInverse = (
   utilization: check.proportionalUtilization,
   proportionalUtilization: check.proportionalUtilization,
   fixedPUtilization: check.fixedPUtilization,
+  designCheck: {
+    evaluated: true,
+    adequacy: check.adequacy,
+    utilizationInterval: check.utilizationInterval
+  },
   designCapacityPoint: check.capacityPoint,
-  resistance: check.resistance
+  resistance: inverse.resistance ?? check.resistance
 })
 
 const solveRawInversePreviewFromPrepared = (
@@ -4988,6 +5107,7 @@ const solveRawInversePreviewFromPrepared = (
     residualNorm: norm,
     iterations,
     utilization: utilization.utilization,
+    designCheck: { evaluated: false },
     contourPoint: utilization.point,
     message
   }

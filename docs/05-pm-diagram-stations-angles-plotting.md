@@ -107,9 +107,11 @@ strain, and adapter provenance.
 
 Fixed mode does not evaluate hidden midpoint probes. It calculates only the 27 × 36 requested
 states, so changing to Section Results does not pay for a second error-measurement grid.
-Fixed-mode demand checks therefore use a separate 2% regression screening margin owned by
+Fixed-mode stress-strain demand checks use that mechanics' 2% regression screening margin owned by
 `@pm/results`; cases whose resulting UR interval crosses 1.0 are visibly `indeterminate`, not
-silently passed or failed.
+silently passed or failed. Fixed equivalent-block checks currently have no validated screening
+bound and are therefore `indeterminate`. A consumer must not borrow the stress-strain margin or
+derive a verdict from raw UR.
 
 Adaptive mode is a separate calculation, not an overlay on Fixed. It measures true midpoint states
 against chords and inserts station or direction midpoints only when the error exceeds tolerance.

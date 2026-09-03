@@ -7,8 +7,8 @@
   "main": "src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "scripts": {
-    "test": "node --import tsx --test test/*.test.ts",
-    "fixture:complex-section-json": "tsx test/fixtures/write-complex-section.ts"
+    "test": "node ../../tools/runtime/check-runtime.mjs && node --import tsx --test test/*.test.ts",
+    "fixture:complex-section-json": "node ../../tools/runtime/check-runtime.mjs && tsx test/fixtures/write-complex-section.ts"
   },
   "dependencies": {
     "@pm/design": "0.1.0",

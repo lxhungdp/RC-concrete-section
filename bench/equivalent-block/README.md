@@ -1,7 +1,7 @@
 # Equivalent Stress-Block Verification
 
-Date: 2026-08-04  
-Runtime: Node.js 22.22.2, Windows  
+Date: 2026-09-03
+Runtime: Node.js 24.20.0 / npm 11.19.0, macOS
 Scope: independent equivalent-block mechanics, KDS 14 20 20:2022 and ACI 318-19(22) adapters,
 version-locked schema v1, worker routing, UI configuration, and result visualization. The parser's
 limited v1 defaulting/repair behavior is documented separately; this record does not claim that
@@ -41,16 +41,17 @@ independent.
 | surface rebuilt per loadcase | worker caches a core Design surface with a complete resistance-domain key; integration test proves four checks cause one build |
 | benchmark confused verification density with defaults | dense references remain explicitly benchmark-only; production surfaces use the shared 27 stations |
 | failed LM reported converged | status is `mesh-fallback`, `converged=false`, `ok=false`; the raw last exact state and residual remain auditable |
+| Fixed-grid adequacy reused the stress-strain 2% margin | Fixed equivalent-block checks are `indeterminate` unless Adaptive sampling supplies converged measured evidence; the observed 2.1829% fixed-to-exact correction is retained as regression evidence, not promoted into a universal bound |
 
 ## Commands and outcome
 
 | Command | Outcome |
 |---|---|
-| `npm.cmd test` | Passed: full unit/integration, CAD, schema round-trip, station, and Excel self-test suite |
-| `npm.cmd run build` | Production Next.js build passed; static application generated |
-| `npm.cmd run bench:equivalent-block` | 8/8 standard/geometry combinations; no failures |
-| `npm.cmd run bench:pipelines` | 5/5 fixtures and 15 candidate surfaces; 100% ray hits |
-| `npm.cmd run bench:verify` | 8 sections x 24 capacity quantities bit-identical to the new baseline |
+| `npm test` | Passed: 306 unit tests, 11 CAD tests, schema round-trip, Excel, Demand Check, and PDF integration suites |
+| `npm run build` | Production Next.js build passed; static application generated |
+| `npm run bench:equivalent-block` | 8/8 standard/geometry combinations; no failures |
+| `npm run bench:pipelines` | 5/5 fixtures; 100% ray hits |
+| `npm run bench:verify` | 8 sections x 24 capacity quantities bit-identical to the Node.js 24 baseline |
 
 ## Core mechanics benchmark
 
@@ -60,18 +61,18 @@ observations, not contractual speed limits.
 
 | Metric | Observed range / worst case |
 |---|---:|
-| Exact forward evaluation | 177.7-492.2 thousand evaluations/s |
-| Controlled surface | 25.28-37.18 ms |
+| Exact forward evaluation | 207.3-489.5 thousand evaluations/s |
+| Controlled surface | 12.76-46.07 ms |
 | Fixed production surface | measured by the current harness |
 | Effective directions / points | 36 directions and the fixed station schedule |
-| Surface ray query | 3,564-17,495 queries/s; 100% hits |
-| Coarse 36-direction ray error | at most 2.622% |
-| Fixed surface seed to exact LM correction | emitted by every run |
-| Exact proportional inverse | 0.32-1.01 ms/solve |
-| Exact proportional inverse residual | at most 7.39e-10 |
+| Surface ray query | 4,555-21,501 queries/s; 100% hits |
+| Coarse 36-direction ray error | at most 2.660% |
+| Fixed surface seed to exact LM correction | at most 2.1829%; no validated adequacy bound claimed |
+| Exact proportional inverse | 0.13-0.40 ms/solve |
+| Exact proportional inverse residual | at most 9.76e-10 |
 | Fixed-axial inverse | solved directly and checked against known states |
-| Fixed-axial relative error | at most 1.21e-13 |
-| Estimated 20-loadcase cache speedup | 4.98x-6.76x |
+| Fixed-axial relative error | at most 1.78e-15 |
+| Estimated 20-loadcase cache speedup | 1.31x-1.74x |
 | Surface topology | zero degenerate triangles; all closed |
 
 ## Sampling benchmark against a high-resolution reference
@@ -98,7 +99,9 @@ final equilibrium residuals are many orders of magnitude smaller than interpolat
 
 A faceted value remains available when LM fails, but it is diagnostic only: `mesh-fallback` is not
 converged or admissible acceptance. Similarly, component-assembly closure is not presented as an
-equilibrium audit.
+equilibrium audit. A Fixed surface also remains a visualization/screening object: because this
+matrix does not prove a universal uncertainty bound, Fixed equivalent-block demand checks fail
+closed as `indeterminate`; Adaptive sampling is required for a measured uncertainty estimate.
 
 This evidence supports implementation readiness, not third-party certification. Design release
 still requires independently reviewed licensed-code examples and commercial-software golden files;

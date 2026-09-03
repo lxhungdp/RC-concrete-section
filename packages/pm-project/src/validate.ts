@@ -1,3 +1,4 @@
+import { validateGeometryInput } from '@pm/geometry'
 import type { GeometryInput, GeometryInputOuter, GeometryInputRebar, Point2 } from '@pm/geometry'
 import { CONCRETE_MATERIAL_ID, DEFAULT_CONCRETE_DENSITY, assertValidMaterialStore } from '@pm/materials'
 import type { ConcreteMaterial, MaterialStore, SteelMaterial, StressStrainPoint } from '@pm/materials'
@@ -161,12 +162,18 @@ const parseGeometry = (value: unknown): GeometryInput => {
   assert(isString(value.name), 'inputs.geometry.name must be a string')
   assertArray(value.outers, 'inputs.geometry.outers must be an array')
   assertArray(value.rebars, 'inputs.geometry.rebars must be an array')
-  return {
+  const geometry: GeometryInput = {
     id: value.id,
     name: value.name,
     outers: value.outers.map((outer, index) => parseOuter(outer, `inputs.geometry.outers[${index}]`)),
     rebars: value.rebars.map((rebar, index) => parseRebar(rebar, `inputs.geometry.rebars[${index}]`))
   }
+  const issues = validateGeometryInput(geometry)
+  assert(
+    issues.length === 0,
+    issues.map((issue) => `inputs.geometry.${issue.path} ${issue.message}`).join('; ')
+  )
+  return geometry
 }
 
 const parseStressPoints = (value: unknown, path: string): StressStrainPoint[] => {
@@ -256,10 +263,19 @@ const parseConcrete = (value: unknown): ConcreteMaterial => {
       alpha: value.stressStrain.alpha
     }
   } else if (modelType === 'user-curve') {
+    assert(
+      value.stressStrain.interpolation === undefined || value.stressStrain.interpolation === 'linear',
+      'concrete.stressStrain.interpolation must be linear'
+    )
+    assert(
+      value.stressStrain.extrapolation === undefined || value.stressStrain.extrapolation === 'clamp',
+      'concrete.stressStrain.extrapolation must be clamp'
+    )
     stressStrain = {
       type: 'user-curve',
       points: parseStressPoints(value.stressStrain.points, 'concrete.stressStrain.points'),
       interpolation: 'linear',
+      extrapolation: 'clamp',
       zeroTension: typeof value.stressStrain.zeroTension === 'boolean' ? value.stressStrain.zeroTension : undefined
     }
   } else {
@@ -314,10 +330,19 @@ const parseSteel = (value: unknown, path: string): SteelMaterial => {
     assert(isFiniteNumber(value.stressStrain.hardeningRatio), `${path}.stressStrain.hardeningRatio must be a finite number`)
     stressStrain = { type: 'bilinear', hardeningRatio: value.stressStrain.hardeningRatio }
   } else if (modelType === 'user-curve') {
+    assert(
+      value.stressStrain.interpolation === undefined || value.stressStrain.interpolation === 'linear',
+      `${path}.stressStrain.interpolation must be linear`
+    )
+    assert(
+      value.stressStrain.extrapolation === undefined || value.stressStrain.extrapolation === 'clamp',
+      `${path}.stressStrain.extrapolation must be clamp`
+    )
     stressStrain = {
       type: 'user-curve',
       points: parseStressPoints(value.stressStrain.points, `${path}.stressStrain.points`),
-      interpolation: 'linear'
+      interpolation: 'linear',
+      extrapolation: 'clamp'
     }
   } else {
     throw new Error(`Unsupported steel stress-strain type: ${String(modelType)}`)

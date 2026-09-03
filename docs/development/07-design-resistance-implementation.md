@@ -120,9 +120,11 @@ UR_3D = 1 / lambda
 classify the UR interval as adequate / indeterminate / inadequate
 ```
 
-Fixed 27 x 36 mode applies the `@pm/results` 2% screening margin. This value is a regression
-envelope, not a mathematical bound. Adaptive mode uses its station and direction error evidence.
-Only an interval wholly below `UR = 1` is adequate; only one wholly above it is inadequate.
+Fixed 27 x 36 stress-strain mode applies that mechanics' `@pm/results` 2% screening margin. This
+value is a regression envelope, not a mathematical bound, and it is not applied to equivalent-
+block Fixed results: those remain indeterminate until that mechanics has an approved bound.
+Adaptive mode uses its station and direction error evidence. Only an interval wholly below
+`UR = 1` is adequate; only one wholly above it is inadequate.
 
 Normalization affects only numerical conditioning; the returned capacity is in physical units.
 The Fixed-P Mx-My intersection is retained as a secondary diagnostic and is reported separately as

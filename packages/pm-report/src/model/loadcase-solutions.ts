@@ -106,7 +106,13 @@ export const solveLoadcases = (input: LoadcaseSolutionInput): LoadcaseSolutions 
     const options = input.analysisOptions as EquivalentBlockAnalysisOptions
     const solved = solveEquivalentBlockDemandsFromPrepared(blockPrepared, options, input.loadcases)
     input.loadcases.forEach((loadcase, index) => {
-      solutions.push(withBeta(loadcase, solved[index]))
+      solutions.push(withBeta(
+        loadcase,
+        applyDesignCheckToInverse(
+          solved[index],
+          checkLoadcaseUtilizationFromSurface(surface, loadcase)
+        )
+      ))
     })
   } else {
     const options = input.analysisOptions as AnalysisOptions

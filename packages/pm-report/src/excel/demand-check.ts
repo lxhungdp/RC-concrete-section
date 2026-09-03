@@ -101,9 +101,8 @@ export const demandCheckWorkbookFileName = (
 ) => `${safeStem(input.projectName)}-demand-check-${input.detailLoadcaseIds.length}LC.xlsx`
 
 const verdictOf = (result: InversePreviewResult) => {
-  const admissible = result.admissibility.evaluated === false || result.admissibility.ok
-  if (!result.converged || result.utilization === null || !admissible) return 'NOT CHECKED'
-  return result.utilization <= 1 ? 'ADEQUATE' : 'INADEQUATE'
+  if (!result.designCheck.evaluated) return 'NOT CHECKED'
+  return result.designCheck.adequacy.toUpperCase()
 }
 
 const loadcaseAngleDeg = (loadcase: LoadCombination) =>
@@ -581,7 +580,7 @@ const writeInverseSheet = (
     // The block inverse does not balance the demand: it walks the demand ray to the surface and
     // returns the capacity point there. What can be checked by formula is that the two are indeed
     // colinear — scale the capacity back by the utilization and the demand must reappear.
-    const utilization = result.utilization
+    const utilization = result.inverseProportionalUtilization
     const urRow = row
     sheet.getCell(urRow, 1).value = 'Utilization UR'
     sheet.getCell(urRow, 2).value = utilization ?? '—'
@@ -657,6 +656,21 @@ const writeInverseSheet = (
   const capacity = result.designCapacityPoint ?? null
   const adequacy: Array<[string, string | number, string, string]> = [
     ['Utilization UR', result.utilization ?? '—', '–', 'Governing proportional 3D ray against the Design surface'],
+    ['UR interval lower', result.designCheck.evaluated
+      ? result.designCheck.utilizationInterval.lower ?? '—'
+      : '—', '–', 'Lower bound carried by the kernel check'],
+    ['UR interval upper', result.designCheck.evaluated
+      ? result.designCheck.utilizationInterval.upper ?? '—'
+      : '—', '–', 'Upper bound carried by the kernel check'],
+    ['Relative uncertainty', result.designCheck.evaluated
+      ? result.designCheck.utilizationInterval.relativeUncertainty ?? '—'
+      : '—', '–', 'Sampling uncertainty carried by the kernel check'],
+    ['Uncertainty evidence', result.designCheck.evaluated
+      ? result.designCheck.utilizationInterval.evidence
+      : 'not evaluated', '–', 'Evidence identifier carried by the kernel check'],
+    ['Kernel adequacy', result.designCheck.evaluated
+      ? result.designCheck.adequacy.toUpperCase()
+      : 'NOT CHECKED', '–', 'Three-state decision produced by the kernel'],
     ['Fixed-P ratio', result.fixedPUtilization ?? '—', '–', 'Secondary diagnostic at constant axial force'],
     ['φ', result.resistance?.factor ?? '—', '–', 'Resistance factor at the capacity point'],
     ['Classification', result.resistance?.classification ?? '—', '–', 'Resistance state at the capacity point'],
@@ -680,14 +694,9 @@ const writeInverseSheet = (
   })
   row = adequacyFirst + adequacy.length
   sheet.getCell(row, 1).value = 'Verdict'
-  setFormula(
-    sheet.getCell(row, 2),
-    `=IF(NOT(ISNUMBER($B$${adequacyFirst})),"NOT CHECKED",IF($B$${adequacyFirst}<=1,"ADEQUATE","INADEQUATE"))`,
-    verdictOf(result),
-    '@'
-  )
+  sheet.getCell(row, 2).value = verdictOf(result)
   sheet.getCell(row, 2).font = { ...(sheet.getCell(row, 2).font ?? {}), bold: true }
-  keyValueNote(sheet, row, 'UR ≤ 1 is adequate. UR is the governing proportional utilization.')
+  keyValueNote(sheet, row, 'Copied from the kernel three-state decision; the workbook does not reclassify UR.')
 }
 
 // ---------------------------------------------------------------------------
