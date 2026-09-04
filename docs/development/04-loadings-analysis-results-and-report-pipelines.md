@@ -259,6 +259,25 @@ mechanics, resistance reduction, or adequacy logic.
 
 ## 5. Results UI state
 
+The two on-screen calculation inspectors default to an interactive technical-document layout: a
+sticky contents rail links to the existing ordered calculation steps, the current section is
+highlighted while the document scrolls, equations and sections expose stable in-document anchors,
+and tables retain one auditable value row per source item. Its content is one continuous reading
+surface with typographic section breaks and technical table rules, not a stack of dashboard cards.
+The former compact `Classic` modal remains implemented behind the local presentation flag but is
+not exposed in the current UI. The header offers Excel audit export and browser print-to-PDF for the
+currently selected trace. Print styling isolates the open inspector, keeps its identifying context
+and Preview statement, expands the scroll surface, and omits navigation and interactive controls;
+it does not create or promote an accepted/released engineering report. Neither export presentation
+path can request, recalculate, factor, classify, or mutate an engineering result.
+
+KaTeX `0.16.47` (MIT) is the bounded presentation dependency for authored TeX equations in these
+inspectors. It is wrapped by the web-only `TechnicalEquation` component with trusted commands
+disabled and HTML+MathML output enabled. KaTeX has no numerical, material, resistance, solver,
+classification, persistence, worker, Excel, or PDF role; the visible values remain copies of the
+existing audit/result DTOs. Plain explanatory formula rows remain React text when they combine
+prose and evidence that is not an authored TeX expression.
+
 The table below is the target accepted-result lifecycle. The current application implements
 missing/ready/working/error preview states and invalidates derived surface/check/field data, but it
 does not yet persist immutable accepted/stale result history or enable released-report actions.
@@ -337,8 +356,9 @@ physical audit and reconciles its Concrete/Steel calculation; it then compares t
 with the maximum permitted value and evaluates the geometric cap formulas through the selected
 stored `P/Mx/My`. The final face still has no unique material state. The complete workbook reuses
 the pre-cap Concrete/Steel builders before its `Axial Cap` sheet; a cap point without a retained
-physical criterion remains a geometric-only cap audit. The control-level Excel action shares the
-selector row and is right aligned; the obsolete “trace from project inputs” subtitle is not shown.
+physical criterion remains a geometric-only cap audit. The Excel and print-to-PDF actions share the
+technical-document header; selectors remain in the document context row, and the obsolete “trace
+from project inputs” subtitle is not shown.
 For that geometric-only case, Input labels the endpoint as geometric and records strain, curvature,
 and resistance factor as unavailable rather than publishing the DTO's non-physical placeholder
 numbers as a resolved or pre-cap state.

@@ -26,6 +26,7 @@ import type {
   ChartTableVerticalRow
 } from './chart-data-table'
 import { CalculationDialogFrame, Fact, Formula, FormulaPanel, Step } from './CalculationDialogFrame'
+import { TechnicalEquation } from './TechnicalEquation'
 
 type PhysicalPointCalculationAudit = Exclude<
   PointCalculationAudit,
@@ -319,8 +320,18 @@ const OriginStrainTrace = ({ trace }: { trace: CalculationAuditOriginStrainTrace
 const RebarLedger = ({ bars, total }: { bars: CalculationAuditRebar[]; total: Resultant }) => (
   <>
     <FormulaPanel>
-      <Formula><span className="pm-calc-math">As = πd²/4; εs = ε₀ + κx·y + κy·x; Fs,net = [σs(εs) − σc,displaced(εs)]·As</span></Formula>
-      <Formula><span className="pm-calc-math">Ps = ΣFs,net; Msx = ΣFs,net·y; Msy = ΣFs,net·x</span></Formula>
+      <Formula numbered>
+        <TechnicalEquation
+          latex={String.raw`A_s=\frac{\pi d^2}{4},\quad \varepsilon_s=\varepsilon_0+\kappa_x y+\kappa_y x,\quad F_{s,\mathrm{net}}=[\sigma_s(\varepsilon_s)-\sigma_{c,\mathrm{disp}}(\varepsilon_s)]A_s`}
+          ariaLabel="Net reinforcement force from steel stress minus displaced concrete stress"
+        />
+      </Formula>
+      <Formula numbered>
+        <TechnicalEquation
+          latex={String.raw`P_s=\sum F_{s,\mathrm{net}},\quad M_{sx}=\sum F_{s,\mathrm{net}}y,\quad M_{sy}=\sum F_{s,\mathrm{net}}x`}
+          ariaLabel="Reinforcement axial force and moment resultants"
+        />
+      </Formula>
     </FormulaPanel>
     <div className="pm-calc-table-wrap"><table>
       <thead><tr><th>Bar</th><th>x (mm)</th><th>y (mm)</th><th>d (mm)</th><th>As (mm²)</th><th>εs</th><th>σs (MPa)</th><th>−σc,disp (MPa)</th><th>σnet (MPa)</th><th>Fnet (kN)</th><th>Mx (kN·m)</th><th>My (kN·m)</th></tr></thead>
@@ -350,7 +361,12 @@ const ResistanceTrace = ({ audit, point, designBasis }: {
       ) : audit.resistanceFactor === null ? (
         <FormulaPanel><Formula><span className="pm-calc-math">Rshown = Rintegration (the active material laws already represent the selected {audit.stage} stage; no global φ is applied)</span></Formula></FormulaPanel>
       ) : (
-        <FormulaPanel><Formula><span className="pm-calc-math">Rdesign = φ·Rnominal = {fmt(audit.resistanceFactor, 4)}·Rnominal</span></Formula></FormulaPanel>
+        <FormulaPanel><Formula numbered>
+          <TechnicalEquation
+            latex={String.raw`\mathbf{R}_{\mathrm{design}}=\phi\mathbf{R}_{\mathrm{nominal}}=${fmt(audit.resistanceFactor, 4)}\,\mathbf{R}_{\mathrm{nominal}}`}
+            ariaLabel={`Design resistance equals ${fmt(audit.resistanceFactor, 4)} times nominal resistance`}
+          />
+        </Formula></FormulaPanel>
       )}
       {audit.stage === 'nominal' ? <p className="pm-calc-caption">Factored / Design columns are intentionally unavailable while the table is in Nominal mode.</p> : null}
       {trace ? <div className="pm-calc-facts">
@@ -500,7 +516,12 @@ const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, sect
           <Fact label="Neutral-axis depth c">{audit.depthProfile.neutralAxisDepth === null ? '∞ (uniform strain)' : `${fmt(audit.depthProfile.neutralAxisDepth)} mm${audit.depthProfile.neutralAxisInsideSection ? '' : ' · outside section'}`}</Fact>
         </div>
         <OriginStrainTrace trace={audit.depthProfile.originStrainTrace} />
-        <FormulaPanel><Formula><span className="pm-calc-math">ε(x,y) = ε₀ + κx·(y − y₀) + κy·(x − x₀)</span></Formula></FormulaPanel>
+        <FormulaPanel><Formula numbered>
+          <TechnicalEquation
+            latex={String.raw`\varepsilon(x,y)=\varepsilon_0+\kappa_x(y-y_0)+\kappa_y(x-x_0)`}
+            ariaLabel="Compatible strain plane equation"
+          />
+        </Formula></FormulaPanel>
         <CalculationDiagram section={section} rebars={rebars} audit={audit} patternId={patternId} />
       </Step>
 
@@ -585,7 +606,12 @@ const VerticalResult = ({ row, index }: { row: ChartTableVerticalRow; index: num
   const selected = row.evidence.stage === 'design' ? row.design : row.nominal
   if (!selected) return null
   return <Step index={index} title="Value shown in the Vertical table">
-    <FormulaPanel><Formula><span className="pm-calc-math">Mβ = Mx·cosβ + My·sinβ, with β = {fmt(row.evidence.angleDeg)}°</span></Formula></FormulaPanel>
+    <FormulaPanel><Formula id="equation-projected-moment" numbered>
+      <TechnicalEquation
+        latex={String.raw`M_{\beta}=M_x\cos\beta+M_y\sin\beta,\qquad \beta=${fmt(row.evidence.angleDeg)}^{\circ}`}
+        ariaLabel={`Projected moment at beta ${fmt(row.evidence.angleDeg)} degrees`}
+      />
+    </Formula></FormulaPanel>
     <div className="pm-calc-final"><Fact label={`${row.evidence.stage} P`}>{force(selected.total.P)}</Fact><Fact label={`${row.evidence.stage} Mβ`}>{moment(selected.total.M)}</Fact></div>
   </Step>
 }
@@ -598,9 +624,24 @@ const FixedPResult = ({ row, index }: { row: ChartTableFixedPRow; index: number 
       <FormulaPanel><Formula><span className="pm-calc-math">Pselected = Pstation; Mx = {moment(sample.Mx)}; My = {moment(sample.My)}</span></Formula></FormulaPanel>
     ) : <>
       <FormulaPanel>
-        <Formula><span className="pm-calc-math">t = (Pselected − Pbelow)/(Pabove − Pbelow) = ({force(fixedP)} − {force(bracket.below.P)})/({force(bracket.above.P)} − {force(bracket.below.P)}) = {fmt(bracket.ratio, 6)}</span></Formula>
-        <Formula><span className="pm-calc-math">Mx = Mx,below + t(Mx,above − Mx,below) = {moment(sample.Mx)}</span></Formula>
-        <Formula><span className="pm-calc-math">My = My,below + t(My,above − My,below) = {moment(sample.My)}</span></Formula>
+        <Formula id="equation-fixed-p-interpolation-ratio" numbered>
+          <TechnicalEquation
+            latex={String.raw`t=\frac{P_{\mathrm{selected}}-P_{\mathrm{below}}}{P_{\mathrm{above}}-P_{\mathrm{below}}}=${fmt(bracket.ratio, 6)}`}
+            ariaLabel={`Fixed P interpolation ratio equals ${fmt(bracket.ratio, 6)}`}
+          />
+        </Formula>
+        <Formula id="equation-fixed-p-mx" numbered>
+          <TechnicalEquation
+            latex={String.raw`M_x=M_{x,\mathrm{below}}+t(M_{x,\mathrm{above}}-M_{x,\mathrm{below}})=${momentValue(sample.Mx)}\ \mathrm{kN\,m}`}
+            ariaLabel={`Interpolated M x equals ${moment(sample.Mx)}`}
+          />
+        </Formula>
+        <Formula id="equation-fixed-p-my" numbered>
+          <TechnicalEquation
+            latex={String.raw`M_y=M_{y,\mathrm{below}}+t(M_{y,\mathrm{above}}-M_{y,\mathrm{below}})=${momentValue(sample.My)}\ \mathrm{kN\,m}`}
+            ariaLabel={`Interpolated M y equals ${moment(sample.My)}`}
+          />
+        </Formula>
       </FormulaPanel>
     </>}
     {selected ? <div className="pm-calc-final"><Fact label={`${stage} P`}>{force(sample.P)}</Fact><Fact label={`${stage} Mx`}>{moment(selected.Mx)}</Fact><Fact label={`${stage} My`}>{moment(selected.My)}</Fact></div> : null}
@@ -675,7 +716,18 @@ export function ChartCalculationDialog({ row, rows, source, resistanceStage, sum
       title="CALCULATION TRACE"
       closeLabel="Close calculation details"
       bodyKey={`${stage}-${row?.key ?? 'empty'}`}
+      defaultView="document"
       onClose={onClose}
+      headerAction={<button
+        type="button"
+        className="pm-calc-excel-button pm-calc-excel-button--report"
+        disabled={exportingCalculationTrace || requestedPoints.length === 0 || !surface.calculationProfileId}
+        onClick={() => void onExportCalculationTraceExcel()}
+        title="Download the complete formula-linked audit for this selected result row"
+      >
+        <span>Excel</span>
+        {exportingCalculationTrace ? <Loader2 size={15} className="pm-spin" /> : <Download size={15} />}
+      </button>}
       controls={<div className="pm-calculation-dialog__selectors" aria-label="Calculation trace selection">
             <label className="pm-calculation-dialog__selector">
               <span>View</span>
@@ -718,16 +770,6 @@ export function ChartCalculationDialog({ row, rows, source, resistanceStage, sum
                 ))}
               </select>
             </label>
-            <button
-              type="button"
-              className="pm-calc-excel-button pm-calc-excel-button--report"
-              disabled={exportingCalculationTrace || requestedPoints.length === 0 || !surface.calculationProfileId}
-              onClick={() => void onExportCalculationTraceExcel()}
-              title="Download the complete formula-linked audit for this selected result row"
-            >
-              <span>Excel</span>
-              {exportingCalculationTrace ? <Loader2 size={15} className="pm-spin" /> : <Download size={15} />}
-            </button>
           </div>}
     >
           {exportError ? <div className="pm-calc-note is-error" role="alert"><AlertTriangle size={16} /><p><b>Export failed:</b> {exportError}</p></div> : null}

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Analytics } from '@vercel/analytics/next'
+import 'katex/dist/katex.min.css'
 import './globals.css'
 import './side-panel.css'
 import './anchor-reference-theme.css'

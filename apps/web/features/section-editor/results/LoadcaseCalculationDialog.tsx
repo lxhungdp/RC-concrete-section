@@ -10,6 +10,7 @@ import type {
 import type { DesignBasis } from '@pm/design'
 import type { LoadCombination } from '@pm/project'
 import { CalculationDialogFrame, Fact, Formula, FormulaPanel, Step } from './CalculationDialogFrame'
+import { TechnicalEquation } from './TechnicalEquation'
 
 type Props = {
   projectName: string
@@ -98,7 +99,18 @@ export function LoadcaseCalculationDialog({
       title="CHECK CALCULATION TRACE"
       closeLabel="Close loadcase calculation details"
       bodyKey={String(loadcase.id)}
+      defaultView="document"
       onClose={onClose}
+      headerAction={<button
+        type="button"
+        className="pm-calc-excel-button pm-calc-excel-button--report"
+        disabled={exporting}
+        onClick={() => void onExportExcel()}
+        title="Download the existing Demand Check workbook with this combination worked through in full"
+      >
+        <span>Excel</span>
+        {exporting ? <Loader2 size={15} className="pm-spin" /> : <Download size={15} />}
+      </button>}
       controls={<div className="pm-calculation-dialog__selectors pm-calculation-dialog__selectors--loadcase" aria-label="Loadcase calculation trace selection">
         <label className="pm-calculation-dialog__selector pm-calculation-dialog__selector--row">
           <span>Loadcase</span>
@@ -112,16 +124,6 @@ export function LoadcaseCalculationDialog({
             ))}
           </select>
         </label>
-        <button
-          type="button"
-          className="pm-calc-excel-button pm-calc-excel-button--report"
-          disabled={exporting}
-          onClick={() => void onExportExcel()}
-          title="Download the existing Demand Check workbook with this combination worked through in full"
-        >
-          <span>Excel</span>
-          {exporting ? <Loader2 size={15} className="pm-spin" /> : <Download size={15} />}
-        </button>
       </div>}
     >
       {exportError ? <div className="pm-calc-note is-error" role="alert"><AlertTriangle size={16} /><p><b>Export failed:</b> {exportError}</p></div> : null}
@@ -148,7 +150,13 @@ export function LoadcaseCalculationDialog({
         </table></div>
         <FormulaPanel>
           {check?.codeAdjustedDemand && check.minimumEccentricityMm !== undefined ? <Formula><span className="pm-calc-math">emin = {fmt(check.minimumEccentricityMm, 2)} mm; the governing code-adjusted moment candidate is carried into both the Design-ray check and inverse diagnostic.</span></Formula> : <Formula><span className="pm-calc-math">Dcheck = Dentered; no code demand adjustment governs this combination.</span></Formula>}
-          <Formula><span className="pm-calc-math">θload = atan2(Muy, Mux) = {check ? degrees(check.demandMomentDirection) : 'pending'}; this is the demand direction in Mx–My action space, not a strain-plane β.</span></Formula>
+          <Formula id="equation-demand-direction" numbered>
+            {check?.demandMomentDirection !== null && check?.demandMomentDirection !== undefined ? <TechnicalEquation
+              latex={String.raw`\theta_{\mathrm{load}}=\operatorname{atan2}(M_{uy},M_{ux})=${fmt(check.demandMomentDirection * 180 / Math.PI, 2)}^{\circ}`}
+              ariaLabel={`Demand direction equals ${degrees(check.demandMomentDirection)}`}
+            /> : <span className="pm-calc-math">θload = atan2(Muy, Mux) = pending or unavailable</span>}
+            <p>This is the demand direction in Mx–My action space, not a strain-plane β.</p>
+          </Formula>
         </FormulaPanel>
       </Step>
 
@@ -156,12 +164,24 @@ export function LoadcaseCalculationDialog({
         {!check ? <div className="pm-calc-loading"><Loader2 size={17} className="pm-spin" /><span>Checking the current factored demand against the Design surface…</span></div> : <>
           <FormulaPanel>
             <Formula><span className="pm-calc-math">1. Place Dcheck = (Pu, Mux, Muy) in the three-dimensional P–Mx–My action space.</span></Formula>
-            <Formula><span className="pm-calc-math">2. Draw one ray from the origin through Dcheck. Along this ray, R(λ) = λ·Dcheck = (λPu, λMux, λMuy), so P, Mx, and My retain their signs and are scaled by the same factor.</span></Formula>
+            <Formula id="equation-proportional-resistance-ray" numbered>
+              <TechnicalEquation
+                latex={String.raw`\mathbf{R}(\lambda)=\lambda\mathbf{D}_{\mathrm{check}}=(\lambda P_u,\lambda M_{ux},\lambda M_{uy})`}
+                ariaLabel="Resistance ray equals lambda times the checked demand vector"
+              />
+              <p>Draw one ray from the origin through Dcheck. P, Mx, and My retain their signs and are scaled by the same factor.</p>
+            </Formula>
             <Formula><span className="pm-calc-math">3. Starting at λ = 0, increase λ outward. λcap is the smallest positive λ at which this ray meets the Design-resistance surface—the first available resistance boundary in the checked demand direction.</span></Formula>
             {check.proportionalUtilization === 0 && check.capacityMultiplier === null
               ? <Formula><span className="pm-calc-math">4. Dcheck = 0 ⇒ UR = 0; an infinite multiplier is not published as numeric engineering data.</span></Formula>
               : check.capacityMultiplier !== null && check.proportionalUtilization !== null
-                ? <Formula><span className="pm-calc-math">4. UR = 1 / λcap = 1 / {factorValue(check.capacityMultiplier)} = {utilizationValue(check.proportionalUtilization)}. Therefore λcap &gt; 1 gives UR &lt; 1, while λcap &lt; 1 gives UR &gt; 1.</span></Formula>
+                ? <Formula id="equation-governing-utilization" numbered>
+                    <TechnicalEquation
+                      latex={String.raw`UR=\frac{1}{\lambda_{\mathrm{cap}}}=\frac{1}{${factorValue(check.capacityMultiplier)}}=${utilizationValue(check.proportionalUtilization)}`}
+                      ariaLabel={`Utilization ratio equals ${utilizationValue(check.proportionalUtilization)}`}
+                    />
+                    <p>λcap &gt; 1 gives UR &lt; 1, while λcap &lt; 1 gives UR &gt; 1.</p>
+                  </Formula>
                 : <Formula><span className="pm-calc-math">4. UR is unavailable because no valid proportional Design-surface crossing was returned.</span></Formula>}
           </FormulaPanel>
           <ResultantTable demand={checkedDemand} capacity={check.capacityPoint} />
@@ -229,7 +249,12 @@ export function LoadcaseCalculationDialog({
         {!check ? <div className="pm-calc-note is-warning"><AlertTriangle size={16} /><p>Fixed-P evidence is pending.</p></div> : check.fixedPUtilization === null || check.fixedPCapacityMoment === null ? (
           <div className="pm-calc-note is-warning"><AlertTriangle size={16} /><p>No unique fixed-P moment-ray ratio is available for this combination. This does not replace or invalidate the governing proportional 3D result above.</p></div>
         ) : <>
-          <FormulaPanel><Formula><span className="pm-calc-math">URfixed-P = Mcheck / Mb = {momentValue(check.fixedPDemandMoment)} / {momentValue(check.fixedPCapacityMoment)} = {utilizationValue(check.fixedPUtilization)}</span></Formula></FormulaPanel>
+          <FormulaPanel><Formula id="equation-fixed-p-utilization" numbered>
+            <TechnicalEquation
+              latex={String.raw`UR_{\mathrm{fixed}\text{-}P}=\frac{M_{\mathrm{check}}}{M_b}=\frac{${momentValue(check.fixedPDemandMoment)}}{${momentValue(check.fixedPCapacityMoment)}}=${utilizationValue(check.fixedPUtilization)}`}
+              ariaLabel={`Fixed P utilization equals ${utilizationValue(check.fixedPUtilization)}`}
+            />
+          </Formula></FormulaPanel>
           <div className="pm-calc-facts">
             <Fact label="Demand moment magnitude">{fmt(check.fixedPDemandMoment / 1_000_000, 2)} kN·m</Fact>
             <Fact label="Fixed-P boundary Mb">{fmt(check.fixedPCapacityMoment / 1_000_000, 2)} kN·m</Fact>
