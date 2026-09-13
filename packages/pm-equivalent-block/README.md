@@ -28,7 +28,11 @@ An elastic-perfectly-plastic steel law validates `eps_u > eps_y`. When `eps_u` i
 
 `bindEquivalentBlockForwardEvaluator(...)` caches only the outer-boundary projection that depends on
 section and angle. Repeated depth evaluations at that angle still perform exact clipping and full
-steel/resultant evaluation; no state-dependent resistance is cached.
+steel/resultant evaluation; no state-dependent resistance is cached. Public point/audit evaluators
+retain the exact clipped rings by default. Surface builders use the evaluator's explicit
+`retainConcreteGeometry: false` mode because they consume only area, first moments, bar ledgers, and
+resultants; the same rings are clipped and integrated in the same order, then released instead of
+being retained for every adaptive trial state.
 
 `componentForceResidual` and the two component-moment residuals audit assembly of the concrete and steel ledgers only. They are not equilibrium residuals. Inverse equilibrium diagnostics are computed independently as the exact evaluated response minus the scaled demand, with a separately normalized residual norm.
 

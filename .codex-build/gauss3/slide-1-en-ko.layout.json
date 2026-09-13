@@ -1,0 +1,2562 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/0ec91q",
+    "id": "0ec91q",
+    "slide": 1,
+    "layoutId": "b074b95f-bf93-4230-827b-957882480da9",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "05c6b66c-d999-4389-a686-53bc849fd0f4",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#F7F8FA",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "Apple SD Gothic Neo"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "b074b95f-bf93-4230-827b-957882480da9",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "05c6b66c-d999-4389-a686-53bc849fd0f4",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "05c6b66c-d999-4389-a686-53bc849fd0f4",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/dcrytgzi",
+      "id": "1",
+      "bbox": [
+        62,
+        28,
+        1156,
+        43
+      ],
+      "geometry": "rect",
+      "text": "Three-point Gaussian quadrature for P–M analysis",
+      "textPreview": "Three-point Gaussian quadrature for P–M analysis",
+      "resolvedFontSize": 32,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 32,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#10213A",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Three-point Gaussian quadrature for P–M analysis"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Three-point Gaussian quadrature for P–M analysis",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 32,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#10213A",
+            "bold": true,
+            "alignment": "left",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Three-point Gaussian quadrature for P–M analysis",
+              "fontSize": 32,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#10213A",
+              "bold": true,
+              "alignment": "left",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/q90fy10r",
+      "id": "2",
+      "bbox": [
+        64,
+        71,
+        1152,
+        34
+      ],
+      "geometry": "rect",
+      "text": "P–M 해석을 위한 삼각형 3점 가우스 구적법",
+      "textPreview": "P–M 해석을 위한 삼각형 3점 가우스 구적법",
+      "resolvedFontSize": 22,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 22,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#1D4ED8",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "P–M 해석을 위한 삼각형 3점 가우스 구적법"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "P–M 해석을 위한 삼각형 3점 가우스 구적법",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 22,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#1D4ED8",
+            "bold": true,
+            "alignment": "left",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "P–M 해석을 위한 삼각형 3점 가우스 구적법",
+              "fontSize": 22,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#1D4ED8",
+              "bold": true,
+              "alignment": "left",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ra9wr6hc",
+      "id": "3",
+      "bbox": [
+        65,
+        111,
+        1150,
+        25
+      ],
+      "geometry": "rect",
+      "text": "The triangle stays unchanged. Three optimal points integrate every polynomial of degree ≤ 2 exactly.",
+      "textPreview": "The triangle stays unchanged. Three optimal points integrate every polynomial of degree ≤ 2 exactly.",
+      "resolvedFontSize": 16.51,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 16.51,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#526173",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "The triangle stays unchanged. Three optimal points integrate every polynomial of degree ≤ 2 exactly."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "The triangle stays unchanged. Three optimal points integrate every polynomial of degree ≤ 2 exactly.",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 16.51,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#526173",
+            "alignment": "left",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "The triangle stays unchanged. Three optimal points integrate every polynomial of degree ≤ 2 exactly.",
+              "fontSize": 16.51,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#526173",
+              "alignment": "left",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/4nixwbil",
+      "id": "4",
+      "bbox": [
+        65,
+        136,
+        1150,
+        25
+      ],
+      "geometry": "rect",
+      "text": "삼각형은 그대로 유지된다. 최적의 세 점으로 2차 이하 다항식을 정확히 적분한다.",
+      "textPreview": "삼각형은 그대로 유지된다. 최적의 세 점으로 2차 이하 다항식을 정확히 적분한다.",
+      "resolvedFontSize": 16,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 16,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#526173",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "삼각형은 그대로 유지된다. 최적의 세 점으로 2차 이하 다항식을 정확히 적분한다."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "삼각형은 그대로 유지된다. 최적의 세 점으로 2차 이하 다항식을 정확히 적분한다.",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 16,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#526173",
+            "alignment": "left",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "삼각형은 그대로 유지된다. 최적의 세 점으로 2차 이하 다항식을 정확히 적분한다.",
+              "fontSize": 16,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#526173",
+              "alignment": "left",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/porepwz6",
+      "id": "5",
+      "bbox": [
+        64,
+        166,
+        1152,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#D8DEE8",
+      "lineWidth": 1.2
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/2lgfu10v",
+      "id": "6",
+      "bbox": [
+        72,
+        180,
+        510,
+        31
+      ],
+      "geometry": "rect",
+      "text": "Method anatomy / 방법 구성",
+      "textPreview": "Method anatomy / 방법 구성",
+      "resolvedFontSize": 21,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 21,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#1D4ED8",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Method anatomy / 방법 구성"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Method anatomy / 방법 구성",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 21,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#1D4ED8",
+            "bold": true,
+            "alignment": "left",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Method anatomy / 방법 구성",
+              "fontSize": 21,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#1D4ED8",
+              "bold": true,
+              "alignment": "left",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/3m9wn6h0",
+      "id": "7",
+      "bbox": [
+        135,
+        220,
+        380,
+        240
+      ],
+      "geometry": "triangle",
+      "fillColor": "#DCEBFF",
+      "lineColor": "#2563EB",
+      "lineWidth": 3
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/oj2x8vi5",
+      "id": "8",
+      "bbox": [
+        306,
+        196,
+        38,
+        28
+      ],
+      "geometry": "rect",
+      "text": "A",
+      "textPreview": "A",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 18,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#172033",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "A"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "A",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#172033",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "A",
+              "fontSize": 18,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#172033",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/94by10zq",
+      "id": "9",
+      "bbox": [
+        101,
+        449,
+        38,
+        28
+      ],
+      "geometry": "rect",
+      "text": "B",
+      "textPreview": "B",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 18,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#172033",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "B"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "B",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#172033",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "B",
+              "fontSize": 18,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#172033",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/p0j6do7m",
+      "id": "10",
+      "bbox": [
+        512,
+        449,
+        38,
+        28
+      ],
+      "geometry": "rect",
+      "text": "C",
+      "textPreview": "C",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 18,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#172033",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "C"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "C",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#172033",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "C",
+              "fontSize": 18,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#172033",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ofqpk3qh",
+      "id": "11",
+      "bbox": [
+        316,
+        291,
+        18,
+        18
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#F97316",
+      "lineColor": "#FFFFFF",
+      "lineWidth": 2
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/3ehobypw",
+      "id": "12",
+      "bbox": [
+        307,
+        269,
+        34,
+        24
+      ],
+      "geometry": "rect",
+      "text": "q₁",
+      "textPreview": "q₁",
+      "resolvedFontSize": 16,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 16,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#9A3412",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "q₁"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "q₁",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 16,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#9A3412",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "q₁",
+              "fontSize": 16,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#9A3412",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 13,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/2d87it8b",
+      "id": "13",
+      "bbox": [
+        221,
+        411,
+        18,
+        18
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#F97316",
+      "lineColor": "#FFFFFF",
+      "lineWidth": 2
+    },
+    {
+      "order": 14,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/1cz69o7q",
+      "id": "14",
+      "bbox": [
+        195,
+        405,
+        34,
+        24
+      ],
+      "geometry": "rect",
+      "text": "q₂",
+      "textPreview": "q₂",
+      "resolvedFontSize": 16,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 16,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#9A3412",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "q₂"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "q₂",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 16,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#9A3412",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "q₂",
+              "fontSize": 16,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#9A3412",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 15,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/gbqpgjq5",
+      "id": "15",
+      "bbox": [
+        411,
+        411,
+        18,
+        18
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#F97316",
+      "lineColor": "#FFFFFF",
+      "lineWidth": 2
+    },
+    {
+      "order": 16,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/faho7epk",
+      "id": "16",
+      "bbox": [
+        431,
+        405,
+        34,
+        24
+      ],
+      "geometry": "rect",
+      "text": "q₃",
+      "textPreview": "q₃",
+      "resolvedFontSize": 16,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 16,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#9A3412",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "q₃"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "q₃",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 16,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#9A3412",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "q₃",
+              "fontSize": 16,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#9A3412",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 17,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/e98ne98z",
+      "id": "17",
+      "bbox": [
+        251,
+        349,
+        148,
+        50
+      ],
+      "geometry": "rect",
+      "text": "Parent triangle T\n원삼각형 T",
+      "textPreview": "Parent triangle T | 원삼각형 T",
+      "resolvedFontSize": 15.51,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 15.51,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#526173",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "middle",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Parent triangle T"
+          },
+          {
+            "index": 2,
+            "text": "원삼각형 T"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Parent triangle T",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 15.51,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#526173",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Parent triangle T",
+              "fontSize": 15.51,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#526173",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        },
+        {
+          "index": 2,
+          "text": "원삼각형 T",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 15.51,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#526173",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "원삼각형 T",
+              "fontSize": 15.51,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#526173",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 18,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/l836l87u",
+      "id": "18",
+      "bbox": [
+        446,
+        352,
+        135,
+        52
+      ],
+      "geometry": "rect",
+      "text": "Quadrature point qᵢ\n구적점(적분점) qᵢ",
+      "textPreview": "Quadrature point qᵢ | 구적점(적분점) qᵢ",
+      "resolvedFontSize": 14.51,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 14.51,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#9A3412",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "middle",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Quadrature point qᵢ"
+          },
+          {
+            "index": 2,
+            "text": "구적점(적분점) qᵢ"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Quadrature point qᵢ",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 14.51,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#9A3412",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Quadrature point qᵢ",
+              "fontSize": 14.51,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#9A3412",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        },
+        {
+          "index": 2,
+          "text": "구적점(적분점) qᵢ",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 14.51,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#9A3412",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "구적점(적분점) qᵢ",
+              "fontSize": 14.51,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#9A3412",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 19,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/07apsnq9",
+      "id": "19",
+      "bbox": [
+        75,
+        481,
+        500,
+        25
+      ],
+      "geometry": "rect",
+      "text": "Three-point degree-2 rule / 3점 2차 정확도 규칙",
+      "textPreview": "Three-point degree-2 rule / 3점 2차 정확도 규칙",
+      "resolvedFontSize": 15.51,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 15.51,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#526173",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Three-point degree-2 rule / 3점 2차 정확도 규칙"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Three-point degree-2 rule / 3점 2차 정확도 규칙",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 15.51,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#526173",
+            "bold": true,
+            "alignment": "left",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Three-point degree-2 rule / 3점 2차 정확도 규칙",
+              "fontSize": 15.51,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#526173",
+              "bold": true,
+              "alignment": "left",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 20,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/kbi9orel",
+      "id": "20",
+      "bbox": [
+        75,
+        510,
+        510,
+        25
+      ],
+      "geometry": "rect",
+      "text": "Barycentric coordinates / 면적좌표    qᵢ = permutations of (⅔, ⅙, ⅙)",
+      "textPreview": "Barycentric coordinates / 면적좌표    qᵢ = permutations of (⅔, ⅙, ⅙)",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 15,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#334155",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Barycentric coordinates / 면적좌표    qᵢ = permutations of (⅔, ⅙, ⅙)"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Barycentric coordinates / 면적좌표    qᵢ = permutations of (⅔, ⅙, ⅙)",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#334155",
+            "alignment": "left",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Barycentric coordinates / 면적좌표    qᵢ = permutations of (⅔, ⅙, ⅙)",
+              "fontSize": 15,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#334155",
+              "alignment": "left",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 21,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/5cbqhwf6",
+      "id": "21",
+      "bbox": [
+        75,
+        538,
+        510,
+        25
+      ],
+      "geometry": "rect",
+      "text": "Integration weight / 적분 가중치    wᵢ = Aₜ/3",
+      "textPreview": "Integration weight / 적분 가중치    wᵢ = Aₜ/3",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 15,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#334155",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Integration weight / 적분 가중치    wᵢ = Aₜ/3"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Integration weight / 적분 가중치    wᵢ = Aₜ/3",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#334155",
+            "alignment": "left",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Integration weight / 적분 가중치    wᵢ = Aₜ/3",
+              "fontSize": 15,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#334155",
+              "alignment": "left",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 22,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/i90rmhwf",
+      "id": "22",
+      "bbox": [
+        75,
+        570,
+        510,
+        38
+      ],
+      "geometry": "rect",
+      "text": "∫ₜ f dA  ≈  Σᵢ wᵢ f(qᵢ)",
+      "textPreview": "∫ₜ f dA  ≈  Σᵢ wᵢ f(qᵢ)",
+      "resolvedFontSize": 22,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 22,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#1D4ED8",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "∫ₜ f dA  ≈  Σᵢ wᵢ f(qᵢ)"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "∫ₜ f dA  ≈  Σᵢ wᵢ f(qᵢ)",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 22,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#1D4ED8",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "∫ₜ f dA  ≈  Σᵢ wᵢ f(qᵢ)",
+              "fontSize": 22,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#1D4ED8",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 23,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ja98fmx0",
+      "id": "23",
+      "bbox": [
+        615,
+        182,
+        0,
+        423
+      ],
+      "geometry": "line",
+      "lineColor": "#D8DEE8",
+      "lineWidth": 1.4
+    },
+    {
+      "order": 24,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/w7i9k7ep",
+      "id": "24",
+      "bbox": [
+        648,
+        180,
+        560,
+        31
+      ],
+      "geometry": "rect",
+      "text": "P–M moment example / P–M 모멘트 예제",
+      "textPreview": "P–M moment example / P–M 모멘트 예제",
+      "resolvedFontSize": 21,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 21,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#1D4ED8",
+        "bold": true,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "P–M moment example / P–M 모멘트 예제"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "P–M moment example / P–M 모멘트 예제",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 21,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#1D4ED8",
+            "bold": true,
+            "alignment": "left",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "P–M moment example / P–M 모멘트 예제",
+              "fontSize": 21,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#1D4ED8",
+              "bold": true,
+              "alignment": "left",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 25,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/x8rqdcfa",
+      "id": "25",
+      "bbox": [
+        650,
+        218,
+        555,
+        25
+      ],
+      "geometry": "rect",
+      "text": "Normalized triangle / 정규화 삼각형:  A(0,0), B(1,0), C(0,1),  Aₜ = 1/2",
+      "textPreview": "Normalized triangle / 정규화 삼각형:  A(0,0), B(1,0), C(0,1),  Aₜ = 1/2",
+      "resolvedFontSize": 15.2,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 15.2,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#526173",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Normalized triangle / 정규화 삼각형:  A(0,0), B(1,0), C(0,1),  Aₜ = 1/2"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Normalized triangle / 정규화 삼각형:  A(0,0), B(1,0), C(0,1),  Aₜ = 1/2",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 15.2,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#526173",
+            "alignment": "left",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Normalized triangle / 정규화 삼각형:  A(0,0), B(1,0), C(0,1),  Aₜ = 1/2",
+              "fontSize": 15.2,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#526173",
+              "alignment": "left",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 26,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/al0rihwj",
+      "id": "26",
+      "bbox": [
+        650,
+        246,
+        555,
+        25
+      ],
+      "geometry": "rect",
+      "text": "Linear stress / 선형 응력:  σ(x,y) = 1 + 2x        Reference axis / 기준축:  x₀ = 0",
+      "textPreview": "Linear stress / 선형 응력:  σ(x,y) = 1 + 2x        Reference axis / 기준축:  x₀ = 0",
+      "resolvedFontSize": 15.2,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 15.2,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#526173",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Linear stress / 선형 응력:  σ(x,y) = 1 + 2x        Reference axis / 기준축:  x₀ = 0"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Linear stress / 선형 응력:  σ(x,y) = 1 + 2x        Reference axis / 기준축:  x₀ = 0",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 15.2,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#526173",
+            "alignment": "left",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Linear stress / 선형 응력:  σ(x,y) = 1 + 2x        Reference axis / 기준축:  x₀ = 0",
+              "fontSize": 15.2,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#526173",
+              "alignment": "left",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 27,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/vm98b2x4",
+      "id": "27",
+      "bbox": [
+        650,
+        279,
+        554,
+        104
+      ],
+      "geometry": "roundRect",
+      "text": "Each point / 각 점:   Fᵢ = σᵢAᵢ     Mᵧ,ᵢ = σᵢAᵢdᵢ     dᵢ = xᵢ − x₀\nWith Aᵢ = Aₜ/3:   P = ΣFᵢ = 5/6     Mᵧ = ΣFᵢdᵢ = 1/3",
+      "textPreview": "Each point / 각 점:   Fᵢ = σᵢAᵢ     Mᵧ,ᵢ = σᵢAᵢdᵢ     dᵢ = xᵢ − x₀ | With Aᵢ = Aₜ/3:   P = ΣFᵢ = 5/6     Mᵧ = ΣFᵢdᵢ = 1/3",
+      "resolvedFontSize": 17,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 17,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#10213A",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "middle",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 10,
+          "right": 14,
+          "bottom": 10,
+          "left": 14
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Each point / 각 점:   Fᵢ = σᵢAᵢ     Mᵧ,ᵢ = σᵢAᵢdᵢ     dᵢ = xᵢ − x₀"
+          },
+          {
+            "index": 2,
+            "text": "With Aᵢ = Aₜ/3:   P = ΣFᵢ = 5/6     Mᵧ = ΣFᵢdᵢ = 1/3"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Each point / 각 점:   Fᵢ = σᵢAᵢ     Mᵧ,ᵢ = σᵢAᵢdᵢ     dᵢ = xᵢ − x₀",
+          "lineSpacingPercent": 105000,
+          "resolvedTextStyle": {
+            "fontSize": 17,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#10213A",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1.05
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Each point / 각 점:   Fᵢ = σᵢAᵢ     Mᵧ,ᵢ = σᵢAᵢdᵢ     dᵢ = xᵢ − x₀",
+              "fontSize": 17,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#10213A",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1.05
+            }
+          ],
+          "marginLeft": 0
+        },
+        {
+          "index": 2,
+          "text": "With Aᵢ = Aₜ/3:   P = ΣFᵢ = 5/6     Mᵧ = ΣFᵢdᵢ = 1/3",
+          "lineSpacingPercent": 105000,
+          "resolvedTextStyle": {
+            "fontSize": 17,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#10213A",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1.05
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "With Aᵢ = Aₜ/3:   P = ΣFᵢ = 5/6     Mᵧ = ΣFᵢdᵢ = 1/3",
+              "fontSize": 17,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#10213A",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1.05
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "fillColor": "#EAF2FF",
+      "lineColor": "#B9D2FF",
+      "lineWidth": 1.2
+    },
+    {
+      "order": 28,
+      "kind": "table",
+      "scope": "slide",
+      "aid": "tb/7m5szyd8",
+      "id": "28",
+      "bbox": [
+        650,
+        397,
+        554,
+        137
+      ],
+      "text": "Method / 방법 | P | Mᵧ = Σ(Fᵢ·dᵢ) | Mᵧ error\n오차\n1-point centroid\n도심 1점법 | 5/6 | 5/18 = 0.2778 | −16.7%\n3-point Gauss\n3점 가우스법 | 5/6 | 1/3 = 0.3333 | 0%",
+      "textPreview": "Method / 방법 | P | Mᵧ = Σ(Fᵢ·dᵢ) | Mᵧ error | 오차 | 1-point centroid | 도심 1점법 | 5/6 | 5/18 = 0.2778 | −16.7% | 3-point Gauss | 3점 가우스법 | 5/...",
+      "rows": 3,
+      "cols": 4,
+      "cells": [
+        {
+          "index": 1,
+          "row": 1,
+          "column": 1,
+          "bbox": [
+            650,
+            397,
+            213,
+            45.67
+          ],
+          "text": "Method / 방법",
+          "textPreview": "Method / 방법",
+          "fillColor": "#10213A",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "Method / 방법",
+              "resolvedTextStyle": {
+                "fontSize": 13.2,
+                "typeface": "Apple SD Gothic Neo",
+                "color": "#FFFFFF",
+                "bold": true,
+                "alignment": "left"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "Method / 방법",
+                  "fontSize": 13.2,
+                  "typeface": "Apple SD Gothic Neo",
+                  "color": "#FFFFFF",
+                  "bold": true,
+                  "alignment": "left"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "row": 1,
+          "column": 2,
+          "bbox": [
+            863,
+            397,
+            84,
+            45.67
+          ],
+          "text": "P",
+          "textPreview": "P",
+          "fillColor": "#10213A",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "P",
+              "resolvedTextStyle": {
+                "fontSize": 13.2,
+                "typeface": "Apple SD Gothic Neo",
+                "color": "#FFFFFF",
+                "bold": true,
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "P",
+                  "fontSize": 13.2,
+                  "typeface": "Apple SD Gothic Neo",
+                  "color": "#FFFFFF",
+                  "bold": true,
+                  "alignment": "center"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "row": 1,
+          "column": 3,
+          "bbox": [
+            947,
+            397,
+            166,
+            45.67
+          ],
+          "text": "Mᵧ = Σ(Fᵢ·dᵢ)",
+          "textPreview": "Mᵧ = Σ(Fᵢ·dᵢ)",
+          "fillColor": "#10213A",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "Mᵧ = Σ(Fᵢ·dᵢ)",
+              "resolvedTextStyle": {
+                "fontSize": 13.2,
+                "typeface": "Apple SD Gothic Neo",
+                "color": "#FFFFFF",
+                "bold": true,
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "Mᵧ = Σ(Fᵢ·dᵢ)",
+                  "fontSize": 13.2,
+                  "typeface": "Apple SD Gothic Neo",
+                  "color": "#FFFFFF",
+                  "bold": true,
+                  "alignment": "center"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "row": 1,
+          "column": 4,
+          "bbox": [
+            1113,
+            397,
+            91,
+            45.67
+          ],
+          "text": "Mᵧ error\n오차",
+          "textPreview": "Mᵧ error | 오차",
+          "fillColor": "#10213A",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "Mᵧ error",
+              "resolvedTextStyle": {
+                "fontSize": 13.2,
+                "typeface": "Apple SD Gothic Neo",
+                "color": "#FFFFFF",
+                "bold": true,
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "Mᵧ error",
+                  "fontSize": 13.2,
+                  "typeface": "Apple SD Gothic Neo",
+                  "color": "#FFFFFF",
+                  "bold": true,
+                  "alignment": "center"
+                }
+              ]
+            },
+            {
+              "index": 2,
+              "text": "오차",
+              "resolvedTextStyle": {
+                "fontSize": 13.2,
+                "typeface": "Apple SD Gothic Neo",
+                "color": "#FFFFFF",
+                "bold": true,
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "오차",
+                  "fontSize": 13.2,
+                  "typeface": "Apple SD Gothic Neo",
+                  "color": "#FFFFFF",
+                  "bold": true,
+                  "alignment": "center"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "row": 2,
+          "column": 1,
+          "bbox": [
+            650,
+            442.67,
+            213,
+            45.67
+          ],
+          "text": "1-point centroid\n도심 1점법",
+          "textPreview": "1-point centroid | 도심 1점법",
+          "fillColor": "#FFF4EC",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "1-point centroid",
+              "resolvedTextStyle": {
+                "fontSize": 13.2,
+                "typeface": "Apple SD Gothic Neo",
+                "color": "#172033",
+                "bold": true,
+                "alignment": "left"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "1-point centroid",
+                  "fontSize": 13.2,
+                  "typeface": "Apple SD Gothic Neo",
+                  "color": "#172033",
+                  "bold": true,
+                  "alignment": "left"
+                }
+              ]
+            },
+            {
+              "index": 2,
+              "text": "도심 1점법",
+              "resolvedTextStyle": {
+                "fontSize": 13.2,
+                "typeface": "Apple SD Gothic Neo",
+                "color": "#172033",
+                "bold": true,
+                "alignment": "left"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "도심 1점법",
+                  "fontSize": 13.2,
+                  "typeface": "Apple SD Gothic Neo",
+                  "color": "#172033",
+                  "bold": true,
+                  "alignment": "left"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "row": 2,
+          "column": 2,
+          "bbox": [
+            863,
+            442.67,
+            84,
+            45.67
+          ],
+          "text": "5/6",
+          "textPreview": "5/6",
+          "fillColor": "#FFF4EC",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "5/6",
+              "resolvedTextStyle": {
+                "fontSize": 13.2,
+                "typeface": "Apple SD Gothic Neo",
+                "color": "#172033",
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "5/6",
+                  "fontSize": 13.2,
+                  "typeface": "Apple SD Gothic Neo",
+                  "color": "#172033",
+                  "alignment": "center"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "row": 2,
+          "column": 3,
+          "bbox": [
+            947,
+            442.67,
+            166,
+            45.67
+          ],
+          "text": "5/18 = 0.2778",
+          "textPreview": "5/18 = 0.2778",
+          "fillColor": "#FFF4EC",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "5/18 = 0.2778",
+              "resolvedTextStyle": {
+                "fontSize": 13.2,
+                "typeface": "Apple SD Gothic Neo",
+                "color": "#172033",
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "5/18 = 0.2778",
+                  "fontSize": 13.2,
+                  "typeface": "Apple SD Gothic Neo",
+                  "color": "#172033",
+                  "alignment": "center"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "row": 2,
+          "column": 4,
+          "bbox": [
+            1113,
+            442.67,
+            91,
+            45.67
+          ],
+          "text": "−16.7%",
+          "textPreview": "−16.7%",
+          "fillColor": "#FFF4EC",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "−16.7%",
+              "resolvedTextStyle": {
+                "fontSize": 13.2,
+                "typeface": "Apple SD Gothic Neo",
+                "color": "#C2410C",
+                "bold": true,
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "−16.7%",
+                  "fontSize": 13.2,
+                  "typeface": "Apple SD Gothic Neo",
+                  "color": "#C2410C",
+                  "bold": true,
+                  "alignment": "center"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 9,
+          "row": 3,
+          "column": 1,
+          "bbox": [
+            650,
+            488.33,
+            213,
+            45.67
+          ],
+          "text": "3-point Gauss\n3점 가우스법",
+          "textPreview": "3-point Gauss | 3점 가우스법",
+          "fillColor": "#ECFDF3",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "3-point Gauss",
+              "resolvedTextStyle": {
+                "fontSize": 13.2,
+                "typeface": "Apple SD Gothic Neo",
+                "color": "#172033",
+                "bold": true,
+                "alignment": "left"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "3-point Gauss",
+                  "fontSize": 13.2,
+                  "typeface": "Apple SD Gothic Neo",
+                  "color": "#172033",
+                  "bold": true,
+                  "alignment": "left"
+                }
+              ]
+            },
+            {
+              "index": 2,
+              "text": "3점 가우스법",
+              "resolvedTextStyle": {
+                "fontSize": 13.2,
+                "typeface": "Apple SD Gothic Neo",
+                "color": "#172033",
+                "bold": true,
+                "alignment": "left"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "3점 가우스법",
+                  "fontSize": 13.2,
+                  "typeface": "Apple SD Gothic Neo",
+                  "color": "#172033",
+                  "bold": true,
+                  "alignment": "left"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 10,
+          "row": 3,
+          "column": 2,
+          "bbox": [
+            863,
+            488.33,
+            84,
+            45.67
+          ],
+          "text": "5/6",
+          "textPreview": "5/6",
+          "fillColor": "#ECFDF3",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "5/6",
+              "resolvedTextStyle": {
+                "fontSize": 13.2,
+                "typeface": "Apple SD Gothic Neo",
+                "color": "#172033",
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "5/6",
+                  "fontSize": 13.2,
+                  "typeface": "Apple SD Gothic Neo",
+                  "color": "#172033",
+                  "alignment": "center"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 11,
+          "row": 3,
+          "column": 3,
+          "bbox": [
+            947,
+            488.33,
+            166,
+            45.67
+          ],
+          "text": "1/3 = 0.3333",
+          "textPreview": "1/3 = 0.3333",
+          "fillColor": "#ECFDF3",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "1/3 = 0.3333",
+              "resolvedTextStyle": {
+                "fontSize": 13.2,
+                "typeface": "Apple SD Gothic Neo",
+                "color": "#172033",
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "1/3 = 0.3333",
+                  "fontSize": 13.2,
+                  "typeface": "Apple SD Gothic Neo",
+                  "color": "#172033",
+                  "alignment": "center"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 12,
+          "row": 3,
+          "column": 4,
+          "bbox": [
+            1113,
+            488.33,
+            91,
+            45.67
+          ],
+          "text": "0%",
+          "textPreview": "0%",
+          "fillColor": "#ECFDF3",
+          "paragraphs": [
+            {
+              "index": 1,
+              "text": "0%",
+              "resolvedTextStyle": {
+                "fontSize": 13.2,
+                "typeface": "Apple SD Gothic Neo",
+                "color": "#15803D",
+                "bold": true,
+                "alignment": "center"
+              },
+              "runs": [
+                {
+                  "index": 1,
+                  "text": "0%",
+                  "fontSize": 13.2,
+                  "typeface": "Apple SD Gothic Neo",
+                  "color": "#15803D",
+                  "bold": true,
+                  "alignment": "center"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 29,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/9krq9cfy",
+      "id": "29",
+      "bbox": [
+        654,
+        543,
+        546,
+        25
+      ],
+      "geometry": "rect",
+      "text": "Both methods recover P exactly. The moment reveals the error.",
+      "textPreview": "Both methods recover P exactly. The moment reveals the error.",
+      "resolvedFontSize": 15.2,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 15.2,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#10213A",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Both methods recover P exactly. The moment reveals the error."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Both methods recover P exactly. The moment reveals the error.",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 15.2,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#10213A",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Both methods recover P exactly. The moment reveals the error.",
+              "fontSize": 15.2,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#10213A",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 30,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/repsz2h0",
+      "id": "30",
+      "bbox": [
+        654,
+        568,
+        546,
+        26
+      ],
+      "geometry": "rect",
+      "text": "두 방법 모두 P는 정확하다. 모멘트에서 오차가 드러난다.",
+      "textPreview": "두 방법 모두 P는 정확하다. 모멘트에서 오차가 드러난다.",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "anchor": 1,
+        "fontSize": 15,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#10213A",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "wrap": "square",
+        "autoFit": "none",
+        "insets": {
+          "top": 2,
+          "right": 4,
+          "bottom": 2,
+          "left": 4
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "두 방법 모두 P는 정확하다. 모멘트에서 오차가 드러난다."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "두 방법 모두 P는 정확하다. 모멘트에서 오차가 드러난다.",
+          "lineSpacingPercent": 100000,
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#10213A",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "두 방법 모두 P는 정확하다. 모멘트에서 오차가 드러난다.",
+              "fontSize": 15,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#10213A",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 31,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/qdgrqx0f",
+      "id": "31",
+      "bbox": [
+        64,
+        620,
+        1152,
+        78
+      ],
+      "geometry": "roundRect",
+      "text": "Why it matters / 의미: 1-point centroid gives Mᵧ 16.7% too low. 3-point Gauss is exact here.\n도심 1점법은 Mᵧ를 16.7% 작게 계산한다. 3점 가우스법은 정확하다.\nRefine the mesh across a neutral axis or material kink / 중립축·재료곡선 꺾임에서는 메시 세분화 필요",
+      "textPreview": "Why it matters / 의미: 1-point centroid gives Mᵧ 16.7% too low. 3-point Gauss is exact here. | 도심 1점법은 Mᵧ를 16.7% 작게 계산한다. 3점 가우스법은 정확하다. | ...",
+      "resolvedFontSize": 14.51,
+      "resolvedTextStyle": {
+        "anchor": 2,
+        "fontSize": 14.51,
+        "typeface": "Apple SD Gothic Neo",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "center",
+        "verticalAlignment": "middle",
+        "wrap": "square",
+        "autoFit": "shrinkText",
+        "autoFitScale": 1,
+        "insets": {
+          "top": 8,
+          "right": 22,
+          "bottom": 8,
+          "left": 22
+        }
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Why it matters / 의미: 1-point centroid gives Mᵧ 16.7% too low. 3-point Gauss is exact here."
+          },
+          {
+            "index": 2,
+            "text": "도심 1점법은 Mᵧ를 16.7% 작게 계산한다. 3점 가우스법은 정확하다."
+          },
+          {
+            "index": 3,
+            "text": "Refine the mesh across a neutral axis or material kink / 중립축·재료곡선 꺾임에서는 메시 세분화 필요"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Why it matters / 의미: 1-point centroid gives Mᵧ 16.7% too low. 3-point Gauss is exact here.",
+          "lineSpacingPercent": 102000,
+          "resolvedTextStyle": {
+            "fontSize": 14.51,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1.02
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Why it matters / 의미: 1-point centroid gives Mᵧ 16.7% too low. 3-point Gauss is exact here.",
+              "fontSize": 14.51,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1.02
+            }
+          ],
+          "marginLeft": 0
+        },
+        {
+          "index": 2,
+          "text": "도심 1점법은 Mᵧ를 16.7% 작게 계산한다. 3점 가우스법은 정확하다.",
+          "lineSpacingPercent": 102000,
+          "resolvedTextStyle": {
+            "fontSize": 14.51,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1.02
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "도심 1점법은 Mᵧ를 16.7% 작게 계산한다. 3점 가우스법은 정확하다.",
+              "fontSize": 14.51,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1.02
+            }
+          ],
+          "marginLeft": 0
+        },
+        {
+          "index": 3,
+          "text": "Refine the mesh across a neutral axis or material kink / 중립축·재료곡선 꺾임에서는 메시 세분화 필요",
+          "lineSpacingPercent": 102000,
+          "resolvedTextStyle": {
+            "fontSize": 14.51,
+            "typeface": "Apple SD Gothic Neo",
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "center",
+            "lineSpacing": 1.02
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Refine the mesh across a neutral axis or material kink / 중립축·재료곡선 꺾임에서는 메시 세분화 필요",
+              "fontSize": 14.51,
+              "typeface": "Apple SD Gothic Neo",
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "center",
+              "lineSpacing": 1.02
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "fillColor": "#10213A",
+      "lineWidth": 0
+    }
+  ],
+  "composeRuns": []
+}

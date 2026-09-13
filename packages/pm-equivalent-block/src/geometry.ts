@@ -393,3 +393,49 @@ export const clipPreparedSectionToHalfPlane = (
   }
   return { geometry, moments }
 }
+
+/**
+ * Integrate a clipped concrete block without retaining its polygon geometry.
+ *
+ * Surface generation needs the exact area and first moments for every trial state, but it does
+ * not consume the clipped rings. Keeping those rings in the adaptive evaluation cache multiplies
+ * temporary geometry by thousands of states. This path deliberately preserves the same clipping,
+ * ring order, and shoelace accumulation order as `clipPreparedSectionToHalfPlane` while allowing
+ * each clipped ring to be reclaimed as soon as its moments have been accumulated.
+ */
+export const clipPreparedSectionMomentsToHalfPlane = (
+  section: PreparedEquivalentBlockSection,
+  normalX: number,
+  normalY: number,
+  offset: number
+): PolygonMoments => {
+  const tolerance = BASE_TOLERANCE * section.characteristicLength
+  let area = 0
+  let firstMomentX = 0
+  let firstMomentY = 0
+  for (const solid of section.solids) {
+    const outer = clipRingToHalfPlane(solid.outer, normalX, normalY, offset, tolerance)
+    if (outer.length < 3) continue
+    const outerMoments = ringSignedMoments(outer)
+    area += outerMoments.area
+    firstMomentX += outerMoments.firstMomentX
+    firstMomentY += outerMoments.firstMomentY
+    for (const hole of solid.holes) {
+      const clippedHole = clipRingToHalfPlane(hole, normalX, normalY, offset, tolerance)
+      if (clippedHole.length < 3) continue
+      const holeMoments = ringSignedMoments(clippedHole)
+      area += holeMoments.area
+      firstMomentX += holeMoments.firstMomentX
+      firstMomentY += holeMoments.firstMomentY
+    }
+  }
+  if (Math.abs(area) <= tolerance * tolerance) {
+    return { area: 0, firstMomentX: 0, firstMomentY: 0, centroid: { ...section.referencePoint } }
+  }
+  return {
+    area,
+    firstMomentX,
+    firstMomentY,
+    centroid: { x: firstMomentX / area, y: firstMomentY / area }
+  }
+}

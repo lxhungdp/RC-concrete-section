@@ -58,9 +58,10 @@ import type {
   CheckLoadcasesPayload,
   MeshAuditExportPayload
 } from './worker-contract'
+import { BoundedLruCache } from './bounded-lru'
 
-let preparedCache: { key: string; value: PreparedAnalysis } | null = null
-let blockCache: { key: string; value: PreparedBlockAnalysis } | null = null
+const preparedCache = new BoundedLruCache<string, PreparedAnalysis>(2)
+const blockCache = new BoundedLruCache<string, PreparedBlockAnalysis>(2)
 let pdfUnicodeFontPromise: Promise<Uint8Array> | null = null
 
 const pdfUnicodeFont = () => {
@@ -80,9 +81,10 @@ const preparedFor = (
   const designBasis = payload.designBasis ?? createDefaultDesignBasis(payload.materialStore)
   const stateMaterials = buildResistanceMaterialSets(payload.materialStore, designBasis).stateMaterials
   const key = `${analysisInputKey(payload.section, payload.rebars, stateMaterials, meshOptions)}:${JSON.stringify(designBasis)}`
-  if (preparedCache?.key === key) return preparedCache.value
+  const cached = preparedCache.get(key)
+  if (cached) return cached
   const value = prepareAnalysis(payload.section, payload.rebars, stateMaterials, meshOptions)
-  preparedCache = { key, value }
+  preparedCache.set(key, value)
   return value
 }
 
@@ -90,7 +92,8 @@ const blockFor = (
   payload: Pick<BuildSurfacePayload, 'calculationProfileId' | 'section' | 'rebars' | 'materialStore' | 'designBasis'>
 ) => {
   const key = JSON.stringify(payload)
-  if (blockCache?.key === key) return blockCache.value
+  const cached = blockCache.get(key)
+  if (cached) return cached
   const value = prepareBlockAnalysis(
     payload.calculationProfileId,
     payload.section,
@@ -98,7 +101,7 @@ const blockFor = (
     payload.materialStore,
     payload.designBasis
   )
-  blockCache = { key, value }
+  blockCache.set(key, value)
   return value
 }
 

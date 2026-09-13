@@ -20,6 +20,7 @@ import {
   Lock,
   Minus,
   Moon,
+  MousePointer2,
   Plus,
   RectangleHorizontal,
   RotateCw,
@@ -619,7 +620,7 @@ const fitCameraToPointsWithInsets = (
   }
 }
 
-export function SectionDrawingClient() {
+export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: boolean }) {
   const svgRef = useRef<SVGSVGElement | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const projectMenuRef = useRef<HTMLDivElement | null>(null)
@@ -2413,7 +2414,7 @@ export function SectionDrawingClient() {
   }
 
   return (
-    <main className="pm-shell">
+    <main className="pm-shell" id={geometryOnly ? 'geometry-workspace' : undefined}>
       <header className="pm-app-header">
         <div className="pm-brand">
           <span className="pm-brand-mark">PM</span>
@@ -2427,6 +2428,7 @@ export function SectionDrawingClient() {
             <RcSectionIcon size={16} />
             <span>Geometry</span>
           </button>
+          {!geometryOnly && <>
           <button className={activeModule === 'materials' ? 'is-active' : ''} onClick={() => switchModule('materials')}>
             <MaterialsIcon size={16} />
             <span>Materials</span>
@@ -2458,7 +2460,12 @@ export function SectionDrawingClient() {
             <SlidersHorizontal size={16} />
             <span>Analysis</span>
           </button>
+          </>}
         </nav>
+
+        {geometryOnly && (
+          <span className="geometry-preview-label">Section editor <span>Preview</span></span>
+        )}
 
         <CalculationBasisToolbar
           calculationProfileId={calculationProfileId}
@@ -2586,9 +2593,9 @@ export function SectionDrawingClient() {
             )}
           </div>
           <span className="pm-toolbar-sep" aria-hidden="true" />
-          <button onClick={toggleTheme} title="Theme">
+          {!geometryOnly && <button onClick={toggleTheme} title="Theme">
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-          </button>
+          </button>}
           <div className="pm-about-menu" ref={aboutMenuRef}>
             <button
               className={aboutMenuOpen ? 'is-active' : ''}
@@ -2683,6 +2690,12 @@ export function SectionDrawingClient() {
         <div className="pm-side-panel-body">
         {activeModule === 'geometry' && (
           <>
+            {geometryOnly && (
+              <div className="geometry-panel-heading">
+                <div><h2>Geometry</h2><p>Section definition</p></div>
+                <span>mm</span>
+              </div>
+            )}
             <div className="pm-page-tabs" role="tablist" aria-label="Geometry tabs">
               <button
                 type="button"
@@ -3434,7 +3447,36 @@ export function SectionDrawingClient() {
           )
         ) : (
         <>
+        {geometryOnly && (
+          <div className="geometry-drawing-heading">
+            <div>
+              <strong>Section drawing</strong>
+              <span>{activeBoundary?.name ?? 'No boundary selected'}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCamera(fitCameraToPointsWithInsets(allVisiblePoints, size, DEFAULT_FIT_INSETS))}
+            >
+              Fit view
+            </button>
+          </div>
+        )}
         <div className="pm-canvas-toolbox" aria-label="Boundary drawing tools">
+          {geometryOnly && (
+            <button
+              type="button"
+              className={tool === 'select' ? 'is-active' : ''}
+              aria-label="Select and pan"
+              title="Select and pan"
+              onClick={() => {
+                setTool('select')
+                setDrawingDraft(null)
+                setSnapCursor(null)
+              }}
+            >
+              <MousePointer2 size={16} />
+            </button>
+          )}
           <button
             className={tool === 'draw-rectangle' ? 'is-active' : ''}
             onClick={() => toggleDrawTool('draw-rectangle')}
@@ -3461,6 +3503,7 @@ export function SectionDrawingClient() {
           ref={svgRef}
           className="pm-cad-surface"
           role="img"
+          aria-label="Section boundaries and reinforcement in millimetres"
           onWheel={handleWheel}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -3602,6 +3645,20 @@ export function SectionDrawingClient() {
             <strong>{formatNumber(activeSummary.centroid.y)} mm</strong>
           </div>
         </div>
+        {geometryOnly && (
+          <div className="geometry-drawing-footer">
+            <span>
+              {tool === 'select'
+                ? 'Drag background to pan · Scroll to zoom · Shift-click for multiple selection'
+                : tool === 'draw-polygon'
+                  ? 'Click to place vertices · Right-click to close polygon'
+                  : tool === 'draw-circle'
+                    ? 'Click center, then radius point'
+                    : 'Click two opposite corners'}
+            </span>
+            <span>Units: mm</span>
+          </div>
+        )}
         </>
         )}
       </section>

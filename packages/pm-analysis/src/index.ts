@@ -1497,21 +1497,30 @@ const addResultant = (a: Resultant, b: Resultant): Resultant => ({
   My: compensatedPair(a.My, b.My)
 })
 
-const evaluate = (fibers: Fiber[], materials: AnalysisMaterials, state: StrainState): ResultantLedger => {
+const evaluate = (
+  concreteFibers: ConcreteFiber[],
+  rebarFibers: RebarFiber[],
+  materials: AnalysisMaterials,
+  state: StrainState
+): ResultantLedger => {
   const concreteSum = new CompensatedResultant()
   const steelGrossSum = new CompensatedResultant()
   const displacedConcreteSum = new CompensatedResultant()
 
-  for (const fiber of fibers) {
+  // PreparedAnalysis stores concrete points before rebars in `fibers`. Keeping the two loops in
+  // that same order removes the per-Gauss-point kind branch without changing the order of any
+  // compensated resultant accumulation or material evaluation.
+  for (const fiber of concreteFibers) {
     const strain = strainAt(state, fiber)
     const concreteStress = materials.concrete.stress(strain)
     assertFiniteMaterialEvaluation(concreteStress, 'stress', fiber)
+    concreteSum.add(concreteStress * fiber.area, fiber)
+  }
 
-    if (fiber.kind !== 'rebar') {
-      concreteSum.add(concreteStress * fiber.area, fiber)
-      continue
-    }
-
+  for (const fiber of rebarFibers) {
+    const strain = strainAt(state, fiber)
+    const concreteStress = materials.concrete.stress(strain)
+    assertFiniteMaterialEvaluation(concreteStress, 'stress', fiber)
     const steelStress = fiber.steel.stress(strain)
     assertFiniteMaterialEvaluation(steelStress, 'stress', fiber)
     steelGrossSum.add(steelStress * fiber.area, fiber)
@@ -1587,7 +1596,7 @@ const evaluateWithTangent = (
 
 /** Integrate a state against an already prepared mesh and compiled material set. */
 export const evaluatePreparedState = (prepared: PreparedAnalysis, state: StrainState): ResultantLedger =>
-  evaluate(prepared.fibers, prepared.materials, state)
+  evaluate(prepared.concreteFibers, prepared.rebarFibers, prepared.materials, state)
 
 /** Resultants and their exact consistent material tangent for one prepared strain state. */
 export const evaluatePreparedStateWithTangent = (
@@ -2331,7 +2340,7 @@ const buildPreviewSurfaceFromPreparedLegacy = (
   designBasis: DesignBasis = createDefaultDesignBasis(prepared.materialStore),
   sampling: PreviewSamplingHooks = {}
 ): PreviewSurface => {
-  const { section, rebars, materialStore, origin, fibers, materials } = prepared
+  const { section, rebars, materialStore, origin, concreteFibers, rebarFibers, materials } = prepared
   const meshReport = prepared.mesh.report
   const epsCu = materialStore.concrete.limits.epsCu
   const pureCompressionStrain = resolvePureCompressionStrain(materialStore, designBasis)
@@ -2442,7 +2451,7 @@ const buildPreviewSurfaceFromPreparedLegacy = (
     }
     const row = resolved.map(({ station, descriptor, state }) => {
       sampling.onEvaluate?.()
-      const ledger = evaluate(fibers, materials, state)
+      const ledger = evaluate(concreteFibers, rebarFibers, materials, state)
       const point: PreviewSurfacePoint = {
         id: `${degrees}-${descriptor.id}`,
         beta,
@@ -2819,7 +2828,7 @@ const buildIndependentAdaptivePreviewSurface = (
   sampling: PreviewSamplingHooks
 ): PreviewSurface => {
   const seedStations = analysisStations(analysisOptions)
-  const { section, rebars, materialStore, origin, fibers, materials } = prepared
+  const { section, rebars, materialStore, origin, concreteFibers, rebarFibers, materials } = prepared
   const meshReport = prepared.mesh.report
   const epsCu = materialStore.concrete.limits.epsCu
   const pureCompressionStrain = resolvePureCompressionStrain(materialStore, designBasis)
@@ -2905,7 +2914,7 @@ const buildIndependentAdaptivePreviewSurface = (
       )
       sampling.onEvaluate?.()
       evaluationCount += 1
-      const ledger = evaluate(fibers, materials, state)
+      const ledger = evaluate(concreteFibers, rebarFibers, materials, state)
       const raw: PreviewSurfacePoint = {
         id: `${key}-${station.id}`,
         beta,

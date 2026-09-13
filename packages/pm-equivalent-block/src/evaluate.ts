@@ -1,4 +1,9 @@
-import { clipPreparedSectionToHalfPlane, projectedOuterExtents, type ProjectedOuterExtents } from './geometry'
+import {
+  clipPreparedSectionMomentsToHalfPlane,
+  clipPreparedSectionToHalfPlane,
+  projectedOuterExtents,
+  type ProjectedOuterExtents
+} from './geometry'
 import {
   EquivalentBlockInputError,
   type BlockSectionState,
@@ -156,7 +161,8 @@ export const evaluateEquivalentBlock = (
   law: EquivalentBlockLaw,
   steelLaws: SteelLawRegistry,
   state: BlockSectionState,
-  preparedExtents?: ProjectedOuterExtents
+  preparedExtents?: ProjectedOuterExtents,
+  options: { retainConcreteGeometry?: boolean } = {}
 ): NominalBlockEvaluation => {
   assertLaw(law)
   if (
@@ -179,7 +185,12 @@ export const evaluateEquivalentBlock = (
   )
   const blockDepth = law.depthFactor * state.neutralAxisDepth
   const blockBoundaryProjection = compressionEdgeProjection - blockDepth
-  const clipped = clipPreparedSectionToHalfPlane(section, normalX, normalY, blockBoundaryProjection)
+  const clipped = options.retainConcreteGeometry === false
+    ? {
+        geometry: [],
+        moments: clipPreparedSectionMomentsToHalfPlane(section, normalX, normalY, blockBoundaryProjection)
+      }
+    : clipPreparedSectionToHalfPlane(section, normalX, normalY, blockBoundaryProjection)
   const concreteForce = law.compressionStress * clipped.moments.area
   const concreteMx = law.compressionStress * (
     clipped.moments.firstMomentY - section.referencePoint.y * clipped.moments.area
@@ -270,7 +281,8 @@ export const evaluateEquivalentBlock = (
 export const bindEquivalentBlockForwardEvaluator = (
   section: PreparedEquivalentBlockSection,
   law: EquivalentBlockLaw,
-  steelLaws: SteelLawRegistry
+  steelLaws: SteelLawRegistry,
+  options: { retainConcreteGeometry?: boolean } = {}
 ) => {
   let cachedAngle = Number.NaN
   let cachedExtents: ProjectedOuterExtents | undefined
@@ -281,6 +293,6 @@ export const bindEquivalentBlockForwardEvaluator = (
       cachedExtents = projectedOuterExtents(section, normalX, normalY)
       cachedAngle = state.neutralAxisAngle
     }
-    return evaluateEquivalentBlock(section, law, steelLaws, state, cachedExtents)
+    return evaluateEquivalentBlock(section, law, steelLaws, state, cachedExtents, options)
   }
 }

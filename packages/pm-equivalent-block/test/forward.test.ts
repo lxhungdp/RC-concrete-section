@@ -115,6 +115,38 @@ test('bound forward evaluator preserves exact results while reusing angle-only p
   }
 })
 
+test('surface evaluator omits retained clipping geometry without changing any numerical ordinate', () => {
+  const prepared = prepareEquivalentBlockSection(section({
+    solids: [
+      { outer: rectangle(420, 560), holes: [rectangle(120, 180, { x: 35, y: -20 })] },
+      { outer: rectangle(90, 160, { x: 320, y: 40 }) }
+    ],
+    rebars: [
+      { id: 'left', x: -150, y: -220, area: 420, steelLawId: 'steel' },
+      { id: 'right', x: 320, y: 40, area: 420, steelLawId: 'steel' }
+    ]
+  }))
+  const steel = createElasticPerfectlyPlasticSteelLaw(200_000, 400)
+  const full = bindEquivalentBlockForwardEvaluator(prepared, law, { steel })
+  const compact = bindEquivalentBlockForwardEvaluator(prepared, law, { steel }, {
+    retainConcreteGeometry: false
+  })
+  for (let angleIndex = 0; angleIndex < 24; angleIndex += 1) {
+    for (const depthRatio of [0.01, 0.08, 0.25, 0.8, 1, 2.5, 8]) {
+      const state = {
+        neutralAxisAngle: angleIndex * 2 * Math.PI / 24 + 0.007,
+        neutralAxisDepth: prepared.characteristicLength * depthRatio
+      }
+      const expected = full(state)
+      const actual = compact(state)
+      assert.deepEqual(actual.resultants, expected.resultants)
+      assert.deepEqual(actual.concrete, { ...expected.concrete, geometry: [] })
+      assert.deepEqual(actual.bars, expected.bars)
+      assert.deepEqual(actual.diagnostics, expected.diagnostics)
+    }
+  }
+})
+
 test('forward evaluator applies strain compatibility and displaced-concrete correction to bars', () => {
   const prepared = prepareEquivalentBlockSection(section({
     rebars: [

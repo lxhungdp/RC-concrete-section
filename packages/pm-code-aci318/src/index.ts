@@ -176,15 +176,27 @@ export const createAci318Model = (input: CreateAci318ModelInput) => {
   const compressionPhi = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.phiCompressionSpiral : resistanceFactors.phiCompressionOther
   const axialCapRatio = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.axialCapSpiral : resistanceFactors.axialCapOther
 
-  const bindNominalEvaluator = (section: PreparedEquivalentBlockSection): CapacityEvaluator<NominalBlockEvaluation> => {
-    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws)
+  const bindNominalEvaluatorFor = (
+    section: PreparedEquivalentBlockSection,
+    retainConcreteGeometry: boolean
+  ): CapacityEvaluator<NominalBlockEvaluation> => {
+    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws, {
+      retainConcreteGeometry
+    })
     return (state: BlockSectionState) => {
       const nominal = evaluate(state)
       return { state, resultants: nominal.resultants, source: nominal }
     }
   }
-  const bindDesignEvaluator = (section: PreparedEquivalentBlockSection): CapacityEvaluator<AciDesignEvaluationSource> => {
-    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws)
+  const bindNominalEvaluator = (section: PreparedEquivalentBlockSection) =>
+    bindNominalEvaluatorFor(section, true)
+  const bindDesignEvaluatorFor = (
+    section: PreparedEquivalentBlockSection,
+    retainConcreteGeometry: boolean
+  ): CapacityEvaluator<AciDesignEvaluationSource> => {
+    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws, {
+      retainConcreteGeometry
+    })
     return (state: BlockSectionState) => {
       const nominal = evaluate(state)
       const controllingBar = nominal.bars.find((bar) => bar.id === nominal.controllingBarId)
@@ -210,6 +222,8 @@ export const createAci318Model = (input: CreateAci318ModelInput) => {
       }
     }
   }
+  const bindDesignEvaluator = (section: PreparedEquivalentBlockSection) =>
+    bindDesignEvaluatorFor(section, true)
   const nominalEndpoints = (section: PreparedEquivalentBlockSection) => {
     const endpointStrain = uniformSteelEndpointStrain(section, steelLaws)
     const tension = evaluateUniformSectionState(section, steelLaws, {
@@ -244,7 +258,7 @@ export const createAci318Model = (input: CreateAci318ModelInput) => {
     axialCapRatio * designEndpoints(section).compression.resultants.P
   const buildNominalSurface = (section: PreparedEquivalentBlockSection, options: AciSurfaceOptions = {}): CapacitySurface => {
     const endpoints = nominalEndpoints(section)
-    return buildCapacitySurface(section, bindNominalEvaluator(section), {
+    return buildCapacitySurface(section, bindNominalEvaluatorFor(section, false), {
       ...options,
       steelLaws,
       barStrainEvents: options.barStrainEvents ?? [],
@@ -259,7 +273,7 @@ export const createAci318Model = (input: CreateAci318ModelInput) => {
   ): CapacitySurface => {
     const { applyAxialCap = true, ...surfaceOptions } = options
     const endpoints = designEndpoints(section)
-    const surface = buildCapacitySurface(section, bindDesignEvaluator(section), {
+    const surface = buildCapacitySurface(section, bindDesignEvaluatorFor(section, false), {
       ...surfaceOptions,
       steelLaws,
       barStrainEvents: surfaceOptions.barStrainEvents ?? [],

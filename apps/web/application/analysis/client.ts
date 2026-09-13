@@ -42,6 +42,8 @@ export const isAnalysisAbort = (error: unknown) => error instanceof Error && err
 
 type PendingJob = {
   requestType: AnalysisWorkerJob['type']
+  replayRequest: AnalysisWorkerRequest
+  assignedWorker: Worker
   resolve: (value: unknown) => void
   reject: (reason?: unknown) => void
   detach: () => void
@@ -70,9 +72,11 @@ const getWorker = () => {
   if (worker) return worker
 
   try {
-    worker = new Worker(new URL('../../workers/pm-analysis.worker.ts', import.meta.url), { type: 'module' })
+    const instance = new Worker(new URL('../../workers/pm-analysis.worker.ts', import.meta.url), { type: 'module' })
+    worker = instance
     workerGeneration += 1
-    worker.onmessage = (event: MessageEvent<AnalysisWorkerResponse>) => {
+    instance.onmessage = (event: MessageEvent<AnalysisWorkerResponse>) => {
+      if (worker !== instance) return
       const response = event.data
       settle(response.jobId, (job) => {
         if (response.type === 'error') {
@@ -84,14 +88,15 @@ const getWorker = () => {
         job.resolve(response.result)
       })
     }
-    worker.onerror = (event) => {
+    instance.onerror = (event) => {
+      if (worker !== instance) return
       workerFailed = true
       for (const [, job] of pending) {
         job.detach()
         job.reject(new Error(event.message || 'Analysis worker failed.'))
       }
       pending.clear()
-      worker?.terminate()
+      instance.terminate()
       worker = null
     }
   } catch {
@@ -102,43 +107,79 @@ const getWorker = () => {
   return worker
 }
 
-const requestWorker = <T>(request: Omit<AnalysisWorkerJob, 'jobId'>, signal?: AbortSignal): Promise<T> => {
+const rejectPendingAfterRestartFailure = (message: string) => {
+  for (const [jobId] of pending) {
+    settle(jobId, (job) => job.reject(new Error(message)))
+  }
+}
+
+const restartWorkerAndReplay = (interrupted: Worker) => {
+  if (worker !== interrupted) return
+  interrupted.terminate()
+  worker = null
+  if (pending.size === 0) return
+  const replacement = getWorker()
+  if (!replacement) {
+    rejectPendingAfterRestartFailure('Analysis worker could not be restarted after cancellation.')
+    return
+  }
+  try {
+    for (const job of pending.values()) {
+      job.assignedWorker = replacement
+      replacement.postMessage(job.replayRequest)
+    }
+  } catch (error) {
+    workerFailed = true
+    replacement.terminate()
+    worker = null
+    rejectPendingAfterRestartFailure(error instanceof Error ? error.message : String(error))
+  }
+}
+
+const requestWorker = <T>(
+  request: Omit<AnalysisWorkerJob, 'jobId'>,
+  signal?: AbortSignal,
+  replayRequest: Omit<AnalysisWorkerJob, 'jobId'> = request
+): Promise<T> => {
   if (signal?.aborted) return Promise.reject(new AnalysisAbortError())
   const instance = getWorker()
   if (!instance) return Promise.reject(new Error('Analysis worker is not available.'))
   const jobId = nextJobId(request.type)
+  const wireRequest = { ...request, jobId } as AnalysisWorkerRequest
+  const wireReplayRequest = { ...replayRequest, jobId } as AnalysisWorkerRequest
 
   return new Promise<T>((resolve, reject) => {
     const onAbort = () => {
-      // A Web Worker cannot process a cancellation message while its synchronous kernel is busy.
-      // When this is the only outstanding request, termination is the only real interruption and
-      // the next request transparently creates a fresh worker. With concurrent jobs, preserve the
-      // shared worker and discard only this late result.
-      if (pending.size === 1 && pending.has(jobId) && worker === instance) {
-        instance.terminate()
-        worker = null
-      }
+      const assignedWorker = pending.get(jobId)?.assignedWorker
+      const interrupt = assignedWorker !== undefined && worker === assignedWorker
       settle(jobId, (job) => job.reject(new AnalysisAbortError()))
+      // Synchronous numerical kernels cannot consume a cancellation message while running.
+      // Termination provides real interruption; every other live request is replayed with the same
+      // job id and, where necessary, a full surface fallback on the replacement worker.
+      if (interrupt) restartWorkerAndReplay(assignedWorker)
     }
     signal?.addEventListener('abort', onAbort, { once: true })
 
     pending.set(jobId, {
       requestType: request.type,
+      replayRequest: wireReplayRequest,
+      assignedWorker: instance,
       resolve: (value) => resolve(value as T),
       reject,
       detach: () => signal?.removeEventListener('abort', onAbort)
     })
-    instance.postMessage({ ...request, jobId } as AnalysisWorkerRequest)
+    instance.postMessage(wireRequest)
   })
 }
 
 const runWorkerOrFallback = async <T>(
   request: Omit<AnalysisWorkerJob, 'jobId'>,
   fallback: () => Promise<T> | T,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  replayRequest: Omit<AnalysisWorkerJob, 'jobId'> = request
 ) => {
   try {
-    return await requestWorker<T>(request, signal)
+    return await requestWorker<T>(request, signal, replayRequest)
   } catch (error) {
     if (isAnalysisAbort(error)) throw error
     if (!workerFailed && !(error instanceof Error && error.message === 'Analysis worker is not available.')) throw error
@@ -191,7 +232,8 @@ export const checkLoadcasesAsync = (
       payload: { ...workerSurfaceReference(payload.surface), loadcases: payload.loadcases }
     },
     async () => (await loadFallback()).checkLoadcasesFallback(payload),
-    signal
+    signal,
+    { type: 'checkLoadcases', payload: { surface: payload.surface, loadcases: payload.loadcases } }
   )
 
 export const checkLoadcaseAsync = (
@@ -209,7 +251,11 @@ export const checkLoadcaseAsync = (
       }
     },
     async () => (await loadFallback()).checkLoadcaseFallback(payload),
-    signal
+    signal,
+    {
+      type: 'checkLoadcase',
+      payload: { ...payload, analysisOptions: payload.surface.analysisOptions }
+    }
   )
 
 export const buildSectionFieldMapAsync = (
@@ -306,7 +352,8 @@ export const exportChartAuditWorkbookAsync = async (
       payload: { ...rest, ...workerSurfaceReference(surface) }
     },
     async () => (await loadFallback()).exportChartAuditWorkbookFallback(payload),
-    signal
+    signal,
+    { type: 'exportChartAudit', payload: { ...rest, surface } }
   )
   return new Blob([result], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -352,7 +399,8 @@ export const exportDemandCheckWorkbookAsync = async (
       payload: { ...rest, ...workerSurfaceReference(surface) }
     },
     async () => (await loadFallback()).exportDemandCheckWorkbookFallback(payload),
-    signal
+    signal,
+    { type: 'exportDemandCheck', payload: { ...rest, surface } }
   )
   return new Blob([result], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'

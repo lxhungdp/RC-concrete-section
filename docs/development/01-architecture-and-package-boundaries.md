@@ -111,6 +111,12 @@ application/         project session, stale-state graph, analysis jobs
 Feature code calls package APIs. It does not reproduce geometry formulas, material derivations, load
 transformations, utilization, or report acceptance logic.
 
+The `/geometry` route presents the same section editor with a single Geometry menu. Its independent,
+light, neutral stylesheet is scoped to `#geometry-workspace`; the main `/` workspace retains its
+existing presentation. Concrete/Rebar editing, project I/O, validation, units, and applied-section
+state use the same owners. The route adds only presentation controls for selection and fitting the
+camera; it changes no engineering DTO, calculation, schema, or verification status.
+
 ## 7. State and invalidation
 
 Maintain separate state for:

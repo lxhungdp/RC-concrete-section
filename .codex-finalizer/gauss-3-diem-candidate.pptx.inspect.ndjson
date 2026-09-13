@@ -1,0 +1,34 @@
+{"kind":"deck","id":"pr/05y658","name":"Deck"}
+{"kind":"layout","layoutId":"f28a4bd5-65c3-4607-a59a-c6381c5b423f","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"9980652d-511e-4ca3-8ae6-04a8be5b9285","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/14qjtc","slide":1,"title":"Gauss 3 điểm nâng độ chính xác ngay trong mỗi tam giác","textShapes":22}
+{"kind":"textbox","id":"sh/v2pw3a5g","slide":1,"text":"Gauss 3 điểm nâng độ chính xác ngay trong mỗi tam giác","textPreview":"Gauss 3 điểm nâng độ chính xác ngay trong mỗi tam giác","textChars":54,"textLines":1,"bbox":[64,38,1152,54]}
+{"kind":"textbox","id":"sh/w3ydwfm1","slide":1,"text":"Tam giác giữ nguyên. Ba vị trí và ba trọng số được chọn để tích phân chính xác mọi đa thức bậc ≤ 2.","textPreview":"Tam giác giữ nguyên. Ba vị trí và ba trọng số được chọn để tích phân chính xác mọi đa thức bậc ≤ 2.","textChars":99,"textLines":1,"bbox":[67,94,1120,36]}
+{"kind":"shape","id":"sh/xo7e5k36","slide":1,"bbox":[64,133,1152,0]}
+{"kind":"textbox","id":"sh/mxwvql4j","slide":1,"text":"Một tam giác, ba điểm tích phân","textPreview":"Một tam giác, ba điểm tích phân","textChars":31,"textLines":1,"bbox":[76,153,525,34]}
+{"kind":"shape","id":"sh/ny5wzq54","slide":1,"bbox":[158,188,430,305]}
+{"kind":"textbox","id":"sh/8zedsvmp","slide":1,"text":"A","textPreview":"A","textChars":1,"textLines":1,"bbox":[360,163,40,30]}
+{"kind":"textbox","id":"sh/90ne10na","slide":1,"text":"B","textPreview":"B","textChars":1,"textLines":1,"bbox":[126,479,40,30]}
+{"kind":"textbox","id":"sh/ytwvml4n","slide":1,"text":"C","textPreview":"C","textChars":1,"textLines":1,"bbox":[584,479,40,30]}
+{"kind":"shape","id":"sh/zu5cvq58","slide":1,"bbox":[363,280,20,20]}
+{"kind":"textbox","id":"sh/ba9obu9w","slide":1,"text":"q₁","textPreview":"q₁","textChars":2,"textLines":1,"bbox":[352,260,38,25]}
+{"kind":"shape","id":"sh/a9072p8b","slide":1,"bbox":[255.5,432.2,20,20]}
+{"kind":"textbox","id":"sh/xcb6d4rm","slide":1,"text":"q₂","textPreview":"q₂","textChars":2,"textLines":1,"bbox":[227,428,38,25]}
+{"kind":"shape","id":"sh/wb2p4zqh","slide":1,"bbox":[470.5,432.2,20,20]}
+{"kind":"textbox","id":"sh/jytofe9s","slide":1,"text":"q₃","textPreview":"q₃","textChars":2,"textLines":1,"bbox":[492,428,38,25]}
+{"kind":"textbox","id":"sh/yxk76987","slide":1,"text":"Tọa độ barycentric","textPreview":"Tọa độ barycentric","textChars":18,"textLines":1,"bbox":[86,515,215,28]}
+{"kind":"textbox","id":"sh/l0b6hory","slide":1,"text":"hoán vị của  (⅔, ⅙, ⅙)","textPreview":"hoán vị của  (⅔, ⅙, ⅙)","textChars":22,"textLines":1,"bbox":[86,544,260,34]}
+{"kind":"textbox","id":"sh/kz2p8jqd","slide":1,"text":"Trọng số mỗi điểm","textPreview":"Trọng số mỗi điểm","textChars":17,"textLines":1,"bbox":[362,515,205,28]}
+{"kind":"textbox","id":"sh/z2po3a9o","slide":1,"text":"w = Aₜ / 3","textPreview":"w = Aₜ / 3","textChars":10,"textLines":1,"bbox":[362,544,210,34]}
+{"kind":"textbox","id":"sh/ehgnu583","slide":1,"text":"∫ₜ f dA  ≈  Aₜ/3 · [ f(q₁) + f(q₂) + f(q₃) ]","textPreview":"∫ₜ f dA  ≈  Aₜ/3 · [ f(q₁) + f(q₂) + f(q₃) ]","textChars":44,"textLines":1,"bbox":[86,584,505,42]}
+{"kind":"shape","id":"sh/ixor2dsr","slide":1,"bbox":[633,160,0,465]}
+{"kind":"textbox","id":"sh/3yxsbitc","slide":1,"text":"Ví dụ chứng minh độ chính xác","textPreview":"Ví dụ chứng minh độ chính xác","textChars":29,"textLines":1,"bbox":[672,153,510,34]}
+{"kind":"textbox","id":"sh/4z694nah","slide":1,"text":"Tam giác chuẩn: (0,0), (1,0), (0,1)     Hàm cần tích phân:  f(x,y) = x²","textPreview":"Tam giác chuẩn: (0,0), (1,0), (0,1)     Hàm cần tích phân:  f(x,y) = x²","textChars":71,"textLines":1,"bbox":[674,194,530,34]}
+{"kind":"textbox","id":"sh/50fadsb2","slide":1,"text":"Giá trị đúng:  ∫ₜ x² dA = 1/12 = 0,0833","textPreview":"Giá trị đúng:  ∫ₜ x² dA = 1/12 = 0,0833","textChars":39,"textLines":1,"bbox":[674,232,530,36]}
+{"kind":"textbox","id":"sh/ut4rydsf","slide":1,"text":"Kết quả chuẩn hóa  (giá trị đúng = 100)","textPreview":"Kết quả chuẩn hóa  (giá trị đúng = 100)","textChars":39,"textLines":1,"bbox":[674,280,505,29]}
+{"kind":"textbox","id":"sh/gv690nal","slide":1,"text":"Gauss 3 điểm: sai số 0%","textPreview":"Gauss 3 điểm: sai số 0%","textChars":23,"textLines":1,"bbox":[696,551,230,32]}
+{"kind":"textbox","id":"sh/hwfa98b6","slide":1,"text":"Chia 3 phần: sai số −18,5%","textPreview":"Chia 3 phần: sai số −18,5%","textChars":26,"textLines":1,"bbox":[938,551,258,32]}
+{"kind":"textbox","id":"sh/654rutsj","slide":1,"text":"Ví dụ dùng cùng 3 lần đánh giá hàm. Sai số −18,5% chỉ thuộc ví dụ này.","textPreview":"Ví dụ dùng cùng 3 lần đánh giá hàm. Sai số −18,5% chỉ thuộc ví dụ này.","textChars":70,"textLines":1,"bbox":[682,587,506,28]}
+{"kind":"textbox","id":"sh/76d83yt4","slide":1,"text":"Trong P–M: trường ứng suất trơn thường cần ít tam giác hơn. Vẫn phải tinh chỉnh mesh khi tam giác cắt trục trung hòa hoặc điểm gãy vật liệu.","textPreview":"Trong P–M: trường ứng suất trơn thường cần ít tam giác hơn. Vẫn phải tinh chỉnh mesh khi tam giác cắt trục trung hòa hoặc điểm gãy vật liệu.","textChars":140,"textLines":1,"bbox":[64,641,1152,55]}
+{"kind":"chart","id":"ch/fqpsb6hg","slide":1,"name":"","chartType":"bar","bbox":[670,310,525,245]}
+{"kind":"notes","id":"nt/14qjtc","slide":1,"text":"Nguồn kỹ thuật: docs/02-meshing-2d.md, mục 5. Quy tắc dùng ba điểm barycentric là các hoán vị của (2/3, 1/6, 1/6), mỗi điểm có trọng số A_triangle/3, và tích phân chính xác đa thức đến bậc 2. Ví dụ kiểm tra độc lập trên tam giác chuẩn T={(x,y): x>=0, y>=0, x+y<=1}: tích phân x^2 bằng 1/12. Quy tắc Gauss cho đúng 1/12. Nếu nối trọng tâm với ba đỉnh và dùng một điểm trọng tâm trên mỗi tam giác con, kết quả bằng 11/162, tương đương 81,48% giá trị đúng, sai số -18,52%. Đây là ví dụ minh họa, không phải sai số phổ quát. Với quan hệ vật liệu phi tuyến hoặc điểm gãy nằm trong tam giác, vẫn cần kiểm tra hội tụ theo mesh."}

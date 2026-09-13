@@ -1,0 +1,36 @@
+{"kind":"deck","id":"pr/oxppjy","name":"Deck"}
+{"kind":"layout","layoutId":"05c6b66c-d999-4389-a686-53bc849fd0f4","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"b074b95f-bf93-4230-827b-957882480da9","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/0ec91q","slide":1,"title":"Three-point Gaussian quadrature for P–M analysis","textShapes":24}
+{"kind":"textbox","id":"sh/dcrytgzi","slide":1,"text":"Three-point Gaussian quadrature for P–M analysis","textPreview":"Three-point Gaussian quadrature for P–M analysis","textChars":48,"textLines":1,"bbox":[62,28,1156,43]}
+{"kind":"textbox","id":"sh/q90fy10r","slide":1,"text":"P–M 해석을 위한 삼각형 3점 가우스 구적법","textPreview":"P–M 해석을 위한 삼각형 3점 가우스 구적법","textChars":25,"textLines":1,"bbox":[64,71,1152,34]}
+{"kind":"textbox","id":"sh/ra9wr6hc","slide":1,"text":"The triangle stays unchanged. Three optimal points integrate every polynomial of degree ≤ 2 exactly.","textPreview":"The triangle stays unchanged. Three optimal points integrate every polynomial of degree ≤ 2 exactly.","textChars":100,"textLines":1,"bbox":[65,111,1150,25]}
+{"kind":"textbox","id":"sh/4nixwbil","slide":1,"text":"삼각형은 그대로 유지된다. 최적의 세 점으로 2차 이하 다항식을 정확히 적분한다.","textPreview":"삼각형은 그대로 유지된다. 최적의 세 점으로 2차 이하 다항식을 정확히 적분한다.","textChars":45,"textLines":1,"bbox":[65,136,1150,25]}
+{"kind":"shape","id":"sh/porepwz6","slide":1,"bbox":[64,166,1152,0]}
+{"kind":"textbox","id":"sh/2lgfu10v","slide":1,"text":"Method anatomy / 방법 구성","textPreview":"Method anatomy / 방법 구성","textChars":22,"textLines":1,"bbox":[72,180,510,31]}
+{"kind":"shape","id":"sh/3m9wn6h0","slide":1,"bbox":[135,220,380,240]}
+{"kind":"textbox","id":"sh/oj2x8vi5","slide":1,"text":"A","textPreview":"A","textChars":1,"textLines":1,"bbox":[306,196,38,28]}
+{"kind":"textbox","id":"sh/94by10zq","slide":1,"text":"B","textPreview":"B","textChars":1,"textLines":1,"bbox":[101,449,38,28]}
+{"kind":"textbox","id":"sh/p0j6do7m","slide":1,"text":"C","textPreview":"C","textChars":1,"textLines":1,"bbox":[512,449,38,28]}
+{"kind":"shape","id":"sh/ofqpk3qh","slide":1,"bbox":[316,291,18,18]}
+{"kind":"textbox","id":"sh/3ehobypw","slide":1,"text":"q₁","textPreview":"q₁","textChars":2,"textLines":1,"bbox":[307,269,34,24]}
+{"kind":"shape","id":"sh/2d87it8b","slide":1,"bbox":[221,411,18,18]}
+{"kind":"textbox","id":"sh/1cz69o7q","slide":1,"text":"q₂","textPreview":"q₂","textChars":2,"textLines":1,"bbox":[195,405,34,24]}
+{"kind":"shape","id":"sh/gbqpgjq5","slide":1,"bbox":[411,411,18,18]}
+{"kind":"textbox","id":"sh/faho7epk","slide":1,"text":"q₃","textPreview":"q₃","textChars":2,"textLines":1,"bbox":[431,405,34,24]}
+{"kind":"textbox","id":"sh/e98ne98z","slide":1,"text":"Parent triangle T\n원삼각형 T","textPreview":"Parent triangle T | 원삼각형 T","textChars":24,"textLines":2,"bbox":[251,349,148,50]}
+{"kind":"textbox","id":"sh/l836l87u","slide":1,"text":"Quadrature point qᵢ\n구적점(적분점) qᵢ","textPreview":"Quadrature point qᵢ | 구적점(적분점) qᵢ","textChars":31,"textLines":2,"bbox":[446,352,135,52]}
+{"kind":"textbox","id":"sh/07apsnq9","slide":1,"text":"Three-point degree-2 rule / 3점 2차 정확도 규칙","textPreview":"Three-point degree-2 rule / 3점 2차 정확도 규칙","textChars":40,"textLines":1,"bbox":[75,481,500,25]}
+{"kind":"textbox","id":"sh/kbi9orel","slide":1,"text":"Barycentric coordinates / 면적좌표    qᵢ = permutations of (⅔, ⅙, ⅙)","textPreview":"Barycentric coordinates / 면적좌표    qᵢ = permutations of (⅔, ⅙, ⅙)","textChars":64,"textLines":1,"bbox":[75,510,510,25]}
+{"kind":"textbox","id":"sh/5cbqhwf6","slide":1,"text":"Integration weight / 적분 가중치    wᵢ = Aₜ/3","textPreview":"Integration weight / 적분 가중치    wᵢ = Aₜ/3","textChars":40,"textLines":1,"bbox":[75,538,510,25]}
+{"kind":"textbox","id":"sh/i90rmhwf","slide":1,"text":"∫ₜ f dA  ≈  Σᵢ wᵢ f(qᵢ)","textPreview":"∫ₜ f dA  ≈  Σᵢ wᵢ f(qᵢ)","textChars":23,"textLines":1,"bbox":[75,570,510,38]}
+{"kind":"shape","id":"sh/ja98fmx0","slide":1,"bbox":[615,182,0,423]}
+{"kind":"textbox","id":"sh/w7i9k7ep","slide":1,"text":"P–M moment example / P–M 모멘트 예제","textPreview":"P–M moment example / P–M 모멘트 예제","textChars":31,"textLines":1,"bbox":[648,180,560,31]}
+{"kind":"textbox","id":"sh/x8rqdcfa","slide":1,"text":"Normalized triangle / 정규화 삼각형:  A(0,0), B(1,0), C(0,1),  Aₜ = 1/2","textPreview":"Normalized triangle / 정규화 삼각형:  A(0,0), B(1,0), C(0,1),  Aₜ = 1/2","textChars":65,"textLines":1,"bbox":[650,218,555,25]}
+{"kind":"textbox","id":"sh/al0rihwj","slide":1,"text":"Linear stress / 선형 응력:  σ(x,y) = 1 + 2x        Reference axis / 기준축:  x₀ = 0","textPreview":"Linear stress / 선형 응력:  σ(x,y) = 1 + 2x        Reference axis / 기준축:  x₀ = 0","textChars":76,"textLines":1,"bbox":[650,246,555,25]}
+{"kind":"textbox","id":"sh/vm98b2x4","slide":1,"text":"Each point / 각 점:   Fᵢ = σᵢAᵢ     Mᵧ,ᵢ = σᵢAᵢdᵢ     dᵢ = xᵢ − x₀\nWith Aᵢ = Aₜ/3:   P = ΣFᵢ = 5/6     Mᵧ = ΣFᵢdᵢ = 1/3","textPreview":"Each point / 각 점:   Fᵢ = σᵢAᵢ     Mᵧ,ᵢ = σᵢAᵢdᵢ     dᵢ = xᵢ − x₀ | With Aᵢ = Aₜ/3:   P = ΣFᵢ = 5/6     Mᵧ = ΣFᵢdᵢ = 1/3","textChars":117,"textLines":2,"bbox":[650,279,554,104]}
+{"kind":"textbox","id":"sh/9krq9cfy","slide":1,"text":"Both methods recover P exactly. The moment reveals the error.","textPreview":"Both methods recover P exactly. The moment reveals the error.","textChars":61,"textLines":1,"bbox":[654,543,546,25]}
+{"kind":"textbox","id":"sh/repsz2h0","slide":1,"text":"두 방법 모두 P는 정확하다. 모멘트에서 오차가 드러난다.","textPreview":"두 방법 모두 P는 정확하다. 모멘트에서 오차가 드러난다.","textChars":32,"textLines":1,"bbox":[654,568,546,26]}
+{"kind":"textbox","id":"sh/qdgrqx0f","slide":1,"text":"Why it matters / 의미: 1-point centroid gives Mᵧ 16.7% too low. 3-point Gauss is exact here.\n도심 1점법은 Mᵧ를 16.7% 작게 계산한다. 3점 가우스법은 정확하다.\nRefine the mesh across a neutral axis or material kink / 중립축·재료곡선 꺾임에서는 메시 세분화 필요","textPreview":"Why it matters / 의미: 1-point centroid gives Mᵧ 16.7% too low. 3-point Gauss is exact here. | 도심 1점법은 Mᵧ를 16.7% 작게 계산한다. 3점 가우스법은 정확하다. | ...","textChars":214,"textLines":3,"bbox":[64,620,1152,78]}
+{"kind":"table","id":"tb/7m5szyd8","slide":1,"name":"","rows":3,"cols":4,"preview":"Method / 방법 | P | Mᵧ = Σ(Fᵢ·dᵢ) | Mᵧ error 오차","bbox":[650,397,554,137]}
+{"kind":"notes","id":"nt/0ec91q","slide":1,"text":"Technical basis / 기술 근거: docs/02-meshing-2d.md section 5 defines the symmetric three-point degree-2 triangle rule with barycentric coordinates equal to permutations of (2/3,1/6,1/6) and weight A_triangle/3. P-M sign convention follows docs/03-forward-analysis-and-jacobian.md: My = sum(F*(x-x0)). Independent example: on T={(x,y): x>=0,y>=0,x+y<=1}, A=1/2, integral x dA=1/6 and integral x^2 dA=1/12. For sigma=1+2x, P=integral sigma dA=5/6 and My=integral sigma*x dA=1/3. The one-point centroid rule uses G=(1/3,1/3), giving P=(5/3)(1/2)=5/6 but My=P*(1/3)=5/18, which is 16.67% low. The three-point rule returns My exactly because sigma*x has total polynomial degree 2. Values are normalized and illustrative. Nonlinear constitutive kinks and neutral-axis crossings still require mesh refinement and convergence evidence."}

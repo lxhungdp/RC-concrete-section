@@ -293,15 +293,27 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
   const compressionPhi = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.phiCompressionSpiral : resistanceFactors.phiCompressionOther
   const axialCapRatio = input.transverseReinforcement === 'qualifying-spiral' ? resistanceFactors.axialCapSpiral : resistanceFactors.axialCapOther
 
-  const bindNominalEvaluator = (section: PreparedEquivalentBlockSection): CapacityEvaluator<NominalBlockEvaluation> => {
-    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws)
+  const bindNominalEvaluatorFor = (
+    section: PreparedEquivalentBlockSection,
+    retainConcreteGeometry: boolean
+  ): CapacityEvaluator<NominalBlockEvaluation> => {
+    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws, {
+      retainConcreteGeometry
+    })
     return (state) => {
       const nominal = evaluate(state)
       return { state, resultants: nominal.resultants, source: nominal }
     }
   }
-  const bindDesignEvaluator = (section: PreparedEquivalentBlockSection): CapacityEvaluator<KdsDesignEvaluationSource> => {
-    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws)
+  const bindNominalEvaluator = (section: PreparedEquivalentBlockSection) =>
+    bindNominalEvaluatorFor(section, true)
+  const bindDesignEvaluatorFor = (
+    section: PreparedEquivalentBlockSection,
+    retainConcreteGeometry: boolean
+  ): CapacityEvaluator<KdsDesignEvaluationSource> => {
+    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws, {
+      retainConcreteGeometry
+    })
     return (state) => {
       const nominal = evaluate(state)
       const controllingBar = nominal.bars.find((bar) => bar.id === nominal.controllingBarId)
@@ -328,6 +340,8 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
       }
     }
   }
+  const bindDesignEvaluator = (section: PreparedEquivalentBlockSection) =>
+    bindDesignEvaluatorFor(section, true)
   const nominalEndpoints = (section: PreparedEquivalentBlockSection) => {
     const endpointStrain = uniformSteelEndpointStrain(section, steelLaws)
     const compressionStrain = input.compressionEndpoint === 'peak-stress-strain'
@@ -414,7 +428,7 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
     axialCapRatio * designEndpoints(section).compression.resultants.P
   const buildNominalSurface = (section: PreparedEquivalentBlockSection, options: KdsSurfaceOptions = {}): CapacitySurface => {
     const endpoints = nominalEndpoints(section)
-    return buildCapacitySurface(section, bindNominalEvaluator(section), {
+    return buildCapacitySurface(section, bindNominalEvaluatorFor(section, false), {
       ...options,
       steelLaws,
       barStrainEvents: options.barStrainEvents ?? [],
@@ -430,7 +444,7 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
     const { applyAxialCap = true, ...surfaceOptions } = options
     const endpoints = designEndpoints(section)
     const compressionPole = surfaceCompressionPole(section)
-    const surface = buildCapacitySurface(section, bindDesignEvaluator(section), {
+    const surface = buildCapacitySurface(section, bindDesignEvaluatorFor(section, false), {
       ...surfaceOptions,
       steelLaws,
       barStrainEvents: surfaceOptions.barStrainEvents ?? [],

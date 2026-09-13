@@ -251,15 +251,20 @@ export const createAs3600Model = (input: CreateAs3600ModelInput) => {
   const compressionPhi = input.compressionPhiClass === 'short-column-high-permanent-load'
     ? resistanceFactors.phiCompressionShortColumnHighPermanentLoad
     : resistanceFactors.phiCompressionOrdinary
-  const bindNominalEvaluator = (
-    section: PreparedEquivalentBlockSection
+  const bindNominalEvaluatorFor = (
+    section: PreparedEquivalentBlockSection,
+    retainConcreteGeometry: boolean
   ): CapacityEvaluator<NominalBlockEvaluation> => {
-    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws)
+    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws, {
+      retainConcreteGeometry
+    })
     return (state: BlockSectionState) => {
       const nominal = evaluate(state)
       return { state, resultants: nominal.resultants, source: nominal }
     }
   }
+  const bindNominalEvaluator = (section: PreparedEquivalentBlockSection) =>
+    bindNominalEvaluatorFor(section, true)
 
   const nominalEndpoints = (section: PreparedEquivalentBlockSection) => {
     const endpointStrain = uniformSteelEndpointStrain(section, steelLaws)
@@ -323,10 +328,13 @@ export const createAs3600Model = (input: CreateAs3600ModelInput) => {
     })
   }
 
-  const bindDesignEvaluator = (
-    section: PreparedEquivalentBlockSection
+  const bindDesignEvaluatorFor = (
+    section: PreparedEquivalentBlockSection,
+    retainConcreteGeometry: boolean
   ): CapacityEvaluator<As3600DesignEvaluationSource> => {
-    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws)
+    const evaluate = bindEquivalentBlockForwardEvaluator(section, blockLaw, steelLaws, {
+      retainConcreteGeometry
+    })
     const pureTensionAxial = nominalEndpoints(section).tension.resultants.P
     return (state: BlockSectionState) => {
       const nominal = evaluate(state)
@@ -344,6 +352,8 @@ export const createAs3600Model = (input: CreateAs3600ModelInput) => {
       }
     }
   }
+  const bindDesignEvaluator = (section: PreparedEquivalentBlockSection) =>
+    bindDesignEvaluatorFor(section, true)
 
   const designEndpoints = (section: PreparedEquivalentBlockSection) => {
     const nominal = nominalEndpoints(section)
@@ -364,7 +374,7 @@ export const createAs3600Model = (input: CreateAs3600ModelInput) => {
     options: As3600SurfaceOptions = {}
   ): CapacitySurface => {
     const endpoints = nominalEndpoints(section)
-    return buildCapacitySurface(section, bindNominalEvaluator(section), {
+    return buildCapacitySurface(section, bindNominalEvaluatorFor(section, false), {
       ...options,
       steelLaws,
       barStrainEvents: options.barStrainEvents ?? [],
@@ -380,7 +390,7 @@ export const createAs3600Model = (input: CreateAs3600ModelInput) => {
   ): CapacitySurface => {
     const { applyAxialCap: _ignored, ...surfaceOptions } = options
     const endpoints = designEndpoints(section)
-    return buildCapacitySurface(section, bindDesignEvaluator(section), {
+    return buildCapacitySurface(section, bindDesignEvaluatorFor(section, false), {
       ...surfaceOptions,
       steelLaws,
       barStrainEvents: surfaceOptions.barStrainEvents ?? [],
