@@ -97,22 +97,22 @@ not be titled “column design complete” when member-level checks are excluded
 Current UI workflow:
 
 ```text
-Geometry -> Materials -> Section Results -> Demand Check -> Analysis Options
+Section -> Materials -> Capacity -> Demand Check -> Options
 ```
 
 Loadcases remain engineering input. Simple `Pu/Mux/Muy` entry and the governing per-combination
 check belong to the dedicated `Demand Check` workspace; a richer source-load-management workspace
 remains deferred until component load cases and combination assembly justify it. Analysis is an
-internal pipeline behind `Section Results` and `Demand Check`, not a top-level menu. There is no
+internal pipeline behind `Capacity` and `Demand Check`, not a top-level menu. There is no
 current Report workspace; preview export actions live in the workspace that owns the evidence.
 
 | Workflow area | Engineering input | Required output gate |
 |---|---|---|
-| Geometry | concrete boundaries, holes, bars, origin/axes | valid normalized topology and reinforcement references |
+| Section | concrete boundaries, holes, bars, origin/axes | valid normalized topology and reinforcement references |
 | Materials | concrete/steel definitions and sources | validated material definitions and compatible selected profile |
-| Section Results | resistance-stage and chart presentation selections | current preview surface, convergence/admissibility evidence, and plots/tables derived without recomputing engineering rules |
+| Capacity | resistance-stage and chart presentation selections | current preview surface, convergence/admissibility evidence, and plots/tables derived without recomputing engineering rules |
 | Demand Check | factored `Pu/Mux/Muy` combinations and selected detail cases | finite compatible demands, current matching 3D Design-ray evidence, uncertainty-aware classification, and diagnostic inverse/fixed-`P` evidence kept secondary |
-| Analysis Options | model-specific stations/directions, integration mesh where applicable, and Design resistance parameters | validated version-1 options matched to the selected calculation profile |
+| Options | model-specific stations/directions, integration mesh where applicable, and Design resistance parameters | validated version-1 options matched to the selected calculation profile |
 | Export actions | calculation-trace workbooks for both mechanics; stress-strain mesh Excel/DXF; demand-check workbook; preview PDF | preview audit artifacts only; immutable accepted-result export and released Excel/PDF reporting are not implemented |
 
 The user may edit modules in any order, but analysis starts only after all prerequisite gates pass.

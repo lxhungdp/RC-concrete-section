@@ -230,7 +230,7 @@ governing 3D utilization check.
 ```text
 Geometry + rebars
   -> one Materials code/model/profile selection
-  -> model-specific Analysis Options
+  -> model-specific Options
   -> prepare the corresponding kernel
   -> build Nominal surface
   -> apply/re-evaluate Design resistance and axial cap

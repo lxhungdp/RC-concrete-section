@@ -80,9 +80,9 @@ do not call it Richardson extrapolation.
 Refinement stops successfully only when all required quantities meet `tolMesh`. Hitting `maxLevels`,
 `maxFibers`, time, or memory limits returns `MESH_NOT_CONVERGED`/`RESOURCE_LIMIT`.
 
-### 4.1 Mesh inspection in Analysis Options
+### 4.1 Mesh inspection in Options
 
-For the stress-strain route, **Analysis Options > Mesh** is a zoomable traceability view of the exact `ConcreteMesh` used
+For the stress-strain route, **Options > Mesh** is a zoomable traceability view of the exact `ConcreteMesh` used
 by the analysis revision. It is loaded lazily. At inspection zoom it draws all clipped triangles in
 the visible viewport; optional Gauss-point markers are the actual quadrature locations derived from
 the same exported degree-2 barycentric rule, not a new display sampling.

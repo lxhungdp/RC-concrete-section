@@ -1,16 +1,18 @@
 'use client'
 
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { CircleArrowRight, Download, Plus, Upload, X } from 'lucide-react'
+import { CircleArrowRight, Download, Loader2, Plus, Upload, X } from 'lucide-react'
 import type { LoadcaseQuickCheckResult } from '@pm/analysis'
 import { createLoadCombination, type LoadCombination, type LoadingsInput } from '@pm/project'
 import { downloadLoadcaseWorkbook, importLoadcaseWorkbook } from './loadcase-xlsx'
+import { selectLoadcaseFromRow } from './loadcase-selection'
 
 type Props = {
   input: LoadingsInput
   selectedLoadcaseId: number | null
   /** Complete quick-check evidence by loadcase id, including the three-state verdict. */
   checksById?: Record<number, LoadcaseQuickCheckResult>
+  updateStatus?: { active: boolean; message: string }
   onSelectLoadcase: (id: number | null) => void
   onActivateLoadcase?: (loadcase: LoadCombination) => void
   onChange: (input: LoadingsInput) => void
@@ -74,6 +76,7 @@ export function LoadingsPanel({
   input,
   selectedLoadcaseId,
   checksById = {},
+  updateStatus = { active: false, message: '' },
   onSelectLoadcase,
   onActivateLoadcase,
   onChange,
@@ -151,21 +154,21 @@ export function LoadingsPanel({
         <div className="pm-loadcase-header-actions">
           <button
             type="button"
-            className="pm-file-btn"
+            className="pm-file-btn pm-loadcase-file-btn"
             onClick={() => void exportExcel()}
             title="Export loadcases to Excel"
+            aria-label="Export loadcases to Excel"
           >
             <Download size={13} />
-            Excel
           </button>
           <button
             type="button"
-            className="pm-file-btn"
+            className="pm-file-btn pm-loadcase-file-btn"
             onClick={() => excelInputRef.current?.click()}
             title="Import loadcases from Excel"
+            aria-label="Import loadcases from Excel"
           >
             <Upload size={13} />
-            Excel
           </button>
           <button type="button" className="pm-table-add-btn" onClick={addCombination}>
             <Plus size={13} />
@@ -181,10 +184,24 @@ export function LoadingsPanel({
         </div>
       </div>
       <div className="pm-loadcase-units" aria-label="Load units">
-        kN, kNm
+        Units · kN, kN·m
       </div>
-      <div className="pm-loadcase-table-wrap">
-        <table className="pm-loadcase-table">
+      <div className="pm-loadcase-table-region">
+        {/* Keep this inline slot mounted so status visibility never moves the table. */}
+        <div className={`pm-loadcase-update-slot${updateStatus.active ? ' is-active' : ''}`}>
+          <div
+            className="pm-loadcase-update-status"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            aria-hidden={!updateStatus.active}
+          >
+            <Loader2 size={12} className="pm-spin" aria-hidden="true" />
+            <span>{updateStatus.message}</span>
+          </div>
+        </div>
+        <div className="pm-loadcase-table-wrap">
+          <table className="pm-loadcase-table" aria-label="Loadcase demand table">
           <colgroup>
             <col className="pm-col-name" />
             <col className="pm-col-detail" />
@@ -196,11 +213,11 @@ export function LoadingsPanel({
           </colgroup>
           <thead>
             <tr>
-              <th>Name</th>
+              <th title="Load combination name">Name</th>
               <th className="pm-col-detail" aria-label="Calculation details" />
-              <th>Pu</th>
-              <th>Mux</th>
-              <th>Muy</th>
+              <th title="Factored axial force in kN">Pu</th>
+              <th title="Factored moment about x in kN·m">Mux</th>
+              <th title="Factored moment about y in kN·m">Muy</th>
               <th className="pm-col-ur" title="Three-dimensional proportional utilization ratio">
                 UR
               </th>
@@ -229,6 +246,7 @@ export function LoadingsPanel({
                 <tr
                   key={item.id}
                   className={selectedLoadcaseId === item.id ? 'is-selected' : ''}
+                  onClick={() => selectLoadcaseFromRow(selectedLoadcaseId, item.id, onSelectLoadcase)}
                 >
                   <td>
                     <SpreadsheetInput
@@ -315,7 +333,8 @@ export function LoadingsPanel({
               )
             })}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
     </section>
   )

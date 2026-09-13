@@ -76,7 +76,7 @@ Classification uses a numerical uncertainty interval and approved margin:
 
 ## 4. Accepted-product Results contract
 
-The current `Section Results` workspace implements preview resistance plots and model-specific
+The current `Capacity` workspace implements preview resistance plots and model-specific
 field views. The separate `Demand Check` workspace implements load-combination editing, governing
 checks, and check exports. Quick checks expose an uncertainty interval and three-state
 classification. Neither workspace yet satisfies the immutable accepted-result identity, result
@@ -105,7 +105,7 @@ capacity. It provides:
 - convergence/error evidence and resolution history;
 - diagnostics for invalid, cancelled, non-converged, or preview runs.
 
-The Section Results envelope table is also an on-screen audit entry point. Selecting a row opens a
+The Capacity envelope table is also an on-screen audit entry point. Selecting a row opens a
 stage- and source-specific calculation inspector built from the same stored point/query evidence as
 that row. Compact selectors in the inspector header expose the same complete Vertical/Fixed-P,
 Design/Nominal, and criterion choices as the envelope table without requiring the inspector to be
@@ -220,7 +220,7 @@ Diagnostic partial data is a separate preview type. It cannot satisfy this contr
 ## 6. Target report capability
 
 There is no current top-level Report menu. Each mechanics now has its own calculation-result
-workbook, the mesh audit exports remain the stress-strain Excel/DXF files under Analysis Options,
+workbook, the mesh audit exports remain the stress-strain Excel/DXF files under Options,
 and `Demand Check` exports a preview PDF design report and a demand-check calculation workbook. A
 **released** report — one generated from an accepted result — remains unimplemented.
 

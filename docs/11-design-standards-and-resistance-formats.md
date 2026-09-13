@@ -456,7 +456,7 @@ Canonical project schema-v1 exports persist DesignBasis version 3 inside project
 loadcases are explicitly
 factored ULS actions. The parser's remaining omitted-field defaults are listed as pre-release debt
 in `development/02` and `development/06`.
-The result DTO contains both `nominalPoints` and governing design `points`. Analysis Options owns
+The result DTO contains both `nominalPoints` and governing design `points`. Options owns
 the model-specific sampling controls and the applied resistance basis. Materials presents the KDS
 resistance-route selection independently from the concrete model; factor equations and exact
 clause/source links remain collapsed until the user requests details. Global-factor profiles expose

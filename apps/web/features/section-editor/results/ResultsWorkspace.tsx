@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { EyeOff, Loader2, Maximize2, RotateCw } from 'lucide-react'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
@@ -56,7 +56,7 @@ import {
 } from './surface-plot-geometry'
 import {
   currentLoadcaseEvidence,
-  currentLoadcaseFrame,
+  loadcaseFrameForTransition,
   sameLoadcaseDemand
 } from './loadcase-calculation-trace'
 
@@ -111,6 +111,7 @@ type Props = {
   onViewChange: (patch: Partial<SectionResultsView>) => void
   onDemandViewChange: (patch: Partial<DemandCheckView>) => void
   onSelectLoadcase: (id: number) => void
+  onLoadcaseUpdatingChange?: (updating: boolean) => void
 }
 
 const SyncedControl = ({
@@ -339,26 +340,6 @@ const solverStatus = (result: InversePreviewResult) => {
 const loadcaseAngleDeg = (loadcase: LoadCombination) =>
   normalizeAngleDeg((Math.atan2(loadcase.My, loadcase.Mx) * 180) / Math.PI)
 
-/**
- * Says plainly that the plots below are the previous surface.
- *
- * Keeping the old charts on screen during a rebuild is better than blanking them, but only if the
- * user is told; otherwise a stale plot is indistinguishable from a fresh one.
- */
-const StaleBanner = () => (
-  <div className="pm-results-stale" role="status">
-    <Loader2 size={13} className="pm-spin" />
-    <span>Recalculating — the charts below are the previous result.</span>
-  </div>
-)
-
-const LoadcaseUpdatingBanner = ({ name }: { name: string }) => (
-  <div className="pm-results-stale" role="status">
-    <Loader2 size={13} className="pm-spin" />
-    <span>Updating {name} — the previous solver result is hidden.</span>
-  </div>
-)
-
 export function ResultsWorkspace({
   theme,
   ready,
@@ -381,7 +362,8 @@ export function ResultsWorkspace({
   demandView,
   onViewChange,
   onDemandViewChange,
-  onSelectLoadcase
+  onSelectLoadcase,
+  onLoadcaseUpdatingChange
 }: Props) {
   const [fieldSnapshot, setFieldSnapshot] = useState<{
     map: SectionFieldMap
@@ -397,11 +379,19 @@ export function ResultsWorkspace({
   const requestedSelectedLoadcase = requestedLoadcases.find((item) => item.id === requestedLoadcaseId) ?? null
   const requestedIsLoadcaseMode = viewMode === 'loadcase' && requestedSelectedLoadcase != null
   const currentInverseResult = currentLoadcaseEvidence(requestedSelectedLoadcase, requestedInverseResult)
-  const displayFieldSnapshot = viewMode === 'loadcase'
-    ? currentLoadcaseFrame(requestedSelectedLoadcase, currentInverseResult, requestedSurface, fieldSnapshot)
-    : null
+  const fieldFrameTransition = viewMode === 'loadcase'
+    ? loadcaseFrameForTransition(
+        requestedLoadcases,
+        requestedSelectedLoadcase,
+        currentInverseResult,
+        requestedSurface,
+        fieldSnapshot
+      )
+    : { frame: null, status: 'pending' as const }
+  const displayFieldSnapshot = fieldFrameTransition.frame
   const loadcases = requestedLoadcases
-  const selectedLoadcaseId = requestedLoadcaseId
+  const selectedLoadcaseId = displayFieldSnapshot?.selectedLoadcaseId ?? requestedLoadcaseId
+  const selectedLoadcase = displayFieldSnapshot?.result.demand ?? requestedSelectedLoadcase
   const inverseResult = displayFieldSnapshot?.result ?? (currentInverseResult?.ok === false ? currentInverseResult : null)
   const fieldMap = displayFieldSnapshot?.map ?? null
   const surface = displayFieldSnapshot?.surface ?? requestedSurface
@@ -433,11 +423,21 @@ export function ResultsWorkspace({
     [plotPalette.text]
   )
 
-  const selectedLoadcase = loadcases.find((item) => item.id === selectedLoadcaseId) ?? null
-  const isLoadcaseMode = viewMode === 'loadcase' && selectedLoadcase != null
+  const isLoadcaseMode = requestedIsLoadcaseMode
   const loadcaseUpdating = requestedIsLoadcaseMode && (
-    !currentInverseResult || (currentInverseResult.ok && !displayFieldSnapshot)
+    !currentInverseResult || (currentInverseResult.ok && fieldFrameTransition.status !== 'current')
   )
+  const demandWorking = requestedIsLoadcaseMode && (busy || loadcaseUpdating)
+
+  useEffect(() => {
+    onLoadcaseUpdatingChange?.(demandWorking)
+  }, [demandWorking, onLoadcaseUpdatingChange])
+
+  useEffect(
+    () => () => onLoadcaseUpdatingChange?.(false),
+    [onLoadcaseUpdatingChange]
+  )
+
   const equilibriumBeta = useMemo(() => {
     if (!isLoadcaseMode || !inverseResult?.ok || !inverseResult.admissibility.evaluated) return null
     return strainGradientDirection(inverseResult.state)
@@ -449,8 +449,8 @@ export function ResultsWorkspace({
       setFieldMapWorking(false)
       return
     }
-    // A previous frame is deliberately hidden until the selected loadcase has one complete,
-    // internally consistent inverse/field/exact-curve revision.
+    // A previous frame may remain visible only as the explicitly labelled outgoing frame. Never
+    // mutate it or combine it with partial evidence from the newly selected loadcase.
     if (
       !requestedInverseResult ||
       requestedLoadcaseId == null ||
@@ -502,18 +502,20 @@ export function ResultsWorkspace({
     // prevents a new beta from ever projecting the previous loadcase's exact curve.
     Promise.all([fieldPromise, exactCurvePromise])
       .then(([map, exactCurve]) => {
-        setFieldSnapshot({
-          map,
-          result: requestedInverseResult,
-          selectedLoadcaseId: requestedLoadcaseId,
-          surface: requestedSurface,
-          section: requestedSection,
-          rebars: requestedRebars,
-          materialStore: requestedMaterialStore,
-          designBasis: requestedDesignBasis,
-          exactCurve
+        startTransition(() => {
+          setFieldSnapshot({
+            map,
+            result: requestedInverseResult,
+            selectedLoadcaseId: requestedLoadcaseId,
+            surface: requestedSurface,
+            section: requestedSection,
+            rebars: requestedRebars,
+            materialStore: requestedMaterialStore,
+            designBasis: requestedDesignBasis,
+            exactCurve
+          })
+          setFieldMapWorking(false)
         })
-        setFieldMapWorking(false)
       })
       .catch((error) => {
         if (isAnalysisAbort(error)) return
@@ -553,8 +555,8 @@ export function ResultsWorkspace({
     [surface]
   )
 
-  const activeFixedP = isLoadcaseMode ? selectedLoadcase.P : fixedP
-  const activeAngle = isLoadcaseMode
+  const activeFixedP = isLoadcaseMode && selectedLoadcase ? selectedLoadcase.P : fixedP
+  const activeAngle = isLoadcaseMode && selectedLoadcase
     ? equilibriumBeta == null ? loadcaseAngleDeg(selectedLoadcase) : equilibriumBeta * 180 / Math.PI
     : exactCurve ? exactCurve.beta * 180 / Math.PI : view.sliceAngle
   useEffect(() => {
@@ -1779,17 +1781,11 @@ export function ResultsWorkspace({
   }
 
   if (isLoadcaseMode && selectedLoadcase) {
-    const demandWorking = busy || loadcaseUpdating
     return (
       <section
-        className={`pm-results-stage pm-results-stage--charts-only${demandWorking ? ' is-recalculating' : ''}`}
+        className={`pm-results-stage pm-results-stage--charts-only${busy ? ' is-recalculating' : ''}`}
         aria-busy={demandWorking}
       >
-        {busy
-          ? <StaleBanner />
-          : loadcaseUpdating
-            ? <LoadcaseUpdatingBanner name={selectedLoadcase.name} />
-            : null}
         <div
           className={`pm-results-grid pm-results-grid--dynamic primary-${demandView.primaryChart} count-${
             Object.values(demandView.visibleCharts).filter(Boolean).length
@@ -1798,7 +1794,7 @@ export function ResultsWorkspace({
           {renderChartShell({
             id: 'heatmap',
             title: 'Section field',
-            meta: inverseResult ? solverStatus(inverseResult).label : 'Updating…',
+            meta: inverseResult ? solverStatus(inverseResult).label : undefined,
             primary: demandView.primaryChart === 'heatmap',
             visible: demandView.visibleCharts.heatmap,
             onMakePrimary: () => onDemandViewChange({ primaryChart: 'heatmap' }),
@@ -2057,7 +2053,7 @@ export function ResultsWorkspace({
               />
             ) : (
               <div className="pm-results-plot-placeholder">
-                {fieldMapWorking ? `Updating ${selectedLoadcase.name}...` : 'Inverse solution is unavailable.'}
+                {fieldMapWorking ? null : 'Inverse solution is unavailable.'}
               </div>
             )
           })}
@@ -2160,8 +2156,6 @@ export function ResultsWorkspace({
       className={`pm-results-stage pm-results-stage--charts-only${busy ? ' is-recalculating' : ''}`}
       aria-busy={busy}
     >
-      {busy ? <StaleBanner /> : null}
-
       <div
         className={`pm-results-grid pm-results-grid--dynamic primary-${view.primaryChart} count-${
           Object.values(view.visibleCharts).filter(Boolean).length

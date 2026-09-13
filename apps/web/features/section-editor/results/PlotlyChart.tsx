@@ -99,6 +99,13 @@ export function PlotlyChart({ data, layout, config, onClick }: Props) {
         plotlyRef.current = Plotly
         const next = latestRenderRef.current
 
+        const isUpdate = host.childElementCount > 0
+        if (isUpdate) {
+          host.classList.add('is-updating')
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+          if (!mountedRef.current || revision !== renderRevisionRef.current) return
+        }
+
         await Plotly.react(
           host,
           next.data,
@@ -119,6 +126,11 @@ export function PlotlyChart({ data, layout, config, onClick }: Props) {
         )
         if (!mountedRef.current || revision !== renderRevisionRef.current) return
         if (host.clientWidth > 8 && host.clientHeight > 8) Plotly.Plots.resize(host)
+        requestAnimationFrame(() => {
+          if (mountedRef.current && revision === renderRevisionRef.current) {
+            host.classList.remove('is-updating')
+          }
+        })
 
         if (!attachedClickRef.current) {
           // The handler reads through a ref, so a new `onClick` identity never re-attaches it — and,
@@ -131,6 +143,7 @@ export function PlotlyChart({ data, layout, config, onClick }: Props) {
           attachedClickRef.current = true
         }
       } catch {
+        hostRef.current?.classList.remove('is-updating')
         if (!plotlyRef.current) plotlyModule = null
       }
     }

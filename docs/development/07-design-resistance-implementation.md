@@ -135,13 +135,14 @@ stability, load generation, accidental eccentricity, seismic detailing, or servi
 
 ## 4. UI behavior
 
-`Design Resistance` is the third tab in the top-level `Analysis Options` workspace. It is not
-duplicated in Results.
+`Resistance` is the third tab in the top-level `Options` workspace. It is not
+duplicated in Capacity.
 
 - Selecting a profile restores its declared defaults.
 - Editing any factor marks the profile `modified` and `draft`.
-- A modified coefficient or reinforcement classification is not published to canonical state until
-  an override reason makes it valid; disabling only the optional axial cap does not require one.
+- A modified code coefficient is not published to canonical state until an override reason makes it
+  valid. Reinforcement classification and disabling only the optional axial cap are explicit
+  analysis choices and do not require that reason.
 - The selected profile is persisted and invalidates/rebuilds the result surface.
 - Fixed-P and Vertical Slice charts show `Design` and `Nominal` layers. Both are independently
   switchable; Design is on by default.
@@ -216,13 +217,13 @@ also runs through `npm run bench:equivalent-block` and `npm run bench:pipelines`
 
 ## 8. UI ownership and display contract
 
-- `Analysis Options` owns the persisted design-code profile, factors, transverse-reinforcement
+- `Options` owns the persisted design-code profile, factors, transverse-reinforcement
   classification, and the optional maximum axial-compression limit.
-- The sidebar separates `Points`, `Mesh`, and `Design Resistance` into tabs. All three groups update
-  their canonical project inputs directly; Design Resistance has no separate Apply button.
-- Disabling only the maximum axial limit is an analysis option and does not require an override
-  reason. Editing a code coefficient or reinforcement classification still requires one.
-- `Results` consumes the applied basis. Its 3D P-Mx-My chart shows either Nominal or Design,
+- The sidebar separates `Points`, `Mesh`/`Block`, and `Resistance` into tabs. All three groups update
+  their canonical project inputs directly; Resistance has no separate Apply button.
+- Reinforcement classification and disabling only the maximum axial limit are analysis options and
+  do not require an override reason. Editing a code coefficient still requires one.
+- `Capacity` consumes the applied basis. Its 3D P-Mx-My chart shows either Nominal or Design,
   selected by radio button, never both at once.
 - Fixed-P Mx-My and Vertical Slice may show both curves. Nominal is faint/dashed only while Design
   is also visible. If either curve is shown alone, it uses the blue primary line and red station

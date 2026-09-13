@@ -233,11 +233,11 @@ Fixed-grid utilization uses a documented screening uncertainty. A demand is:
 
 The web application is organized around these workspaces:
 
-1. **Geometry** — concrete regions, openings and reinforcement;
+1. **Section** — concrete regions, openings and reinforcement;
 2. **Materials** — code/method selection and material definitions;
-3. **Section Results** — nominal/design resistance surface and section slices;
+3. **Capacity** — nominal/design resistance surface and section slices;
 4. **Demand Check** — factored load combinations, utilization, inverse state and report export;
-5. **Analysis Options** — fixed/adaptive sampling and numerical controls.
+5. **Options** — points, mesh/block, and resistance controls.
 
 Production calculations run in a browser Web Worker. A calculated surface is cached in the worker
 and subsequent loadcase checks reference it by handle rather than repeatedly cloning the complete

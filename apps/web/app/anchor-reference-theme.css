@@ -564,6 +564,11 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   background: transparent;
 }
 
+.pm-side-panel .pm-analysis-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+
 .pm-side-panel .pm-page-tabs::before,
 .pm-side-panel .pm-analysis-tabs::before,
 .pm-side-panel .pm-geometry-tabs::before {
@@ -575,6 +580,12 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   border-radius: 999px;
   background: var(--accent);
   box-shadow: none;
+}
+
+/* Three independently highlighted cells avoid a sliding indicator jumping when the sidebar
+   width, scrollbar, or the model-specific Mesh/Block label changes. */
+.pm-side-panel .pm-analysis-tabs::before {
+  display: none;
 }
 
 .pm-side-panel .pm-page-tabs:has(button:nth-child(2).is-active)::before,
@@ -600,6 +611,14 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   line-height: 1;
 }
 
+.pm-side-panel .pm-analysis-tabs button {
+  min-width: 0;
+  overflow: hidden;
+  border-bottom: 3px solid transparent;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pm-side-panel .pm-page-tabs button:hover,
 .pm-side-panel .pm-analysis-tabs button:hover,
 .pm-side-panel .pm-geometry-tabs button:hover {
@@ -613,6 +632,10 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   background: transparent;
   color: var(--accent);
   font-weight: 700;
+}
+
+.pm-side-panel .pm-analysis-tabs button.is-active {
+  border-bottom-color: var(--accent);
 }
 
 .pm-side-panel .pm-section-title h2,

@@ -19,22 +19,22 @@ linked from the control map.
 ## 2. Product Workflow
 
 ```text
-Geometry -> Materials -> Section Results -> Demand Check -> Analysis Options
+Section -> Materials -> Capacity -> Demand Check -> Options
 ```
 
 Current UI note:
 
-- `Section Results` owns the resistance surface: its sidebar carries the section-capacity summary,
+- `Capacity` owns the resistance surface: its sidebar carries the section-capacity summary,
   the sampling evidence, and every chart parameter, so the plot headers hold no controls.
 - `Demand Check` owns loadcase entry and the governing check for the current simple `Pu/Mux/Muy`
-  workflow. Selecting a combination anywhere — including a click on a demand marker in the Section
-  Results 3D plot — moves to this menu.
+  workflow. Selecting a combination anywhere — including a click on a demand marker in the Capacity
+  3D plot — moves to this menu.
 - A separate `Loadings` workspace is intentionally avoided until source-load management becomes
   large enough to justify it.
-- `Analysis Options` is the last menu and separates its controls into `Points`, `Mesh`, and
-  `Design Resistance` tabs. Points also owns direction sampling; Design Resistance applies valid
+- `Options` is the last menu and separates its controls into `Points`, `Mesh`/`Block`, and
+  `Resistance` tabs. Points also owns direction sampling; Resistance applies valid
   edits immediately without a separate action button. These settings are not edited in either
-  results menu — the results sidebars carry presentation state only, never a value that changes a
+  result workspace — the result sidebars carry presentation state only, never a value that changes a
   resultant.
 - There is no top-level `Report` menu. Export commands are actions in the relevant preview
   workspace: `Demand Check` exports the PDF design report and the demand-check calculation

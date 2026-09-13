@@ -313,6 +313,10 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   background: var(--sp-surface-sunken);
 }
 
+.pm-side-panel .pm-analysis-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .pm-side-panel .pm-page-tabs::before,
 .pm-side-panel .pm-analysis-tabs::before,
 .pm-side-panel .pm-geometry-tabs::before {
@@ -328,10 +332,18 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   transition: transform var(--sp-ease);
 }
 
+.pm-side-panel .pm-analysis-tabs::before {
+  width: calc((100% - 6px) / 3);
+}
+
 .pm-side-panel .pm-page-tabs:has(button:nth-child(2).is-active)::before,
 .pm-side-panel .pm-geometry-tabs:has(button:nth-child(2).is-active)::before,
 .pm-side-panel .pm-analysis-tabs:has(button:nth-child(2).is-active)::before {
   transform: translateX(100%);
+}
+
+.pm-side-panel .pm-analysis-tabs:has(button:nth-child(3).is-active)::before {
+  transform: translateX(200%);
 }
 
 .pm-side-panel .pm-page-tabs button,
@@ -354,6 +366,13 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   letter-spacing: 0;
   line-height: 1;
   transition: color var(--sp-ease);
+}
+
+.pm-side-panel .pm-analysis-tabs button {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pm-side-panel .pm-page-tabs button:hover,

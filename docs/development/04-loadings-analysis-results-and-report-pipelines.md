@@ -53,7 +53,7 @@ retains input order while using stable IDs.
 The current web UI keeps simple `Pu/Mux/Muy` entry and governing checks together in `Demand Check`
 rather than exposing a separate source-load-management module. The user can edit a combination,
 open its concise trace through the dedicated row action, and switch between combinations without
-closing the dialog. `Section Results` remains the resistance-surface and chart workspace.
+closing the dialog. `Capacity` remains the resistance-surface and chart workspace.
 
 The v1 DTO needs no `My` mechanics discriminator. The UI and worker pass the canonical component
 unchanged, and both `@pm/analysis` and `@pm/equivalent-block` use `+F*(x-x0)`. Asymmetric ledger
@@ -290,12 +290,13 @@ does not yet persist immutable accepted/stale result history or enable released-
 | failed/cancelled | diagnostics and optional branded preview; no acceptance/report action |
 | accepted/current | target only: tables, plots, evidence, and report action enabled |
 
-Analysis settings are edited in the separate top-level **Analysis Options** workspace, not in a
-Results dialog. Its three tabs are `Points`, `Mesh`, and `Design Resistance`. Valid option changes
+Analysis settings are edited in the separate top-level **Options** workspace, not in a
+Capacity dialog. Its three tabs are `Points`, `Mesh`/`Block`, and `Resistance`. Valid option changes
 update the canonical project state, invalidate the surface and derived inverse/field/quick-check
-data, then trigger worker recomputation. Design Resistance auto-publishes valid edits; factor or
-reinforcement-class changes that depart from defaults are withheld until an override reason makes
-the draft valid. Disabling only the axial cap does not require that reason.
+data, then trigger worker recomputation. Resistance auto-publishes valid edits; code-factor changes
+that depart from defaults are withheld until an override reason makes the draft valid.
+Reinforcement classification and disabling only the axial cap are explicit analysis choices and do
+not require that reason.
 
 Results overview has exactly three charts: Vertical slice, 3D P-Mx-My, and Fixed-P Mx-My. Loadcase
 detail has Section field, Fixed-P Mx-My, and Vertical slice. Each mode allows one large primary chart
@@ -457,7 +458,7 @@ cancellation.
 
 ## 9. Delivery status and remaining order
 
-1. **Implemented preview:** dedicated `Section Results` and `Demand Check` workspaces, project round
+1. **Implemented preview:** dedicated `Capacity` and `Demand Check` workspaces, project round
    trip, analysis-option validation, two independent mechanics, five selectable code calculation
    routes, adaptive preview surfaces/checks, model-specific fields, calculation-trace workbooks for
    both mechanics, stress-strain mesh Excel/DXF, demand-check workbook, shared `ReportModel`, and a
@@ -467,7 +468,7 @@ cancellation.
    a complete stale-state graph.
 3. **Production gates:** finish geometry/material validation gateways, accepted-result numerical
    uncertainty and topology gates, independent code-profile review, and cooperative cancellation.
-4. **Reporting:** make `Section Results`, `Demand Check`, and the existing report builders consume an
+4. **Reporting:** make `Capacity`, `Demand Check`, and the existing report builders consume an
    immutable accepted DTO; enforce accepted/current eligibility; attach result identity, signature,
    approval, and rollback metadata; then qualify the existing Excel/PDF renderers for released
    reports without weakening their Preview path.

@@ -5,6 +5,7 @@ import {
   currentLoadcaseEvidence,
   currentLoadcaseEvidenceMap,
   currentLoadcaseFrame,
+  loadcaseFrameForTransition,
   sameLoadcaseDemand
 } from '../../features/section-editor/results/loadcase-calculation-trace'
 
@@ -60,4 +61,41 @@ test('loadcase result frames stay hidden until the complete current revision is 
   assert.equal(currentLoadcaseFrame(selected, replacementResult, surface, frame), null, 'a replacement result must build its own frame')
   assert.equal(currentLoadcaseFrame(selected, result, otherSurface, frame), null, 'a rebuilt surface rejects the previous frame')
   assert.equal(currentLoadcaseFrame({ ...selected, id: 8 }, result, surface, frame), null, 'another selected row rejects the frame')
+})
+
+test('loadcase chart transitions retain one coherent previous frame until the next frame is complete', () => {
+  const first = createLoadCombination({ id: 7, name: 'ULS-7', P: 1_200_000, Mx: 80_000_000, My: -35_000_000 })
+  const second = createLoadCombination({ id: 8, name: 'ULS-8', P: 900_000, Mx: -20_000_000, My: 45_000_000 })
+  const surface = { revision: 'surface-current' }
+  const firstResult = { demand: first, marker: 'result-first' }
+  const firstFrame = { result: firstResult, selectedLoadcaseId: first.id, surface, marker: 'frame-first' }
+
+  assert.deepEqual(
+    loadcaseFrameForTransition([first, second], second, null, surface, firstFrame),
+    { frame: firstFrame, status: 'previous' }
+  )
+
+  const secondResult = { demand: second, marker: 'result-second' }
+  const secondFrame = { result: secondResult, selectedLoadcaseId: second.id, surface, marker: 'frame-second' }
+  assert.deepEqual(
+    loadcaseFrameForTransition([first, second], second, secondResult, surface, secondFrame),
+    { frame: secondFrame, status: 'current' }
+  )
+})
+
+test('loadcase chart transitions reject an edited outgoing demand or a different surface', () => {
+  const first = createLoadCombination({ id: 7, name: 'ULS-7', P: 1_200_000, Mx: 80_000_000, My: -35_000_000 })
+  const second = createLoadCombination({ id: 8, name: 'ULS-8', P: 900_000, Mx: -20_000_000, My: 45_000_000 })
+  const surface = { revision: 'surface-current' }
+  const result = { demand: first, marker: 'result-first' }
+  const frame = { result, selectedLoadcaseId: first.id, surface, marker: 'frame-first' }
+
+  assert.deepEqual(
+    loadcaseFrameForTransition([{ ...first, Mx: first.Mx + 1 }, second], second, null, surface, frame),
+    { frame: null, status: 'pending' }
+  )
+  assert.deepEqual(
+    loadcaseFrameForTransition([first, second], second, null, { revision: 'surface-new' }, frame),
+    { frame: null, status: 'pending' }
+  )
 })

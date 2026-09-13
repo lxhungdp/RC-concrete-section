@@ -11,10 +11,12 @@ import {
   createKdsBasicDesignBasis,
   designProfileGuidance,
   resolveMaterialFactorExpression,
+  setMaterialFactorComponentValue,
   designBasisIssues,
   designBasisRequiresOverrideReason,
   type DesignBasis,
-  type DesignProfileId
+  type DesignProfileId,
+  type MaterialFactorComponent
 } from '@pm/design'
 
 type Props = {
@@ -124,6 +126,14 @@ export function DesignBasisPanel({ value, onChange }: Props) {
     publishIfValid(next)
   }
 
+  const updateMaterialFactor = (id: MaterialFactorComponent['id'], factor: number) => {
+    if (draft.format !== 'designMaterialReevaluation') return
+    const next = setMaterialFactorComponentValue(draft, id, factor)
+    next.modified = true
+    next.verificationStatus = isUserDefinedProfile ? 'user-defined' : 'draft'
+    publishIfValid(next)
+  }
+
   const useDefaults = () => publishIfValid(profileDefaults(draft.profileId))
 
   return (
@@ -136,10 +146,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
         <button
           type="button"
           className="pm-table-icon-btn"
-          title={draft.format === 'designMaterialReevaluation'
-            ? 'Edit and restore material partial factors from Materials'
-            : 'Restore the selected profile defaults'}
-          disabled={draft.format === 'designMaterialReevaluation'}
+          title="Restore the selected profile defaults"
           onClick={useDefaults}
         >
           <RotateCcw size={14} />
@@ -433,9 +440,8 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                 min={0.1}
                 max={3}
                 step={component.id.startsWith('gamma') ? 0.05 : 0.01}
-                readOnly
                 help={`${component.label}. ${component.clauseRef}`}
-                onChange={() => undefined}
+                onChange={(factor) => updateMaterialFactor(component.id, factor)}
               />
             ))}
           </div>
@@ -454,12 +460,45 @@ export function DesignBasisPanel({ value, onChange }: Props) {
             </div>
           </dl>
           {draft.minimumEccentricity && (
-            <p className="pm-design-help">
-              Minimum eccentricity verification: e_min = {draft.minimumEccentricity.constantMm} + {draft.minimumEccentricity.depthFactor}h mm.
-              This is a demand-side rule, not a horizontal capacity cap.
-            </p>
+            <>
+              <div className="pm-design-group-title">
+                <strong>Minimum eccentricity</strong>
+                <span>Demand-side rule; it does not create a horizontal capacity cap</span>
+              </div>
+              <div className="pm-design-factor-grid">
+                <NumericFactor
+                  label="e min · constant (mm)"
+                  value={draft.minimumEccentricity.constantMm}
+                  min={0}
+                  max={100}
+                  step={1}
+                  help={draft.minimumEccentricity.clauseRef}
+                  onChange={(factor) => update((next) => {
+                    if (next.format === 'designMaterialReevaluation' && next.minimumEccentricity) {
+                      next.minimumEccentricity.constantMm = factor
+                    }
+                  })}
+                />
+                <NumericFactor
+                  label="e min · depth factor"
+                  value={draft.minimumEccentricity.depthFactor}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  help={draft.minimumEccentricity.clauseRef}
+                  onChange={(factor) => update((next) => {
+                    if (next.format === 'designMaterialReevaluation' && next.minimumEccentricity) {
+                      next.minimumEccentricity.depthFactor = factor
+                    }
+                  })}
+                />
+              </div>
+            </>
           )}
-          <p className="pm-design-help">Material-factor values are edited in Materials; the resistance profile remains their canonical source.</p>
+          <p className="pm-design-help">
+            Every editable value here belongs to the canonical resistance profile. Code-profile
+            deviations remain draft and require a recorded project basis before they are applied.
+          </p>
         </div>
       )}
 

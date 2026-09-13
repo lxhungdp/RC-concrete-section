@@ -53,3 +53,39 @@ export const currentLoadcaseFrame = <
   ) return null
   return frame
 }
+
+export type LoadcaseFrameTransition<TFrame> = {
+  frame: TFrame | null
+  status: 'current' | 'previous' | 'pending'
+}
+
+/**
+ * Keep one complete outgoing visual frame while another loadcase frame is assembled.
+ *
+ * The previous frame is returned only when its own demand revision is still present and it belongs
+ * to the same resistance surface. Callers must label the `previous` state; it is never re-associated
+ * with the newly selected loadcase or mixed with that loadcase's partial solver evidence.
+ */
+export const loadcaseFrameForTransition = <
+  TResult extends { demand: LoadCombination },
+  TSurface,
+  TFrame extends { result: TResult; selectedLoadcaseId: number; surface: TSurface }
+>(
+  loadcases: readonly LoadCombination[],
+  requestedLoadcase: LoadCombination | null,
+  requestedResult: TResult | null | undefined,
+  requestedSurface: TSurface | null | undefined,
+  completedFrame: TFrame | null | undefined
+): LoadcaseFrameTransition<TFrame> => {
+  const current = currentLoadcaseFrame(requestedLoadcase, requestedResult, requestedSurface, completedFrame)
+  if (current) return { frame: current, status: 'current' }
+  if (!requestedLoadcase || !requestedSurface || !completedFrame || completedFrame.surface !== requestedSurface) {
+    return { frame: null, status: 'pending' }
+  }
+
+  const previousLoadcase = loadcases.find((loadcase) => loadcase.id === completedFrame.selectedLoadcaseId) ?? null
+  if (!currentLoadcaseEvidence(previousLoadcase, completedFrame.result)) {
+    return { frame: null, status: 'pending' }
+  }
+  return { frame: completedFrame, status: 'previous' }
+}

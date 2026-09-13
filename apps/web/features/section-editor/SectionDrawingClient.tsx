@@ -150,6 +150,7 @@ const LoadcaseCalculationDialog = dynamic(
   { ssr: false }
 )
 import { AnalysisOptionsPanel } from './analysis/AnalysisOptionsPanel'
+import { DesignBasisPanel } from './design/DesignBasisPanel'
 import { MaterialPanel } from './materials/MaterialPanel'
 import { RebarPanel } from './geometry/RebarPanel'
 import { DemandCheckPanel } from './results/DemandCheckPanel'
@@ -244,7 +245,7 @@ type Theme = 'light' | 'dark'
 type ProjectShareNotice = { kind: 'success' | 'error'; message: string }
 const THEME_STORAGE_KEY = 'pm-column-designer:theme:v1'
 /**
- * Section Results and Demand Check are separate menus because they answer different questions and
+ * Capacity and Demand Check are separate menus because they answer different questions and
  * need different sidebars: one owns the capacity surface and its presentation, the other owns the
  * load combinations checked against it.
  */
@@ -254,7 +255,7 @@ type WorkspaceModule = 'geometry' | 'materials' | 'analysis' | 'section' | 'dema
 const isResultsModule = (module: WorkspaceModule) => module === 'section' || module === 'demand'
 const APP_VERSION = webPackage.version
 type GeometrySubTab = 'concrete' | 'rebar'
-type AnalysisSubTab = 'points' | 'mesh'
+type AnalysisSubTab = 'points' | 'mesh' | 'resistance'
 type BuilderShape = 'rectangle' | 'circle' | 'capsule'
 type BooleanAction = 'union' | 'subtract'
 type BoundarySource =
@@ -699,6 +700,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
   const [surfaceStatus, setSurfaceStatus] = useState<'idle' | 'working' | 'error'>('idle')
   const [surfaceMessage, setSurfaceMessage] = useState('')
   const [inverseResults, setInverseResults] = useState<Record<number, InversePreviewResult>>({})
+  const [loadcaseUpdating, setLoadcaseUpdating] = useState(false)
   const [lastResolvedChartSnapshot, setLastResolvedChartSnapshot] = useState<{
     loadcase: LoadCombination
     result: InversePreviewResult
@@ -1012,7 +1014,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     return resultSurface.stationError.maxStations ?? resultSurface.stationError.stations
   }, [resultSurface])
 
-  /** Everything the Section Results sidebar reports, assembled once per surface. */
+  /** Everything the Capacity sidebar reports, assembled once per surface. */
   const sectionResultsSummary = useMemo<SectionResultsSummary>(() => {
     return {
       hasAppliedSection,
@@ -1388,7 +1390,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
 
   /**
    * Selecting a combination is a demand-check action wherever it comes from — including a click on
-   * a demand marker in the Section Results 3D plot — so it also moves the user to that menu.
+   * a demand marker in the Capacity 3D plot — so it also moves the user to that menu.
    */
   const runInverseForLoadcase = (id: number) => {
     setActiveModule('demand')
@@ -2424,41 +2426,52 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
         </div>
 
         <nav className="pm-module-tabs" aria-label="Design modules">
-          <button className={activeModule === 'geometry' ? 'is-active' : ''} onClick={() => switchModule('geometry')}>
+          <button
+            className={activeModule === 'geometry' ? 'is-active' : ''}
+            aria-label="Section"
+            onClick={() => switchModule('geometry')}
+          >
             <RcSectionIcon size={16} />
-            <span>Geometry</span>
+            <span>Section</span>
           </button>
           {!geometryOnly && <>
-          <button className={activeModule === 'materials' ? 'is-active' : ''} onClick={() => switchModule('materials')}>
+          <button
+            className={activeModule === 'materials' ? 'is-active' : ''}
+            aria-label="Materials"
+            onClick={() => switchModule('materials')}
+          >
             <MaterialsIcon size={16} />
             <span>Materials</span>
           </button>
           <button
             className={activeModule === 'section' ? 'is-active' : ''}
+            aria-label="Capacity"
             onMouseEnter={() => preloadModule('section')}
             onFocus={() => preloadModule('section')}
             onClick={() => switchModule('section')}
           >
             <BarChart3 size={16} />
-            <span>Results</span>
+            <span>Capacity</span>
           </button>
           <button
             className={activeModule === 'demand' ? 'is-active' : ''}
+            aria-label="Demand Check"
             onMouseEnter={() => preloadModule('demand')}
             onFocus={() => preloadModule('demand')}
             onClick={() => switchModule('demand')}
           >
             <Gauge size={16} />
-            <span>Check</span>
+            <span>Demand Check</span>
           </button>
           <button
             className={activeModule === 'analysis' ? 'is-active' : ''}
+            aria-label="Options"
             onMouseEnter={() => preloadModule('analysis')}
             onFocus={() => preloadModule('analysis')}
             onClick={() => switchModule('analysis')}
           >
             <SlidersHorizontal size={16} />
-            <span>Analysis</span>
+            <span>Options</span>
           </button>
           </>}
         </nav>
@@ -3292,8 +3305,9 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
           <>
             <div className="pm-analysis-tabs" role="tablist" aria-label="Analysis option groups">
               {([
-                ['points', 'Point'],
-                ['mesh', analysisOptions.methodId === 'equivalent-block-surface-v1' ? 'Block' : 'Mesh']
+                ['points', 'Points'],
+                ['mesh', analysisOptions.methodId === 'equivalent-block-surface-v1' ? 'Block' : 'Mesh'],
+                ['resistance', 'Resistance']
               ] as const).map(([id, label]) => (
                 <button
                   key={id}
@@ -3307,11 +3321,15 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                 </button>
               ))}
             </div>
-            <AnalysisOptionsPanel
-              options={analysisOptions}
-              onChange={setAnalysisOptions}
-              view={analysisSubTab}
-            />
+            {analysisSubTab === 'resistance' ? (
+              <DesignBasisPanel value={designBasis} onChange={setDesignBasis} />
+            ) : (
+              <AnalysisOptionsPanel
+                options={analysisOptions}
+                onChange={setAnalysisOptions}
+                view={analysisSubTab}
+              />
+            )}
           </>
         )}
 
@@ -3354,6 +3372,10 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
               input={loadingsInput}
               selectedLoadcaseId={selectedLoadcaseId}
               checksById={currentQuickChecksById}
+              updateStatus={{
+                active: loadcaseUpdating,
+                message: selectedLoadcase ? `Updating ${selectedLoadcase.name}…` : ''
+              }}
               onSelectLoadcase={(id) => {
                 if (id == null) {
                   setSelectedLoadcaseId(null)
@@ -3423,6 +3445,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
             onViewChange={updateSectionResultsView}
             onDemandViewChange={updateDemandCheckView}
             onSelectLoadcase={runInverseForLoadcase}
+            onLoadcaseUpdatingChange={setLoadcaseUpdating}
           />
         ) : activeModule === 'analysis' ? (
           analysisOptions.methodId === 'strain-domain-surface-v1' ? (

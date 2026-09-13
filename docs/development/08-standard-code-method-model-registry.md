@@ -64,12 +64,14 @@ that migration must preserve KDS/ACI result fingerprints.
 `DesignBasis.factors` is the canonical source for `alphaCc`, `gammaC`, and `gammaS`. The no-National-
 Annex preview starts from the EN 1992-1-1:2004 recommended values `1.0`, `1.5`, and `1.15`;
 `alphaCc` is an NDP and must change only through an explicitly selected National Annex or a recorded
-project override. Materials shows
-and edits those fields next to `fck/fcd` and `fyk/fyd`. Material factor fields are a derived runtime
-snapshot used by compilers and exports, not an independent user-owned source.
+project override. Materials shows and edits those fields next to `fck/fcd` and `fyk/fyd`. The
+`Options > Resistance` tab edits the same canonical `DesignBasis`; neither location owns a separate
+copy. Material factor fields are a derived runtime snapshot used by compilers and exports, not an
+independent user-owned source.
 
-The Design Resistance tab shows EN factors read-only. This prevents two editors from drifting. The
-runtime sequence is:
+The Resistance tab exposes EN factors together with the rest of the resistance basis. Valid changes
+publish through the same validation and override-reason gate used by Materials. The runtime sequence
+is:
 
 ```text
 characteristic MaterialStore
