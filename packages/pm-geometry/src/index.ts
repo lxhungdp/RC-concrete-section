@@ -405,6 +405,24 @@ const primitiveToClippingPolygon = (
   options: Pick<Required<SectionComposeOptions>, 'coordinatePrecision' | 'collinearTolerance'>
 ): Polygon => primitive.rings.map((ring) => toClippingRing(ring, options)).filter((ring) => ring.length >= 4)
 
+const sectionGeometryToClippingMultiPolygon = (
+  geometry: SectionGeometry,
+  options: Pick<Required<SectionComposeOptions>, 'coordinatePrecision' | 'collinearTolerance'>
+): MultiPolygon => {
+  const polygons: Polygon[] = []
+
+  for (const sectionSolid of geometry.solids) {
+    const outer = toClippingRing(sectionSolid.outer, options)
+    if (outer.length < 4) continue
+    const holes = sectionSolid.holes
+      .map((ring) => toClippingRing(ring, options))
+      .filter((ring) => ring.length >= 4)
+    polygons.push([outer, ...holes])
+  }
+
+  return polygons
+}
+
 const polygonAreaAbs = (polygon: Polygon) => {
   const [outer] = polygon
   if (!outer) return 0
@@ -467,16 +485,18 @@ const normalizeClippingResult = (
   }
 }
 
+const resolveSectionComposeOptions = (options: SectionComposeOptions): Required<SectionComposeOptions> => ({
+  id: options.id ?? 1,
+  name: options.name ?? 'Composed section',
+  coordinatePrecision: options.coordinatePrecision ?? 6,
+  collinearTolerance: options.collinearTolerance ?? 1e-9
+})
+
 export const composeSectionPrimitives = (
   primitives: SectionPrimitive[],
   options: SectionComposeOptions = {}
 ): SectionComposeResult => {
-  const resolvedOptions: Required<SectionComposeOptions> = {
-    id: options.id ?? 1,
-    name: options.name ?? 'Composed section',
-    coordinatePrecision: options.coordinatePrecision ?? 6,
-    collinearTolerance: options.collinearTolerance ?? 1e-9
-  }
+  const resolvedOptions = resolveSectionComposeOptions(options)
   const warnings: string[] = []
   let solid: MultiPolygon | null = null
 
@@ -514,6 +534,34 @@ export const composeSectionPrimitives = (
   }
 
   const result = normalizeClippingResult(solid ?? [], resolvedOptions)
+  return { ...result, warnings: [...warnings, ...result.warnings] }
+}
+
+/** Intersect complete section geometries while preserving each input's disconnected solids as one operand. */
+export const intersectSectionGeometries = (
+  geometries: SectionGeometry[],
+  options: SectionComposeOptions = {}
+): SectionComposeResult => {
+  const resolvedOptions = resolveSectionComposeOptions(options)
+  const warnings: string[] = []
+
+  if (geometries.length === 0) {
+    const result = normalizeClippingResult([], resolvedOptions)
+    return { ...result, warnings: ['Intersection requires at least one section geometry.', ...result.warnings] }
+  }
+
+  const operands = geometries.map((geometry) => {
+    const operand = sectionGeometryToClippingMultiPolygon(geometry, resolvedOptions)
+    if (operand.length === 0) warnings.push(`Section "${geometry.name}" has no valid polygon rings.`)
+    return operand
+  })
+
+  let solid = operands[0]
+  for (let index = 1; index < operands.length && solid.length > 0; index += 1) {
+    solid = polygonClipping.intersection(solid, operands[index])
+  }
+
+  const result = normalizeClippingResult(solid, resolvedOptions)
   return { ...result, warnings: [...warnings, ...result.warnings] }
 }
 

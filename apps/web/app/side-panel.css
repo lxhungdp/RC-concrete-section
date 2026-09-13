@@ -462,8 +462,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-design-group-title strong,
 .pm-side-panel .pm-chart-visibility-title,
 .pm-side-panel .pm-point-table-caption,
-.pm-side-panel .pm-table-toolbar-label,
-.pm-side-panel .pm-boundary-create > span {
+.pm-side-panel .pm-table-toolbar-label {
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
   font-weight: 600;
@@ -932,17 +931,6 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   overflow: hidden;
 }
 
-.pm-side-panel .pm-boundary-create-section {
-  flex: 0 0 auto;
-}
-
-.pm-side-panel .pm-boundary-create {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
 .pm-side-panel .pm-boundary-create-actions button:not(.pm-file-btn) {
   display: inline-flex;
   align-items: center;
@@ -956,16 +944,6 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   color: var(--sp-text-2);
   cursor: pointer;
   transition: background var(--sp-ease), border-color var(--sp-ease), color var(--sp-ease);
-}
-
-/* globals still pins every create-action button to 26×26 — reset width so the
-   Excel chip can grow with its icon + label instead of overflowing the border. */
-.pm-side-panel .pm-boundary-create-actions .pm-file-btn {
-  width: auto;
-  min-width: 0;
-  flex: 0 0 auto;
-  height: var(--sp-h-2);
-  padding: 0 10px;
 }
 
 .pm-side-panel .pm-boundary-create-actions button:not(.pm-file-btn):hover:not(:disabled) {
@@ -2264,11 +2242,6 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-boundary-row.is-applied .pm-selection-badge {
   border-color: var(--geometry-final);
   background: var(--geometry-final);
-}
-
-.pm-side-panel .pm-boundary-create-section.pm-panel-section {
-  padding-top: 16px;
-  padding-bottom: 0;
 }
 
 .pm-side-panel .pm-boundary-list-section > .pm-section-title {

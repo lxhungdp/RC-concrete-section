@@ -23,6 +23,9 @@ geometry
 The UI keeps additional draft `BoundaryObject` data. Pressing Apply converts one active boundary to
 `GeometryInput`. Project export writes only applied geometry and warns when unapplied draft
 boundaries exist. This draft/applied separation is correct and shall be preserved.
+The boundary list reports its current multi-selection count. In its Concrete geometry context, the
+Delete key removes every selected boundary through the same applied-section confirmation and cleanup
+path as the row action; editable fields and dialogs do not trigger the shortcut.
 
 ### Implemented geometry helpers
 
@@ -30,6 +33,7 @@ boundaries exist. This draft/applied separation is correct and shall be preserve
 |---|---|---|
 | shape parameters | rectangle/circle/chamfer/capsule/ring factories | point rings for editor |
 | ordered primitives | `composeSectionPrimitives` | polygon-clipping result as one/more solids and warnings |
+| two or more section geometries | `intersectSectionGeometries` | common polygon-clipping region, preserving disconnected solids within each operand |
 | `GeometryInput` | `sectionGeometryFromGeometryInput` | concrete-only `SectionGeometry` view |
 | `GeometryInput` | `geometryInputRebars` | flattened UI rebar view with `solidIndex` |
 | section geometry | area/centroid/perimeter summaries | editor display/basic warnings |

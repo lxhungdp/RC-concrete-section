@@ -121,9 +121,6 @@
   & .pm-boundary-apply-btn:hover:not(:disabled) { background: #454c52; color: #fff; }
   & :is(.pm-table-icon-btn, .pm-table-add-icon-btn) { min-height: 24px; width: 24px; padding: 3px; border-color: transparent; background: transparent; }
   & .pm-table-icon-btn--danger:hover:not(:disabled), & .pm-rebar-remove-all:hover:not(:disabled) { color: #a02e2e; border-color: #d6aaaa; background: #fcf5f5; }
-  & .pm-boundary-create-section { padding-top: 10px; padding-bottom: 10px; }
-  & .pm-boundary-create { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  & .pm-boundary-create > span { color: var(--muted); font-size: 11px; }
   & .pm-boundary-create-actions > button { min-height: 28px; }
   & .pm-boundary-detail-header { flex-wrap: wrap; }
   & .pm-boundary-detail-heading { display: flex; flex-direction: column; gap: 3px; min-width: 0; }

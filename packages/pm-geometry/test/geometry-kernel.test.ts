@@ -3,6 +3,8 @@ import test from 'node:test'
 import {
   buildConcreteMesh,
   createRectangleRing,
+  createSectionSolid,
+  intersectSectionGeometries,
   sectionCentroid,
   signedPolygonArea,
   summarizeSection,
@@ -36,6 +38,49 @@ test('multi-solid area and centroid with an off-centre hole match the closed for
   close(summary.centroid.y, 1.2)
   close(sectionCentroid(geometry).x, 4.76)
   close(sectionCentroid(geometry).y, 1.2)
+})
+
+test('ENG-GEO-002: intersection treats disconnected solids in one section as a single operand', () => {
+  const subject: SectionGeometry = {
+    id: 1,
+    name: 'subject',
+    solids: [createSectionSolid(createRectangleRing({ width: 10, height: 4 }))]
+  }
+  const disconnectedMask: SectionGeometry = {
+    id: 2,
+    name: 'disconnected mask',
+    solids: [
+      createSectionSolid(createRectangleRing({ center: { x: -3, y: 0 }, width: 2, height: 2 })),
+      createSectionSolid(createRectangleRing({ center: { x: 3, y: 0 }, width: 2, height: 2, usedIds: [1, 2, 3, 4] }))
+    ]
+  }
+
+  const result = intersectSectionGeometries([subject, disconnectedMask], { name: 'intersection' })
+  const summary = summarizeSection(result.geometry)
+
+  assert.equal(result.geometry.solids.length, 2)
+  close(summary.area, 8)
+  close(summary.centroid.x, 0)
+  close(summary.centroid.y, 0)
+  assert.deepEqual(result.warnings, [])
+})
+
+test('ENG-GEO-002: an empty section intersection fails closed with no solids', () => {
+  const left: SectionGeometry = {
+    id: 1,
+    name: 'left',
+    solids: [createSectionSolid(createRectangleRing({ center: { x: -10, y: 0 }, width: 4, height: 4 }))]
+  }
+  const right: SectionGeometry = {
+    id: 2,
+    name: 'right',
+    solids: [createSectionSolid(createRectangleRing({ center: { x: 10, y: 0 }, width: 4, height: 4 }))]
+  }
+
+  const result = intersectSectionGeometries([left, right], { name: 'empty intersection' })
+
+  assert.deepEqual(result.geometry.solids, [])
+  assert.ok(result.warnings.includes('Boolean composition produced an empty section.'))
 })
 
 test('shared topology gate rejects self-intersections and boundary-crossing bar disks', () => {

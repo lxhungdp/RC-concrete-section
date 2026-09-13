@@ -26,6 +26,7 @@ import {
   RotateCw,
   SlidersHorizontal,
   Share2,
+  SquaresIntersect,
   Sun,
   Unlock,
   Upload,
@@ -43,6 +44,7 @@ import {
   createSectionSolid,
   geometryInputFromOuterRings,
   geometryInputRebars,
+  intersectSectionGeometries,
   makePointId,
   nextAvailableId,
   sectionGeometryFromGeometryInput,
@@ -153,6 +155,7 @@ import { AnalysisOptionsPanel } from './analysis/AnalysisOptionsPanel'
 import { DesignBasisPanel } from './design/DesignBasisPanel'
 import { MaterialPanel } from './materials/MaterialPanel'
 import { RebarPanel } from './geometry/RebarPanel'
+import { boundarySelectionStatus, shouldHandleBoundaryDelete } from './geometry/boundary-selection'
 import { DemandCheckPanel } from './results/DemandCheckPanel'
 import { preloadPlotly } from './results/PlotlyChart'
 import { WorkspaceLoading } from './shared/WorkspaceLoading'
@@ -177,9 +180,7 @@ import {
 import {
   downloadRebarWorkbook,
   downloadSectionWorkbook,
-  importRebarWorkbook,
-  importSectionWorkbook,
-  type ImportedSectionWorkbook
+  importRebarWorkbook
 } from './geometry/section-xlsx'
 import {
   createSectionCamera2d,
@@ -257,7 +258,7 @@ const APP_VERSION = webPackage.version
 type GeometrySubTab = 'concrete' | 'rebar'
 type AnalysisSubTab = 'points' | 'mesh' | 'resistance'
 type BuilderShape = 'rectangle' | 'circle' | 'capsule'
-type BooleanAction = 'union' | 'subtract'
+type BooleanAction = 'union' | 'subtract' | 'intersect'
 type BoundarySource =
   | { kind: 'rectangle'; center: Point2; width: number; height: number }
   | { kind: 'circle'; center: Point2; radius: number; segments: number }
@@ -398,26 +399,6 @@ const geometryInputToBoundary = (input: GeometryInput): BoundaryObject => ({
 })
 
 const makeBoundaryId = (used: Iterable<number>) => nextAvailableId(used)
-
-const remapBoundaryPoints = (
-  outers: Point2[][][],
-  dx = 0,
-  dy = 0,
-  usedPointIds: Iterable<number> = []
-): Point2[][][] => {
-  const count = outers.reduce((sum, outer) => sum + outer.reduce((ringSum, ring) => ringSum + ring.length, 0), 0)
-  const ids = allocateIds(count, usedPointIds)
-  let index = 0
-  return outers.map((outer) =>
-    outer.map((ring) =>
-      ring.map((point) => ({
-        id: ids[index++]!,
-        x: point.x + dx,
-        y: point.y + dy
-      }))
-    )
-  )
-}
 
 const pointInRing = (point: Pick<Point2, 'x' | 'y'>, ring: Point2[]) => {
   let inside = false
@@ -583,6 +564,9 @@ const measureSvgContentSize = (svg: SVGSVGElement) =>
     height: svg.clientHeight
   })
 
+const isEditableKeyboardTarget = (target: EventTarget | null) =>
+  target instanceof Element && Boolean(target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]'))
+
 const DEFAULT_FIT_INSETS = {
   top: 74,
   right: 36,
@@ -626,7 +610,6 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const projectMenuRef = useRef<HTMLDivElement | null>(null)
   const aboutMenuRef = useRef<HTMLDivElement | null>(null)
-  const boundaryExcelInputRef = useRef<HTMLInputElement | null>(null)
   const rotationSessionRef = useRef<BoundaryObject | null>(null)
   const pendingFitAfterImportRef = useRef(false)
   const pendingFitOnGeometryModuleRef = useRef(false)
@@ -1502,56 +1485,6 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     }
   }
 
-  const addImportedBoundary = (imported: ImportedSectionWorkbook) => {
-    const id = makeBoundaryId(boundaries.map((item) => item.id))
-    const usedPointIds = boundaries.flatMap(collectBoundaryPointIds)
-    const boundary: BoundaryObject = {
-      id,
-      name: imported.name,
-      outers: remapBoundaryPoints(imported.outers, 0, 0, usedPointIds),
-      sourceKind: 'manual',
-      source: { kind: 'manual' },
-      rebars: imported.rebars.map((bar) => ({ ...bar })),
-      visible: true,
-      locked: false
-    }
-    addBoundary(boundary)
-    pendingFitAfterImportRef.current = true
-  }
-
-  const handleBoundaryExcelFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-    try {
-      const fallbackName = file.name.replace(/\.xlsx$/i, '').replace(/-section$/i, '') || 'Imported section'
-      const imported = await importSectionWorkbook(
-        await file.arrayBuffer(),
-        materialStore.steel,
-        materialStore.defaults.steelMaterialId,
-        fallbackName
-      )
-      const pointCount = imported.outers.reduce(
-        (sum, outer) => sum + outer.reduce((ringSum, ring) => ringSum + ring.length, 0),
-        0
-      )
-      const outside = imported.rebars.filter((bar) => !barCenterInsideOuters(imported.outers, bar))
-      const warnings = [...imported.warnings]
-      if (outside.length > 0) {
-        warnings.push(
-          `${outside.length} bar(s) outside concrete or inside a hole (ids: ${outside.map((bar) => bar.id).join(', ')}). You can edit them after import.`
-        )
-      }
-      const warningText = warnings.length ? `\n\nWarnings:\n${warnings.join('\n')}` : ''
-      const confirmed = window.confirm(
-        `Import "${imported.name}" as a new draft boundary?\n\n${imported.outers.length} outer(s), ${pointCount} point(s), ${imported.rebars.length} rebar(s).${warningText}`
-      )
-      if (confirmed) addImportedBoundary(imported)
-    } catch (error) {
-      window.alert(`Excel import failed:\n${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-
   const commitDrawnBoundary = (name: string, sourceKind: BoundaryObject['sourceKind'], ring: Point2[], source?: BoundarySource) => {
     if (ring.length < 3) return
     const boundary: BoundaryObject = {
@@ -1765,35 +1698,84 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     setRotationDraft('0')
   }
 
-  const deleteBoundary = (id: number) => {
-    setBoundaries((current) => current.filter((boundary) => boundary.id !== id))
-    setSelectedBoundaryIds((current) => current.filter((selectedId) => selectedId !== id))
-    if (finalSection.id === id) {
+  const deleteBoundaries = (ids: readonly number[]) => {
+    const deletedIds = new Set(ids)
+    if (deletedIds.size === 0) return
+
+    const remainingBoundaries = boundaries.filter((boundary) => !deletedIds.has(boundary.id))
+    setBoundaries(remainingBoundaries)
+    setSelectedBoundaryIds((current) => current.filter((selectedId) => !deletedIds.has(selectedId)))
+    if (deletedIds.has(appliedBoundaryId)) {
       setAppliedGeometryInput(createEmptyGeometryInput({ id: 1, name: 'Column section' }))
       setSelectedRebarId(null)
     }
-    if (activeBoundaryId === id) {
-      const nextBoundary = boundaries.find((boundary) => boundary.id !== id)
+    if (deletedIds.has(activeBoundaryId)) {
+      const nextBoundary = remainingBoundaries[0]
       setActiveBoundaryId(nextBoundary?.id ?? 0)
       setActiveOuterIndex(0)
       setActiveRingIndex(0)
       setSelectedPointId(nextBoundary?.outers[0]?.[0]?.[0]?.id ?? null)
     }
+    if (rotationSessionRef.current && deletedIds.has(rotationSessionRef.current.id)) {
+      rotationSessionRef.current = null
+      setRotationDraft('0')
+    }
   }
 
-  const requestDeleteBoundary = (id: number) => {
-    const boundary = boundaries.find((item) => item.id === id)
-    if (!boundary) return
+  const requestDeleteBoundaries = (ids: readonly number[]) => {
+    const requestedIds = new Set(ids)
+    const requestedBoundaries = boundaries.filter((boundary) => requestedIds.has(boundary.id))
+    if (requestedBoundaries.length === 0) return
 
-    if (id === appliedBoundaryId) {
+    const appliedBoundary = requestedBoundaries.find((boundary) => boundary.id === appliedBoundaryId)
+    if (appliedBoundary) {
       const confirmed = window.confirm(
-        `“${boundary.name}” is the applied section. Remove it and clear the applied section?`
+        requestedBoundaries.length === 1
+          ? `“${appliedBoundary.name}” is the applied section. Remove it and clear the applied section?`
+          : `Remove ${requestedBoundaries.length} selected regions, including applied section “${appliedBoundary.name}”, and clear the applied section?`
       )
       if (!confirmed) return
     }
 
-    deleteBoundary(id)
+    deleteBoundaries(requestedBoundaries.map((boundary) => boundary.id))
   }
+
+  const requestDeleteBoundary = (id: number) => requestDeleteBoundaries([id])
+
+  useEffect(() => {
+    const handleBoundaryDeleteShortcut = (event: KeyboardEvent) => {
+      const inBoundaryContext =
+        activeModule === 'geometry' &&
+        geometrySubTab === 'concrete' &&
+        !projectMenuOpen &&
+        !aboutMenuOpen &&
+        !projectInformationOpen
+      if (!shouldHandleBoundaryDelete({
+        key: event.key,
+        defaultPrevented: event.defaultPrevented,
+        repeat: event.repeat,
+        selectedCount: selectedBoundaryIds.length,
+        inBoundaryContext,
+        editableTarget: isEditableKeyboardTarget(event.target)
+      })) return
+
+      event.preventDefault()
+      requestDeleteBoundaries(selectedBoundaryIds)
+    }
+
+    document.addEventListener('keydown', handleBoundaryDeleteShortcut)
+    return () => document.removeEventListener('keydown', handleBoundaryDeleteShortcut)
+  }, [
+    aboutMenuOpen,
+    activeBoundaryId,
+    activeModule,
+    appliedBoundaryId,
+    boundaries,
+    geometrySubTab,
+    projectInformationOpen,
+    projectMenuOpen,
+    selectedBoundaryIds
+  ])
 
   const applyBooleanAction = (action: BooleanAction) => {
     if (selectedBoundaries.length < 2) return
@@ -1801,22 +1783,25 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     const subtractBaseArea =
       action === 'subtract' ? summarizeSection(boundaryToSectionGeometry(selectedBoundaries[0])).area : null
 
-    const usedPrimitiveIds: number[] = []
-    const primitives =
-      action === 'union'
-        ? selectedBoundaries.flatMap((boundary) => boundaryToPrimitives(boundary, 'add', usedPrimitiveIds))
-        : (() => {
-            const [outer, ...inners] = selectedBoundaries
-            return [
-              ...boundaryToPrimitives(outer, 'add', usedPrimitiveIds),
-              ...inners.flatMap((boundary) => boundaryToPrimitives(boundary, 'subtract', usedPrimitiveIds))
-            ]
-          })()
-
-    const result = composeSectionPrimitives(primitives, {
+    const resultOptions = {
       id: makeBoundaryId(boundaries.map((item) => item.id)),
-      name: action === 'union' ? 'Union result' : 'Subtract result'
-    })
+      name: action === 'union' ? 'Union result' : action === 'subtract' ? 'Subtract result' : 'Intersection result'
+    }
+    const result = action === 'intersect'
+      ? intersectSectionGeometries(selectedBoundaries.map(boundaryToSectionGeometry), resultOptions)
+      : (() => {
+          const usedPrimitiveIds: number[] = []
+          const primitives = action === 'union'
+            ? selectedBoundaries.flatMap((boundary) => boundaryToPrimitives(boundary, 'add', usedPrimitiveIds))
+            : (() => {
+                const [outer, ...inners] = selectedBoundaries
+                return [
+                  ...boundaryToPrimitives(outer, 'add', usedPrimitiveIds),
+                  ...inners.flatMap((boundary) => boundaryToPrimitives(boundary, 'subtract', usedPrimitiveIds))
+                ]
+              })()
+          return composeSectionPrimitives(primitives, resultOptions)
+        })()
     setLastBooleanWarning(result.warnings.join(' '))
     if (!result.geometry.solids.some((solid) => solid.outer.length >= 3)) return
     if (action === 'subtract' && subtractBaseArea !== null) {
@@ -2733,7 +2718,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
             {geometrySubTab === 'concrete' && (
           <>
             <section className="pm-panel-section pm-boundary-list-section">
-              <div className="pm-section-title pm-section-title--with-action">
+              <div className="pm-section-title pm-section-title--with-action pm-section-title--boolean-actions">
                 <h2>Boundary List</h2>
                 <div className="pm-boundary-list-actions">
                   <button
@@ -2755,6 +2740,16 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                   >
                     <Minus size={14} />
                     Subtract
+                  </button>
+                  <button
+                    type="button"
+                    className="pm-table-add-btn"
+                    onClick={() => applyBooleanAction('intersect')}
+                    disabled={selectedBoundaries.length < 2}
+                    title="Keep only the region shared by all selected boundaries"
+                  >
+                    <SquaresIntersect size={14} />
+                    Intersection
                   </button>
                 </div>
               </div>
@@ -2809,37 +2804,25 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                   )
                 })}
               </div>
-              {lastBooleanWarning && <p className="pm-warning-text">{lastBooleanWarning}</p>}
-            </section>
-
-            <section className="pm-panel-section pm-boundary-create-section">
-              <div className="pm-boundary-create">
-                <span>Create Boundary</span>
+              <div className="pm-boundary-selection-row">
+                <p
+                  className={`pm-boundary-selection-status${selectedBoundaryIds.length > 0 ? ' is-active' : ''}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  {boundarySelectionStatus(selectedBoundaryIds.length)}
+                </p>
                 <div className="pm-boundary-create-actions">
+                  <span className="pm-boundary-create-label">Create Boundary</span>
                   <button type="button" title="Create rectangle" aria-label="Create rectangle" onClick={() => createDefaultBoundary('rectangle')}>
                     <RectangleHorizontal size={14} />
                   </button>
                   <button type="button" title="Create circle" aria-label="Create circle" onClick={() => createDefaultBoundary('circle')}>
                     <Circle size={14} />
                   </button>
-                  <button
-                    type="button"
-                    className="pm-file-btn"
-                    title="Import boundary from Excel"
-                    onClick={() => boundaryExcelInputRef.current?.click()}
-                  >
-                    <Upload size={13} />
-                    Excel
-                  </button>
                 </div>
               </div>
-              <input
-                ref={boundaryExcelInputRef}
-                type="file"
-                accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"
-                hidden
-                onChange={handleBoundaryExcelFileChange}
-              />
+              {lastBooleanWarning && <p className="pm-warning-text">{lastBooleanWarning}</p>}
             </section>
 
             {boundaries.length > 0 && (

@@ -1149,11 +1149,6 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
   overflow: auto;
 }
 
-.pm-boundary-create-section {
-  flex: 0 0 auto;
-  gap: 0;
-}
-
 .pm-boundary-detail-header {
   display: flex;
   align-items: center;
@@ -1208,6 +1203,53 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+}
+
+.pm-side-panel .pm-section-title--boolean-actions,
+#geometry-workspace .pm-section-title--boolean-actions {
+  flex-wrap: wrap;
+}
+
+.pm-side-panel .pm-section-title--boolean-actions > .pm-boundary-list-actions,
+#geometry-workspace .pm-section-title--boolean-actions > .pm-boundary-list-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 100%;
+}
+
+.pm-section-title--boolean-actions .pm-table-add-btn {
+  min-width: 0;
+  padding-inline: 6px;
+}
+
+.pm-boundary-selection-status {
+  margin: 0;
+  color: var(--foreground-muted);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.pm-side-panel .pm-boundary-selection-status {
+  color: var(--sp-text-3);
+  font-size: var(--sp-fs-2);
+}
+
+.pm-boundary-selection-status.is-active {
+  color: var(--ui-danger-bright);
+  font-weight: 700;
+}
+
+.pm-side-panel .pm-boundary-selection-status.is-active {
+  color: var(--sp-danger);
+}
+
+.pm-boundary-selection-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .pm-detail-tabs {
@@ -1614,14 +1656,15 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
   color: var(--foreground);
 }
 
-.pm-boundary-create {
-  display: flex;
+.pm-boundary-create-actions {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  justify-content: flex-start;
+  gap: 2px;
 }
 
-.pm-boundary-create > span {
+.pm-boundary-create-label {
+  margin-right: 4px;
   color: var(--foreground-muted);
   font-size: 0.64rem;
   font-weight: 700;
@@ -1630,11 +1673,10 @@ body[data-jscad-theme="dark"] .pm-rebar-params select option {
   white-space: nowrap;
 }
 
-.pm-boundary-create-actions {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 2px;
+.pm-side-panel .pm-boundary-create-label {
+  color: var(--sp-text-3);
+  font-size: var(--sp-fs-1);
+  font-weight: 600;
 }
 
 .pm-boundary-create-actions button:not(.pm-file-btn) {
