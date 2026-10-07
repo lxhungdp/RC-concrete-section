@@ -233,3 +233,90 @@ Prepared meshes, compiled material functions, capacity surfaces, inverse iterati
 and Plotly traces are runtime artifacts. They are regenerated from persisted definitions and are not
 embedded in the project JSON. A future accepted-result artifact requires its own immutable contract,
 input hash, kernel/profile versions, convergence evidence, and release policy.
+
+## 10. Editable project workbook
+
+`Import Export` selects Excel (`.xlsx`, default) or JSON. Both export the same applied input
+snapshot and project metadata; unapplied geometry drafts are excluded. The web boundary adapter
+`features/section-editor/project/project-xlsx.ts` owns `pm-column-input-workbook`, version 3.
+The canonical project schema and its parser remain unchanged.
+
+The format selector sits above two explicitly labeled Import and Export buttons. Project share
+links are removed: the app neither creates project URL payloads nor reads project inputs from the
+URL fragment on startup. Recent-file storage and explicit Excel/JSON file imports retain their
+existing validation and apply paths. No URL-fragment compatibility or migration is provided.
+
+Visible sheets are Project, Section, Rebar, Material, and Loadings. Analysis and Resistance are
+hidden (not veryHidden); users may unhide them for advanced editing. Analysis also retains separate
+PROJECT_METADATA and SECTION_METADATA field/value blocks for workbook identity, project IDs/
+timestamps/profile and section identity. Those blocks cannot override the visible Project fields.
+Material hides the fixed strain sign, curve interpolation/extrapolation, limits/factors, and
+advanced code-model coefficients. Base strengths/density/moduli, names, standard/model identity,
+user-block coefficients, bilinear hardening, user-curve points and zero-tension control remain
+visible. The general material settings block is hidden when there is only one steel grade.
+All hidden material parameters remain independent, persisted inputs; strength edits derive nothing.
+No JSON snapshot overrides the editable cells, including the explicitly retained hidden advanced settings.
+
+Ordinary cells, bold markers/headers, gridlines, and basic widths/text/number formats support
+editing. There are no native Excel Tables, merges, background fills, or print layouts.
+Section and Rebar state mm once in the first note row; Loadings states P in N and Mx/My in N.mm.
+Their named column headers omit units. These labels do not change canonical values or conversions.
+
+| Sheet | Marker | User-facing inputs |
+|---|---|---|
+| Project | PROJECT | Name, Client, Company, Designed by, Checked by, Address, Date |
+| Section | `outer #1`, `outer #2`, ... | X, Y |
+| Section | `hole #1`, `hole #2`, ... | X, Y; belongs to the nearest preceding outer |
+| Rebar | REBAR | Diameter, X, Y; Steel Material ID shown when several grades exist |
+| Material | MATERIAL; CONCRETE, ID; STEEL, ID | Independent material field/value inputs and default steel reference |
+| Material | CONCRETE_CURVE, ID; STEEL_CURVE, ID | Strain (1), Stress (MPa) |
+| Loadings | LOADINGS | Name, P, Mx, My |
+| Analysis (hidden) | ANALYSIS; STATIONS | Explicit options and ordered station records |
+| Resistance (hidden) | RESISTANCE | Explicit design basis and provenance |
+
+Markers and named column headers, never absolute row/column coordinates, identify tables.
+Keywords/column names are case-insensitive with surrounding spaces ignored. Blank rows and single-cell
+`#` comments are ignored; repeated column headers continue a table. Columns can be reordered.
+Loading names beginning with `#` or matching LOADINGS remain data when demand cells are present.
+Outer/hole numbers are stable entity IDs; they must be positive and unique in their namespaces.
+A hole before an outer fails closed. Move an outer together with its holes to retain ownership.
+Vertex/station/curve order remains row order; sorting changes meaning and is never repaired.
+
+Point, bar and loading ID columns are hidden optional transport hints, not user-required inputs.
+Existing unique IDs survive a round trip. New rows, missing ID columns and copied duplicate ID
+hints receive unused positive IDs through the existing public identity allocator; copied-ID
+reassignment is reported as a warning. This normalization concerns editor identity only and
+changes no coordinates, bars, material references, demand values, signs or engineering parameters.
+Malformed explicit ID hints still fail closed. New blank bar material references use the persisted
+default under the existing project contract. The optional Steel Material ID column remains readable
+even when hidden; imported explicit references must exist. Loadings has no Action basis column:
+the current application's `createLoadCombination` owner declares every row `factoredULS`.
+Export rejects another demand basis instead of relabeling it.
+
+Add/delete complete rows directly, or add an outer/hole by copying a marker, headers and vertices
+and assigning a new marker number. Rebar/loading blocks can repeat. Copy STEEL fields and assign
+a unique material ID to add a grade. Empty tables represent empty arrays; deleting a definition
+removes it subject to geometry/material validation. No ordering-column renumbering is needed.
+Section may contain no polygon blocks for an empty project.
+
+Field/value tables use explicit per-block allowed-field/type maps; units appear in field names.
+Booleans accept TRUE/FALSE. Empty optional objects/arrays use {}/[]; numeric paths in advanced
+arrays require consecutive zero-based indexes. Version-1/2 previews require re-export; there is no
+silent migration. Required hidden sheets/metadata must be retained; missing advanced settings are
+not reconstructed from defaults.
+
+Lengths remain mm, stresses/moduli MPa, density kg/m3, forces N, moments N.mm, and declared angles
+degrees. Compression-positive P/strain and canonical moment signs are unchanged. Stored doubles
+retain full precision; cell formatting affects display only. Formulas, cached results, dates,
+errors and linked/rich text cells are rejected; paste values. Material parameters remain explicit
+independent inputs; editing strength does not derive a new modulus or code parameter.
+
+Import reconstructs raw definitions and uses `parseProjectDocument` for engineering validation
+and documented parser-v1 normalization. Missing sheets/markers/columns, duplicate authoritative
+fields/entities, malformed types/units, broken references and resource exhaustion return typed
+failures with sheet/row context. No project state changes until validation succeeds. Limits are
+10 MiB compressed, 64 MiB declared expanded ZIP content, 256 ZIP entries, 100,000 rows per sheet,
+and 64 columns: resource bounds, not engineering tolerances/defaults. Input workbooks contain no
+results and confer no acceptance or release status. Their verification status must match the
+selected registry profile (currently draft or user-defined); a workbook cannot grant reviewed/
+verified status. These boundary rules do not change JSON parser-v1 behavior.

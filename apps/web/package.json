@@ -3,13 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "imports": {
-    "#project-share-brotli": {
-      "browser": "./features/section-editor/project/project-share-brotli.browser.ts",
-      "node": "./features/section-editor/project/project-share-brotli.node.ts",
-      "default": "./features/section-editor/project/project-share-brotli.browser.ts"
-    }
-  },
   "scripts": {
     "dev": "node ../../tools/runtime/check-runtime.mjs && next dev --webpack -p 3001",
     "start": "node ../../tools/runtime/check-runtime.mjs && next start -p 3001",
@@ -28,7 +21,6 @@
     "@pm/report": "0.1.0",
     "@structures/cad-drawing": "0.1.0",
     "@vercel/analytics": "^2.0.1",
-    "brotli-wasm": "3.0.1",
     "katex": "0.16.47",
     "lucide-react": "1.25.0",
     "next": "16.3.5",

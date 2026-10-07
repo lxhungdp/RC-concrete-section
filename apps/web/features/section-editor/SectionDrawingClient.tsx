@@ -8,13 +8,12 @@ import {
   ChevronRight,
   Circle,
   Download,
-  ExternalLink,
   Eye,
   EyeOff,
+  FileDown,
+  FileUp,
   FolderOpen,
   Gauge,
-  GitFork,
-  Globe2,
   History,
   Info,
   Lock,
@@ -25,11 +24,9 @@ import {
   RectangleHorizontal,
   RotateCw,
   SlidersHorizontal,
-  Share2,
   SquaresIntersect,
   Sun,
   Unlock,
-  Upload,
   X
 } from 'lucide-react'
 import webPackage from '../../package.json'
@@ -160,11 +157,6 @@ import { DemandCheckPanel } from './results/DemandCheckPanel'
 import { preloadPlotly } from './results/PlotlyChart'
 import { WorkspaceLoading } from './shared/WorkspaceLoading'
 import { ProjectInformationDialog } from './project/ProjectInformationDialog'
-import {
-  createProjectShareUrl,
-  decodeProjectSharePayload,
-  projectSharePayloadFromHash
-} from './project/project-share'
 import type { SectionResultsSummary } from './results/SectionResultsPanel'
 import {
   createDemandCheckView,
@@ -243,7 +235,6 @@ type ScreenPoint = {
 
 type Tool = 'select' | 'draw-rectangle' | 'draw-circle' | 'draw-polygon'
 type Theme = 'light' | 'dark'
-type ProjectShareNotice = { kind: 'success' | 'error'; message: string }
 const THEME_STORAGE_KEY = 'pm-column-designer:theme:v1'
 /**
  * Capacity and Demand Check are separate menus because they answer different questions and
@@ -304,29 +295,6 @@ const formatNumber = (value: number, digits = 1) =>
   Math.abs(value) < 1e-9 ? '0' : value.toLocaleString('en-US', { maximumFractionDigits: digits })
 
 const normalizeAngleDeg = (degrees: number) => ((degrees % 360) + 360) % 360
-
-const copyTextToClipboard = async (value: string): Promise<void> => {
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(value)
-      return
-    } catch {
-      // Fall back to a temporary text field for browsers that reject async clipboard access.
-    }
-  }
-
-  const textArea = window.document.createElement('textarea')
-  textArea.value = value
-  textArea.setAttribute('readonly', '')
-  textArea.style.position = 'fixed'
-  textArea.style.opacity = '0'
-  textArea.style.pointerEvents = 'none'
-  window.document.body.appendChild(textArea)
-  textArea.select()
-  const copied = window.document.execCommand('copy')
-  textArea.remove()
-  if (!copied) throw new Error('The project link could not be copied to the clipboard.')
-}
 
 const downloadBlob = (blob: Blob, fileName: string) => {
   const url = URL.createObjectURL(blob)
@@ -625,10 +593,10 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
   >(null)
   const [theme, setTheme] = useState<Theme>('light')
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
+  const [projectFileFormat, setProjectFileFormat] = useState<'excel' | 'json'>('excel')
+  const [projectFileBusy, setProjectFileBusy] = useState(false)
   const [aboutMenuOpen, setAboutMenuOpen] = useState(false)
   const [projectInformationOpen, setProjectInformationOpen] = useState(false)
-  const [sharingProject, setSharingProject] = useState(false)
-  const [projectShareNotice, setProjectShareNotice] = useState<ProjectShareNotice | null>(null)
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([])
   const [recentStorageReady, setRecentStorageReady] = useState(false)
   const [tool, setTool] = useState<Tool>('select')
@@ -2009,7 +1977,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     setCamera(fitCameraToPointsWithInsets(allVisiblePoints, size, DEFAULT_FIT_INSETS))
   }, [allVisiblePoints, size])
 
-  const exportProjectJson = () => {
+  const exportProjectFile = async () => {
     const draftCount = boundaries.filter((boundary) => boundary.id !== appliedBoundaryId).length
     if (!hasAppliedSection && boundaries.length > 0) {
       const proceed = window.confirm(
@@ -2018,7 +1986,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
       if (!proceed) return
     } else if (hasAppliedSection && draftCount > 0) {
       const proceed = window.confirm(
-        `${draftCount} draft boundary(ies) are not applied and will not be included in the JSON.\n\nOnly the applied section is exported.\nContinue?`
+        `${draftCount} draft boundary(ies) are not applied and will not be included in the file.\n\nOnly the applied section is exported.\nContinue?`
       )
       if (!proceed) return
     }
@@ -2031,39 +1999,32 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
       createdAt: document.meta.createdAt
     })
 
-    const blob = new Blob([serializeProjectDocument(document)], { type: 'application/json' })
-    downloadBlob(blob, projectDocumentFileName(document))
-  }
-
-  const shareCurrentProject = async () => {
-    setProjectMenuOpen(false)
-    setSharingProject(true)
-    setProjectShareNotice(null)
+    setProjectFileBusy(true)
     try {
-      const shareUrl = await createProjectShareUrl(buildCurrentProjectDocument(), window.location.href)
-      await copyTextToClipboard(shareUrl)
-      setProjectShareNotice({
-        kind: 'success',
-        message: 'Project link copied. Project Information is excluded; anyone with the link can view calculation data.'
-      })
+      if (projectFileFormat === 'excel') {
+        const { buildProjectWorkbook, projectWorkbookFileName } = await import('./project/project-xlsx')
+        const bytes = await buildProjectWorkbook(document)
+        const copy = new Uint8Array(bytes)
+        downloadBlob(new Blob([copy.buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), projectWorkbookFileName(document))
+      } else {
+        downloadBlob(new Blob([serializeProjectDocument(document)], { type: 'application/json' }), projectDocumentFileName(document))
+      }
     } catch (error) {
-      setProjectShareNotice({
-        kind: 'error',
-        message: error instanceof Error ? error.message : 'The project link could not be created.'
-      })
+      window.alert(`Export failed:\n${error instanceof Error ? error.message : 'Could not create the project file.'}`)
     } finally {
-      setSharingProject(false)
+      setProjectFileBusy(false)
     }
   }
 
-  const applyImportedProject = (raw: unknown) => {
+  const applyImportedProject = (raw: unknown, workbookWarnings: string[] = []) => {
     const result = parseProjectDocument(raw)
     if (!result.ok) {
       window.alert(`Import failed:\n${result.error}`)
       return
     }
 
-    const { document, warnings } = result
+    const { document } = result
+    const warnings = [...new Set([...workbookWarnings, ...result.warnings])]
     publishRecentProject(document)
     const geometry = document.inputs.geometry
     const hasGeometry = geometry.outers.some((outer) => outer.points.length >= 3)
@@ -2112,11 +2073,21 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
+    setProjectFileBusy(true)
     try {
-      const text = await file.text()
-      applyImportedProject(text)
-    } catch {
-      window.alert('Import failed: could not read the selected file.')
+      if (projectFileFormat === 'excel') {
+        const { importProjectWorkbook, PROJECT_WORKBOOK_MAX_BYTES } = await import('./project/project-xlsx')
+        if (file.size > PROJECT_WORKBOOK_MAX_BYTES) throw new Error('Project workbook exceeds 10 MiB.')
+        const result = await importProjectWorkbook(await file.arrayBuffer())
+        if (!result.ok) throw new Error(result.error)
+        applyImportedProject(result.document, result.warnings)
+      } else {
+        applyImportedProject(await file.text())
+      }
+    } catch (error) {
+      window.alert(`Import failed:\n${error instanceof Error ? error.message : 'Could not read the selected file.'}`)
+    } finally {
+      setProjectFileBusy(false)
     }
   }
 
@@ -2139,38 +2110,15 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     if (projectBootstrapStartedRef.current) return
     projectBootstrapStartedRef.current = true
 
-    const bootstrapProject = async () => {
-      const sharedPayload = projectSharePayloadFromHash(window.location.hash)
-      if (sharedPayload) {
-        try {
-          const raw = await decodeProjectSharePayload(sharedPayload)
-          const parsed = parseProjectDocument(raw)
-          if (!parsed.ok) throw new Error(parsed.error)
-          applyImportedProject(raw)
-          window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
-          setProjectShareNotice({ kind: 'success', message: 'Shared project loaded.' })
-          setRecentStorageReady(true)
-          return
-        } catch (error) {
-          setProjectShareNotice({
-            kind: 'error',
-            message: `Shared project could not be opened: ${error instanceof Error ? error.message : String(error)}`
-          })
-        }
-      }
-
-      let stored: RecentProject[] = []
-      try {
-        stored = recentProjectsFromStorage(window.localStorage.getItem(RECENT_PROJECT_STORAGE_KEY))
-      } catch {
-        // Fall through to the current default project when storage access is restricted.
-      }
-      if (stored.length > 0) setRecentProjects(stored)
-      else publishRecentProject(buildCurrentProjectDocument())
-      setRecentStorageReady(true)
+    let stored: RecentProject[] = []
+    try {
+      stored = recentProjectsFromStorage(window.localStorage.getItem(RECENT_PROJECT_STORAGE_KEY))
+    } catch {
+      // Fall through to the current default project when storage access is restricted.
     }
-
-    void bootstrapProject()
+    if (stored.length > 0) setRecentProjects(stored)
+    else publishRecentProject(buildCurrentProjectDocument())
+    setRecentStorageReady(true)
   }, [buildCurrentProjectDocument, publishRecentProject])
 
   useEffect(() => {
@@ -2182,12 +2130,6 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     const timer = window.setTimeout(() => publishRecentProject(buildCurrentProjectDocument()), 450)
     return () => window.clearTimeout(timer)
   }, [buildCurrentProjectDocument, publishRecentProject, recentStorageReady])
-
-  useEffect(() => {
-    if (!projectShareNotice) return
-    const timer = window.setTimeout(() => setProjectShareNotice(null), 4_500)
-    return () => window.clearTimeout(timer)
-  }, [projectShareNotice])
 
   const toggleDrawTool = (nextTool: Exclude<Tool, 'select'>) => {
     setTool((current) => (current === nextTool ? 'select' : nextTool))
@@ -2507,41 +2449,47 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
 
                 <section className="pm-project-menu__section">
                   <div className="pm-project-menu__section-head"><span>Import Export</span></div>
-                  <div className="pm-project-menu__actions">
-                    <button
-                      className="pm-project-menu__icon-action pm-project-menu__file-action"
-                      type="button"
-                      title="Import project"
-                      aria-label="Import project"
-                      onClick={() => {
-                        setProjectMenuOpen(false)
-                        importInputRef.current?.click()
-                      }}
+                  <div className="pm-project-menu__file-controls">
+                    <select
+                      className="pm-project-menu__format"
+                      aria-label="Project file format"
+                      value={projectFileFormat}
+                      disabled={projectFileBusy}
+                      onChange={(event) => setProjectFileFormat(event.target.value === 'json' ? 'json' : 'excel')}
                     >
-                      <Upload size={18} />
-                    </button>
-                    <button
-                      className="pm-project-menu__icon-action pm-project-menu__file-action"
-                      type="button"
-                      title="Export project"
-                      aria-label="Export project"
-                      onClick={() => {
-                        setProjectMenuOpen(false)
-                        exportProjectJson()
-                      }}
-                    >
-                      <Download size={18} />
-                    </button>
-                    <button
-                      className="pm-project-menu__icon-action pm-project-menu__file-action"
-                      type="button"
-                      title="Copy project share link"
-                      aria-label="Copy project share link"
-                      disabled={sharingProject}
-                      onClick={() => void shareCurrentProject()}
-                    >
-                      <Share2 size={18} />
-                    </button>
+                      <option value="excel">Excel (.xlsx)</option>
+                      <option value="json">JSON (.json)</option>
+                    </select>
+                    <div className="pm-project-menu__actions">
+                      <button
+                        className="pm-project-menu__file-action"
+                        type="button"
+                        title={`Import project from ${projectFileFormat === 'excel' ? 'Excel' : 'JSON'}`}
+                        aria-label={`Import project from ${projectFileFormat === 'excel' ? 'Excel' : 'JSON'}`}
+                        disabled={projectFileBusy}
+                        onClick={() => {
+                          setProjectMenuOpen(false)
+                          importInputRef.current?.click()
+                        }}
+                      >
+                        <FileUp size={16} aria-hidden="true" />
+                        <span>Import</span>
+                      </button>
+                      <button
+                        className="pm-project-menu__file-action"
+                        type="button"
+                        title={`Export project to ${projectFileFormat === 'excel' ? 'Excel' : 'JSON'}`}
+                        aria-label={`Export project to ${projectFileFormat === 'excel' ? 'Excel' : 'JSON'}`}
+                        disabled={projectFileBusy}
+                        onClick={() => {
+                          setProjectMenuOpen(false)
+                          void exportProjectFile()
+                        }}
+                      >
+                        <FileDown size={16} aria-hidden="true" />
+                        <span>Export</span>
+                      </button>
+                    </div>
                   </div>
                 </section>
 
@@ -2570,22 +2518,27 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                 </section>
 
                 <section className="pm-project-menu__section">
-                  <div className="pm-project-menu__section-head"><span>Example files</span></div>
-                  <div className="pm-project-menu__examples">
-                    {PROJECT_EXAMPLES.map((example) => (
-                      <button
-                        className="pm-project-menu__item pm-project-menu__example"
-                        type="button"
-                        key={example.id}
-                        onClick={() => loadProjectExample(example)}
-                      >
-                        <span>
-                          <strong>{example.label}</strong>
-                          <small>{example.description}</small>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
+                  <details className="pm-project-menu__example-group">
+                    <summary className="pm-project-menu__item pm-project-menu__example-toggle">
+                      <strong>Example files</strong>
+                      <ChevronRight className="pm-project-menu__row-chevron" size={15} aria-hidden="true" />
+                    </summary>
+                    <div className="pm-project-menu__examples">
+                      {PROJECT_EXAMPLES.map((example) => (
+                        <button
+                          className="pm-project-menu__item pm-project-menu__example"
+                          type="button"
+                          key={example.id}
+                          onClick={() => loadProjectExample(example)}
+                        >
+                          <span>
+                            <strong>{example.label}</strong>
+                            <small>{example.description}</small>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </details>
                 </section>
               </div>
             )}
@@ -2627,28 +2580,6 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                   <span>Developed by Le Xuan Hung</span>
                   <span>Open-source software licensed under the MIT License.</span>
                 </div>
-                <nav className="pm-about-links" aria-label="Project links">
-                  <a
-                    href="https://pmdesigner.vercel.app/"
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="Open project website"
-                  >
-                    <Globe2 size={15} aria-hidden="true" />
-                    <span>Website</span>
-                    <ExternalLink size={12} aria-hidden="true" />
-                  </a>
-                  <a
-                    href="https://github.com/lxhungdp/RC-concrete-section.git"
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="Open GitHub repository"
-                  >
-                    <GitFork size={15} aria-hidden="true" />
-                    <span>GitHub</span>
-                    <ExternalLink size={12} aria-hidden="true" />
-                  </a>
-                </nav>
                 <p className="pm-about-disclaimer">
                   Engineering results require independent professional review.
                 </p>
@@ -2658,22 +2589,13 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
           <input
             ref={importInputRef}
             type="file"
-            accept="application/json,.json"
+            accept={projectFileFormat === 'excel' ? '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/json,.json'}
             hidden
             onChange={handleImportFileChange}
           />
         </div>
 
       </header>
-
-      {projectShareNotice ? (
-        <div
-          className={`pm-project-share-notice is-${projectShareNotice.kind}`}
-          role={projectShareNotice.kind === 'error' ? 'alert' : 'status'}
-        >
-          {projectShareNotice.message}
-        </div>
-      ) : null}
 
       {projectInformationOpen ? (
         <ProjectInformationDialog

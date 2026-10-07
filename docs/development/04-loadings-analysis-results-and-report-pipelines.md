@@ -219,7 +219,8 @@ modebar controls, click events, and filled 3D surfaces. Current preview implemen
 - app-level range sliders for quickly changing fixed `P` and the slice rotation angle.
 
 `npm run check:web-bundle` is the production bundle gate. It measures gzip bytes for the initial
-route, Plotly, the analysis worker and Excel, plus raw Brotli WASM bytes. The checked-in ceilings are
+route, Plotly, the analysis worker and Excel. The share-only Brotli codec is removed with project
+share links; it has no remaining bundle budget. The checked-in ceilings are
 budgets, not targets: a deliberate increase requires an implementation review and a budget change
 in the same patch. This gate changes no engineering input, result, or fingerprint.
 

@@ -10,8 +10,7 @@ const budgets = {
   initialGzip: 375 * 1024,
   plotlyGzip: 1400 * 1024,
   workerGzip: 120 * 1024,
-  excelGzip: 300 * 1024,
-  brotliWasmRaw: 1100 * 1024
+  excelGzip: 300 * 1024
 }
 
 const filesUnder = (directory) =>
@@ -49,12 +48,9 @@ const largestChunkContaining = (marker, label) => {
 const plotlyGzip = largestChunkContaining('plotly_click', 'Plotly chunk')
 const workerGzip = largestChunkContaining('longer available in this worker', 'analysis worker chunk')
 const excelGzip = largestChunkContaining('ExcelJS', 'Excel export chunk')
-const wasmFiles = filesUnder(join(webBuild, 'static/media')).filter((path) => path.endsWith('.wasm'))
-const brotliWasmRaw = Math.max(0, ...wasmFiles.map((path) => statSync(path).size))
 
 console.log(`      initial chunks: ${uniqueInitialChunks.length}`)
 assertBudget('initial JavaScript (gzip)', initialGzip, budgets.initialGzip)
 assertBudget('Plotly lazy chunk (gzip)', plotlyGzip, budgets.plotlyGzip)
 assertBudget('analysis worker chunk (gzip)', workerGzip, budgets.workerGzip)
 assertBudget('Excel lazy chunk (gzip)', excelGzip, budgets.excelGzip)
-assertBudget('Brotli WASM (raw)', brotliWasmRaw, budgets.brotliWasmRaw)

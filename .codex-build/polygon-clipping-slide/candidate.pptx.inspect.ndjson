@@ -1,0 +1,95 @@
+{"kind":"deck","id":"pr/7o75gs","name":"Deck"}
+{"kind":"layout","layoutId":"9a90071d-f56b-4d5e-ad0e-a07d19620640","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"a91b724c-8ff6-4b0e-88ee-54461daedd38","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/roifog","slide":1,"title":"P–M COLUMN DESIGNER  /  GEOMETRY ENGINE","textShapes":56}
+{"kind":"textbox","id":"sh/gfilcjih","slide":1,"text":"P–M COLUMN DESIGNER  /  GEOMETRY ENGINE","textPreview":"P–M COLUMN DESIGNER  /  GEOMETRY ENGINE","textChars":39,"textLines":1,"bbox":[60,32,510,22]}
+{"kind":"textbox","id":"sh/ve94jehw","slide":1,"text":"Flexible Sections with polygon-clipping","textPreview":"Flexible Sections with polygon-clipping","textChars":39,"textLines":1,"bbox":[60,58,850,42]}
+{"kind":"textbox","id":"sh/ut03a90b","slide":1,"text":"polygon-clipping으로 만드는 자유로운 단면 형상","textPreview":"polygon-clipping으로 만드는 자유로운 단면 형상","textChars":33,"textLines":1,"bbox":[60,103,780,30]}
+{"kind":"shape","id":"sh/pkbmpozy","slide":1,"bbox":[955,42,264,30]}
+{"kind":"textbox","id":"sh/4jilg3it","slide":1,"text":"v0.15.7  ·  MultiPolygon output","textPreview":"v0.15.7  ·  MultiPolygon output","textChars":31,"textLines":1,"bbox":[967,42,240,30]}
+{"kind":"textbox","id":"sh/3i94nyh8","slide":1,"text":"UNION  ·  DIFFERENCE  ·  INTERSECTION","textPreview":"UNION  ·  DIFFERENCE  ·  INTERSECTION","textChars":37,"textLines":1,"bbox":[933,78,300,22]}
+{"kind":"shape","id":"sh/ih03et0n","slide":1,"bbox":[60,151,1160,0]}
+{"kind":"shape","id":"sh/dobmt8za","slide":1,"bbox":[60,172,38,38]}
+{"kind":"textbox","id":"sh/cn25k3ip","slide":1,"text":"∪","textPreview":"∪","textChars":1,"textLines":1,"bbox":[60,169,38,42]}
+{"kind":"textbox","id":"sh/mtgra5gb","slide":1,"text":"UNION","textPreview":"UNION","textChars":5,"textLines":1,"bbox":[110,166,150,24]}
+{"kind":"textbox","id":"sh/nup8jaxw","slide":1,"text":"합집합","textPreview":"합집합","textChars":3,"textLines":1,"bbox":[110,190,150,22]}
+{"kind":"textbox","id":"sh/ovy9cfyh","slide":1,"text":"INPUT","textPreview":"INPUT","textChars":5,"textLines":1,"bbox":[68,224,76,18]}
+{"kind":"textbox","id":"sh/9w7qlkfm","slide":1,"text":"RESULT","textPreview":"RESULT","textChars":6,"textLines":1,"bbox":[190,224,78,18]}
+{"kind":"shape","id":"sh/ax0repg7","slide":1,"bbox":[64,265,78,42]}
+{"kind":"shape","id":"sh/by98naxs","slide":1,"bbox":[93,247,42,78]}
+{"kind":"shape","id":"sh/wji9gfyd","slide":1,"bbox":[93,265,42,42]}
+{"kind":"shape","id":"sh/xkrqpkfy","slide":1,"bbox":[155,277,26,18]}
+{"kind":"shape","id":"sh/q1w72lg3","slide":1,"bbox":[188,265,78,42]}
+{"kind":"shape","id":"sh/r258bqxo","slide":1,"bbox":[217,247,42,78]}
+{"kind":"textbox","id":"sh/vu1wni94","slide":1,"text":"Merge selected regions","textPreview":"Merge selected regions","textChars":22,"textLines":1,"bbox":[60,340,210,42]}
+{"kind":"textbox","id":"sh/utsfuxsj","slide":1,"text":"선택한 영역을 하나로 결합","textPreview":"선택한 영역을 하나로 결합","textChars":14,"textLines":1,"bbox":[60,382,210,36]}
+{"kind":"shape","id":"sh/hwjepsra","slide":1,"bbox":[60,427,210,29]}
+{"kind":"textbox","id":"sh/wvaxwnap","slide":1,"text":"union(A, B)","textPreview":"union(A, B)","textChars":11,"textLines":1,"bbox":[68,427,194,29]}
+{"kind":"shape","id":"sh/7qhwzi98","slide":1,"bbox":[287,176,0,280]}
+{"kind":"shape","id":"sh/mp8fqdsn","slide":1,"bbox":[310,172,38,38]}
+{"kind":"textbox","id":"sh/9szelsry","slide":1,"text":"−","textPreview":"−","textChars":1,"textLines":1,"bbox":[310,169,38,42]}
+{"kind":"textbox","id":"sh/8rqxsnat","slide":1,"text":"SUBTRACT","textPreview":"SUBTRACT","textChars":8,"textLines":1,"bbox":[360,166,150,24]}
+{"kind":"textbox","id":"sh/rmlgv29c","slide":1,"text":"차집합","textPreview":"차집합","textChars":3,"textLines":1,"bbox":[360,190,150,22]}
+{"kind":"textbox","id":"sh/qlcf2hsr","slide":1,"text":"INPUT","textPreview":"INPUT","textChars":5,"textLines":1,"bbox":[318,224,76,18]}
+{"kind":"textbox","id":"sh/o7mtwzq9","slide":1,"text":"RESULT","textPreview":"RESULT","textChars":6,"textLines":1,"bbox":[440,224,78,18]}
+{"kind":"shape","id":"sh/psvup47u","slide":1,"bbox":[314,257,78,58]}
+{"kind":"shape","id":"sh/254bu983","slide":1,"bbox":[339,271,30,30]}
+{"kind":"shape","id":"sh/n6dcnepo","slide":1,"bbox":[405,277,26,18]}
+{"kind":"shape","id":"sh/cv6t0jq5","slide":1,"bbox":[438,257,78,58]}
+{"kind":"shape","id":"sh/xwfuto7q","slide":1,"bbox":[463,271,30,30]}
+{"kind":"textbox","id":"sh/at4by98f","slide":1,"text":"Cut openings and voids","textPreview":"Cut openings and voids","textChars":22,"textLines":1,"bbox":[310,340,210,42]}
+{"kind":"textbox","id":"sh/buxcrep0","slide":1,"text":"개구부와 공극을 생성","textPreview":"개구부와 공극을 생성","textChars":11,"textLines":1,"bbox":[310,382,210,36]}
+{"kind":"shape","id":"sh/kz6d4jqh","slide":1,"bbox":[310,427,210,29]}
+{"kind":"textbox","id":"sh/l0fuxo72","slide":1,"text":"difference(A, B)","textPreview":"difference(A, B)","textChars":16,"textLines":1,"bbox":[318,427,194,29]}
+{"kind":"shape","id":"sh/587udob2","slide":1,"bbox":[537,176,0,280]}
+{"kind":"shape","id":"sh/k7ydkjuh","slide":1,"bbox":[560,172,38,38]}
+{"kind":"textbox","id":"sh/j6pcbetc","slide":1,"text":"∩","textPreview":"∩","textChars":1,"textLines":1,"bbox":[560,169,38,42]}
+{"kind":"textbox","id":"sh/i5gbi9cr","slide":1,"text":"INTERSECTION","textPreview":"INTERSECTION","textChars":12,"textLines":1,"bbox":[610,166,150,24]}
+{"kind":"textbox","id":"sh/x47u94b6","slide":1,"text":"교집합","textPreview":"교집합","textChars":3,"textLines":1,"bbox":[610,190,150,22]}
+{"kind":"textbox","id":"sh/w3etgzul","slide":1,"text":"INPUT","textPreview":"INPUT","textChars":5,"textLines":1,"bbox":[568,224,76,18]}
+{"kind":"textbox","id":"sh/v25c7ud0","slide":1,"text":"RESULT","textPreview":"RESULT","textChars":6,"textLines":1,"bbox":[690,224,78,18]}
+{"kind":"shape","id":"sh/a1wbe9cf","slide":1,"bbox":[564,265,78,42]}
+{"kind":"shape","id":"sh/h0rul8ba","slide":1,"bbox":[593,247,42,78]}
+{"kind":"shape","id":"sh/gzids3up","slide":1,"bbox":[593,265,42,42]}
+{"kind":"shape","id":"sh/e9sjq1ov","slide":1,"bbox":[655,277,26,18]}
+{"kind":"shape","id":"sh/zu10z65g","slide":1,"bbox":[706,265,42,42]}
+{"kind":"textbox","id":"sh/0va1sb61","slide":1,"text":"Keep only the common area","textPreview":"Keep only the common area","textChars":25,"textLines":1,"bbox":[560,340,210,42]}
+{"kind":"textbox","id":"sh/1wji1gnm","slide":1,"text":"겹치는 영역만 유지","textPreview":"겹치는 영역만 유지","textChars":10,"textLines":1,"bbox":[560,382,210,36]}
+{"kind":"shape","id":"sh/q58zm1oz","slide":1,"bbox":[560,427,210,29]}
+{"kind":"textbox","id":"sh/r6h0v6pk","slide":1,"text":"intersection(A, B)","textPreview":"intersection(A, B)","textChars":18,"textLines":1,"bbox":[568,427,194,29]}
+{"kind":"shape","id":"sh/c7qhor65","slide":1,"bbox":[802,176,0,436]}
+{"kind":"textbox","id":"sh/d8jixwnq","slide":1,"text":"REGION MODEL","textPreview":"REGION MODEL","textChars":12,"textLines":1,"bbox":[840,166,240,26]}
+{"kind":"textbox","id":"sh/a1cjylo3","slide":1,"text":"영역 데이터 모델","textPreview":"영역 데이터 모델","textChars":9,"textLines":1,"bbox":[840,192,240,23]}
+{"kind":"textbox","id":"sh/b2l07q5o","slide":1,"text":"Section = Region[]","textPreview":"Section = Region[]","textChars":18,"textLines":1,"bbox":[1033,166,188,26]}
+{"kind":"textbox","id":"sh/76dgzi50","slide":1,"text":"단면 = 영역들의 집합","textPreview":"단면 = 영역들의 집합","textChars":12,"textLines":1,"bbox":[1033,192,188,23]}
+{"kind":"shape","id":"sh/654fqd4v","slide":1,"name":"Region 1 outer ring","bbox":[845,236,314,206]}
+{"kind":"shape","id":"sh/t8fy1s36","slide":1,"name":"Region 1 hole 1","bbox":[888,282,62,62]}
+{"kind":"shape","id":"sh/87mxsnml","slide":1,"name":"Region 1 hole 2","bbox":[1037,328,74,50]}
+{"kind":"shape","id":"sh/vaxg32lc","slide":1,"name":"Disconnected Region 2","bbox":[1172,302,48,62]}
+{"kind":"textbox","id":"sh/u9ofux4r","slide":1,"text":"OUTER","textPreview":"OUTER","textChars":5,"textLines":1,"bbox":[852,247,80,22]}
+{"kind":"textbox","id":"sh/hcfy5s3i","slide":1,"text":"외곽","textPreview":"외곽","textChars":2,"textLines":1,"bbox":[852,267,65,20]}
+{"kind":"textbox","id":"sh/gb6xwnmx","slide":1,"text":"HOLE / 홀","textPreview":"HOLE / 홀","textChars":8,"textLines":1,"bbox":[882,347,80,20]}
+{"kind":"textbox","id":"sh/3exgr2l8","slide":1,"text":"HOLE / 홀","textPreview":"HOLE / 홀","textChars":8,"textLines":1,"bbox":[1032,381,84,20]}
+{"kind":"textbox","id":"sh/2dofyx4n","slide":1,"text":"Region 2","textPreview":"Region 2","textChars":8,"textLines":1,"bbox":[1165,371,64,20]}
+{"kind":"shape","id":"sh/03qxo721","slide":1,"bbox":[842,466,378,57]}
+{"kind":"textbox","id":"sh/14zehcjm","slide":1,"text":"Region = 1 outer ring − 0…n hole rings","textPreview":"Region = 1 outer ring − 0…n hole rings","textChars":38,"textLines":1,"bbox":[858,470,346,24]}
+{"kind":"textbox","id":"sh/eh8fmxkv","slide":1,"text":"영역 = 외곽 링 1개 − 내부 홀 링 0…n개","textPreview":"영역 = 외곽 링 1개 − 내부 홀 링 0…n개","textChars":26,"textLines":1,"bbox":[858,494,346,23]}
+{"kind":"textbox","id":"sh/z2hwf21g","slide":1,"text":"Boolean results are normalized to MultiPolygon:","textPreview":"Boolean results are normalized to MultiPolygon:","textChars":47,"textLines":1,"bbox":[842,535,378,22]}
+{"kind":"textbox","id":"sh/cf6xk725","slide":1,"text":"each connected polygon becomes one Region; disconnected results remain multiple Regions.","textPreview":"each connected polygon becomes one Region; disconnected results remain multiple Regions.","textChars":88,"textLines":1,"bbox":[842,558,378,38]}
+{"kind":"textbox","id":"sh/dgzedcja","slide":1,"text":"불리언 결과는 MultiPolygon으로 정규화되며, 연결된 폴리곤마다 하나의 영역이 됩니다.","textPreview":"불리언 결과는 MultiPolygon으로 정규화되며, 연결된 폴리곤마다 하나의 영역이 됩니다.","textChars":52,"textLines":1,"bbox":[842,596,378,36]}
+{"kind":"shape","id":"sh/qdovixkz","slide":1,"bbox":[60,482,716,0]}
+{"kind":"textbox","id":"sh/rexwb21k","slide":1,"text":"FROM PRIMITIVES TO SECTION DATA","textPreview":"FROM PRIMITIVES TO SECTION DATA","textChars":31,"textLines":1,"bbox":[60,497,480,23]}
+{"kind":"textbox","id":"sh/4b6dgn2t","slide":1,"text":"기본 도형에서 단면 데이터까지","textPreview":"기본 도형에서 단면 데이터까지","textChars":16,"textLines":1,"bbox":[60,520,480,22]}
+{"kind":"shape","id":"sh/pcfe9sje","slide":1,"bbox":[60,552,716,62]}
+{"kind":"textbox","id":"sh/x8jmtk32","slide":1,"text":"rectangles · circles · custom polygons","textPreview":"rectangles · circles · custom polygons","textChars":38,"textLines":1,"bbox":[76,556,218,24]}
+{"kind":"textbox","id":"sh/w7alkf2h","slide":1,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[296,554,30,28]}
+{"kind":"textbox","id":"sh/vm14ralw","slide":1,"text":"Boolean composition","textPreview":"Boolean composition","textChars":19,"textLines":1,"bbox":[326,556,176,24]}
+{"kind":"textbox","id":"sh/al83i5kb","slide":1,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[505,554,30,28]}
+{"kind":"textbox","id":"sh/5cjmxk3y","slide":1,"text":"MultiPolygon → Region[]","textPreview":"MultiPolygon → Region[]","textChars":23,"textLines":1,"bbox":[535,556,226,24]}
+{"kind":"textbox","id":"sh/kbalof2d","slide":1,"text":"사각형 · 원 · 사용자 폴리곤","textPreview":"사각형 · 원 · 사용자 폴리곤","textChars":17,"textLines":1,"bbox":[76,583,218,22]}
+{"kind":"textbox","id":"sh/ja14vul8","slide":1,"text":"불리언 조합","textPreview":"불리언 조합","textChars":6,"textLines":1,"bbox":[326,583,176,22]}
+{"kind":"textbox","id":"sh/i9s3mpkn","slide":1,"text":"복합 단면 형상","textPreview":"복합 단면 형상","textChars":8,"textLines":1,"bbox":[535,583,226,22]}
+{"kind":"textbox","id":"sh/tg3m14ja","slide":1,"text":"Exact polygon boundaries define geometry; meshing remains a separate analysis step.","textPreview":"Exact polygon boundaries define geometry; meshing remains a separate analysis step.","textChars":83,"textLines":1,"bbox":[60,648,770,21]}
+{"kind":"textbox","id":"sh/sfu5sz2p","slide":1,"text":"정확한 폴리곤 경계가 형상을 정의하며, 메시는 별도의 해석 단계입니다.","textPreview":"정확한 폴리곤 경계가 형상을 정의하며, 메시는 별도의 해석 단계입니다.","textChars":39,"textLines":1,"bbox":[60,669,770,20]}
+{"kind":"textbox","id":"sh/ql4jm107","slide":1,"text":"GEOMETRY EDITING · PREVIEW","textPreview":"GEOMETRY EDITING · PREVIEW","textChars":26,"textLines":1,"bbox":[1005,659,215,24]}
+{"kind":"notes","id":"nt/roifog","slide":1,"text":"EN — Presentation notes\n• UNION merges all occupied areas from the selected inputs.\n• SUBTRACT calls polygon-clipping.difference(A, B) to create openings, voids, or removed zones.\n• INTERSECTION keeps only the common area shared by the selected regions.\n• The Boolean result is normalized as a MultiPolygon. Each polygon becomes one SectionSolid/Region with one exterior ring and zero or more hole rings. Disconnected polygons remain separate regions.\n• This slide describes the geometry-authoring capability, not full structural-code certification.\n\nKO — 발표 노트\n• 합집합은 선택한 형상의 모든 유효 영역을 결합합니다.\n• 차집합은 polygon-clipping.difference(A, B)를 사용하여 개구부, 공극 또는 제거 영역을 만듭니다.\n• 교집합은 선택한 영역이 공통으로 겹치는 부분만 유지합니다.\n• 불리언 결과는 MultiPolygon으로 정규화됩니다. 각 폴리곤은 외곽 링 1개와 내부 홀 링 0개 이상을 가진 하나의 SectionSolid/Region이 되며, 서로 떨어진 폴리곤은 별도 영역으로 유지됩니다.\n\nSources: packages/pm-geometry/package.json; packages/pm-geometry/src/index.ts (SectionSolid, SectionGeometry, normalizeClippingResult, composeSectionPrimitives, intersectSectionGeometries)."}
