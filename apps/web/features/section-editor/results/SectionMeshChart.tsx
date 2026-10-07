@@ -164,16 +164,13 @@ export function SectionMeshChart({
         canvas.height = height
       }
 
-      const ctx = canvas.getContext('2d', { alpha: false })
+      const ctx = canvas.getContext('2d', { alpha: true })
       if (!ctx) return
       const styles = getComputedStyle(document.body)
       const foreground = styles.getPropertyValue('--foreground').trim() || '#111827'
       const muted = styles.getPropertyValue('--foreground-muted').trim() || '#64748b'
       const border = styles.getPropertyValue('--border').trim() || '#cbd5e1'
       const card = styles.getPropertyValue('--card').trim() || '#ffffff'
-      const canvasBackground =
-        styles.getPropertyValue('--mesh-canvas-bg').trim() ||
-        (theme === 'dark' ? '#0b0d10' : '#ffffff')
       const accent = styles.getPropertyValue('--accent').trim() || '#2563eb'
 
       const padLeft = 38 * dpr
@@ -207,8 +204,7 @@ export function SectionMeshChart({
       }
 
       ctx.setTransform(1, 0, 0, 1, 0, 0)
-      ctx.fillStyle = canvasBackground
-      ctx.fillRect(0, 0, width, height)
+      ctx.clearRect(0, 0, width, height)
 
       drawSectionPath(ctx, px, py)
       ctx.globalAlpha = 0.08
@@ -580,14 +576,14 @@ export function SectionMeshChart({
         tabIndex={0}
         aria-label="Interactive exact section mesh; use the mouse wheel to zoom and drag to pan"
       />
-      <div className="pm-section-mesh-nav" role="toolbar" aria-label="Section mesh navigation">
-        <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoomRef.current(1.6)}>
+      <div className="pm-section-mesh-nav ws-chart-controls" role="toolbar" aria-label="Section mesh navigation">
+        <button type="button" title="Zoom in" aria-label="Zoom in" onClick={() => zoomRef.current(1.6)} className="ws-action ws-action--icon">
           <ZoomIn size={14} />
         </button>
-        <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomRef.current(1 / 1.6)}>
+        <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomRef.current(1 / 1.6)} className="ws-action ws-action--icon">
           <ZoomOut size={14} />
         </button>
-        <button type="button" title="Fit mesh" aria-label="Fit mesh" onClick={() => resetRef.current()}>
+        <button type="button" title="Fit mesh" aria-label="Fit mesh" onClick={() => resetRef.current()} className="ws-action ws-action--icon">
           <Focus size={14} />
         </button>
       </div>

@@ -1,258 +1,38 @@
-/* Independent Geometry presentation. The editor and all engineering DTOs retain their owners. */
+/* Geometry-only chrome shares the workspace contract. Its drawing palette is retained. */
 #geometry-workspace {
-  all: revert;
-  --ink: #24282b;
-  --muted: #666d73;
-  --line: #dfe2e4;
-  --paper: #fff;
-  --wash: #f5f6f7;
-  position: fixed;
-  inset: 0;
-  display: grid;
-  grid-template-columns: 380px minmax(0, 1fr);
-  grid-template-rows: 52px minmax(0, 1fr);
-  color: var(--ink);
-  background: var(--paper);
-  font: 12px/1.45 Arial, Helvetica, sans-serif;
-  font-variant-numeric: tabular-nums;
-  color-scheme: light;
-  isolation: isolate;
-
-  /* Discard previous component decoration; rebuild the same three workspace regions below. */
-  & :where(*):not(svg, svg *) {
-    all: revert;
-    box-sizing: border-box;
-    color: inherit;
-    font: inherit;
-  }
-  & :where(*)::before, & :where(*)::after { content: none; }
-  & [hidden] { display: none; }
-  & :is(h1, h2, p) { margin: 0; }
-  & h1 { font-size: 14px; font-weight: 600; letter-spacing: -.3px; }
-  & h2 { font-size: 12px; font-weight: 600; }
-  & strong { font-weight: 600; }
-  & small { font-size: 11px; color: var(--muted); }
-  & button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    min-height: 28px;
-    margin: 0;
-    padding: 4px 8px;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    background: var(--paper);
-    color: var(--ink);
-    font-weight: 500;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  & button:hover:not(:disabled) { background: #eceeef; border-color: #afb5ba; }
-  & button:disabled { color: #8a9095; background: var(--wash); cursor: not-allowed; }
-  & :is(button, input, select, a):focus-visible { outline: 2px solid #424b53; outline-offset: 2px; }
-  & button.is-active { color: #fff; background: #30363b; border-color: #30363b; }
-  & button.is-active:hover { color: #fff; background: #454c52; }
-  & button svg { flex: 0 0 auto; stroke-width: 1.6; }
-  & input:not([type='checkbox']), & select {
-    width: 100%;
-    min-width: 0;
-    height: 30px;
-    padding: 4px 7px;
-    border: 1px solid #cdd2d6;
-    border-radius: 3px;
-    background: var(--paper);
-    color: var(--ink);
-  }
-  & input[type='number'] { text-align: right; font-variant-numeric: tabular-nums; }
-  & input:disabled, & input:read-only, & select:disabled { background: var(--wash); color: var(--muted); }
-  & input[type='checkbox'] { width: 14px; height: 14px; margin: 0; accent-color: #30363b; }
-  & .pm-app-header {
-    grid-column: 1 / -1;
-    display: flex;
-    align-items: center;
-    gap: 24px;
-    min-width: 0;
-    padding: 0 16px;
-    border-bottom: 1px solid var(--line);
-    background: var(--paper);
-    z-index: 5;
-  }
-  & .pm-brand { display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
-  & .pm-brand-mark { display: grid; place-items: center; width: 27px; height: 27px; border: 1px solid #444b50; font-size: 11px; font-weight: 700; letter-spacing: -1px; }
-  & .pm-module-tabs { display: flex; align-self: stretch; }
-  & .pm-module-tabs button { border: 0; border-bottom: 2px solid var(--ink); border-radius: 0; background: transparent; color: var(--ink); padding: 0 4px; gap: 8px; }
-  & .pm-module-tabs button:hover { background: var(--wash); color: var(--ink); }
-  & .geometry-preview-label { display: flex; align-items: center; gap: 8px; color: var(--muted); white-space: nowrap; }
-  & .geometry-preview-label > span { padding: 1px 5px; border: 1px solid var(--line); border-radius: 3px; font-size: 10px; text-transform: uppercase; letter-spacing: .6px; }
-  & .pm-calculation-toolbar { margin-left: auto; min-width: 0; }
-  & .pm-calculation-summary { max-width: 100%; border: 0; gap: 8px; }
-  & .pm-calculation-code { font-weight: 600; }
-  & .pm-calculation-options { display: flex; gap: 5px; color: var(--muted); font-size: 11px; }
-  & .pm-toolbar { display: flex; align-items: center; gap: 4px; }
-  & .pm-toolbar > button, & .pm-toolbar > div > button { width: 30px; padding: 5px; border-color: transparent; }
-  & .pm-toolbar-sep { height: 18px; border-left: 1px solid var(--line); margin: 0 3px; }
-  & .pm-side-panel { min-width: 0; min-height: 0; border-right: 1px solid var(--line); background: var(--paper); overflow: auto; scrollbar-width: thin; }
-  & .pm-side-panel-body { min-width: 0; padding-bottom: 16px; }
-  & .geometry-panel-heading { display: flex; justify-content: space-between; align-items: center; padding: 18px 16px 14px; }
-  & .geometry-panel-heading h2 { font-size: 18px; letter-spacing: -.45px; }
-  & .geometry-panel-heading p { color: var(--muted); margin-top: 2px; }
-  & .geometry-panel-heading > span { color: var(--muted); border: 1px solid var(--line); padding: 2px 6px; border-radius: 3px; }
-  & .pm-page-tabs { display: flex; padding: 0 16px; border-bottom: 1px solid var(--line); gap: 18px; }
-  & .pm-page-tabs button { min-height: 35px; padding: 4px 0; background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); }
-  & .pm-page-tabs button.is-active { color: var(--ink); border-bottom-color: var(--ink); font-weight: 600; }
-  & .pm-page-tabs button:hover { background: transparent; color: var(--ink); }
-  & .pm-panel-section { padding: 16px; border-bottom: 1px solid var(--line); }
-  & .pm-section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
-  & .pm-section-title h2 { font-size: 11px; letter-spacing: .65px; text-transform: uppercase; }
-  & :is(.pm-boundary-list-actions, .pm-boundary-create-actions, .pm-boundary-detail-actions, .pm-rebar-excel-actions) { display: flex; align-items: center; gap: 5px; }
-  & :is(.pm-table-add-btn, .pm-file-btn) { font-size: 11px; min-height: 26px; padding: 3px 6px; }
-  & .pm-boundary-list { display: grid; gap: 3px; }
-  & .pm-boundary-row { display: flex; align-items: center; gap: 3px; min-height: 45px; padding: 3px 4px; border: 1px solid transparent; border-radius: 3px; }
-  & .pm-boundary-row.is-selected { background: var(--wash); border-color: var(--line); }
-  & .pm-boundary-row.is-active { border-left: 2px solid var(--ink); padding-left: 3px; }
-  & .pm-boundary-row-main { display: grid; grid-template-columns: 10px minmax(0, 1fr); column-gap: 7px; row-gap: 0; flex: 1; min-width: 0; border: 0; background: transparent; text-align: left; padding: 3px; }
-  & .pm-boundary-row-name { grid-column: 2; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-  & .pm-boundary-row-meta { grid-column: 2; color: var(--muted); font-size: 10px; white-space: normal; }
-  & .pm-selection-badge { grid-row: 1 / 3; width: 8px; height: 8px; align-self: center; border: 1px solid #939ba1; }
-  & .pm-selection-badge.is-on { background: #30363b; border-color: #30363b; }
-  & .pm-boundary-final-label { font-size: 10px; color: var(--muted); border: 1px solid #bfc5c9; padding: 1px 4px; border-radius: 2px; }
-  & .pm-boundary-apply-btn { min-height: 25px; padding: 2px 6px; background: #30363b; color: #fff; border-color: #30363b; font-size: 11px; }
-  & .pm-boundary-apply-btn:hover:not(:disabled) { background: #454c52; color: #fff; }
-  & :is(.pm-table-icon-btn, .pm-table-add-icon-btn) { min-height: 24px; width: 24px; padding: 3px; border-color: transparent; background: transparent; }
-  & .pm-table-icon-btn--danger:hover:not(:disabled), & .pm-rebar-remove-all:hover:not(:disabled) { color: #a02e2e; border-color: #d6aaaa; background: #fcf5f5; }
-  & .pm-boundary-create-actions > button { min-height: 28px; }
-  & .pm-boundary-detail-header { flex-wrap: wrap; }
-  & .pm-boundary-detail-heading { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-  & .pm-boundary-detail-name { color: var(--muted); font-size: 11px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  & .pm-detail-tabs { display: flex; gap: 0; }
-  & .pm-detail-tabs button { min-height: 25px; padding: 2px 7px; font-size: 11px; border-radius: 0; }
-  & .pm-detail-tabs button:first-child { border-radius: 3px 0 0 3px; }
-  & .pm-detail-tabs button:last-child { border-radius: 0 3px 3px 0; margin-left: -1px; }
-  & :is(.pm-shape-params, .pm-rebar-params) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
-  & .pm-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  & .pm-field > span { color: var(--muted); font-size: 11px; }
-  & .pm-boundary-rotation { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0; }
-  & .pm-boundary-rotation > span:first-child { display: flex; flex-direction: column; gap: 2px; }
-  & .pm-boundary-rotation-input { display: flex; align-items: center; gap: 6px; width: 106px; }
-  & .pm-boundary-rotation-input em { font-style: normal; }
-  & .pm-point-table-wrap { width: 100%; overflow: auto; scrollbar-width: thin; }
-  & .pm-point-table-caption { display: flex; justify-content: space-between; padding: 7px 0; color: var(--muted); font-size: 11px; }
-  & .pm-point-table { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 12px; }
-  & .pm-point-table th { height: 29px; padding: 3px 6px; text-align: right; font-size: 10px; font-weight: 600; color: var(--muted); background: var(--wash); border-top: 1px solid var(--line); border-bottom: 1px solid #c9cfd3; }
-  & .pm-point-table td { height: 31px; padding: 2px 3px; text-align: right; border-bottom: 1px solid var(--line); }
-  & .pm-point-table th:first-child, & .pm-point-table td:first-child { width: 32px; text-align: center; color: var(--muted); }
-  & .pm-point-table th:last-child, & .pm-point-table td:last-child { width: 27px; padding: 0; }
-  & .pm-point-table tr.is-selected td { background: #eceff1; }
-  & .pm-point-table tr:hover td { background: var(--wash); }
-  & .pm-point-table td input, & .pm-point-table td select { height: 26px; padding: 2px 4px; border-color: transparent; background: transparent; border-radius: 2px; font-size: 12px; }
-  & .pm-point-table td input:hover:not(:read-only), & .pm-point-table td select:hover { border-color: #cdd2d6; }
-  & .pm-point-table td input:focus, & .pm-point-table td select:focus { background: var(--paper); }
-  & .pm-point-table td input:read-only { color: var(--muted); }
-  & .pm-rebar-table td select { font-size: 11px; padding-left: 2px; }
-  & .pm-rebar-table { min-width: 380px; }
-  & .pm-ring-nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-  & .pm-ring-nav__group { display: flex; flex-wrap: wrap; gap: 3px; }
-  & .pm-ring-nav__btn { font-size: 11px; }
-  & .pm-rebar-patterns { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
-  & .pm-rebar-patterns button { flex: 1; font-size: 11px; padding: 4px 6px; }
-  & .pm-rebar-params-full { grid-column: 1 / -1; }
-  & .pm-rebar-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; }
-  & .pm-rebar-replace { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
-  & .pm-rebar-actions button { background: #30363b; color: white; border-color: #30363b; }
-  & .pm-rebar-actions button:hover:not(:disabled) { background: #454c52; }
-  & .pm-rebar-count { margin-left: 4px; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--muted); }
-  & .pm-rebar-col--id { width: 30px; }
-  & .pm-rebar-col--dia { width: 15%; }
-  & .pm-rebar-col--mat { width: 29%; }
-  & .pm-rebar-col--x, & .pm-rebar-col--y { width: 20%; }
-  & .pm-rebar-col--action { width: 26px; }
-  & .pm-rebar-list-footer { display: flex; justify-content: flex-end; margin-top: 10px; }
-  & .pm-rebar-remove-all { font-size: 11px; color: var(--muted); }
-  & .pm-rebar-empty { text-align: left !important; padding: 12px 4px !important; color: var(--muted); }
-  & :is(.pm-boundary-empty, .pm-preview-hint) { color: var(--muted); line-height: 1.6; padding: 8px 0; }
-  & .pm-warning-text { margin-top: 10px; padding: 8px; color: #922f2f; border-left: 2px solid #922f2f; background: #fcf7f7; }
-  & .pm-drawing-stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #fafbfc; }
-  & .geometry-drawing-heading { position: absolute; inset: 0 0 auto; height: 49px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 18px; border-bottom: 1px solid var(--line); background: var(--paper); z-index: 2; }
-  & .geometry-drawing-heading > div { display: flex; align-items: center; gap: 14px; min-width: 0; }
-  & .geometry-drawing-heading strong { white-space: nowrap; }
-  & .geometry-drawing-heading span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
-  & .geometry-drawing-heading button { font-size: 11px; }
-  & .pm-cad-surface { position: absolute; inset: 49px 0 31px; display: block; width: 100%; height: calc(100% - 80px); cursor: crosshair; touch-action: none; }
-  & .pm-canvas-toolbox { position: absolute; top: 65px; left: 16px; z-index: 2; display: flex; flex-direction: column; padding: 3px; gap: 2px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); }
-  & .pm-canvas-toolbox button { width: 30px; height: 30px; padding: 6px; border-color: transparent; }
-  & .pm-boundary-hud { position: absolute; right: 18px; bottom: 48px; min-width: 177px; padding: 10px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 3px; pointer-events: none; }
-  & .pm-boundary-hud-row { display: flex; justify-content: space-between; gap: 20px; padding: 3px 0; font-size: 11px; }
-  & .pm-boundary-hud-row span { color: var(--muted); }
-  & .pm-boundary-hud-row strong { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 11px; font-weight: 400; }
-  & .geometry-drawing-footer { position: absolute; inset: auto 0 0; display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 31px; padding: 5px 16px; background: var(--paper); border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
-  & .geometry-drawing-footer > span:last-child { white-space: nowrap; }
-  & .pm-canvas-bg { fill: #fafbfc; }
-  & .pm-grid line { stroke: #e9ecef; stroke-width: .6; }
-  & .pm-grid line.is-major { stroke: #d9dfe3; stroke-width: .8; }
-  & .pm-workspace-boundary { fill: #e7eaed; fill-opacity: .75; stroke: #808990; stroke-width: 1.2; stroke-dasharray: none; }
-  & .pm-workspace-boundary.is-selected, & .pm-workspace-boundary.is-active { fill: #dfe4e8; stroke: #39464f; stroke-width: 1.5; }
-  & .pm-workspace-boundary.is-locked { stroke-dasharray: 4 3; }
-  & .pm-workspace-boundary.is-applied { fill: #e3e7ea; stroke: #30383e; stroke-width: 1.5; stroke-dasharray: none; }
-  & .pm-applied-section { fill: #e6e9ec; stroke: #858d93; stroke-width: 1; stroke-dasharray: 5 4; opacity: .6; }
-  & .pm-drawing-preview { fill: #e5e9ec; fill-opacity: .6; stroke: #424e57; stroke-width: 1.3; stroke-dasharray: 5 4; }
-  & .pm-handles circle { fill: #fff; stroke: #4b5862; stroke-width: 1.2; cursor: move; }
-  & .pm-handles circle.is-selected { fill: #30383e; stroke: #30383e; }
-  & :is(.pm-point-label, .pm-rebar-label, .pm-snap-cursor text) { fill: #4f5d67; stroke: #fafbfc; stroke-width: 3px; paint-order: stroke; font: 10px 'SFMono-Regular', Consolas, monospace; pointer-events: none; }
-  & .pm-rebar-dot { fill: #4c5963; stroke: #fff; stroke-width: 1; }
-  & .pm-rebar-layer .is-selected .pm-rebar-dot { fill: #222a30; stroke: #8998a4; stroke-width: 3; }
-  & .pm-centroid line { stroke: #697781; stroke-width: 1; }
-  & .pm-snap-cursor :is(line, circle) { stroke: #526573; stroke-width: 1; fill: none; }
-  & .pm-project-menu, & .pm-about-menu { position: relative; }
-  & :is(.pm-project-menu__popover, .pm-about-popover, .pm-calculation-popover) { position: absolute; top: calc(100% + 10px); right: 0; width: 330px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 75px); overflow: auto; padding: 14px; border: 1px solid #cdd2d6; border-radius: 5px; background: var(--paper); box-shadow: 0 8px 24px #24282b14; z-index: 20; }
-  & .pm-calculation-popover { position: fixed; right: auto; display: grid; gap: 12px; width: 400px; }
-  & .pm-calculation-field { display: grid; gap: 4px; }
-  & .pm-calculation-field > span { color: var(--muted); font-size: 11px; }
-  & .pm-project-menu__section { padding: 10px 0; border-bottom: 1px solid var(--line); }
-  & .pm-project-menu__section:first-child { padding-top: 0; }
-  & .pm-project-menu__section:last-child { border: 0; padding-bottom: 0; }
-  & .pm-project-menu__section-head { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 7px; }
-  & .pm-project-menu__item { display: flex; width: 100%; justify-content: flex-start; text-align: left; white-space: normal; border: 0; padding: 7px; }
-  & .pm-project-menu__item > span { display: grid; gap: 2px; }
-  & .pm-project-menu__row-chevron { margin-left: auto; }
-  & .pm-project-menu__actions { display: flex; gap: 6px; }
-  & .pm-project-menu__icon-action { min-width: 34px; }
-  & .pm-about-header { display: flex; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-  & .pm-about-mark { font-weight: 700; font-size: 18px; }
-  & .pm-about-title > div { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
-  & .pm-about-title p { font-size: 11px; color: var(--muted); }
-  & .pm-about-attribution { display: grid; gap: 4px; padding: 12px 0; font-size: 11px; }
-  & .pm-about-links { display: flex; gap: 14px; }
-  & .pm-about-links a { display: inline-flex; gap: 5px; align-items: center; color: var(--ink); }
-  & .pm-about-disclaimer { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); }
-  & .pm-project-dialog-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; background: #24282b55; z-index: 40; }
-  & .pm-project-dialog { width: min(560px, 100%); max-height: calc(100dvh - 40px); overflow: auto; background: var(--paper); border: 1px solid #bfc6cb; border-radius: 5px; }
-  & .pm-project-dialog__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 20px; border-bottom: 1px solid var(--line); }
-  & .pm-project-dialog__header h2 { font-size: 16px; }
-  & .pm-project-dialog__header p { margin-top: 4px; color: var(--muted); font-size: 11px; }
-  & .pm-project-dialog__form { padding: 20px; }
-  & .pm-project-dialog__rows { display: grid; gap: 12px; }
-  & .pm-project-dialog__field { display: grid; gap: 4px; min-width: 0; }
-  & .pm-project-dialog__field > span { font-size: 11px; color: var(--muted); }
-  & .pm-project-dialog__row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  & .pm-project-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
-  & .pm-primary-btn { background: #30363b; color: #fff; border-color: #30363b; }
+  --geometry-canvas-bg: #fafbfc;
+  .geometry-preview-label { display: flex; align-items: center; gap: var(--sp-3); color: var(--foreground-muted); font-size: var(--fs-xs); white-space: nowrap; }
+  .geometry-preview-label > span { padding: 1px var(--sp-1); border: 1px solid var(--border); border-radius: var(--r-sm); }
+  .geometry-drawing-heading { position: absolute; inset: 0 0 auto; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-5); height: 44px; padding: 0 var(--sp-5); border-bottom: 1px solid var(--group-separator); background: var(--menu-surface); }
+  .geometry-drawing-heading > div { display: flex; align-items: center; gap: var(--sp-5); min-width: 0; }
+  .geometry-drawing-heading strong { font-size: var(--fs-md); font-weight: 600; white-space: nowrap; }
+  .geometry-drawing-heading span { overflow: hidden; color: var(--foreground-muted); font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; }
+  .pm-cad-surface { inset: 44px 0 31px; height: calc(100% - 75px); background: var(--geometry-canvas-bg); }
+  .pm-canvas-toolbox { top: 52px; }
+  .pm-boundary-hud { bottom: 43px; }
+  .geometry-drawing-footer { position: absolute; inset: auto 0 0; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-5); min-height: 31px; padding: var(--sp-1) var(--sp-5); border-top: 1px solid var(--group-separator); background: var(--menu-surface); color: var(--foreground-muted); font-size: var(--fs-xs); }
+  .geometry-drawing-footer > span:last-child { white-space: nowrap; }
+  .pm-canvas-bg { fill: #fafbfc; }
+  .pm-grid line { stroke: #e9ecef; stroke-width: .6; }
+  .pm-grid line.is-major { stroke: #d9dfe3; stroke-width: .8; }
+  .pm-workspace-boundary { fill: #e7eaed; fill-opacity: .75; stroke: #808990; stroke-width: 1.2; stroke-dasharray: none; }
+  .pm-workspace-boundary.is-selected, & .pm-workspace-boundary.is-active { fill: #dfe4e8; stroke: #39464f; stroke-width: 1.5; }
+  .pm-workspace-boundary.is-locked { stroke-dasharray: 4 3; }
+  .pm-workspace-boundary.is-applied { fill: #e3e7ea; stroke: #30383e; stroke-width: 1.5; stroke-dasharray: none; }
+  .pm-applied-section { fill: #e6e9ec; stroke: #858d93; stroke-width: 1; stroke-dasharray: 5 4; opacity: .6; }
+  .pm-drawing-preview { fill: #e5e9ec; fill-opacity: .6; stroke: #424e57; stroke-width: 1.3; stroke-dasharray: 5 4; }
+  .pm-handles circle { fill: #fff; stroke: #4b5862; stroke-width: 1.2; cursor: move; }
+  .pm-handles circle.is-selected { fill: #30383e; stroke: #30383e; }
+  :is(.pm-point-label, .pm-rebar-label, .pm-snap-cursor text) { fill: #4f5d67; stroke: #fafbfc; stroke-width: 3px; paint-order: stroke; font: 10px 'SFMono-Regular', Consolas, monospace; pointer-events: none; }
+  .pm-rebar-dot { fill: #4c5963; stroke: #fff; stroke-width: 1; }
+  .pm-rebar-layer .is-selected .pm-rebar-dot { fill: #222a30; stroke: #8998a4; stroke-width: 3; }
+  .pm-centroid line { stroke: #697781; stroke-width: 1; }
+  .pm-snap-cursor :is(line, circle) { stroke: #526573; stroke-width: 1; fill: none; }
 }
-
 @media (max-width: 1100px) {
   #geometry-workspace .geometry-preview-label { display: none; }
-  #geometry-workspace .pm-app-header { gap: 16px; }
-  #geometry-workspace .pm-calculation-options { display: none; }
 }
 @media (max-width: 760px) {
-  #geometry-workspace { grid-template-columns: 320px minmax(240px, 1fr); overflow: auto; }
-  #geometry-workspace .pm-app-header { gap: 12px; padding: 0 12px; }
-  #geometry-workspace .pm-brand h1 { display: none; }
-  #geometry-workspace .pm-panel-section { padding: 12px; }
-  #geometry-workspace .geometry-drawing-heading { padding: 0 10px; }
   #geometry-workspace .geometry-drawing-heading > div { flex-direction: column; align-items: flex-start; gap: 0; }
   #geometry-workspace .geometry-drawing-footer > span:first-child { max-width: 75%; }
-}
-@media (prefers-reduced-motion: reduce) {
-  #geometry-workspace *, #geometry-workspace *::before, #geometry-workspace *::after { animation: none; transition: none; }
 }

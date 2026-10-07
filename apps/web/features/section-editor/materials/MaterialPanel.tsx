@@ -1,7 +1,8 @@
 'use client'
 
+import { AddIcon } from '../shared/WorkspaceIcons'
 import { useMemo, useState } from 'react'
-import { Plus, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import {
   designBasisRequiresOverrideReason,
   resolveMaterialFactorExpression,
@@ -358,8 +359,8 @@ function UserCurveEditor({
             <th>ε</th>
             <th>σ</th>
             <th>
-              <button type="button" className="pm-table-add-icon-btn" onClick={addPoint} title="Add point">
-                <Plus size={14} />
+              <button type="button" className="ws-action ws-action--primary ws-action--compact ws-action--icon pm-table-add-icon-btn" onClick={addPoint} title="Add point">
+                <AddIcon />
               </button>
             </th>
           </tr>
@@ -387,7 +388,7 @@ function UserCurveEditor({
               <td>
                 <button
                   type="button"
-                  className="pm-material-remove"
+                  className="ws-action ws-action--quiet ws-action--danger-quiet ws-action--compact ws-action--icon pm-material-remove"
                   disabled={points.length <= 2}
                   onClick={() => removePoint(index)}
                   title="Remove point"
@@ -500,7 +501,7 @@ export function MaterialPanel({
 
   return (
     <>
-      <div className="pm-page-tabs" role="tablist" aria-label="Material tabs">
+      <div className="ws-page-tabs pm-page-tabs" role="tablist" aria-label="Material tabs">
         <button
           type="button"
           role="tab"
@@ -524,7 +525,7 @@ export function MaterialPanel({
       {activePage === 'concrete' && (
         <section className="pm-panel-section">
           <div className="pm-section-title pm-section-title--with-action">
-            <h2>Concrete Material</h2>
+            <h2>Concrete material</h2>
             <select
               className="pm-concrete-model-select"
               value={activeModelId}
@@ -759,7 +760,7 @@ export function MaterialPanel({
             {!isBlockMechanics && (
             <div className="pm-material-stress-box">
               <div className="pm-material-stress-head">
-                <div className="pm-material-stress-title">Stress-Strain</div>
+                <div className="pm-material-stress-title">Stress–strain</div>
                 <label className="pm-material-toggle">
                   <input
                     type="checkbox"
@@ -904,9 +905,9 @@ export function MaterialPanel({
       {activePage === 'steel' && (
         <section className="pm-panel-section">
           <div className="pm-section-title pm-section-title--with-action">
-            <h2>Steel Materials</h2>
-            <button type="button" className="pm-table-add-btn" onClick={addSteel} title="Add steel material">
-              <Plus size={13} />
+            <h2>Steel materials</h2>
+            <button type="button" className="ws-action ws-action--primary pm-table-add-btn" onClick={addSteel} title="Add steel material">
+              <AddIcon />
               Add
             </button>
           </div>
@@ -916,12 +917,12 @@ export function MaterialPanel({
                 key={material.id}
                 className={`pm-material-row${activeSteel?.id === material.id ? ' is-active' : ''}`}
               >
-                <button type="button" className="pm-material-row-main" onClick={() => selectSteel(material.id)}>
+                <button type="button" className="ws-row-action pm-material-row-main" onClick={() => selectSteel(material.id)}>
                   {material.name}
                 </button>
                 <button
                   type="button"
-                  className="pm-material-remove"
+                  className="ws-action ws-action--quiet ws-action--danger-quiet ws-action--compact ws-action--icon pm-material-remove"
                   disabled={store.steel.length <= 1 || usedSteelMaterialIds.has(material.id)}
                   onClick={() => removeSteel(material.id)}
                   title={usedSteelMaterialIds.has(material.id) ? 'Steel is used by rebar' : 'Remove steel'}
@@ -1033,7 +1034,7 @@ export function MaterialPanel({
               </div>
 
               <div className="pm-material-stress-box">
-                <div className="pm-material-stress-title">Stress-Strain</div>
+                <div className="pm-material-stress-title">Stress–strain</div>
 
                 <div className="pm-material-inline-params">
                   <label className="pm-inline-param">

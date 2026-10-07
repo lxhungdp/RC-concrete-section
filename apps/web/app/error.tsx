@@ -18,8 +18,8 @@ export default function ApplicationError({ error, reset }: Props) {
         </p>
         {error.digest ? <code>Reference: {error.digest}</code> : null}
         <div className="pm-application-error-actions">
-          <button type="button" onClick={reset}>Retry</button>
-          <button type="button" onClick={() => window.location.reload()}>Reload application</button>
+          <button type="button" className="ws-action ws-action--primary" onClick={reset}>Retry</button>
+          <button type="button" className="ws-action" onClick={() => window.location.reload()}>Reload application</button>
         </div>
       </section>
     </main>

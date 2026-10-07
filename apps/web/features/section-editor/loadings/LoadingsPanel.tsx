@@ -1,7 +1,8 @@
 'use client'
 
+import { AddIcon, TransferIcon } from '../shared/WorkspaceIcons'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { CircleArrowRight, Download, Loader2, Plus, Upload, X } from 'lucide-react'
+import { CircleArrowRight, Loader2, X } from 'lucide-react'
 import type { LoadcaseQuickCheckResult } from '@pm/analysis'
 import { createLoadCombination, type LoadCombination, type LoadingsInput } from '@pm/project'
 import { downloadLoadcaseWorkbook, importLoadcaseWorkbook } from './loadcase-xlsx'
@@ -154,24 +155,24 @@ export function LoadingsPanel({
         <div className="pm-loadcase-header-actions">
           <button
             type="button"
-            className="pm-file-btn pm-loadcase-file-btn"
+            className="ws-action pm-file-btn pm-loadcase-file-btn"
             onClick={() => void exportExcel()}
             title="Export loadcases to Excel"
             aria-label="Export loadcases to Excel"
           >
-            <Download size={13} />
+            <TransferIcon direction="export" />
           </button>
           <button
             type="button"
-            className="pm-file-btn pm-loadcase-file-btn"
+            className="ws-action pm-file-btn pm-loadcase-file-btn"
             onClick={() => excelInputRef.current?.click()}
             title="Import loadcases from Excel"
             aria-label="Import loadcases from Excel"
           >
-            <Upload size={13} />
+            <TransferIcon direction="import" />
           </button>
-          <button type="button" className="pm-table-add-btn" onClick={addCombination}>
-            <Plus size={13} />
+          <button type="button" className="ws-action ws-action--primary pm-table-add-btn" onClick={addCombination}>
+            <AddIcon />
             Add
           </button>
           <input
@@ -258,7 +259,7 @@ export function LoadingsPanel({
                   <td className="pm-col-detail">
                     <button
                       type="button"
-                      className="pm-table-icon-btn"
+                      className="ws-action ws-action--quiet ws-action--compact ws-action--icon pm-table-icon-btn"
                       title="Open calculation trace"
                       aria-label={`Open calculation trace for ${item.name}`}
                       onClick={(event) => {
@@ -310,7 +311,7 @@ export function LoadingsPanel({
                           : 'Run check by selecting this loadcase'
                       }
                     >
-                      <span>{hasUr ? formatUr(ur) : '—'}</span>
+                      <span className="ws-num">{hasUr ? formatUr(ur) : '—'}</span>
                       {statusLabel && <small>{statusLabel}</small>}
                     </span>
                   </td>
@@ -318,7 +319,7 @@ export function LoadingsPanel({
                     <div className="pm-loadcase-actions">
                       <button
                         type="button"
-                        className="pm-table-icon-btn pm-table-icon-btn--danger"
+                        className="ws-action ws-action--quiet ws-action--danger-quiet ws-action--compact ws-action--icon pm-table-icon-btn pm-table-icon-btn--danger"
                         title="Delete"
                         onClick={(event) => {
                           event.stopPropagation()

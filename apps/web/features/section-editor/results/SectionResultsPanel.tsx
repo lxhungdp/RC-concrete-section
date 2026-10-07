@@ -1,8 +1,9 @@
 'use client'
 
+import { TransferIcon } from '../shared/WorkspaceIcons'
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import dynamic from 'next/dynamic'
-import { Download, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import type {
   ExactDirectionCurve,
   PreviewSurface,
@@ -94,15 +95,15 @@ const SumCells = ({ stage }: { stage: ChartTableStageForces | null }) => {
   if (!stage) {
     return (
       <>
-        <td>—</td>
-        <td>—</td>
+        <td className="ws-num">—</td>
+        <td className="ws-num">—</td>
       </>
     )
   }
   return (
     <>
-      <td>{fmtForce(stage.total.P)}</td>
-      <td>{fmtMoment(stage.total.M)}</td>
+      <td className="ws-num">{fmtForce(stage.total.P)}</td>
+      <td className="ws-num">{fmtMoment(stage.total.M)}</td>
     </>
   )
 }
@@ -111,15 +112,15 @@ const MomentCells = ({ stage }: { stage: ChartTableMoments | null }) => {
   if (!stage) {
     return (
       <>
-        <td>—</td>
-        <td>—</td>
+        <td className="ws-num">—</td>
+        <td className="ws-num">—</td>
       </>
     )
   }
   return (
     <>
-      <td>{fmtMoment(stage.Mx)}</td>
-      <td>{fmtMoment(stage.My)}</td>
+      <td className="ws-num">{fmtMoment(stage.Mx)}</td>
+      <td className="ws-num">{fmtMoment(stage.My)}</td>
     </>
   )
 }
@@ -398,7 +399,7 @@ export function SectionResultsPanel({
               <button
                 key={id}
                 type="button"
-                className={`pm-chart-visibility-btn${on ? ' is-on' : ''}`}
+                className={`ws-action pm-chart-visibility-btn${on ? ' is-on' : ''}`}
                 aria-pressed={on}
                 title={on ? `Hide ${sectionChartLabel(id)}` : `Show ${sectionChartLabel(id)}`}
                 onClick={() => onViewChange(toggleChartVisibility(view, SECTION_CHART_IDS, id))}
@@ -412,10 +413,10 @@ export function SectionResultsPanel({
       </section>
 
       <section className="pm-panel-section">
-        <h2 className="pm-chart-visibility-title">Section Information</h2>
+        <h2 className="pm-chart-visibility-title">Section information</h2>
         <div className="pm-result-status-list">
           <span>Ac / As</span>
-          <strong>
+          <strong className="ws-num">
             {summary.hasAppliedSection
               ? `${integer(summary.concreteArea)} / ${integer(summary.steelArea)} mm²`
               : `— / ${integer(summary.steelArea)} mm²`}
@@ -423,23 +424,23 @@ export function SectionResultsPanel({
           <span>Sampling mode</span>
           <strong>{summary.samplingMode === 'adaptive' ? 'Independent adaptive' : 'Fixed grid'}</strong>
           <span>Directions / max stations</span>
-          <strong>{`${integer(summary.directionCount)} / ${integer(summary.stationCount)}`}</strong>
+          <strong className="ws-num">{`${integer(summary.directionCount)} / ${integer(summary.stationCount)}`}</strong>
           {summary.mechanics === 'stress-strain-integration' ? (
             <>
               <span>Mesh cells / points</span>
-              <strong>{`${integer(summary.meshCells)} / ${integer(summary.meshPoints)}`}</strong>
+              <strong className="ws-num">{`${integer(summary.meshCells)} / ${integer(summary.meshPoints)}`}</strong>
             </>
           ) : null}
           <span>Surface points</span>
-          <strong>{integer(summary.surfacePoints)}</strong>
+          <strong className="ws-num">{integer(summary.surfacePoints)}</strong>
           {summary.refinement ? (
             <>
               <span>{summary.samplingMode === 'fixed' ? 'Measured interp. error' : 'Interp. error / tolerance'}</span>
               <strong
                 className={
                   summary.samplingMode === 'fixed' || !summary.refinement.withinTolerance
-                    ? 'is-warning'
-                    : ''
+                    ? 'ws-num is-warning'
+                    : 'ws-num'
                 }
               >
                 {summary.samplingMode === 'fixed'
@@ -468,18 +469,18 @@ export function SectionResultsPanel({
           </div>
           <button
             type="button"
-            className="pm-file-btn"
+            className="ws-action pm-file-btn"
             disabled={rows.length === 0 || exporting}
             onClick={() => void exportExcel()}
             title="Export a formula-driven project audit workbook"
           >
-            {exporting ? <Loader2 size={13} className="pm-spin" /> : <Download size={13} />}
+            {exporting ? <Loader2 size={13} className="pm-spin" /> : <TransferIcon direction="export" />}
             Excel
           </button>
         </div>
 
         <div className="pm-chart-data-controls">
-          <fieldset className="pm-result-radio-group" aria-label="Chart source">
+          <fieldset className="pm-result-radio-group ws-joined-buttons" aria-label="Chart source">
             <label className={source === 'vertical' ? 'is-active' : ''}>
               <input
                 type="radio"
@@ -499,7 +500,7 @@ export function SectionResultsPanel({
               Fixed-P
             </label>
           </fieldset>
-          <fieldset className="pm-result-radio-group" aria-label="Table resistance stage">
+          <fieldset className="pm-result-radio-group ws-joined-buttons" aria-label="Table resistance stage">
             <label className={resistanceStage === 'design' ? 'is-active' : ''}>
               <input
                 type="radio"
@@ -564,9 +565,9 @@ export function SectionResultsPanel({
                       }}
                       onKeyDown={(event) => rowKeyDown(event, row)}
                     >
-                      <td>{row.index}</td>
-                      <td>{row.branch}</td>
-                      <td>{fmt(row.angleDeg, 3)}°</td>
+                      <td className="ws-num">{row.index}</td>
+                      <td className="ws-num">{row.branch}</td>
+                      <td className="ws-num">{fmt(row.angleDeg, 3)}°</td>
                       {includeDesign ? <MomentCells stage={row.design} /> : null}
                       {includeNominal ? <MomentCells stage={row.nominal} /> : null}
                     </tr>
@@ -609,7 +610,7 @@ export function SectionResultsPanel({
                       }}
                       onKeyDown={(event) => rowKeyDown(event, row)}
                     >
-                      <td>{row.index}</td>
+                      <td className="ws-num">{row.index}</td>
                       <td title={row.criterion}>{row.criterion}</td>
                       {includeDesign ? <SumCells stage={row.design} /> : null}
                       {includeNominal ? <SumCells stage={row.nominal} /> : null}

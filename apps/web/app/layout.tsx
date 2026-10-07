@@ -3,7 +3,10 @@ import { Analytics } from '@vercel/analytics/next'
 import 'katex/dist/katex.min.css'
 import './globals.css'
 import './side-panel.css'
-import './anchor-reference-theme.css'
+import './workspace-tokens.css'
+import './drawing-palette.css'
+import './workspace-chrome.css'
+import './workspace-primitives.css'
 
 export const metadata: Metadata = {
   title: 'P-M Column Designer',

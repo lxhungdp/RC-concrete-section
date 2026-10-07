@@ -145,7 +145,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
         </div>
         <button
           type="button"
-          className="pm-table-icon-btn"
+          className="ws-action ws-action--quiet ws-action--compact ws-action--icon pm-table-icon-btn"
           title="Restore the selected profile defaults"
           onClick={useDefaults}
         >
@@ -161,7 +161,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
       <div className={`pm-disclosure${showMethodInfo ? ' is-open' : ''}`}>
         <button
           type="button"
-          className="pm-disclosure-toggle"
+          className="ws-row-action pm-disclosure-toggle"
           aria-expanded={showMethodInfo}
           onClick={() => setShowMethodInfo((current) => !current)}
           title="Method and standard references"
@@ -405,7 +405,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                 }
               />
             </div>
-            <label className={`pm-field-check pm-design-cap-check${draft.axialCapEnabled ? ' is-on' : ''}`}>
+            <label className={`ws-check ws-check--wrap pm-field-check pm-design-cap-check${draft.axialCapEnabled ? ' is-on' : ''}`}>
               <input
                 type="checkbox"
                 checked={draft.axialCapEnabled}

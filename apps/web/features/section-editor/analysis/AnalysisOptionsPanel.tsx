@@ -1,7 +1,8 @@
 'use client'
 
+import { AddIcon } from '../shared/WorkspaceIcons'
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, RotateCcw, X } from 'lucide-react'
+import { RotateCcw, X } from 'lucide-react'
 import {
   FIXED_DIRECTION_COUNT,
   MAX_BLOCK_STATIONS,
@@ -252,7 +253,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
         </div>
         <button
           type="button"
-          className="pm-table-icon-btn"
+          className="ws-action ws-action--quiet ws-action--compact ws-action--icon pm-table-icon-btn"
           title="Reset the selected sampling mode"
           onClick={() => onChange(options.samplingMode === 'adaptive'
             ? { ...createAdaptiveAnalysisOptions(), mesh: structuredClone(options.mesh) }
@@ -282,15 +283,15 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
       </label>
       <div className="pm-result-status-list">
         <span>Reporting points</span>
-        <strong>{stationCount}</strong>
+        <strong className="ws-num">{stationCount}</strong>
         <span>Maximum stations</span>
-        <strong>{maxStations}</strong>
+        <strong className="ws-num">{maxStations}</strong>
         <span>Seed directions</span>
-        <strong>{seedCount}</strong>
+        <strong className="ws-num">{seedCount}</strong>
         <span>Maximum states</span>
-        <strong>{maxStations * maxDirections}</strong>
+        <strong className="ws-num">{maxStations * maxDirections}</strong>
         <span>Largest angular gap</span>
-        <strong>{maxGap.toFixed(2)}°</strong>
+        <strong className="ws-num">{maxGap.toFixed(2)}°</strong>
       </div>
 
       <div className="pm-section-title">
@@ -310,7 +311,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
               <th>
                 <button
                   type="button"
-                  className="pm-table-add-icon-btn"
+                  className="ws-action ws-action--primary ws-action--compact ws-action--icon pm-table-add-icon-btn"
                   disabled={options.stations.intermediate.length >= MAX_INTERMEDIATE_STATIONS}
                   onClick={() =>
                     commit((draft) => {
@@ -324,7 +325,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
                   }
                   title="Add point"
                 >
-                  <Plus size={14} />
+                  <AddIcon />
                 </button>
               </th>
             </tr>
@@ -371,7 +372,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
                 <td>
                   <button
                     type="button"
-                    className="pm-table-icon-btn pm-table-icon-btn--danger"
+                    className="ws-action ws-action--quiet ws-action--danger-quiet ws-action--compact ws-action--icon pm-table-icon-btn pm-table-icon-btn--danger"
                     disabled={isMandatoryTransitionStation(station.criterion)}
                     onClick={() =>
                       commit((draft) => {
@@ -531,7 +532,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
               }
             />
           </label>
-          <p className="pm-field-note">Exact spacing: {(360 / options.directions.seed.count).toFixed(4)}°</p>
+          <p className="pm-field-note">Exact spacing: <span className="ws-num">{(360 / options.directions.seed.count).toFixed(4)}°</span></p>
         </>
       ) : (
         <>
@@ -546,7 +547,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
                     if (draft.directions.seed.type !== 'explicit' || draft.directions.seed.anglesDeg.length <= 4) return
                     draft.directions.seed.anglesDeg = draft.directions.seed.anglesDeg.filter((item) => item !== angle)
                   })
-                }
+                } className="ws-action ws-action--compact ws-num"
               >
                 {angle}° ×
               </button>
@@ -554,7 +555,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
           </div>
           <button
             type="button"
-            className="pm-secondary-btn"
+            className="ws-action pm-secondary-btn"
             disabled={options.directions.seed.anglesDeg.length >= MAX_SEED_DIRECTIONS}
             onClick={() =>
               commit((draft) => {
@@ -580,7 +581,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
               }}
             />
           </label>
-          <button type="button" className="pm-secondary-btn" disabled={!angleDraft.trim()} onClick={applyExplicitDraft}>
+          <button type="button" className="ws-action pm-secondary-btn" disabled={!angleDraft.trim()} onClick={applyExplicitDraft}>
             Replace angle list
           </button>
           {angleError && <p className="pm-field-error">{angleError}</p>}
@@ -778,7 +779,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
         </div>
         <button
           type="button"
-          className="pm-table-icon-btn"
+          className="ws-action ws-action--quiet ws-action--compact ws-action--icon pm-table-icon-btn"
           title="Reset the selected sampling mode"
           onClick={() => onChange(options.samplingMode === 'adaptive'
             ? createAdaptiveEquivalentBlockAnalysisOptions()
@@ -810,11 +811,11 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
             </select>
           </label>
           <div className="pm-result-status-list">
-            <span>Baseline stations</span><strong>{stationCount}</strong>
-            <span>Maximum stations</span><strong>{stationMaximum}</strong>
-            <span>Seed directions</span><strong>{options.directions.seedCount}</strong>
-            <span>Maximum directions</span><strong>{directionMaximum}</strong>
-            <span>Maximum sampled states</span><strong>{stationMaximum * directionMaximum}</strong>
+            <span>Baseline stations</span><strong className="ws-num">{stationCount}</strong>
+            <span>Maximum stations</span><strong className="ws-num">{stationMaximum}</strong>
+            <span>Seed directions</span><strong className="ws-num">{options.directions.seedCount}</strong>
+            <span>Maximum directions</span><strong className="ws-num">{directionMaximum}</strong>
+            <span>Maximum sampled states</span><strong className="ws-num">{stationMaximum * directionMaximum}</strong>
           </div>
 
           <div className="pm-section-title">
@@ -834,7 +835,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
                   <th>
                     <button
                       type="button"
-                      className="pm-table-add-icon-btn"
+                      className="ws-action ws-action--primary ws-action--compact ws-action--icon pm-table-add-icon-btn"
                       disabled={intermediateStationCount >= MAX_BLOCK_STATIONS - 2}
                       onClick={() => commit((draft) => {
                         draft.neutralAxisStations.values.push({
@@ -844,7 +845,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
                       }, true)}
                       title="Add point"
                     >
-                      <Plus size={14} />
+                      <AddIcon />
                     </button>
                   </th>
                 </tr>
@@ -891,7 +892,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
                     <td>
                       <button
                         type="button"
-                        className="pm-table-icon-btn pm-table-icon-btn--danger"
+                        className="ws-action ws-action--quiet ws-action--danger-quiet ws-action--compact ws-action--icon pm-table-icon-btn pm-table-icon-btn--danger"
                         disabled={intermediateStationCount <= 2}
                         onClick={() => commit((draft) => {
                           draft.neutralAxisStations.values.splice(index, 1)

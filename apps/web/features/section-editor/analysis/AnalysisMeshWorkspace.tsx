@@ -1,7 +1,8 @@
 'use client'
 
+import { TransferIcon } from '../shared/WorkspaceIcons'
 import { useEffect, useState } from 'react'
-import { FileDown, FileSpreadsheet, Loader2, RotateCw } from 'lucide-react'
+import { Loader2, RotateCw } from 'lucide-react'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
 import type { AnalysisOptions } from '@pm/project'
@@ -124,10 +125,10 @@ export function AnalysisMeshWorkspace({
   return (
     <section className="pm-analysis-mesh-stage" aria-label="Analysis section mesh">
       <article className="pm-results-plot pm-analysis-mesh-card">
-        <div className="pm-results-plot-title">
+        <div className="pm-results-plot-title ws-chart-controls">
           <div className="pm-results-plot-heading">
             <span>Section mesh</span>
-            <strong>
+            <strong className={mesh ? 'ws-num' : undefined}>
               {mesh
                 ? `${mesh.report.cells.toLocaleString('en-US')} cells · ${mesh.report.triangles.toLocaleString('en-US')} triangles`
                 : working
@@ -138,29 +139,29 @@ export function AnalysisMeshWorkspace({
           <div className="pm-section-field-toolbar" role="group" aria-label="Section mesh options">
             <button
               type="button"
-              className="pm-mesh-export-button"
+              className="ws-action pm-mesh-export-button"
               disabled={!mesh || exporting !== null}
               onClick={() => downloadMesh('excel')}
               title="Download the complete mesh audit workbook"
             >
               {exporting === 'excel'
                 ? <Loader2 size={13} className="pm-spin" />
-                : <FileSpreadsheet size={13} />}
+                : <TransferIcon direction="export" />}
               Excel
             </button>
             <button
               type="button"
-              className="pm-mesh-export-button"
+              className="ws-action pm-mesh-export-button"
               disabled={!mesh || exporting !== null}
               onClick={() => downloadMesh('dxf')}
               title="Download all mesh triangles, quadrature points, boundaries and rebars as DXF"
             >
               {exporting === 'dxf'
                 ? <Loader2 size={13} className="pm-spin" />
-                : <FileDown size={13} />}
+                : <TransferIcon direction="export" />}
               DXF
             </button>
-            <label className={`pm-field-check${showQuadraturePoints ? ' is-on' : ''}`}>
+            <label className={`ws-check pm-field-check${showQuadraturePoints ? ' is-on' : ''}`}>
               <input
                 type="checkbox"
                 checked={showQuadraturePoints}
@@ -168,7 +169,7 @@ export function AnalysisMeshWorkspace({
               />
               Gauss pts
             </label>
-            <label className={`pm-field-check${showRebars ? ' is-on' : ''}`}>
+            <label className={`ws-check pm-field-check${showRebars ? ' is-on' : ''}`}>
               <input
                 type="checkbox"
                 checked={showRebars}
@@ -204,9 +205,9 @@ export function AnalysisMeshWorkspace({
           </div>
           {mesh ? (
             <div className="pm-section-mesh-quality">
-              <span>h = {fmt(mesh.report.cellSize, 3)} mm</span>
-              <span>{mesh.report.points.toLocaleString('en-US')} integration points</span>
-              <span>area error = {sci(mesh.report.areaError, 2)} mm²</span>
+              <span>h = <span className="ws-num">{fmt(mesh.report.cellSize, 3)}</span> mm</span>
+              <span><span className="ws-num">{mesh.report.points.toLocaleString('en-US')}</span> integration points</span>
+              <span>area error = <span className="ws-num">{sci(mesh.report.areaError, 2)}</span> mm²</span>
               <strong className={mesh.report.ok ? 'is-ok' : 'is-bad'}>
                 {mesh.report.ok ? 'Verified' : 'Check mesh'}
               </strong>

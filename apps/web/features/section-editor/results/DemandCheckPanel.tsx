@@ -1,6 +1,7 @@
 'use client'
 
-import { Download, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { TransferIcon } from '../shared/WorkspaceIcons'
+import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import type { LoadCombination } from '@pm/project'
 import {
   DEMAND_CHART_IDS,
@@ -53,7 +54,7 @@ export function DemandCheckPanel({
   }
   return (
     <>
-      <section className="pm-panel-section">
+      <section className="pm-panel-section pm-chart-toggle-section">
         <div className="pm-chart-visibility-row" role="toolbar" aria-label="Chart visibility">
           {DEMAND_CHART_IDS.map((id) => {
             const on = view.visibleCharts[id]
@@ -61,7 +62,7 @@ export function DemandCheckPanel({
               <button
                 key={id}
                 type="button"
-                className={`pm-chart-visibility-btn${on ? ' is-on' : ''}`}
+                className={`ws-action pm-chart-visibility-btn${on ? ' is-on' : ''}`}
                 aria-pressed={on}
                 title={on ? `Hide ${demandChartLabel(id)}` : `Show ${demandChartLabel(id)}`}
                 onClick={() => onViewChange(toggleChartVisibility(view, DEMAND_CHART_IDS, id))}
@@ -80,22 +81,22 @@ export function DemandCheckPanel({
           <div className="pm-panel-actions pm-report-export-actions">
             <button
               type="button"
-              className="pm-file-btn"
+              className="ws-action pm-file-btn"
               onClick={onExportReport}
               disabled={reportState === 'working' || !surfaceReady}
               title={`Export the column design report as PDF · every combination gets its two curves, ${reportDetailIds.length} worked through`}
             >
-              {reportState === 'working' ? <Loader2 size={13} className="pm-spin" /> : <Download size={13} />}
+              {reportState === 'working' ? <Loader2 size={13} className="pm-spin" /> : <TransferIcon direction="export" />}
               PDF
             </button>
             <button
               type="button"
-              className="pm-file-btn"
+              className="ws-action pm-file-btn"
               onClick={onExportExcel}
               disabled={excelState === 'working' || !excelReady}
               title={`Export the demand check to Excel with live formulas · inverse, vertical and fixed-P sheets for ${reportDetailIds.length} combination(s)`}
             >
-              {excelState === 'working' ? <Loader2 size={13} className="pm-spin" /> : <Download size={13} />}
+              {excelState === 'working' ? <Loader2 size={13} className="pm-spin" /> : <TransferIcon direction="export" />}
               Excel
             </button>
           </div>
@@ -105,7 +106,7 @@ export function DemandCheckPanel({
           <div className="pm-report-selection-actions">
             <button
               type="button"
-              className="pm-secondary-btn pm-report-pick-action"
+              className="ws-action pm-secondary-btn pm-report-pick-action"
               onClick={() => onReportDetailIdsChange(loadcases.map((item) => item.id))}
               disabled={loadcases.length === 0}
             >
@@ -113,7 +114,7 @@ export function DemandCheckPanel({
             </button>
             <button
               type="button"
-              className="pm-secondary-btn pm-report-pick-action"
+              className="ws-action pm-secondary-btn pm-report-pick-action"
               onClick={() => onReportDetailIdsChange([])}
               disabled={reportDetailIds.length === 0}
             >
@@ -125,7 +126,7 @@ export function DemandCheckPanel({
           {loadcases.map((loadcase) => (
             <label
               key={loadcase.id}
-              className={`pm-field-check pm-report-pick${selected.has(loadcase.id) ? ' is-on' : ''}`}
+              className={`ws-check pm-field-check pm-report-pick${selected.has(loadcase.id) ? ' is-on' : ''}`}
             >
               <input
                 type="checkbox"

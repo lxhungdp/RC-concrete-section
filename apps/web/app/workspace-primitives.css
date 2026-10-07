@@ -1,0 +1,196 @@
+/* Single owner for control geometry, type and interaction states.
+   Features choose roles in markup; they do not restyle these primitives. */
+:root {
+  --ws-control-h: var(--control-h);
+  --ws-control-fs: var(--fs-md);
+  --ws-control-radius: var(--r-sm);
+  --ws-control-padding: var(--sp-4);
+  --ws-control-gap: var(--sp-2);
+  --ws-field-fs: var(--fs-sm);
+  --ws-choice-fs: var(--fs-md);
+}
+
+.ws-action--compact, .ws-compact-status {
+  --ws-control-h: var(--control-compact-h);
+  --ws-control-fs: var(--control-compact-fs);
+  --ws-control-padding: var(--sp-2);
+  --ws-control-gap: var(--sp-1);
+}
+.ws-chart-controls {
+  --ws-control-h: var(--chart-control-h);
+  --ws-control-fs: var(--chart-control-fs);
+  --ws-control-radius: var(--chart-control-radius);
+  --ws-control-padding: var(--chart-control-padding);
+  --ws-control-gap: var(--chart-control-gap);
+  --ws-field-fs: var(--chart-control-fs);
+  --ws-choice-fs: var(--chart-control-fs);
+  font: var(--weight-normal) var(--ws-control-fs)/var(--lh-control) var(--font-sans);
+}
+
+:where(.ws-action, .ws-joined-buttons > label, .ws-check, .ws-compact-status) {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ws-control-gap);
+  height: var(--ws-control-h);
+  min-height: var(--ws-control-h);
+  padding: 0 var(--ws-control-padding);
+  border: 1px solid var(--btn-secondary-border);
+  border-radius: var(--ws-control-radius);
+  background: var(--btn-secondary-bg);
+  color: var(--foreground-secondary);
+  font: var(--weight-normal) var(--ws-control-fs)/var(--lh-control) var(--font-sans);
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  box-shadow: none;
+  cursor: pointer;
+  transition: background var(--ui-transition), border-color var(--ui-transition), color var(--ui-transition);
+}
+:where(.ws-action, .ws-joined-buttons > label, .ws-check):hover:not(:disabled) {
+  background: var(--btn-secondary-hover-bg);
+  color: var(--foreground);
+}
+.ws-action--primary { border-color: transparent; background: var(--btn-primary-bg); color: var(--btn-primary-foreground); }
+.ws-action--primary:hover:not(:disabled) { background: var(--btn-primary-hover-bg); color: var(--btn-primary-foreground); }
+.ws-action--quiet { border-color: transparent; background: transparent; color: var(--foreground-muted); }
+.ws-action--danger { border-color: transparent; background: var(--destructive-bg); color: var(--destructive-text); }
+:is(.ws-action--danger, .ws-action--danger-quiet):hover:not(:disabled) { border-color: transparent; background: var(--destructive-hover-bg); color: var(--destructive-text); }
+:is(.ws-action, .ws-joined-buttons > label, .ws-check):is(.is-active, .is-on),
+:is(.ws-action, .ws-joined-buttons > label, .ws-check):is(.is-active, .is-on):hover {
+  border-color: var(--accent-border);
+  background: var(--accent-muted);
+  color: var(--accent);
+  font-weight: var(--weight-normal);
+}
+:where(.ws-action, .ws-check):is(:disabled, :has(input:disabled)) { cursor: default; opacity: var(--disabled-opacity); }
+:where(.ws-action, .ws-row-action, .ws-joined-buttons > label, .ws-check):focus-visible,
+:where(.ws-joined-buttons > label, .ws-check):has(input:focus-visible) { outline: none; box-shadow: var(--focus-ring); }
+.ws-action { min-width: 0; width: auto; }
+.ws-action--icon { width: var(--ws-control-h); min-width: var(--ws-control-h); padding: 0; }
+.ws-action--cad { --ws-control-h: var(--nav-control-h); --ws-control-radius: var(--r-xs); }
+.ws-action-content { display: inline-flex; align-items: center; justify-content: center; gap: inherit; line-height: 1; }
+.ws-action svg, .ws-action-content > svg { display: block; flex: 0 0 auto; margin: 0; color: currentColor; }
+:is(.ws-action, .ws-action-content) > svg { width: var(--icon-action); height: var(--icon-action); }
+.ws-action--compact > svg { width: var(--icon-add); height: var(--icon-add); }
+.ws-action--cad > svg { width: var(--icon-menu); height: var(--icon-menu); }
+.ws-action .ws-add-icon { width: var(--icon-add); height: var(--icon-add); }
+.ws-action .ws-transfer-icon { width: var(--icon-action); height: var(--icon-action); }
+.ws-chart-controls .ws-action svg { width: var(--chart-control-icon); height: var(--chart-control-icon); }
+.ws-row-action { font-family: var(--font-sans); font-weight: var(--weight-normal); letter-spacing: 0; text-transform: none; }
+.ws-compact-status { cursor: default; }
+.ws-check--wrap { height: auto; padding-block: var(--sp-1); white-space: normal; text-align: left; justify-content: flex-start; }
+
+/* A group contributes no frame or height beyond its buttons. */
+.ws-joined-buttons {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  gap: 0;
+  height: var(--ws-control-h);
+  min-height: var(--ws-control-h);
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.ws-joined-buttons::before { display: none; }
+.ws-joined-buttons > :is(button, label) { position: relative; min-width: 0; margin: 0; border-radius: 0; overflow: visible; }
+.ws-joined-buttons > :is(button, label) + :is(button, label) { margin-left: -1px; }
+.ws-joined-buttons > :first-child { border-radius: var(--ws-control-radius) 0 0 var(--ws-control-radius); }
+.ws-joined-buttons > :last-child { border-radius: 0 var(--ws-control-radius) var(--ws-control-radius) 0; }
+.ws-joined-buttons > :only-child { border-radius: var(--ws-control-radius); }
+.ws-joined-buttons > .is-active { z-index: 1; }
+.ws-joined-buttons > :is(:focus-visible, label:has(input:focus-visible)) { z-index: 2; }
+fieldset.ws-joined-buttons > label { flex: 1 1 0; }
+fieldset.ws-joined-buttons > label > input[type='radio'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  opacity: 0;
+}
+
+/* Native field semantics and feature widths remain intact. */
+.pm-shell :where(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='hidden']):not([type='file']), select, textarea, [contenteditable='true'], .ws-field-group) {
+  box-sizing: border-box;
+  min-width: 0;
+  height: var(--ws-field-h, var(--field-h));
+  padding: 0 var(--ws-field-padding, var(--sp-3));
+  border: 1px solid var(--input-border);
+  border-radius: var(--ws-field-radius, var(--r-sm));
+  background-color: var(--input-bg);
+  color: var(--input-value);
+  font: var(--weight-normal) var(--ws-field-fs)/var(--lh-control) var(--font-sans);
+  letter-spacing: 0;
+  outline: none;
+  box-shadow: none;
+}
+.pm-shell textarea { height: auto; min-height: var(--textarea-min-h); padding-block: var(--sp-2); line-height: var(--lh-body); }
+.pm-shell select:not([multiple]) {
+  appearance: none;
+  padding-right: var(--ws-select-padding, var(--select-padding));
+  background: var(--ui-combobox-trigger-bg) url('./icons/combobox-chevron.svg') no-repeat right var(--ws-chevron-inset, var(--sp-2)) center / var(--icon-add);
+  border-color: var(--ui-combobox-trigger-border);
+  color: var(--foreground);
+  font-size: var(--ws-choice-fs);
+}
+.pm-shell select option { background: var(--ui-combobox-popup-bg); color: var(--foreground); }
+.pm-shell :where(input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea, [contenteditable='true']):hover:not(:disabled):not(:focus) { border-color: var(--foreground-muted); }
+.pm-shell :where(input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea, [contenteditable='true']):focus { border-color: var(--accent); outline: none; box-shadow: none; }
+.pm-shell :where(input, select, textarea):disabled { background-color: var(--background-muted); color: var(--foreground-muted); opacity: 1; -webkit-text-fill-color: var(--foreground-muted); }
+.pm-shell :where(input[type='checkbox'], input[type='radio'], input[type='range']) { accent-color: var(--accent); }
+.pm-shell :where(input[type='checkbox'], input[type='radio']) { width: var(--control-check); height: var(--control-check); margin: 0; }
+.pm-shell :where(input[type='checkbox'], input[type='radio'], input[type='range']):focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* An inline icon/unit field owns exactly one ordinary field frame. */
+.pm-shell .ws-field-group { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: var(--ws-field-h, var(--field-h)); color: var(--foreground-muted); }
+.pm-shell .ws-field-group > em { font-style: normal; }
+.pm-shell .ws-field-group > svg { flex: 0 0 auto; width: var(--icon-action); height: var(--icon-action); }
+.pm-shell .ws-field-group > input,
+.pm-shell .ws-field-group > input:is(:hover, :focus, :disabled) { flex: 1 1 auto; width: 100%; height: calc(var(--ws-field-h, var(--field-h)) - 2px); padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.pm-shell .ws-field-group:hover:not(:has(input:disabled)):not(:focus-within) { border-color: var(--foreground-muted); }
+.pm-shell .ws-field-group:focus-within { border-color: var(--accent); }
+.pm-shell .ws-field-group:has(input:disabled) { background: var(--background-muted); }
+
+.pm-shell table :where(input, select, textarea, [contenteditable='true']) {
+  --ws-field-h: var(--table-field-h);
+  --ws-field-radius: var(--table-field-radius);
+  --ws-field-padding: var(--table-field-padding);
+  --ws-field-fs: var(--fs-sm);
+  --ws-choice-fs: var(--fs-sm);
+  --ws-select-padding: var(--table-select-padding);
+  --ws-chevron-inset: var(--table-chevron-inset);
+  border-color: transparent;
+  background-color: transparent;
+}
+.pm-shell table :where(input, select, textarea, [contenteditable='true']):focus { background-color: var(--input-bg); }
+.pm-shell table select:not([multiple]) { border-color: transparent; background-color: transparent; }
+.pm-shell table select:not([multiple]):focus { border-color: var(--accent); background-color: var(--ui-combobox-trigger-bg); }
+.ws-chart-controls :where(input, select) {
+  --ws-field-h: var(--chart-control-h);
+  --ws-field-radius: var(--chart-control-radius);
+  --ws-field-padding: var(--chart-control-padding);
+  --ws-select-padding: var(--chart-select-padding);
+  --ws-chevron-inset: var(--sp-1);
+}
+.ws-chart-controls input[type='number'] { width: var(--chart-number-width); min-width: var(--chart-number-width); }
+.ws-chart-controls input[type='range'] { height: var(--chart-control-h); margin: 0; }
+.ws-chart-controls :where(input[type='checkbox'], input[type='radio']) { width: var(--chart-control-check); height: var(--chart-control-check); margin: 0; }
+
+.pm-shell .ws-num,
+.pm-shell input:is([type='number'], [inputmode='decimal'], [inputmode='numeric']),
+.pm-shell .pm-point-index, .pm-shell .pm-synced-control-value input {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-normal);
+  font-variant-numeric: tabular-nums;
+}
+@media print {
+  .pm-shell .pm-calculation-dialog.is-document .ws-joined-buttons { display: none; }
+}

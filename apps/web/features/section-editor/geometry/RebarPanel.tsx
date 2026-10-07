@@ -1,7 +1,8 @@
 'use client'
 
+import { AddIcon, TransferIcon } from '../shared/WorkspaceIcons'
 import { useRef, useState } from 'react'
-import { Download, Plus, Upload, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import {
   generateRebarsForSection,
   makeRebarId,
@@ -120,14 +121,15 @@ export function RebarPanel({
       <section className="pm-panel-section">
         <div className="pm-rebar-quick">
           <div className="pm-section-title">
-            <h2>Quick Generate</h2>
+            <h2>Quick generate</h2>
           </div>
-          <div className="pm-rebar-patterns" role="group" aria-label="Rebar patterns">
+          <div className="pm-rebar-patterns ws-joined-buttons" role="group" aria-label="Rebar patterns">
             {REBAR_PATTERN_OPTIONS.map((option) => (
               <button
                 type="button"
                 key={option.kind}
-                className={pattern === option.kind ? 'is-active' : ''}
+                className={"ws-action " + (pattern === option.kind ? 'is-active' : '')}
+                aria-pressed={pattern === option.kind}
                 title={option.description}
                 onClick={() => setPattern(option.kind)}
               >
@@ -205,7 +207,7 @@ export function RebarPanel({
               />
               <span>Replace existing bars</span>
             </label>
-            <button type="button" className="pm-table-add-btn" onClick={runGenerate}>
+            <button type="button" className="ws-action ws-action--primary pm-table-add-btn" onClick={runGenerate}>
               Generate
             </button>
           </div>
@@ -216,27 +218,27 @@ export function RebarPanel({
         <div className="pm-section-title pm-section-title--with-action">
           <div>
             <h2>
-              Rebar List
+              Rebar list
               <span className="pm-rebar-count">({rebars.length} bars)</span>
             </h2>
           </div>
           <div className="pm-rebar-excel-actions" role="group" aria-label="Rebar Excel tools">
             <button
               type="button"
-              className="pm-file-btn"
+              className="ws-action pm-file-btn"
               title="Import rebar from Excel"
               onClick={() => importInputRef.current?.click()}
             >
-              <Upload size={13} />
+              <TransferIcon direction="import" />
               Excel
             </button>
             <button
               type="button"
-              className="pm-file-btn"
+              className="ws-action pm-file-btn"
               title="Export rebar to Excel"
               onClick={onExportExcel}
             >
-              <Download size={13} />
+              <TransferIcon direction="export" />
               Excel
             </button>
             <input
@@ -276,8 +278,8 @@ export function RebarPanel({
                 <th>X</th>
                 <th>Y</th>
                 <th>
-                  <button type="button" className="pm-table-add-icon-btn" onClick={addManualRebar} title="Add bar">
-                    <Plus size={14} />
+                  <button type="button" className="ws-action ws-action--primary ws-action--compact ws-action--icon pm-table-add-icon-btn" onClick={addManualRebar} title="Add bar">
+                    <AddIcon />
                   </button>
                 </th>
               </tr>
@@ -286,7 +288,7 @@ export function RebarPanel({
               {rebars.length === 0 && (
                 <tr>
                   <td colSpan={6} className="pm-rebar-empty">
-                    No bars yet. Use Quick Generate.
+                    No bars yet. Use Quick generate.
                   </td>
                 </tr>
               )}
@@ -342,7 +344,7 @@ export function RebarPanel({
                   <td>
                     <button
                       type="button"
-                      className="pm-table-icon-btn pm-table-icon-btn--danger"
+                      className="ws-action ws-action--quiet ws-action--danger-quiet ws-action--compact ws-action--icon pm-table-icon-btn pm-table-icon-btn--danger"
                       title="Delete bar"
                       onClick={(event) => {
                         event.stopPropagation()
@@ -360,7 +362,7 @@ export function RebarPanel({
         <div className="pm-rebar-list-footer">
           <button
             type="button"
-            className="pm-rebar-remove-all"
+            className="ws-action ws-action--danger pm-rebar-remove-all"
             disabled={rebars.length === 0}
             onClick={removeAllRebars}
           >

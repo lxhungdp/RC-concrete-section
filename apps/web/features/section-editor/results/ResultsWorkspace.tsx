@@ -202,7 +202,7 @@ const ResistanceVisibilityControls = ({
   onShowNominal: (value: boolean) => void
 }) => (
   <>
-    <label className={`pm-field-check${showDesign ? ' is-on' : ''}`} title="Design resistance">
+    <label className={`ws-check pm-field-check${showDesign ? ' is-on' : ''}`} title="Design resistance">
       <input
         type="checkbox"
         checked={showDesign}
@@ -213,7 +213,7 @@ const ResistanceVisibilityControls = ({
       />
       Mr
     </label>
-    <label className={`pm-field-check${showNominal ? ' is-on' : ''}`} title="Nominal reference">
+    <label className={`ws-check pm-field-check${showNominal ? ' is-on' : ''}`} title="Nominal reference">
       <input
         type="checkbox"
         checked={showNominal}
@@ -234,7 +234,7 @@ const SurfaceResistanceControl = ({
   value: SurfaceResistanceMode
   onChange: (value: SurfaceResistanceMode) => void
 }) => (
-  <fieldset className="pm-result-radio-group" aria-label="3D resistance surface">
+  <fieldset className="pm-result-radio-group ws-joined-buttons" aria-label="3D resistance surface">
     <label className={value === 'design' ? 'is-active' : ''} title="Design resistance surface">
       <input
         type="radio"
@@ -991,6 +991,7 @@ export function ResultsWorkspace({
       margin: { l: 0, r: view.showSceneAxes ? 28 : 8, t: 2, b: 0 },
       showlegend: false,
       scene: {
+        bgcolor: 'rgba(0,0,0,0)',
         xaxis: axis('Mx (kN.m)'),
         yaxis: axis('My (kN.m)'),
         zaxis: axis('P (kN)'),
@@ -1732,7 +1733,7 @@ export function ResultsWorkspace({
     if (!visible) return null
     return (
       <article className={`pm-results-plot${primary ? ' is-primary' : ''}`} data-chart={id}>
-        <div className="pm-results-plot-chrome">
+        <div className="pm-results-plot-chrome ws-chart-controls">
           <div className="pm-results-plot-heading">
             <span>{title}</span>
             {meta ? <strong>{meta}</strong> : null}
@@ -1740,13 +1741,13 @@ export function ResultsWorkspace({
           <div className="pm-results-plot-tools" role="group" aria-label="Chart layout">
             <button
               type="button"
-              className={`pm-chart-tool${primary ? ' is-active' : ''}`}
+              className={`ws-action ws-action--quiet ws-action--icon pm-chart-tool${primary ? ' is-active' : ''}`}
               title="Make this the large chart"
               onClick={onMakePrimary}
             >
               <Maximize2 size={14} />
             </button>
-            <button type="button" className="pm-chart-tool" title="Hide chart" onClick={onToggleVisible}>
+            <button type="button" className="ws-action ws-action--quiet ws-action--icon pm-chart-tool" title="Hide chart" onClick={onToggleVisible}>
               <EyeOff size={14} />
             </button>
           </div>
@@ -1801,10 +1802,11 @@ export function ResultsWorkspace({
             onToggleVisible: () => toggleDemandChart('heatmap'),
             controls: (
               <div className="pm-section-field-toolbar" role="group" aria-label="Section field options">
-                <div className="pm-field-mode-toggle" role="group" aria-label="Field mode">
+                <div className="pm-field-mode-toggle ws-joined-buttons" role="group" aria-label="Field mode">
                   <button
                     type="button"
-                    className={demandView.fieldMode === 'strain' ? 'is-active' : ''}
+                    className={"ws-action " + (demandView.fieldMode === 'strain' ? 'is-active' : '')}
+                    aria-pressed={demandView.fieldMode === 'strain'}
                     title="Strain field"
                     onClick={() => onDemandViewChange({ fieldMode: 'strain' })}
                   >
@@ -1812,7 +1814,8 @@ export function ResultsWorkspace({
                   </button>
                   <button
                     type="button"
-                    className={demandView.fieldMode === 'stress' ? 'is-active' : ''}
+                    className={"ws-action " + (demandView.fieldMode === 'stress' ? 'is-active' : '')}
+                    aria-pressed={demandView.fieldMode === 'stress'}
                     title="Stress field"
                     onClick={() => onDemandViewChange({ fieldMode: 'stress' })}
                   >
@@ -1820,7 +1823,7 @@ export function ResultsWorkspace({
                   </button>
                 </div>
                 <label
-                  className={`pm-field-check${demandView.showNeutralAxis ? ' is-on' : ''}`}
+                  className={`ws-check pm-field-check${demandView.showNeutralAxis ? ' is-on' : ''}`}
                   title="Neutral axis"
                 >
                   <input
@@ -1831,7 +1834,7 @@ export function ResultsWorkspace({
                   N.A.
                 </label>
                 <label
-                  className={`pm-field-check${demandView.showMoments ? ' is-on' : ''}`}
+                  className={`ws-check pm-field-check${demandView.showMoments ? ' is-on' : ''}`}
                   title="Resultant"
                 >
                   <input
@@ -1842,7 +1845,7 @@ export function ResultsWorkspace({
                   R
                 </label>
                 <label
-                  className={`pm-field-check${demandView.includeRebar ? ' is-on' : ''}`}
+                  className={`ws-check pm-field-check${demandView.includeRebar ? ' is-on' : ''}`}
                   title="Rebar"
                 >
                   <input
@@ -1870,7 +1873,7 @@ export function ResultsWorkspace({
                     </div>
                     <div>
                       <span>Iter / η</span>
-                      <strong>
+                      <strong className="ws-num">
                         {inverseResult.iterations}
                         {' · '}
                         {inverseResult.utilization == null ? 'n/a' : fmt(inverseResult.utilization, 3)}
@@ -1878,7 +1881,7 @@ export function ResultsWorkspace({
                     </div>
                     <div>
                       <span>Fixed-P UR</span>
-                      <strong>
+                      <strong className="ws-num">
                         {inverseResult.fixedPUtilization == null
                           ? 'n/a'
                           : fmt(inverseResult.fixedPUtilization, 3)}
@@ -1886,11 +1889,11 @@ export function ResultsWorkspace({
                     </div>
                     <div>
                       <span>Residual</span>
-                      <strong>{sci(inverseResult.residualNorm, 2)}</strong>
+                      <strong className="ws-num">{sci(inverseResult.residualNorm, 2)}</strong>
                     </div>
                     <div title="Actual epsilon=0 neutral-axis line, measured CCW from section +x modulo 180 degrees.">
                       <span>N.A. axis αNA</span>
-                      <strong>
+                      <strong className="ws-num">
                         {fieldAngleComparison?.neutralAxis == null
                           ? 'n/a'
                           : `${fmt(fieldAngleComparison.neutralAxis, 1)}°`}
@@ -1906,23 +1909,23 @@ export function ResultsWorkspace({
                       <>
                         <div title="Neutral-axis depth measured from the extreme compression edge along the block normal.">
                           <span>N.A. depth c</span>
-                          <strong>{fmt(inverseResult.equivalentBlock.neutralAxisDepth, 2)} mm</strong>
+                          <strong className="ws-num">{fmt(inverseResult.equivalentBlock.neutralAxisDepth, 2)} mm</strong>
                         </div>
                         <div>
                           <span>Block factor β1</span>
-                          <strong>{fmt(inverseResult.equivalentBlock.beta1, 3)}</strong>
+                          <strong className="ws-num">{fmt(inverseResult.equivalentBlock.beta1, 3)}</strong>
                         </div>
                         <div title="Equivalent rectangular compression-block depth.">
                           <span>a = β1·c</span>
-                          <strong>{fmt(inverseResult.equivalentBlock.blockDepth, 2)} mm</strong>
+                          <strong className="ws-num">{fmt(inverseResult.equivalentBlock.blockDepth, 2)} mm</strong>
                         </div>
                         <div title="Full section depth projected onto the compression-block normal.">
                           <span>Depth Dθ</span>
-                          <strong>{fmt(inverseResult.equivalentBlock.projectedSectionDepth, 2)} mm</strong>
+                          <strong className="ws-num">{fmt(inverseResult.equivalentBlock.projectedSectionDepth, 2)} mm</strong>
                         </div>
                         <div>
                           <span>εt / bar</span>
-                          <strong>
+                          <strong className="ws-num">
                             {inverseResult.equivalentBlock.controllingTensileStrain == null
                               ? 'n/a'
                               : fmt(inverseResult.equivalentBlock.controllingTensileStrain, 6)}
@@ -1935,21 +1938,21 @@ export function ResultsWorkspace({
                       <>
                         <div>
                           <span>ε₀</span>
-                          <strong>{fmt(inverseResult.state.e0, 6)}</strong>
+                          <strong className="ws-num">{fmt(inverseResult.state.e0, 6)}</strong>
                         </div>
                         <div>
                           <span>kx</span>
-                          <strong>{sci(inverseResult.state.kx, 2)}</strong>
+                          <strong className="ws-num">{sci(inverseResult.state.kx, 2)}</strong>
                         </div>
                         <div>
                           <span>ky</span>
-                          <strong>{sci(inverseResult.state.ky, 2)}</strong>
+                          <strong className="ws-num">{sci(inverseResult.state.ky, 2)}</strong>
                         </div>
                       </>
                     )}
                     <div>
                       <span>ε max / min</span>
-                      <strong>
+                      <strong className="ws-num">
                         {fieldExtremes
                           ? `${fmt(fieldExtremes.epsMax, 6)} / ${fmt(fieldExtremes.epsMin, 6)}`
                           : '—'}
@@ -1965,11 +1968,11 @@ export function ResultsWorkspace({
                       <>
                         <div>
                           <span>Block stress</span>
-                          <strong>{fmt(inverseResult.equivalentBlock.compressionStress, 3)} MPa</strong>
+                          <strong className="ws-num">{fmt(inverseResult.equivalentBlock.compressionStress, 3)} MPa</strong>
                         </div>
                         <div>
                           <span>Block area Ac</span>
-                          <strong>
+                          <strong className="ws-num">
                             {inverseResult.equivalentBlock.concreteBlockArea == null
                               ? 'n/a'
                               : `${fmt(inverseResult.equivalentBlock.concreteBlockArea, 1)} mm²`}
@@ -1977,7 +1980,7 @@ export function ResultsWorkspace({
                         </div>
                         <div>
                           <span>Cc</span>
-                          <strong>
+                          <strong className="ws-num">
                             {inverseResult.equivalentBlock.concreteForce == null
                               ? 'n/a'
                               : `${fmt(kn(inverseResult.equivalentBlock.concreteForce), 1)} kN`}
@@ -1987,15 +1990,15 @@ export function ResultsWorkspace({
                     ) : null}
                     <div>
                       <span>σ max</span>
-                      <strong>{fieldExtremes ? `${fmt(fieldExtremes.sigMax, 2)} MPa` : '—'}</strong>
+                      <strong className="ws-num">{fieldExtremes ? `${fmt(fieldExtremes.sigMax, 2)} MPa` : '—'}</strong>
                     </div>
                     <div>
                       <span>σ min</span>
-                      <strong>{fieldExtremes ? `${fmt(fieldExtremes.sigMin, 2)} MPa` : '—'}</strong>
+                      <strong className="ws-num">{fieldExtremes ? `${fmt(fieldExtremes.sigMin, 2)} MPa` : '—'}</strong>
                     </div>
                     <div>
                       <span>Δσ</span>
-                      <strong>
+                      <strong className="ws-num">
                         {fieldExtremes
                           ? `${fmt(fieldExtremes.sigMax - fieldExtremes.sigMin, 2)} MPa`
                           : '—'}
@@ -2009,19 +2012,19 @@ export function ResultsWorkspace({
                   <div className="pm-field-metric-rows">
                     <div>
                       <span>Pu</span>
-                      <strong>{fmt(kn(inverseResult.demand.P), 1)} kN</strong>
+                      <strong className="ws-num">{fmt(kn(inverseResult.demand.P), 1)} kN</strong>
                     </div>
                     <div>
                       <span>Mux</span>
-                      <strong>{fmt(knm(inverseResult.demand.Mx), 1)} kN·m</strong>
+                      <strong className="ws-num">{fmt(knm(inverseResult.demand.Mx), 1)} kN·m</strong>
                     </div>
                     <div>
                       <span>Muy</span>
-                      <strong>{fmt(knm(inverseResult.demand.My), 1)} kN·m</strong>
+                      <strong className="ws-num">{fmt(knm(inverseResult.demand.My), 1)} kN·m</strong>
                     </div>
                     <div>
                       <span>|M|</span>
-                      <strong>
+                      <strong className="ws-num">
                         {fmt(knm(Math.hypot(inverseResult.demand.Mx, inverseResult.demand.My)), 1)} kN·m
                       </strong>
                     </div>
@@ -2029,7 +2032,7 @@ export function ResultsWorkspace({
                       title="Reference line perpendicular to the in-section resultant direction (Muy,Mux)."
                     >
                       <span>Ref. ⊥Rₘ · α⊥</span>
-                      <strong>
+                      <strong className="ws-num">
                         {fieldAngleComparison?.perpendicularBendingAxis == null
                           ? 'n/a'
                           : `${fmt(fieldAngleComparison.perpendicularBendingAxis, 1)}°`}
@@ -2080,7 +2083,7 @@ export function ResultsWorkspace({
                   onChange={() => undefined}
                 />
                 <label
-                  className={`pm-field-check${view.showFixedPAngleRays ? ' is-on' : ''}`}
+                  className={`ws-check pm-field-check${view.showFixedPAngleRays ? ' is-on' : ''}`}
                   title="Angle rays"
                 >
                   <input
@@ -2125,7 +2128,7 @@ export function ResultsWorkspace({
                   onChange={() => undefined}
                 />
                 <label
-                  className={`pm-field-check${view.includeOppositeMoment ? ' is-on' : ''}`}
+                  className={`ws-check pm-field-check${view.includeOppositeMoment ? ' is-on' : ''}`}
                   title="Opposite half"
                 >
                   <input
@@ -2193,7 +2196,7 @@ export function ResultsWorkspace({
                 onChange={setSliceAngle}
               />
               <label
-                className={`pm-field-check${view.includeOppositeMoment ? ' is-on' : ''}`}
+                className={`ws-check pm-field-check${view.includeOppositeMoment ? ' is-on' : ''}`}
                 title="Opposite half"
               >
                 <input
@@ -2229,7 +2232,7 @@ export function ResultsWorkspace({
                 onChange={(surfaceResistanceMode) => onViewChange({ surfaceResistanceMode })}
               />
               <label
-                className={`pm-field-check${view.showSceneAxes ? ' is-on' : ''}`}
+                className={`ws-check pm-field-check${view.showSceneAxes ? ' is-on' : ''}`}
                 title="Scene axes"
               >
                 <input
@@ -2265,7 +2268,7 @@ export function ResultsWorkspace({
                 onChange={(value) => onFixedPChange(value * 1000)}
               />
               <label
-                className={`pm-field-check${view.showFixedPAngleRays ? ' is-on' : ''}`}
+                className={`ws-check pm-field-check${view.showFixedPAngleRays ? ' is-on' : ''}`}
                 title="Angle rays"
               >
                 <input

@@ -17,6 +17,7 @@ behavior, or package ownership.
 | 6 | [`06-current-state-and-roadmap.md`](06-current-state-and-roadmap.md) | Current implementation status and phased delivery order. |
 | 7 | [`07-design-resistance-implementation.md`](07-design-resistance-implementation.md) | Nominal/design separation, factored ULS checks, UI, workbook and verification status. |
 | 8 | [`08-standard-code-method-model-registry.md`](08-standard-code-method-model-registry.md) | Code -> method -> concrete-model capabilities, EN factor ownership, AS fail-closed scope. |
+| 9 | [`09-workspace-design-system.md`](09-workspace-design-system.md) | Frame jscad workspace design, P-M accent/CAD exceptions, shared controls and theme parity. |
 
 The numbered root files are technical references, not competing implementation instructions. The
 control map names the single owner for each rule or parameter.

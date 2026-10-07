@@ -301,7 +301,7 @@ export function CalculationDialogFrame({
             {documentMode ? (
               <button
                 type="button"
-                className="pm-file-btn pm-calc-pdf-button"
+                className="ws-action pm-file-btn pm-calc-pdf-button"
                 onClick={printCalculationDocument}
                 title="Print this calculation document or save it as PDF"
               >
@@ -310,10 +310,10 @@ export function CalculationDialogFrame({
               </button>
             ) : null}
             {SHOW_CALCULATION_VIEW_SWITCH ? (
-              <div className="pm-calculation-dialog__view-switch" role="group" aria-label="Calculation detail layout">
+              <div className="pm-calculation-dialog__view-switch ws-joined-buttons" role="group" aria-label="Calculation detail layout">
                 <button
                   type="button"
-                  className={documentMode ? 'is-active' : ''}
+                  className={"ws-action " + (documentMode ? 'is-active' : '')}
                   aria-pressed={documentMode}
                   onClick={() => setView('document')}
                   title="Technical document layout"
@@ -322,7 +322,7 @@ export function CalculationDialogFrame({
                 </button>
                 <button
                   type="button"
-                  className={!documentMode ? 'is-active' : ''}
+                  className={"ws-action " + (!documentMode ? 'is-active' : '')}
                   aria-pressed={!documentMode}
                   onClick={() => setView('classic')}
                   title="Original calculation modal layout"
@@ -336,7 +336,7 @@ export function CalculationDialogFrame({
           <button
             ref={closeButtonRef}
             type="button"
-            className="pm-calculation-dialog__close"
+            className="ws-action ws-action--quiet ws-action--icon pm-calculation-dialog__close"
             aria-label={closeLabel}
             onClick={closeDialog}
           >
@@ -355,7 +355,7 @@ export function CalculationDialogFrame({
                     <button
                       key={section.id}
                       type="button"
-                      className={activeSection === section.id ? 'is-active' : ''}
+                      className={"ws-row-action " + (activeSection === section.id ? 'is-active' : '')}
                       aria-current={activeSection === section.id ? 'location' : undefined}
                       onClick={() => navigateToSection(section.id)}
                     >
@@ -391,7 +391,7 @@ export function CalculationDialogFrame({
 
         <footer className="pm-calculation-dialog__footer">
           <span className="pm-calculation-dialog__footer-note">P-M Column Designer · Calculation evidence</span>
-          <button type="button" className="pm-secondary-btn" onClick={closeDialog}>Close</button>
+          <button type="button" className="ws-action pm-secondary-btn" onClick={closeDialog}>Close</button>
         </footer>
       </article>
     </div>

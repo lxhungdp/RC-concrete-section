@@ -1,7 +1,10 @@
+/* Shared visual primitives are unlayered; feature rules own layout and content. */
+@layer pm-feature {
 /* ===========================================================================
    Side panel design system
 
-   A self-contained visual language for the left input panel. Everything is
+   Feature layouts and content for the left input panel; shared controls are
+   owned by workspace-primitives.css and tokens by workspace-tokens.css. Everything is
    scoped under `.pm-side-panel`, so the drawing stage and its overlays keep
    their own styling and nothing here can leak outward.
 
@@ -12,94 +15,47 @@
       neutral, which is what keeps a dense engineering panel calm.
    2. Fixed scales. Four type sizes, three control heights, four radii, one
       spacing rhythm. A value that is not on a scale is a bug, not a choice.
-   3. Primitives first. Inputs, buttons, tables and rows are styled at the panel
-      scope, so every block inherits the language whether or not it has its own
-      component rule.
+   3. Primitives first. Markup selects shared roles. This layer cannot override
+      their geometry, type or interaction states through feature specificity.
    =========================================================================== */
 
 .pm-side-panel {
-  /* Neutrals: very slightly cool, so white surfaces read as paper, not screen. */
-  --sp-surface: #ffffff;
-  --sp-surface-sunken: #f6f7f9;
-  --sp-surface-hover: rgba(15, 23, 42, 0.04);
-  --sp-line: #e5e8ec;
-  --sp-line-soft: #eff1f4;
-
-  --sp-text: #101620;
-  --sp-text-2: #4b5563;
-  /* Tertiary is the label colour, and labels here are 10px. It is therefore
-     pinned to >= 4.5:1 on the panel surface rather than to whatever looked
-     suitably quiet: at this size, quiet and unreadable are one step apart. */
-  --sp-text-3: #6d7684;
-
-  /* The single accent: deep enough to stay legible at 10px, never neon. */
-  --sp-accent: #2f5fd0;
-  --sp-accent-hover: #2750b4;
-  --sp-accent-soft: rgba(47, 95, 208, 0.08);
-  --sp-accent-line: rgba(47, 95, 208, 0.3);
-  --sp-accent-on: #ffffff;
-
-  /* Semantic colours, desaturated to sit beside the accent without competing. */
-  --sp-ok: #1c7a52;
-  --sp-ok-soft: rgba(28, 122, 82, 0.1);
-  --sp-warn: #94660f;
-  --sp-danger: #bf392e;
-  --sp-danger-soft: rgba(191, 57, 46, 0.09);
-
-  --sp-r-1: 4px;
-  --sp-r-2: 6px;
-  --sp-r-3: 8px;
-  --sp-r-4: 10px;
-
-  /* Control heights. Everything clickable lands on one of these three. */
-  --sp-h-1: 22px;
-  --sp-h-2: 26px;
-  --sp-h-3: 30px;
-
-  /* Row heights. Separate from control heights because a row is a container:
-     a 22px editor inside a 28px table row is correct, a 22px row is not. */
+  --sp-surface: var(--menu-surface);
+  --sp-surface-sunken: var(--background-muted);
+  --sp-surface-hover: var(--card-hover);
+  --sp-line: var(--border);
+  --sp-line-soft: var(--group-separator);
+  --sp-text: var(--foreground);
+  --sp-text-2: var(--foreground-secondary);
+  --sp-text-3: var(--foreground-muted);
+  --sp-accent: var(--accent);
+  --sp-accent-hover: var(--accent-hover);
+  --sp-accent-soft: var(--accent-muted);
+  --sp-accent-line: var(--accent-border);
+  --sp-accent-on: var(--on-accent);
+  --sp-ok: var(--ok);
+  --sp-ok-soft: var(--ok-muted);
+  --sp-warn: var(--warn);
+  --sp-danger: var(--danger);
+  --sp-danger-soft: var(--danger-muted);
+  --sp-r-1: var(--r-sm);
+  --sp-r-2: var(--r-sm);
+  --sp-r-3: var(--r-md);
+  --sp-r-4: var(--r-lg);
+  --sp-h-1: var(--table-field-h);
+  --sp-h-2: var(--field-h);
+  --sp-h-3: var(--control-h);
   --sp-row-table: 28px;
   --sp-row-list: 32px;
-
   --sp-icon: 13px;
-
-  /* Plot tick labels sit below the text scale on purpose: they are chart
-     furniture, not reading copy, and 10px crowds a 120px-wide axis. */
-  --sp-fs-0: 9px;
-  --sp-fs-1: 0.625rem;
-  --sp-fs-2: 0.6875rem;
-  --sp-fs-3: 0.75rem;
-  --sp-fs-4: 0.8125rem;
-
-  --sp-ring: 0 0 0 3px var(--sp-accent-soft);
-  --sp-lift: 0 1px 2px rgba(16, 24, 40, 0.06);
-  --sp-ease: 140ms cubic-bezier(0.2, 0, 0.2, 1);
-}
-
-body[data-jscad-theme='dark'] .pm-side-panel {
-  --sp-surface: #101318;
-  --sp-surface-sunken: #171a21;
-  --sp-surface-hover: rgba(255, 255, 255, 0.05);
-  --sp-line: rgba(255, 255, 255, 0.09);
-  --sp-line-soft: rgba(255, 255, 255, 0.055);
-
-  --sp-text: #e9ecf1;
-  --sp-text-2: #a5adb9;
-  --sp-text-3: #828c9a;
-
-  --sp-accent: #7ba2f5;
-  --sp-accent-hover: #99b8ff;
-  --sp-accent-soft: rgba(123, 162, 245, 0.13);
-  --sp-accent-line: rgba(123, 162, 245, 0.34);
-  --sp-accent-on: #0d1017;
-
-  --sp-ok: #4fc78d;
-  --sp-ok-soft: rgba(79, 199, 141, 0.13);
-  --sp-warn: #d6a85a;
-  --sp-danger: #ff7d73;
-  --sp-danger-soft: rgba(255, 125, 115, 0.13);
-
+  --sp-fs-0: 9px; /* Existing plotted material-axis typography, not a chrome role. */
+  --sp-fs-1: var(--fs-xs);
+  --sp-fs-2: var(--fs-sm);
+  --sp-fs-3: var(--fs-md);
+  --sp-fs-4: var(--fs-md);
+  --sp-ring: var(--focus-ring);
   --sp-lift: none;
+  --sp-ease: var(--ui-transition);
 }
 
 /* ---------------------------------------------------------------------------
@@ -129,7 +85,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   flex-direction: column;
   gap: 0;
   min-height: 0;
-  padding: 14px;
+  padding: var(--sp-5);
   overflow: hidden auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -162,7 +118,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-panel-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-4);
   min-width: 0;
   padding: 0;
   border: 0;
@@ -174,21 +130,21 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 /* Equal air on both sides of the hairline: margin above, padding below. Body
    gap is 0 so this rhythm is not doubled against a flex gap. */
 .pm-side-panel .pm-panel-section + .pm-panel-section {
-  margin-top: 16px;
-  padding-top: 16px;
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-6);
   border-top: 1px solid var(--sp-line-soft);
 }
 
 .pm-side-panel .pm-panel-section + .pm-page-tabs,
 .pm-side-panel .pm-panel-section + .pm-analysis-tabs,
 .pm-side-panel .pm-panel-section + .pm-geometry-tabs {
-  margin-top: 16px;
+  margin-top: var(--sp-6);
 }
 
 .pm-side-panel .pm-section-title {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--sp-2);
   min-width: 0;
   min-height: 18px;
   color: var(--sp-text-3);
@@ -212,7 +168,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   height: var(--sp-h-2);
   min-width: 0;
   margin-left: auto;
-  padding: 0 7px;
+  padding: 0 var(--sp-2);
   font-size: var(--sp-fs-2);
 }
 
@@ -220,7 +176,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   display: inline-flex;
   flex-direction: row;
   align-items: center;
-  gap: 7px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
@@ -230,7 +186,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-section-title > div:has(> p) {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--sp-1);
   min-width: 0;
 }
 
@@ -260,10 +216,10 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   color: var(--sp-text-3);
   font-family: var(--font-sans);
   font-size: var(--sp-fs-1);
-  font-weight: 600;
-  letter-spacing: 0.055em;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0;
   text-overflow: ellipsis;
-  text-transform: uppercase;
+  text-transform: none;
   white-space: nowrap;
 }
 
@@ -273,7 +229,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   margin: 0;
   color: var(--sp-text-3);
   font-size: var(--sp-fs-2);
-  font-weight: 400;
+  font-weight: var(--weight-normal);
   line-height: 1.45;
   letter-spacing: 0;
   text-transform: none;
@@ -285,17 +241,9 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   margin: 0;
   color: var(--sp-danger);
   font-size: var(--sp-fs-2);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   line-height: 1.45;
 }
-
-/* ---------------------------------------------------------------------------
-   Segmented tabs
-
-   Selected tab is an accent-tinted raised pill on a sunken track — quiet enough
-   not to dominate the panel, strong enough to read at a glance which page is
-   open. Inactive labels stay tertiary so the contrast does the work.
-   --------------------------------------------------------------------------- */
 
 .pm-side-panel .pm-page-tabs,
 .pm-side-panel .pm-analysis-tabs,
@@ -304,46 +252,12 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   display: grid;
   flex-shrink: 0;
   grid-template-columns: 1fr 1fr;
-  gap: 0;
-  margin-bottom: 16px;
-  padding: 3px;
+  margin-bottom: var(--sp-6);
   overflow: hidden;
-  border: 1px solid var(--sp-line);
-  border-radius: var(--sp-r-3);
-  background: var(--sp-surface-sunken);
 }
 
 .pm-side-panel .pm-analysis-tabs {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.pm-side-panel .pm-page-tabs::before,
-.pm-side-panel .pm-analysis-tabs::before,
-.pm-side-panel .pm-geometry-tabs::before {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: 3px;
-  width: calc((100% - 6px) / 2);
-  border-radius: var(--sp-r-2);
-  background: var(--sp-accent-soft);
-  box-shadow: inset 0 0 0 1px var(--sp-accent-line);
-  content: '';
-  transition: transform var(--sp-ease);
-}
-
-.pm-side-panel .pm-analysis-tabs::before {
-  width: calc((100% - 6px) / 3);
-}
-
-.pm-side-panel .pm-page-tabs:has(button:nth-child(2).is-active)::before,
-.pm-side-panel .pm-geometry-tabs:has(button:nth-child(2).is-active)::before,
-.pm-side-panel .pm-analysis-tabs:has(button:nth-child(2).is-active)::before {
-  transform: translateX(100%);
-}
-
-.pm-side-panel .pm-analysis-tabs:has(button:nth-child(3).is-active)::before {
-  transform: translateX(200%);
 }
 
 .pm-side-panel .pm-page-tabs button,
@@ -354,18 +268,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: var(--sp-h-3);
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--sp-r-2);
-  background: none;
-  color: var(--sp-text-3);
   cursor: pointer;
-  font-size: var(--sp-fs-2);
-  font-weight: 500;
-  letter-spacing: 0;
-  line-height: 1;
-  transition: color var(--sp-ease);
 }
 
 .pm-side-panel .pm-analysis-tabs button {
@@ -375,57 +278,16 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   white-space: nowrap;
 }
 
-.pm-side-panel .pm-page-tabs button:hover,
-.pm-side-panel .pm-analysis-tabs button:hover,
-.pm-side-panel .pm-geometry-tabs button:hover {
-  color: var(--sp-text-2);
-}
-
-.pm-side-panel .pm-page-tabs button.is-active,
-.pm-side-panel .pm-analysis-tabs button.is-active,
-.pm-side-panel .pm-geometry-tabs button.is-active {
-  color: var(--sp-accent);
-  font-weight: 600;
-}
-
 /* Inline tab strip used beside a title, e.g. the boundary detail toolbar. */
 .pm-side-panel .pm-detail-tabs {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--sp-line);
-  border-radius: var(--sp-r-2);
-  background: var(--sp-surface-sunken);
 }
 
 .pm-side-panel .pm-detail-tabs button {
   min-width: 46px;
-  min-height: var(--sp-h-1);
-  height: var(--sp-h-1);
-  padding: 0 8px;
-  border: 0;
-  border-radius: var(--sp-r-1);
-  background: none;
-  color: var(--sp-text-3);
   cursor: pointer;
-  font-family: var(--font-sans);
-  font-size: var(--sp-fs-1);
-  font-weight: 500;
-  line-height: 1;
-  transition: background var(--sp-ease), color var(--sp-ease);
-}
-
-.pm-side-panel .pm-detail-tabs button:hover {
-  color: var(--sp-text-2);
-}
-
-.pm-side-panel .pm-detail-tabs button.is-active {
-  background: var(--sp-surface);
-  box-shadow: var(--sp-lift), inset 0 0 0 1px var(--sp-line);
-  color: var(--sp-text);
-  font-weight: 600;
 }
 
 .pm-side-panel .pm-detail-tabs button:disabled {
@@ -442,7 +304,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-material-field-full {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--sp-1);
   min-width: 0;
 }
 
@@ -450,7 +312,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-design-field > span:first-child {
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
-  font-weight: 600;
+  font-weight: var(--weight-strong);
   letter-spacing: 0;
   /* Keep author casing — engineering symbols (fc, εcu, β1, φc, …) must not be
      forced to uppercase by the section-title label language. */
@@ -465,21 +327,21 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-table-toolbar-label {
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .pm-side-panel .pm-point-table-caption {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
-  margin: 0 0 4px;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-1);
 }
 
 .pm-side-panel .pm-point-table-caption span {
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -491,52 +353,15 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel textarea {
   width: 100%;
   min-width: 0;
-  border: 1px solid var(--sp-line);
-  border-radius: var(--sp-r-2);
-  background: var(--sp-surface);
-  color: var(--sp-text);
-  font-family: inherit;
-  font-size: var(--sp-fs-3);
-  font-variant-numeric: tabular-nums;
-  outline: none;
-  transition: border-color var(--sp-ease), box-shadow var(--sp-ease);
-}
-
-.pm-side-panel .pm-field input,
-.pm-side-panel .pm-field select,
-.pm-side-panel .pm-design-field select,
-.pm-side-panel .pm-design-select-wrap select {
-  height: var(--sp-h-3);
-  padding: 0 9px;
 }
 
 .pm-side-panel textarea {
-  padding: 7px 9px;
-  line-height: 1.5;
   resize: vertical;
-}
-
-.pm-side-panel input:hover:not(:disabled):not(:focus),
-.pm-side-panel select:hover:not(:disabled):not(:focus),
-.pm-side-panel textarea:hover:not(:disabled):not(:focus) {
-  border-color: color-mix(in srgb, var(--sp-text-3) 45%, var(--sp-line));
-}
-
-.pm-side-panel input:focus,
-.pm-side-panel input:focus-visible,
-.pm-side-panel select:focus,
-.pm-side-panel select:focus-visible,
-.pm-side-panel textarea:focus,
-.pm-side-panel textarea:focus-visible {
-  border-color: var(--sp-accent);
-  box-shadow: var(--sp-ring);
 }
 
 .pm-side-panel input:disabled,
 .pm-side-panel select:disabled,
 .pm-side-panel textarea:disabled {
-  background: var(--sp-surface-sunken);
-  color: var(--sp-text-3);
   cursor: not-allowed;
 }
 
@@ -544,19 +369,11 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel input[type='radio'] {
   width: auto;
   min-width: 0;
-  color: var(--sp-text);
   accent-color: var(--sp-accent);
-}
-
-.pm-side-panel .pm-design-select-wrap select,
-.pm-side-panel .pm-field select {
-  font-weight: 500;
 }
 
 .pm-side-panel input[type='range'] {
   width: 100%;
-  border: 0;
-  background: none;
   accent-color: var(--sp-accent);
 }
 
@@ -566,7 +383,6 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 }
 
 .pm-side-panel .pm-design-select-wrap select {
-  padding-right: 32px;
   appearance: none;
 }
 
@@ -583,38 +399,13 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  border: 1px solid transparent;
-  border-radius: var(--sp-r-2);
-  background: var(--sp-accent);
-  color: var(--sp-accent-on);
   cursor: pointer;
-  font-family: inherit;
-  font-size: var(--sp-fs-2);
-  font-weight: 600;
-  line-height: 1;
   white-space: nowrap;
-  transition: background var(--sp-ease);
-}
-
-.pm-side-panel .pm-table-add-btn,
-.pm-side-panel .pm-boundary-apply-btn {
-  min-height: var(--sp-h-1);
-  height: var(--sp-h-1);
-  padding: 0 9px;
 }
 
 .pm-side-panel .pm-table-add-icon-btn {
   width: var(--sp-h-1);
-  height: var(--sp-h-1);
   margin: 0;
-  padding: 0;
-}
-
-.pm-side-panel .pm-table-add-btn:hover:not(:disabled),
-.pm-side-panel .pm-boundary-apply-btn:hover:not(:disabled),
-.pm-side-panel .pm-table-add-icon-btn:hover:not(:disabled) {
-  background: var(--sp-accent-hover);
 }
 
 /* One icon size for the whole panel. Component call sites pass 12, 13, 14 and
@@ -638,10 +429,10 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: var(--sp-1);
   height: var(--sp-h-1);
   min-height: 0;
-  padding: 0 8px;
+  padding: 0 var(--sp-3);
   border: 1px solid var(--sp-line);
   border-radius: var(--sp-r-2);
   background: var(--sp-surface);
@@ -649,8 +440,8 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   cursor: pointer;
   font-family: inherit;
   font-size: var(--sp-fs-1);
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0;
   line-height: 1;
   white-space: nowrap;
   transition: background var(--sp-ease), border-color var(--sp-ease), color var(--sp-ease);
@@ -661,9 +452,6 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-file-btn {
   width: auto;
   min-width: 0;
-  height: var(--sp-h-2);
-  padding: 0 10px;
-  font-size: var(--sp-fs-2);
 }
 
 /* A disclosure spans its section, so it takes the full-width row height rather
@@ -672,7 +460,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   width: 100%;
   height: var(--sp-h-3);
   justify-content: flex-start;
-  padding: 0 9px;
+  padding: 0 var(--sp-3);
 }
 
 .pm-side-panel .pm-info-btn > svg:last-child {
@@ -702,16 +490,8 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   align-items: center;
   justify-content: center;
   width: var(--sp-h-1);
-  height: var(--sp-h-1);
   margin: 0;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--sp-r-2);
-  background: none;
-  color: var(--sp-text-3);
   cursor: pointer;
-  line-height: 1;
-  transition: background var(--sp-ease), color var(--sp-ease);
 }
 
 .pm-side-panel td .pm-table-icon-btn,
@@ -721,37 +501,9 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   margin: 0 auto;
 }
 
-.pm-side-panel .pm-table-icon-btn:hover:not(:disabled),
-.pm-side-panel .pm-inline-actions button:hover:not(:disabled) {
-  background: var(--sp-surface-hover);
-  color: var(--sp-text);
-}
-
-.pm-side-panel .pm-table-icon-btn--danger,
-.pm-side-panel .pm-material-remove {
-  color: var(--sp-text-3);
-}
-
-.pm-side-panel .pm-table-icon-btn--danger:hover:not(:disabled),
-.pm-side-panel .pm-material-remove:hover:not(:disabled) {
-  border-color: transparent;
-  background: var(--sp-danger-soft);
-  color: var(--sp-danger);
-}
-
 .pm-side-panel button:disabled {
   cursor: not-allowed;
   opacity: 0.4;
-}
-
-.pm-side-panel button:disabled:hover {
-  background: inherit;
-}
-
-.pm-side-panel .pm-table-add-btn:disabled:hover,
-.pm-side-panel .pm-boundary-apply-btn:disabled:hover,
-.pm-side-panel .pm-table-add-icon-btn:disabled:hover {
-  background: var(--sp-accent);
 }
 
 .pm-side-panel .pm-inline-actions,
@@ -765,7 +517,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 .pm-side-panel :focus-visible {
@@ -796,9 +548,9 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-material-row {
   position: relative;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   min-height: var(--sp-row-list);
-  padding: 4px 8px;
+  padding: var(--sp-1) var(--sp-3);
   border: 0;
   border-bottom: 1px solid var(--sp-line-soft);
   border-radius: 0;
@@ -845,7 +597,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-material-row-main {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   min-width: 0;
   height: var(--sp-h-1);
   padding: 0;
@@ -854,7 +606,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   color: var(--sp-text);
   cursor: pointer;
   font-size: var(--sp-fs-3);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   overflow: hidden;
   text-align: left;
   text-overflow: ellipsis;
@@ -866,7 +618,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   overflow: hidden;
   color: var(--sp-text);
   font-size: var(--sp-fs-3);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   letter-spacing: 0;
   text-overflow: ellipsis;
   text-transform: none;
@@ -880,7 +632,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   overflow: hidden;
   color: var(--sp-text-3);
   font-size: var(--sp-fs-2);
-  font-weight: 400;
+  font-weight: var(--weight-normal);
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -893,13 +645,13 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   justify-content: center;
   min-width: 42px;
   height: var(--sp-h-1);
-  padding: 0 7px;
+  padding: 0 var(--sp-2);
   border-radius: var(--sp-r-1);
   background: var(--geometry-final-muted);
   color: var(--geometry-final);
   font-size: var(--sp-fs-1);
-  font-weight: 600;
-  letter-spacing: 0.03em;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0;
   line-height: 1;
   white-space: nowrap;
 }
@@ -912,7 +664,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-rebar-empty,
 .pm-side-panel .pm-material-blocked {
   margin: 0;
-  padding: 16px 12px;
+  padding: var(--sp-6) var(--sp-5);
   border: 1px dashed var(--sp-line);
   border-radius: var(--sp-r-3);
   background: var(--sp-surface-sunken);
@@ -936,30 +688,17 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   align-items: center;
   justify-content: center;
   width: var(--sp-h-2);
-  height: var(--sp-h-2);
-  padding: 0;
-  border: 1px solid var(--sp-line);
-  border-radius: var(--sp-r-2);
-  background: var(--sp-surface);
-  color: var(--sp-text-2);
   cursor: pointer;
-  transition: background var(--sp-ease), border-color var(--sp-ease), color var(--sp-ease);
-}
-
-.pm-side-panel .pm-boundary-create-actions button:not(.pm-file-btn):hover:not(:disabled) {
-  border-color: var(--sp-accent-line);
-  background: var(--sp-accent-soft);
-  color: var(--sp-accent);
 }
 
 .pm-side-panel .pm-vertex-section {
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 .pm-side-panel .pm-boundary-detail-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
@@ -981,7 +720,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   min-width: 0;
 }
 
@@ -1015,7 +754,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 
 /* Loadcases use compact cells while keeping the header comfortably legible. */
 .pm-side-panel .pm-loadcase-table {
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 
 .pm-side-panel .pm-point-table th,
@@ -1025,20 +764,20 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   top: 0;
   z-index: 1;
   height: var(--sp-h-2);
-  padding: 0 6px;
+  padding: 0 var(--sp-2);
   border-bottom: 1px solid var(--sp-line);
   background: var(--sp-surface-sunken);
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
-  font-weight: 600;
-  letter-spacing: 0.05em;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0;
   text-align: left;
-  text-transform: uppercase;
+  text-transform: none;
   white-space: nowrap;
 }
 
 .pm-side-panel .pm-chart-data-table .pm-table-unit {
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -1046,7 +785,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 /* Load symbols and units are case-sensitive: Pu, Mux, Muy, kN and kNm. */
 .pm-side-panel .pm-loadcase-table th {
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -1055,7 +794,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-loadcase-table td,
 .pm-side-panel .pm-chart-data-table td {
   height: var(--sp-row-table);
-  padding: 2px 4px;
+  padding: var(--sp-0) var(--sp-1);
   border-bottom: 1px solid var(--sp-line-soft);
   color: var(--sp-text);
 }
@@ -1091,50 +830,12 @@ body[data-jscad-theme='dark'] .pm-side-panel {
     inset 0 -1px 0 var(--sp-accent-line);
 }
 
-.pm-side-panel .pm-loadcase-table tbody tr.is-selected input {
-  border-color: transparent;
-  background: transparent;
-  font-weight: 600;
-}
-
-.pm-side-panel .pm-loadcase-table tbody tr.is-selected input:focus {
-  border-color: var(--sp-accent);
-  background: var(--sp-surface);
-  box-shadow: var(--sp-ring);
-}
-
 /* In-cell editors are invisible until touched, so the table reads as data. */
 .pm-side-panel .pm-point-table input,
 .pm-side-panel .pm-point-table select,
 .pm-side-panel .pm-loadcase-table input {
   width: 100%;
-  height: var(--sp-h-1);
   min-width: 0;
-  padding: 0 5px;
-  border: 1px solid transparent;
-  border-radius: var(--sp-r-1);
-  background: none;
-  color: inherit;
-  font-size: var(--sp-fs-2);
-}
-
-.pm-side-panel .pm-loadcase-table input[type='text'] {
-  font-size: 11px;
-}
-
-.pm-side-panel .pm-point-table input:hover:not(:disabled):not(:focus),
-.pm-side-panel .pm-point-table select:hover:not(:disabled):not(:focus),
-.pm-side-panel .pm-loadcase-table input:hover:not(:disabled):not(:focus) {
-  border-color: var(--sp-line);
-  background: var(--sp-surface);
-}
-
-.pm-side-panel .pm-point-table input:focus,
-.pm-side-panel .pm-point-table select:focus,
-.pm-side-panel .pm-loadcase-table input:focus {
-  border-color: var(--sp-accent);
-  background: var(--sp-surface);
-  box-shadow: var(--sp-ring);
 }
 
 .pm-side-panel .pm-point-index {
@@ -1145,7 +846,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   height: var(--sp-h-1);
   color: var(--sp-text-3);
   font-size: var(--sp-fs-2);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1153,17 +854,17 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-3);
 }
 
 .pm-side-panel .pm-loadcase-ur {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 
 .pm-side-panel .pm-loadcase-ur small {
-  font-size: 9px;
+  font-size: var(--fs-xs);
 }
 
 .pm-side-panel .pm-loadcase-ur.is-pass {
@@ -1186,7 +887,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-metrics {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px 12px;
+  gap: var(--sp-2) var(--sp-5);
   color: var(--sp-text-3);
   font-size: var(--sp-fs-2);
 }
@@ -1196,7 +897,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-analysis-fixed-value {
   color: var(--sp-text);
   font-size: var(--sp-fs-2);
-  font-weight: 600;
+  font-weight: var(--weight-strong);
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
@@ -1217,9 +918,9 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 
 .pm-side-panel .pm-result-status-card {
   display: grid;
-  gap: 8px;
+  gap: var(--sp-3);
   width: 100%;
-  padding: 10px;
+  padding: var(--sp-4);
   border: 1px solid var(--sp-line);
   border-radius: var(--sp-r-3);
   background: var(--sp-surface);
@@ -1241,43 +942,26 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-result-status-hint {
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
 }
 
 /* ---------------------------------------------------------------------------
    Toggles and radio groups
    --------------------------------------------------------------------------- */
-
-/* Choice groups.
-
-   Single-select (radio) and multi-select (checkbox) are different semantics but
-   the same object: a sunken track holding 22px items, so both boxes are exactly
-   30px tall and line up when they sit side by side. Previously the radio
-   fieldset collapsed to 22px against a 30px checkbox row, which is the visible
-   misalignment in the Section Results chart-data controls. */
 .pm-side-panel .pm-result-radio-group,
 .pm-side-panel .pm-result-check-row {
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 2px;
+  gap: var(--sp-0);
   height: var(--sp-h-3);
   min-width: 0;
   margin: 0;
-  padding: 3px;
+  padding: var(--sp-1);
   border: 1px solid var(--sp-line);
   border-radius: var(--sp-r-3);
   background: var(--sp-surface-sunken);
-}
-
-.pm-side-panel .pm-result-radio-group legend {
-  padding: 0 0 5px;
-  color: var(--sp-text-3);
-  font-size: var(--sp-fs-1);
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .pm-side-panel .pm-result-radio-group label,
@@ -1286,42 +970,23 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: var(--sp-1);
   height: var(--sp-h-1);
   min-height: 0;
-  padding: 0 9px;
+  padding: 0 var(--sp-3);
   border: 0;
   border-radius: var(--sp-r-1);
   background: none;
   color: var(--sp-text-3);
   cursor: pointer;
   font-size: var(--sp-fs-2);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   white-space: nowrap;
   transition: background var(--sp-ease), color var(--sp-ease);
 }
 
 /* A `pm-field-check` chip must not nest inside a choice track — strip the chip
    chrome so Design/Nominal sit on the same 30px baseline as the radio group. */
-.pm-side-panel .pm-result-check-row .pm-field-check {
-  border: 0;
-  background: none;
-  padding: 0 9px;
-  height: var(--sp-h-1);
-  min-height: 0;
-  border-radius: var(--sp-r-1);
-}
-
-.pm-side-panel .pm-result-check-row .pm-field-check:hover:not(.is-on) {
-  border-color: transparent;
-  color: var(--sp-text-2);
-}
-
-.pm-side-panel .pm-result-check-row .pm-field-check.is-on {
-  border-color: transparent;
-  background: var(--sp-accent-soft);
-  color: var(--sp-accent);
-}
 
 .pm-side-panel .pm-result-radio-group label:hover,
 .pm-side-panel .pm-result-check-row label:hover {
@@ -1330,17 +995,11 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 
 /* Selected single-choice reads as a raised pill; selected multi-choice as an
    accent tint, so you can tell the two behaviours apart without a legend. */
-.pm-side-panel .pm-result-radio-group label.is-active {
-  background: var(--sp-surface);
-  box-shadow: var(--sp-lift), inset 0 0 0 1px var(--sp-line);
-  color: var(--sp-text);
-  font-weight: 600;
-}
 
 .pm-side-panel .pm-result-check-row label.is-on {
   background: var(--sp-accent-soft);
   color: var(--sp-accent);
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 
 /* The native control is the state marker, not a second object with its own
@@ -1349,7 +1008,6 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-result-check-row input {
   flex: 0 0 auto;
   width: 12px;
-  height: 12px;
   margin: 0;
 }
 
@@ -1357,7 +1015,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   width: 100%;
   min-width: 0;
   margin: 0;
@@ -1370,7 +1028,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   width: 100%;
   height: var(--sp-h-2);
   margin: 0;
-  padding: 2px;
+  padding: var(--sp-0);
 }
 
 .pm-side-panel .pm-chart-data-controls label {
@@ -1378,7 +1036,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   width: 100%;
   min-width: 0;
   height: 20px;
-  padding: 0 4px;
+  padding: 0 var(--sp-1);
   overflow: hidden;
   font-size: var(--sp-fs-1);
   text-overflow: ellipsis;
@@ -1389,7 +1047,6 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-chart-data-controls .pm-result-radio-group input {
   position: absolute;
   width: 1px;
-  height: 1px;
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
@@ -1425,15 +1082,15 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   top: 0;
   z-index: 1;
   height: var(--sp-h-2);
-  padding: 0 8px;
+  padding: 0 var(--sp-3);
   border-bottom: 1px solid var(--sp-line);
   background: var(--sp-surface-sunken);
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0;
   text-align: right;
-  text-transform: uppercase;
+  text-transform: none;
   white-space: nowrap;
 }
 
@@ -1444,7 +1101,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 
 .pm-side-panel .pm-chart-data-table td {
   height: var(--sp-row-table);
-  padding: 2px 8px;
+  padding: var(--sp-0) var(--sp-3);
   border-bottom: 1px solid var(--sp-line-soft);
   color: var(--sp-text);
   text-align: right;
@@ -1459,8 +1116,8 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-chart-data-table td:nth-child(1),
 .pm-side-panel .pm-chart-data-table th:nth-child(1) {
   width: 28px;
-  padding-right: 4px;
-  padding-left: 10px;
+  padding-right: var(--sp-1);
+  padding-left: var(--sp-4);
 }
 
 .pm-side-panel .pm-chart-data-table td:nth-child(2),
@@ -1483,14 +1140,14 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-3);
   min-height: var(--sp-h-1);
 }
 
 .pm-side-panel .pm-chart-data-heading {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
@@ -1503,7 +1160,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   white-space: nowrap;
 }
 
-/* Compact chart-toggle strip at the top of Section Results.
+/* Compact chart-toggle strip shared by Capacity and Demand Check.
    Buttons stay content-sized so more controls can join the row later. */
 .pm-side-panel .pm-chart-toggle-section {
   gap: 0;
@@ -1512,32 +1169,23 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 }
 
 .pm-side-panel .pm-chart-toggle-section + .pm-panel-section {
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-4);
 }
 
 .pm-side-panel .pm-chart-toggle-section .pm-chart-visibility-row {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-start;
-  gap: 4px;
+  gap: var(--sp-1);
   width: 100%;
-}
-
-.pm-side-panel .pm-chart-toggle-section .pm-chart-visibility-btn {
-  flex: 0 0 auto;
-  justify-content: center;
-  min-width: 0;
-  height: 20px;
-  padding: 0 7px;
-  font-size: var(--sp-fs-1);
 }
 
 .pm-side-panel .pm-chart-data-section {
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-4);
   min-height: 0;
 }
 
@@ -1560,32 +1208,25 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-chart-toggle-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--sp-1);
 }
-
-/* Checkable primitive.
-
-   Three layouts, one metric set: a standalone chip (a wrapping filter list), an
-   item inside a choice track, and a full-width row when the label is a sentence
-   rather than a word. All are 22px tall with a 12px control, so a mixed row of
-   checkboxes, radios and outline buttons has a single baseline. */
 .pm-side-panel .pm-field-check,
 .pm-side-panel .pm-material-toggle,
 .pm-side-panel .pm-design-cap-check {
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   height: var(--sp-h-1);
   margin: 0;
-  padding: 0 8px;
+  padding: 0 var(--sp-3);
   border: 1px solid var(--sp-line);
   border-radius: var(--sp-r-2);
   background: var(--sp-surface);
   color: var(--sp-text-3);
   cursor: pointer;
   font-size: var(--sp-fs-2);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   text-align: left;
   white-space: nowrap;
   transition: background var(--sp-ease), border-color var(--sp-ease), color var(--sp-ease);
@@ -1598,14 +1239,6 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   color: var(--sp-text);
 }
 
-.pm-side-panel .pm-field-check.is-on,
-.pm-side-panel .pm-design-cap-check.is-on {
-  border-color: var(--sp-accent-line);
-  background: var(--sp-accent-soft);
-  color: var(--sp-accent);
-  font-weight: 600;
-}
-
 /* A sentence-length label is a row: it spans the section and wraps. */
 .pm-side-panel .pm-material-toggle,
 .pm-side-panel .pm-design-cap-check {
@@ -1613,7 +1246,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   width: 100%;
   height: auto;
   min-height: var(--sp-h-3);
-  padding: 5px 9px;
+  padding: var(--sp-1) var(--sp-3);
   white-space: normal;
 }
 
@@ -1622,7 +1255,6 @@ body[data-jscad-theme='dark'] .pm-side-panel {
 .pm-side-panel .pm-design-cap-check input {
   flex: 0 0 auto;
   width: 12px;
-  height: 12px;
   margin: 0;
 }
 
@@ -1641,7 +1273,7 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   overflow: hidden;
   color: var(--sp-text-3);
   font-size: var(--sp-fs-2);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1668,14 +1300,14 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-3);
   min-width: 0;
   padding: 0;
   border: 0;
   background: none;
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
-  font-weight: 400;
+  font-weight: var(--weight-normal);
   line-height: 1.45;
 }
 
@@ -1684,14 +1316,14 @@ body[data-jscad-theme='dark'] .pm-side-panel {
   align-items: center;
   flex: 0 0 auto;
   height: 16px;
-  padding: 0 6px;
+  padding: 0 var(--sp-2);
   border-radius: var(--sp-r-1);
   background: var(--sp-surface-hover);
   color: var(--sp-text-2);
   font-size: var(--sp-fs-1);
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 /* The dark selector is spelled out because the rule it replaces is itself
@@ -1711,17 +1343,17 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-chart-toggle-main {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sp-1);
   height: var(--sp-h-1);
   min-height: 0;
-  padding: 0 8px;
+  padding: 0 var(--sp-3);
   border: 1px solid var(--sp-line);
   border-radius: var(--sp-r-2);
   background: var(--sp-surface);
   color: var(--sp-text-3);
   cursor: pointer;
   font-size: var(--sp-fs-2);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   text-align: left;
   transition: background var(--sp-ease), border-color var(--sp-ease), color var(--sp-ease);
 }
@@ -1732,18 +1364,11 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   color: var(--sp-text);
 }
 
-.pm-side-panel .pm-chart-visibility-btn.is-on {
-  border-color: var(--sp-accent-line);
-  background: var(--sp-accent-soft);
-  color: var(--sp-accent);
-  font-weight: 600;
-}
-
 .pm-side-panel .pm-chart-toggle {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   border: 0;
   border-radius: var(--sp-r-2);
   background: none;
@@ -1763,13 +1388,13 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
    --------------------------------------------------------------------------- */
 
 .pm-side-panel .pm-design-panel {
-  gap: 12px;
+  gap: var(--sp-5);
 }
 
 .pm-side-panel .pm-design-group {
   display: grid;
-  gap: 9px;
-  padding: 11px;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
   border: 1px solid var(--sp-line);
   border-radius: var(--sp-r-3);
   background: var(--sp-surface-sunken);
@@ -1777,7 +1402,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 
 .pm-side-panel .pm-design-group-title {
   display: grid;
-  gap: 3px;
+  gap: var(--sp-1);
 }
 
 .pm-side-panel .pm-design-group-title span,
@@ -1787,50 +1412,48 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-material-factor-references {
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
-  font-weight: 400;
+  font-weight: var(--weight-normal);
   line-height: 1.5;
 }
 
 .pm-side-panel .pm-design-factor-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 .pm-side-panel .pm-design-factor {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 62px;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   color: var(--sp-text-2);
   font-size: var(--sp-fs-2);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
 }
 
 .pm-side-panel .pm-design-factor input {
-  height: var(--sp-h-2);
-  padding: 0 7px;
   text-align: right;
 }
 
 .pm-side-panel .pm-design-definitions {
   display: grid;
-  gap: 5px;
+  gap: var(--sp-1);
   margin: 0;
-  padding-top: 9px;
+  padding-top: var(--sp-3);
   border-top: 1px solid var(--sp-line);
 }
 
 .pm-side-panel .pm-design-definitions div {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
-  gap: 8px;
+  gap: var(--sp-3);
 }
 
 .pm-side-panel .pm-design-definitions dt {
   color: var(--sp-text-2);
   font-size: var(--sp-fs-1);
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 
 .pm-side-panel .pm-design-definitions dd {
@@ -1855,10 +1478,10 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 5px;
+  gap: var(--sp-1);
   width: 100%;
   height: var(--sp-h-3);
-  padding: 0 9px;
+  padding: 0 var(--sp-3);
   border: 0;
   border-radius: 0;
   background: var(--sp-surface-sunken);
@@ -1866,8 +1489,8 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   cursor: pointer;
   font-family: inherit;
   font-size: var(--sp-fs-1);
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-weight: var(--weight-strong);
+  letter-spacing: 0;
   line-height: 1;
   white-space: nowrap;
   transition: background var(--sp-ease), color var(--sp-ease);
@@ -1894,8 +1517,8 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-design-method-info,
 .pm-side-panel .pm-material-factor-info {
   display: grid;
-  gap: 7px;
-  padding: 10px;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
   border: 1px solid var(--sp-line);
   border-radius: var(--sp-r-3);
   background: var(--sp-surface-sunken);
@@ -1915,8 +1538,8 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-material-factor-warning,
 .pm-side-panel .pm-design-override {
   display: grid;
-  gap: 6px;
-  padding: 10px;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
   border: 1px solid color-mix(in srgb, var(--sp-warn) 32%, transparent);
   border-radius: var(--sp-r-3);
   background: color-mix(in srgb, var(--sp-warn) 8%, transparent);
@@ -1928,8 +1551,8 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-material-factor-equation,
 .pm-side-panel .pm-material-stress-box {
   display: grid;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
   border: 1px solid var(--sp-line);
   border-radius: var(--sp-r-2);
   background: var(--sp-surface-sunken);
@@ -1943,7 +1566,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-3);
   width: 100%;
   min-width: 0;
 }
@@ -1969,7 +1592,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   background: transparent;
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   letter-spacing: 0;
   text-transform: none;
   white-space: nowrap;
@@ -1986,7 +1609,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-4);
   width: 100%;
   min-width: 0;
 }
@@ -1995,7 +1618,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   display: inline-flex;
   flex: 1 1 0;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   min-width: 0;
   margin: 0;
 }
@@ -2004,7 +1627,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   flex: 0 0 auto;
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
-  font-weight: 600;
+  font-weight: var(--weight-strong);
   letter-spacing: 0;
   text-transform: none;
   white-space: nowrap;
@@ -2014,8 +1637,6 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;
-  height: var(--sp-h-2);
-  padding: 0 7px;
   text-align: right;
 }
 
@@ -2033,14 +1654,14 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
   font-style: normal;
-  font-weight: 500;
+  font-weight: var(--weight-normal);
 }
 
 /* `bolder` resolves to 900 against a 600 parent, which is a weight nothing else
    in the panel uses. Emphasis here is 600, full stop. */
 .pm-side-panel strong,
 .pm-side-panel b {
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 
 /* A composed title such as "1 · Elastic Perfectly Plastic": the index is the
@@ -2048,24 +1669,24 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-material-editor-title {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
 .pm-side-panel .pm-material-editor-title strong {
   color: var(--sp-text-2);
   font-size: var(--sp-fs-1);
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 
 .pm-side-panel .pm-material-editor-title span {
   overflow: hidden;
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
-  font-weight: 500;
-  letter-spacing: 0.05em;
+  font-weight: var(--weight-normal);
+  letter-spacing: 0;
   text-overflow: ellipsis;
-  text-transform: uppercase;
+  text-transform: none;
   white-space: nowrap;
 }
 
@@ -2077,7 +1698,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   margin: 0;
   color: var(--sp-accent);
   font-size: var(--sp-fs-2);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   line-height: 1.45;
 }
 
@@ -2086,38 +1707,23 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-3);
   min-height: var(--sp-h-3);
   color: var(--sp-text-3);
   font-size: var(--sp-fs-2);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
 }
 
 .pm-side-panel .pm-boundary-rotation > span {
   display: inline-flex;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--sp-2);
   min-width: 0;
   color: var(--sp-text-3);
   font-size: var(--sp-fs-2);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   letter-spacing: 0;
   text-transform: none;
-}
-
-.pm-side-panel .pm-boundary-rotation-input {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: 0 0 auto;
-  color: var(--sp-text-3);
-}
-
-.pm-side-panel .pm-boundary-rotation-input input {
-  width: 62px;
-  height: var(--sp-h-2);
-  padding: 0 7px;
-  text-align: right;
 }
 
 /* ---------------------------------------------------------------------------
@@ -2152,7 +1758,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-material-curve-axis-mid {
   fill: var(--sp-text-3);
   font-size: var(--sp-fs-0);
-  font-weight: 500;
+  font-weight: var(--weight-menu);
 }
 
 /* ---------------------------------------------------------------------------
@@ -2167,7 +1773,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-material-row-2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--sp-3);
   min-width: 0;
 }
 
@@ -2175,7 +1781,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-rebar-params {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--sp-3);
   min-width: 0;
 }
 
@@ -2187,7 +1793,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-material-form,
 .pm-side-panel .pm-material-editor {
   display: grid;
-  gap: 8px;
+  gap: var(--sp-3);
   min-width: 0;
   padding: 0;
 }
@@ -2200,26 +1806,26 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-3);
   min-width: 0;
 }
 
 .pm-side-panel .pm-material-factor-heading > div {
   display: grid;
-  gap: 2px;
+  gap: var(--sp-0);
   min-width: 0;
 }
 
 .pm-side-panel .pm-material-factor-heading strong {
   color: var(--sp-text-2);
   font-size: var(--sp-fs-2);
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 
 .pm-side-panel .pm-material-factor-heading small {
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
-  font-weight: 400;
+  font-weight: var(--weight-normal);
   line-height: 1.4;
 }
 
@@ -2283,7 +1889,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
@@ -2291,23 +1897,13 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px;
   max-width: 100%;
-  padding: 2px;
-  border: 1px solid var(--sp-line);
-  border-radius: var(--sp-r-2);
-  background: var(--sp-surface-sunken);
-}
-
-.pm-side-panel .pm-ring-nav__group.is-active {
-  border-color: var(--sp-accent-line);
-  background: var(--sp-accent-soft);
 }
 
 .pm-side-panel .pm-ring-nav__btn {
   min-height: var(--sp-h-1);
   height: var(--sp-h-1);
-  padding: 0 8px;
+  padding: 0 var(--sp-3);
   border: 0;
   border-radius: var(--sp-r-1);
   background: none;
@@ -2315,14 +1911,14 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   cursor: pointer;
   font-family: var(--font-sans);
   font-size: var(--sp-fs-1);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   line-height: 1;
   transition: background var(--sp-ease), color var(--sp-ease);
 }
 
 .pm-side-panel .pm-ring-nav__btn--hole {
   color: var(--sp-text-3);
-  font-weight: 400;
+  font-weight: var(--weight-normal);
 }
 
 .pm-side-panel .pm-ring-nav__btn:hover {
@@ -2333,21 +1929,21 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   background: var(--sp-surface);
   box-shadow: var(--sp-lift), inset 0 0 0 1px var(--sp-line);
   color: var(--sp-text);
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 
 .pm-side-panel .pm-ring-nav__btn.is-editing {
   background: var(--sp-accent-soft);
   box-shadow: inset 0 0 0 1px var(--sp-accent-line);
   color: var(--sp-accent);
-  font-weight: 600;
+  font-weight: var(--weight-strong);
 }
 
 /* Rebar: no nested card — the section already provides the frame. */
 .pm-side-panel .pm-rebar-quick {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-4);
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -2357,7 +1953,6 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-rebar-patterns {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
 }
 
 .pm-side-panel .pm-rebar-patterns button {
@@ -2366,60 +1961,38 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   align-items: center;
   justify-content: center;
   min-width: 0;
-  height: var(--sp-h-2);
-  padding: 0 8px;
-  border: 1px solid var(--sp-line);
-  border-radius: var(--sp-r-2);
-  background: var(--sp-surface);
-  color: var(--sp-text-3);
   cursor: pointer;
-  font-size: var(--sp-fs-1);
-  font-weight: 600;
-  line-height: 1;
-  transition: background var(--sp-ease), border-color var(--sp-ease), color var(--sp-ease);
-}
-
-.pm-side-panel .pm-rebar-patterns button:hover {
-  border-color: color-mix(in srgb, var(--sp-text-3) 45%, var(--sp-line));
-  color: var(--sp-text);
-}
-
-.pm-side-panel .pm-rebar-patterns button.is-active {
-  border-color: var(--sp-accent-line);
-  background: var(--sp-accent-soft);
-  color: var(--sp-accent);
 }
 
 .pm-side-panel .pm-rebar-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-3);
   min-width: 0;
 }
 
 .pm-side-panel .pm-rebar-replace {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   min-width: 0;
   color: var(--sp-text-3);
   cursor: pointer;
   font-size: var(--sp-fs-2);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
 }
 
 .pm-side-panel .pm-rebar-replace input {
   width: 12px;
-  height: 12px;
   margin: 0;
 }
 
 .pm-side-panel .pm-rebar-count {
-  margin-left: 6px;
+  margin-left: var(--sp-2);
   color: var(--sp-text-3);
   font-size: inherit;
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
   text-transform: none;
@@ -2429,7 +2002,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 .pm-side-panel .pm-rebar-excel-actions .pm-file-btn,
@@ -2437,35 +2010,15 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  height: var(--sp-h-2);
-  min-height: 0;
-  padding: 0 10px;
-  border: 1px solid var(--sp-line);
-  border-radius: var(--sp-r-2);
-  background: var(--sp-surface);
-  color: var(--sp-text-2);
   cursor: pointer;
-  font-family: inherit;
-  font-size: var(--sp-fs-2);
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  line-height: 1;
   white-space: nowrap;
-  transition: background var(--sp-ease), border-color var(--sp-ease), color var(--sp-ease);
-}
-
-.pm-side-panel .pm-rebar-excel-actions button:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--sp-text-3) 45%, var(--sp-line));
-  background: var(--sp-surface-hover);
-  color: var(--sp-text);
 }
 
 .pm-side-panel .pm-rebar-list-section {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-4);
   min-height: 0;
 }
 
@@ -2517,16 +2070,11 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 /* Keep the compact rebar grid focused on values: numeric steppers consume a
    meaningful part of the X/Y cells at the narrow sidebar width. */
 .pm-side-panel .pm-rebar-table th {
-  padding-inline: 2px;
+  padding-inline: var(--sp-0);
 }
 
 .pm-side-panel .pm-rebar-table td {
   padding-inline: 1px;
-}
-
-.pm-side-panel .pm-rebar-table input,
-.pm-side-panel .pm-rebar-table select {
-  padding-inline: 2px;
 }
 
 .pm-side-panel .pm-rebar-table input[type='number'] {
@@ -2544,31 +2092,14 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--sp-3);
 }
 
 .pm-side-panel .pm-rebar-remove-all {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  height: var(--sp-h-1);
-  padding: 0 8px;
-  border: 1px solid var(--sp-line);
-  border-radius: var(--sp-r-2);
-  background: var(--sp-surface);
-  color: var(--sp-text-3);
   cursor: pointer;
-  font-size: var(--sp-fs-1);
-  font-weight: 600;
-  line-height: 1;
-  transition: background var(--sp-ease), border-color var(--sp-ease), color var(--sp-ease);
-}
-
-.pm-side-panel .pm-rebar-remove-all:hover:not(:disabled) {
-  border-color: transparent;
-  background: var(--sp-danger-soft);
-  color: var(--sp-danger);
 }
 
 .pm-side-panel .pm-user-curve-editor {
@@ -2592,12 +2123,12 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 
 .pm-side-panel .pm-user-curve-table th {
   height: var(--sp-h-2);
-  padding: 0 6px;
+  padding: 0 var(--sp-2);
   border-bottom: 1px solid var(--sp-line);
   background: var(--sp-surface-sunken);
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
-  font-weight: 600;
+  font-weight: var(--weight-strong);
   letter-spacing: 0;
   text-align: left;
   /* ε / σ headers must stay lowercase Greek, not Ε / Σ. */
@@ -2606,7 +2137,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 
 .pm-side-panel .pm-user-curve-table td {
   height: var(--sp-row-table);
-  padding: 2px 4px;
+  padding: var(--sp-0) var(--sp-1);
   border-bottom: 1px solid var(--sp-line-soft);
 }
 
@@ -2624,25 +2155,12 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 
 .pm-side-panel .pm-user-curve-table input {
   width: 100%;
-  height: var(--sp-h-1);
   min-width: 0;
-  padding: 0 5px;
-  border: 1px solid transparent;
-  border-radius: var(--sp-r-1);
-  background: none;
-  color: inherit;
-  font-size: var(--sp-fs-2);
-}
-
-.pm-side-panel .pm-user-curve-table input:focus {
-  border-color: var(--sp-accent);
-  background: var(--sp-surface);
-  box-shadow: var(--sp-ring);
 }
 
 .pm-side-panel .pm-result-slider {
   display: grid;
-  gap: 6px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
@@ -2650,14 +2168,12 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   display: grid;
   grid-template-columns: minmax(0, 1fr) 72px auto;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-3);
   color: var(--sp-text-3);
   font-size: var(--sp-fs-2);
 }
 
 .pm-side-panel .pm-result-slider-head input[type='number'] {
-  height: var(--sp-h-2);
-  padding: 0 7px;
   text-align: right;
 }
 
@@ -2665,7 +2181,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
   font-style: normal;
-  font-weight: 500;
+  font-weight: var(--weight-normal);
 }
 
 .pm-side-panel .pm-chart-toggle-list.pm-report-pick-list,
@@ -2673,7 +2189,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   display: flex;
   flex-wrap: wrap;
   align-content: start;
-  gap: 4px;
+  gap: var(--sp-1);
   max-height: 148px;
   margin: 0;
   overflow: hidden auto;
@@ -2716,21 +2232,21 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   margin-bottom: -6px;
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
-  font-weight: 500;
+  font-weight: var(--weight-normal);
   line-height: 1;
 }
 
 .pm-side-panel .pm-panel-section .pm-loadcase-table-wrap {
-  margin-right: calc(0px - var(--sp-5, 14px));
-  margin-left: calc(0px - var(--sp-5, 14px));
+  margin-right: calc(0px - var(--sp-5, var(--sp-5)));
+  margin-left: calc(0px - var(--sp-5, var(--sp-5)));
   border-right: 0;
   border-left: 0;
   border-radius: 0;
 }
 
 .pm-side-panel .pm-loadcase-table th {
-  padding-right: 2px;
-  padding-left: 2px;
+  padding-right: var(--sp-0);
+  padding-left: var(--sp-0);
 }
 
 .pm-side-panel .pm-loadcase-table td {
@@ -2738,12 +2254,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 }
 
 .pm-side-panel .pm-loadcase-table td:first-child {
-  padding-left: 3px;
-}
-
-.pm-side-panel .pm-loadcase-table input {
-  padding-right: 3px;
-  padding-left: 3px;
+  padding-left: var(--sp-1);
 }
 
 .pm-side-panel .pm-loadcase-table th.pm-col-ur,
@@ -2761,7 +2272,6 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 
 .pm-side-panel .pm-loadcase-actions .pm-table-icon-btn {
   width: 20px;
-  height: 20px;
   margin: 0;
 }
 
@@ -2790,7 +2300,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-design-method-info ul,
 .pm-side-panel .pm-material-factor-info ul {
   display: grid;
-  gap: 6px;
+  gap: var(--sp-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2799,12 +2309,11 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-design-method-info li,
 .pm-side-panel .pm-material-factor-info li {
   display: grid;
-  gap: 2px;
+  gap: var(--sp-0);
 }
 
 .pm-side-panel .pm-design-override textarea {
   width: 100%;
-  min-height: 64px;
 }
 
 .pm-side-panel .pm-spin {
@@ -2824,10 +2333,12 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 @media (prefers-reduced-motion: reduce) {
   .pm-side-panel *,
   .pm-side-panel *::before {
-    transition: none !important;
+    transition: none;
   }
 
   .pm-side-panel .pm-spin {
-    animation: none !important;
+    animation: none;
   }
+}
+
 }

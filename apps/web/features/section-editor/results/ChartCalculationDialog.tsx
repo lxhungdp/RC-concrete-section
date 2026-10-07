@@ -1,7 +1,8 @@
 'use client'
 
+import { TransferIcon } from '../shared/WorkspaceIcons'
 import { useEffect, useId, useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Download, Loader2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react'
 import {
   stationDefinitionLabel,
   type AxialCapPointCalculationAudit,
@@ -530,7 +531,7 @@ const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, sect
         title={`${title}: concrete detail`}
         action={<button
           type="button"
-          className="pm-calc-excel-button"
+          className="ws-action pm-calc-excel-button"
           disabled={exportingConcreteKey !== null}
           onClick={() => void onExportConcreteExcel({
             key: exportKey,
@@ -545,7 +546,7 @@ const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, sect
           <span>Excel</span>
           {exportingConcreteKey === exportKey
             ? <Loader2 size={15} className="pm-spin" />
-            : <Download size={15} />}
+            : <TransferIcon direction="export" />}
         </button>}
       >
         <ConcreteSummary audit={audit} />
@@ -720,13 +721,13 @@ export function ChartCalculationDialog({ row, rows, source, resistanceStage, sum
       onClose={onClose}
       headerAction={<button
         type="button"
-        className="pm-calc-excel-button pm-calc-excel-button--report"
+        className="ws-action pm-calc-excel-button pm-calc-excel-button--report"
         disabled={exportingCalculationTrace || requestedPoints.length === 0 || !surface.calculationProfileId}
         onClick={() => void onExportCalculationTraceExcel()}
         title="Download the complete formula-linked audit for this selected result row"
       >
         <span>Excel</span>
-        {exportingCalculationTrace ? <Loader2 size={15} className="pm-spin" /> : <Download size={15} />}
+        {exportingCalculationTrace ? <Loader2 size={15} className="pm-spin" /> : <TransferIcon direction="export" />}
       </button>}
       controls={<div className="pm-calculation-dialog__selectors" aria-label="Calculation trace selection">
             <label className="pm-calculation-dialog__selector">

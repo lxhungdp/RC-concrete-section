@@ -166,7 +166,7 @@ export function EquivalentBlockGeometryWorkspace({
   return (
     <section className="pm-analysis-mesh-stage" aria-label="Equivalent stress block geometry">
       <article className="pm-results-plot pm-analysis-mesh-card">
-        <div className="pm-results-plot-title">
+        <div className="pm-results-plot-title ws-chart-controls">
           <div className="pm-results-plot-heading">
             <span>Equivalent stress block</span>
             <strong>Exact polygon clipping · no integration mesh</strong>
@@ -182,7 +182,7 @@ export function EquivalentBlockGeometryWorkspace({
                 value={angleDeg}
                 onChange={(event) => setAngleDeg(Number(event.target.value))}
               />
-              <strong>{angleDeg}°</strong>
+              <strong className="ws-num">{angleDeg}°</strong>
             </label>
             <label title="Neutral-axis depth divided by projected section depth">
               <span>c/Dθ</span>
@@ -194,9 +194,9 @@ export function EquivalentBlockGeometryWorkspace({
                 value={depthRatio}
                 onChange={(event) => setDepthRatio(Number(event.target.value))}
               />
-              <strong>{fmt(depthRatio, 2)}</strong>
+              <strong className="ws-num">{fmt(depthRatio, 2)}</strong>
             </label>
-            <label className={`pm-field-check${showRebars ? ' is-on' : ''}`}>
+            <label className={`ws-check pm-field-check${showRebars ? ' is-on' : ''}`}>
               <input
                 type="checkbox"
                 checked={showRebars}
@@ -267,12 +267,12 @@ export function EquivalentBlockGeometryWorkspace({
             </svg>
           </div>
           <div className="pm-section-mesh-quality">
-            <span>θ = {angleDeg}°</span>
-            <span>c = {fmt(preview.c)} mm</span>
-            <span>{preview.factor.symbol} = {fmt(preview.factor.value, 3)}</span>
-            <span>a = {fmt(preview.a)} mm</span>
-            <span>Dθ = {fmt(preview.projectedDepth)} mm</span>
-            <span>Ac = {fmt(preview.blockArea, 1)} mm²</span>
+            <span>θ = <span className="ws-num">{angleDeg}</span>°</span>
+            <span>c = <span className="ws-num">{fmt(preview.c)}</span> mm</span>
+            <span>{preview.factor.symbol} = <span className="ws-num">{fmt(preview.factor.value, 3)}</span></span>
+            <span>a = <span className="ws-num">{fmt(preview.a)}</span> mm</span>
+            <span>Dθ = <span className="ws-num">{fmt(preview.projectedDepth)}</span> mm</span>
+            <span>Ac = <span className="ws-num">{fmt(preview.blockArea, 1)}</span> mm²</span>
             <strong className="is-ok">Exact block</strong>
           </div>
         </div>

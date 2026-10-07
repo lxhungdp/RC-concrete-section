@@ -1,21 +1,16 @@
 'use client'
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties } from 'react'
 import dynamic from 'next/dynamic'
 import {
   BarChart3,
-  BriefcaseBusiness,
   ChevronRight,
   Circle,
-  Download,
   Eye,
   EyeOff,
-  FileDown,
-  FileUp,
-  FolderOpen,
+  File,
   Gauge,
   History,
-  Info,
   Lock,
   Minus,
   Moon,
@@ -95,6 +90,9 @@ import {
 } from '../../application/analysis/client'
 import { ExcelExportError, demandCheckWorkbookFileName } from '@pm/report'
 import { CalculationBasisToolbar } from './CalculationBasisToolbar'
+import { WorkspaceFrame } from './shared/WorkspaceFrame'
+import { WORKSPACE_PANE_GAP } from './shared/workspace-layout'
+import { AddIcon, TransferIcon } from './shared/WorkspaceIcons'
 import { PROJECT_EXAMPLES, type ProjectExample } from './project-examples'
 import {
   RECENT_PROJECT_STORAGE_KEY,
@@ -104,6 +102,12 @@ import {
   upsertRecentProject,
   type RecentProject
 } from './recent-project'
+
+// The popup is browser-only; keep its DOM adapter outside the initial render bundle.
+const WorkspaceComboboxes = dynamic(
+  () => import('./shared/WorkspaceComboboxes').then((module) => module.WorkspaceComboboxes),
+  { ssr: false }
+)
 
 /**
  * The results and mesh stages carry Plotly and the analysis kernels. Loading them on demand keeps
@@ -2343,19 +2347,54 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
   }
 
   return (
-    <main className="pm-shell" id={geometryOnly ? 'geometry-workspace' : undefined}>
+    <main className="pm-shell" id={geometryOnly ? 'geometry-workspace' : undefined}
+      style={{ '--ws-pane-gap': `${WORKSPACE_PANE_GAP}px` } as CSSProperties}>
       <header className="pm-app-header">
-        <div className="pm-brand">
-          <span className="pm-brand-mark">PM</span>
-          <div>
-            <h1>P-M Column Designer</h1>
-          </div>
+        <div className="pm-brand pm-about-menu" ref={aboutMenuRef}>
+          <button
+            className="pm-brand-mark"
+            type="button"
+            title="About P-M Column Designer"
+            aria-label="About P-M Column Designer"
+            aria-haspopup="dialog"
+            aria-expanded={aboutMenuOpen}
+            onClick={() => {
+              setProjectMenuOpen(false)
+              setAboutMenuOpen((open) => !open)
+            }}
+          >
+            <span aria-hidden="true">PM</span>
+          </button>
+          {aboutMenuOpen && (
+            <div className="pm-about-popover" role="dialog" aria-label="About P-M Column Designer">
+              <div className="pm-about-header">
+                <span className="pm-about-mark" aria-hidden="true">PM</span>
+                <div className="pm-about-title">
+                  <div>
+                    <h2>P-M Column Designer</h2>
+                    <span>v{APP_VERSION}</span>
+                  </div>
+                  <p>Reinforced-concrete P–M–M section resistance analysis</p>
+                  <p>Stage 1 · Section resistance only</p>
+                </div>
+              </div>
+              <div className="pm-about-attribution">
+                <strong>© 2026 Envico Co., Ltd.</strong>
+                <span>Developed by Le Xuan Hung</span>
+                <span>Open-source software licensed under the MIT License.</span>
+              </div>
+              <p className="pm-about-disclaimer">
+                Engineering results require independent professional review.
+              </p>
+            </div>
+          )}
         </div>
 
         <nav className="pm-module-tabs" aria-label="Design modules">
           <button
             className={activeModule === 'geometry' ? 'is-active' : ''}
             aria-label="Section"
+            aria-pressed={activeModule === 'geometry'}
             onClick={() => switchModule('geometry')}
           >
             <RcSectionIcon size={16} />
@@ -2365,6 +2404,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
           <button
             className={activeModule === 'materials' ? 'is-active' : ''}
             aria-label="Materials"
+            aria-pressed={activeModule === 'materials'}
             onClick={() => switchModule('materials')}
           >
             <MaterialsIcon size={16} />
@@ -2373,6 +2413,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
           <button
             className={activeModule === 'section' ? 'is-active' : ''}
             aria-label="Capacity"
+            aria-pressed={activeModule === 'section'}
             onMouseEnter={() => preloadModule('section')}
             onFocus={() => preloadModule('section')}
             onClick={() => switchModule('section')}
@@ -2383,6 +2424,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
           <button
             className={activeModule === 'demand' ? 'is-active' : ''}
             aria-label="Demand Check"
+            aria-pressed={activeModule === 'demand'}
             onMouseEnter={() => preloadModule('demand')}
             onFocus={() => preloadModule('demand')}
             onClick={() => switchModule('demand')}
@@ -2393,6 +2435,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
           <button
             className={activeModule === 'analysis' ? 'is-active' : ''}
             aria-label="Options"
+            aria-pressed={activeModule === 'analysis'}
             onMouseEnter={() => preloadModule('analysis')}
             onFocus={() => preloadModule('analysis')}
             onClick={() => switchModule('analysis')}
@@ -2420,7 +2463,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
               className={`pm-project-menu__trigger${projectMenuOpen ? ' is-active' : ''}`}
               type="button"
               title="Project information and files"
-              aria-label="Open project information and files"
+              aria-label="Project menu"
               aria-haspopup="dialog"
               aria-expanded={projectMenuOpen}
               onClick={() => {
@@ -2428,27 +2471,26 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                 setProjectMenuOpen((open) => !open)
               }}
             >
-              <FolderOpen size={18} />
+              <File size={16} />
+              <span>Project</span>
             </button>
             {projectMenuOpen && (
               <div className="pm-project-menu__popover" role="dialog" aria-label="Project information and files">
                 <section className="pm-project-menu__section pm-project-menu__section--information">
                   <button
-                    className="pm-project-menu__item pm-project-menu__information-row"
+                    className="ws-row-action pm-project-menu__item pm-project-menu__information-row"
                     type="button"
                     onClick={() => {
                       setProjectMenuOpen(false)
                       setProjectInformationOpen(true)
                     }}
                   >
-                    <BriefcaseBusiness size={16} />
-                    <strong>Project Information</strong>
-                    <ChevronRight className="pm-project-menu__row-chevron" size={15} />
+                    <strong>Project information</strong>
                   </button>
                 </section>
 
                 <section className="pm-project-menu__section">
-                  <div className="pm-project-menu__section-head"><span>Import Export</span></div>
+                  <div className="pm-project-menu__section-head"><span>Import / Export</span></div>
                   <div className="pm-project-menu__file-controls">
                     <select
                       className="pm-project-menu__format"
@@ -2462,7 +2504,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                     </select>
                     <div className="pm-project-menu__actions">
                       <button
-                        className="pm-project-menu__file-action"
+                        className="ws-action pm-project-menu__file-action"
                         type="button"
                         title={`Import project from ${projectFileFormat === 'excel' ? 'Excel' : 'JSON'}`}
                         aria-label={`Import project from ${projectFileFormat === 'excel' ? 'Excel' : 'JSON'}`}
@@ -2472,11 +2514,11 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                           importInputRef.current?.click()
                         }}
                       >
-                        <FileUp size={16} aria-hidden="true" />
+                        <TransferIcon direction="import" />
                         <span>Import</span>
                       </button>
                       <button
-                        className="pm-project-menu__file-action"
+                        className="ws-action pm-project-menu__file-action"
                         type="button"
                         title={`Export project to ${projectFileFormat === 'excel' ? 'Excel' : 'JSON'}`}
                         aria-label={`Export project to ${projectFileFormat === 'excel' ? 'Excel' : 'JSON'}`}
@@ -2486,7 +2528,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                           void exportProjectFile()
                         }}
                       >
-                        <FileDown size={16} aria-hidden="true" />
+                        <TransferIcon direction="export" />
                         <span>Export</span>
                       </button>
                     </div>
@@ -2498,7 +2540,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                   <div className="pm-project-menu__recent-list">
                     {recentProjects.map((recent) => (
                       <button
-                        className="pm-project-menu__item pm-project-menu__recent"
+                        className="ws-row-action pm-project-menu__item pm-project-menu__recent"
                         type="button"
                         key={`${recent.id}:${recent.createdAt}`}
                         onClick={() => loadRecentProject(recent)}
@@ -2526,7 +2568,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                     <div className="pm-project-menu__examples">
                       {PROJECT_EXAMPLES.map((example) => (
                         <button
-                          className="pm-project-menu__item pm-project-menu__example"
+                          className="ws-row-action pm-project-menu__item pm-project-menu__example"
                           type="button"
                           key={example.id}
                           onClick={() => loadProjectExample(example)}
@@ -2544,48 +2586,9 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
             )}
           </div>
           <span className="pm-toolbar-sep" aria-hidden="true" />
-          {!geometryOnly && <button onClick={toggleTheme} title="Theme">
+          <button onClick={toggleTheme} title="Theme">
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-          </button>}
-          <div className="pm-about-menu" ref={aboutMenuRef}>
-            <button
-              className={aboutMenuOpen ? 'is-active' : ''}
-              type="button"
-              title="About P-M Column Designer"
-              aria-label="About P-M Column Designer"
-              aria-haspopup="dialog"
-              aria-expanded={aboutMenuOpen}
-              onClick={() => {
-                setProjectMenuOpen(false)
-                setAboutMenuOpen((open) => !open)
-              }}
-            >
-              <Info size={18} />
-            </button>
-            {aboutMenuOpen && (
-              <div className="pm-about-popover" role="dialog" aria-label="About P-M Column Designer">
-                <div className="pm-about-header">
-                  <span className="pm-about-mark" aria-hidden="true">PM</span>
-                  <div className="pm-about-title">
-                    <div>
-                      <h2>P-M Column Designer</h2>
-                      <span>v{APP_VERSION}</span>
-                    </div>
-                    <p>Reinforced-concrete P–M–M section resistance analysis</p>
-                    <p>Stage 1 · Section resistance only</p>
-                  </div>
-                </div>
-                <div className="pm-about-attribution">
-                  <strong>© 2026 Envico Co., Ltd.</strong>
-                  <span>Developed by Le Xuan Hung</span>
-                  <span>Open-source software licensed under the MIT License.</span>
-                </div>
-                <p className="pm-about-disclaimer">
-                  Engineering results require independent professional review.
-                </p>
-              </div>
-            )}
-          </div>
+          </button>
           <input
             ref={importInputRef}
             type="file"
@@ -2606,17 +2609,14 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
         />
       ) : null}
 
-      <aside className="pm-side-panel">
+      <WorkspaceComboboxes />
+      <WorkspaceFrame>
+      <aside className="pm-side-panel" id="pm-workspace-sidebar" aria-label={`${activeModule === 'geometry' ? 'Section' : activeModule === 'materials' ? 'Materials'
+        : activeModule === 'section' ? 'Capacity' : activeModule === 'demand' ? 'Demand Check' : 'Options'} workspace editor`}>
         <div className="pm-side-panel-body">
         {activeModule === 'geometry' && (
           <>
-            {geometryOnly && (
-              <div className="geometry-panel-heading">
-                <div><h2>Geometry</h2><p>Section definition</p></div>
-                <span>mm</span>
-              </div>
-            )}
-            <div className="pm-page-tabs" role="tablist" aria-label="Geometry tabs">
+            <div className="ws-page-tabs pm-page-tabs" role="tablist" aria-label="Geometry tabs">
               <button
                 type="button"
                 role="tab"
@@ -2641,37 +2641,34 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
           <>
             <section className="pm-panel-section pm-boundary-list-section">
               <div className="pm-section-title pm-section-title--with-action pm-section-title--boolean-actions">
-                <h2>Boundary List</h2>
+                <h2>Boundary list</h2>
                 <div className="pm-boundary-list-actions">
                   <button
                     type="button"
-                    className="pm-table-add-btn"
+                    className="ws-action ws-action--primary pm-table-add-btn"
                     onClick={() => applyBooleanAction('union')}
                     disabled={selectedBoundaries.length < 2}
                     title="Add regions (union)"
                   >
-                    <Plus size={14} />
-                    Union
+                    <span className="ws-action-content"><Plus size={14} /><span>Union</span></span>
                   </button>
                   <button
                     type="button"
-                    className="pm-table-add-btn"
+                    className="ws-action ws-action--primary pm-table-add-btn"
                     onClick={() => applyBooleanAction('subtract')}
                     disabled={selectedBoundaries.length < 2}
                     title="Subtract later selections from the first selected boundary"
                   >
-                    <Minus size={14} />
-                    Subtract
+                    <span className="ws-action-content"><Minus size={14} /><span>Subtract</span></span>
                   </button>
                   <button
                     type="button"
-                    className="pm-table-add-btn"
+                    className="ws-action ws-action--primary pm-table-add-btn"
                     onClick={() => applyBooleanAction('intersect')}
                     disabled={selectedBoundaries.length < 2}
                     title="Keep only the region shared by all selected boundaries"
                   >
-                    <SquaresIntersect size={14} />
-                    Intersection
+                    <span className="ws-action-content"><SquaresIntersect size={14} /><span>Intersection</span></span>
                   </button>
                 </div>
               </div>
@@ -2689,7 +2686,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                       className={`pm-boundary-row${isSelected ? ' is-selected' : ''}${isActive ? ' is-active' : ''}${isFinal ? ' is-applied' : ''}`}
                       key={boundary.id}
                     >
-                      <button className="pm-boundary-row-main" onClick={(event) => selectBoundary(boundary.id, event.shiftKey || event.metaKey)}>
+                      <button className="ws-row-action pm-boundary-row-main" onClick={(event) => selectBoundary(boundary.id, event.shiftKey || event.metaKey)}>
                         <span className={`pm-selection-badge${isSelected ? ' is-on' : ''}${isFinal ? ' is-applied' : ''}`} />
                         <span className="pm-boundary-row-name">
                           {boundary.name}
@@ -2702,24 +2699,24 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                         </span>
                       </button>
                       {isFinal ? (
-                        <span className="pm-boundary-final-label">Final</span>
+                        <span className="pm-boundary-final-label ws-compact-status">Final</span>
                       ) : (
                         <button
                           type="button"
-                          className="pm-boundary-apply-btn"
+                          className="ws-action ws-action--primary ws-action--compact pm-boundary-apply-btn"
                           onClick={() => applyBoundaryAsSection(boundary)}
                           title="Use this boundary and its rebars as the final section"
                         >
                           Apply
                         </button>
                       )}
-                      <button className="pm-table-icon-btn" title="Visibility" onClick={() => updateBoundary(boundary.id, { visible: !boundary.visible })}>
+                      <button className="ws-action ws-action--quiet ws-action--compact ws-action--icon pm-table-icon-btn" title="Visibility" onClick={() => updateBoundary(boundary.id, { visible: !boundary.visible })}>
                         {boundary.visible ? <Eye size={14} /> : <EyeOff size={14} />}
                       </button>
-                      <button className="pm-table-icon-btn" title="Lock" onClick={() => updateBoundary(boundary.id, { locked: !boundary.locked })}>
+                      <button className="ws-action ws-action--quiet ws-action--compact ws-action--icon pm-table-icon-btn" title="Lock" onClick={() => updateBoundary(boundary.id, { locked: !boundary.locked })}>
                         {boundary.locked ? <Lock size={14} /> : <Unlock size={14} />}
                       </button>
-                      <button className="pm-table-icon-btn pm-table-icon-btn--danger" title="Delete boundary" onClick={() => requestDeleteBoundary(boundary.id)}>
+                      <button className="ws-action ws-action--quiet ws-action--danger-quiet ws-action--compact ws-action--icon pm-table-icon-btn pm-table-icon-btn--danger" title="Delete boundary" onClick={() => requestDeleteBoundary(boundary.id)}>
                         <X size={14} />
                       </button>
                     </div>
@@ -2735,11 +2732,11 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                   {boundarySelectionStatus(selectedBoundaryIds.length)}
                 </p>
                 <div className="pm-boundary-create-actions">
-                  <span className="pm-boundary-create-label">Create Boundary</span>
-                  <button type="button" title="Create rectangle" aria-label="Create rectangle" onClick={() => createDefaultBoundary('rectangle')}>
+                  <span className="pm-boundary-create-label">Create boundary</span>
+                  <button type="button" title="Create rectangle" aria-label="Create rectangle" onClick={() => createDefaultBoundary('rectangle')} className="ws-action ws-action--compact ws-action--icon">
                     <RectangleHorizontal size={14} />
                   </button>
-                  <button type="button" title="Create circle" aria-label="Create circle" onClick={() => createDefaultBoundary('circle')}>
+                  <button type="button" title="Create circle" aria-label="Create circle" onClick={() => createDefaultBoundary('circle')} className="ws-action ws-action--compact ws-action--icon">
                     <Circle size={14} />
                   </button>
                 </div>
@@ -2760,12 +2757,12 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                 </div>
                 {activeBoundary && (
                   <div className="pm-boundary-detail-actions">
-                    <div className="pm-detail-tabs" role="tablist" aria-label={`${activeBoundary.name} details`}>
+                    <div className="pm-detail-tabs ws-joined-buttons" role="tablist" aria-label={`${activeBoundary.name} details`}>
                       <button
                         type="button"
                         role="tab"
                         aria-selected={effectiveDetailTab === 'basic'}
-                        className={effectiveDetailTab === 'basic' ? 'is-active' : ''}
+                        className={"ws-action " + (effectiveDetailTab === 'basic' ? 'is-active' : '')}
                         disabled={!showBasicDetailTab}
                         onClick={() => setDetailTab('basic')}
                       >
@@ -2775,7 +2772,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                         type="button"
                         role="tab"
                         aria-selected={effectiveDetailTab === 'points'}
-                        className={effectiveDetailTab === 'points' ? 'is-active' : ''}
+                        className={"ws-action " + (effectiveDetailTab === 'points' ? 'is-active' : '')}
                         onClick={() => setDetailTab('points')}
                       >
                         Point
@@ -2783,11 +2780,11 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                     </div>
                     <button
                       type="button"
-                      className="pm-file-btn"
+                      className="ws-action pm-file-btn"
                       onClick={() => exportBoundaryExcel(activeBoundary)}
                       title="Export boundary to Excel"
                     >
-                      <Download size={13} />
+                      <TransferIcon direction="export" />
                       Excel
                     </button>
                   </div>
@@ -3040,7 +3037,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                         X {formatNumber(activeSummary.centroid.x, 3)} · Y {formatNumber(activeSummary.centroid.y, 3)}
                       </small>
                     </span>
-                    <span className="pm-boundary-rotation-input">
+                    <span className="pm-boundary-rotation-input ws-field-group">
                       <RotateCw size={13} />
                       <input
                         type="number"
@@ -3066,13 +3063,14 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                         return (
                           <div
                             key={`outer-group-${outerIndex}`}
-                            className={`pm-ring-nav__group${isActiveOuter ? ' is-active' : ''}`}
+                            className={`pm-ring-nav__group ws-joined-buttons${isActiveOuter ? ' is-active' : ''}`}
                             role="group"
                             aria-label={`Outer ${outerIndex + 1}${holes.length > 0 ? ` with ${holes.length} hole(s)` : ''}`}
                           >
                             <button
                               type="button"
-                              className={`pm-ring-nav__btn${isActiveOuter && activeRingIndex === 0 ? ' is-editing' : ''}${isActiveOuter ? ' is-active' : ''}`}
+                              className={`ws-action pm-ring-nav__btn${isActiveOuter && activeRingIndex === 0 ? ' is-editing is-active' : ''}`}
+                              aria-pressed={isActiveOuter && activeRingIndex === 0}
                               onClick={() => {
                                 setActiveOuterIndex(outerIndex)
                                 setActiveRingIndex(0)
@@ -3088,7 +3086,8 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                                 <button
                                   type="button"
                                   key={`hole-${outerIndex}-${ringIndex}`}
-                                  className={`pm-ring-nav__btn pm-ring-nav__btn--hole${isEditingHole ? ' is-editing is-active' : ''}`}
+                                  className={`ws-action pm-ring-nav__btn pm-ring-nav__btn--hole${isEditingHole ? ' is-editing is-active' : ''}`}
+                                  aria-pressed={isEditingHole}
                                   onClick={() => {
                                     setActiveOuterIndex(outerIndex)
                                     setActiveRingIndex(ringIndex)
@@ -3120,12 +3119,12 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                           <th>
                             <button
                               type="button"
-                              className="pm-table-add-icon-btn"
+                              className="ws-action ws-action--primary ws-action--compact ws-action--icon pm-table-add-icon-btn"
                               onClick={addPointAfterSelected}
                               disabled={activeBoundary.locked}
                               title="Add point"
                             >
-                              <Plus size={14} />
+                              <AddIcon />
                             </button>
                           </th>
                         </tr>
@@ -3158,7 +3157,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                               </td>
                               <td>
                                 <button
-                                  className="pm-table-icon-btn pm-table-icon-btn--danger"
+                                  className="ws-action ws-action--quiet ws-action--danger-quiet ws-action--compact ws-action--icon pm-table-icon-btn pm-table-icon-btn--danger"
                                   disabled={activeBoundary.locked || activeRing.length <= 3}
                                   onClick={() => deleteSelectedPoint(point.id)}
                                   title="Delete point"
@@ -3208,7 +3207,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
 
         {activeModule === 'analysis' && (
           <>
-            <div className="pm-analysis-tabs" role="tablist" aria-label="Analysis option groups">
+            <div className="ws-page-tabs pm-analysis-tabs" role="tablist" aria-label="Analysis option groups">
               {([
                 ['points', 'Points'],
                 ['mesh', analysisOptions.methodId === 'equivalent-block-surface-v1' ? 'Block' : 'Mesh'],
@@ -3383,6 +3382,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
             </div>
             <button
               type="button"
+              className="ws-action"
               onClick={() => setCamera(fitCameraToPointsWithInsets(allVisiblePoints, size, DEFAULT_FIT_INSETS))}
             >
               Fit view
@@ -3393,7 +3393,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
           {geometryOnly && (
             <button
               type="button"
-              className={tool === 'select' ? 'is-active' : ''}
+              className={"ws-action ws-action--icon ws-action--cad " + (tool === 'select' ? 'is-active' : '')}
               aria-label="Select and pan"
               title="Select and pan"
               onClick={() => {
@@ -3406,21 +3406,21 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
             </button>
           )}
           <button
-            className={tool === 'draw-rectangle' ? 'is-active' : ''}
+            className={"ws-action ws-action--icon ws-action--cad " + (tool === 'draw-rectangle' ? 'is-active' : '')}
             onClick={() => toggleDrawTool('draw-rectangle')}
             title="Draw rectangle: click two opposite corners"
           >
             <RectangleHorizontal size={16} />
           </button>
           <button
-            className={tool === 'draw-circle' ? 'is-active' : ''}
+            className={"ws-action ws-action--icon ws-action--cad " + (tool === 'draw-circle' ? 'is-active' : '')}
             onClick={() => toggleDrawTool('draw-circle')}
             title="Draw circle: click center, then radius point"
           >
             <Circle size={16} />
           </button>
           <button
-            className={tool === 'draw-polygon' ? 'is-active' : ''}
+            className={"ws-action ws-action--icon ws-action--cad " + (tool === 'draw-polygon' ? 'is-active' : '')}
             onClick={() => toggleDrawTool('draw-polygon')}
             title="Draw polygon: click points, right-click to close"
           >
@@ -3590,6 +3590,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
         </>
         )}
       </section>
+      </WorkspaceFrame>
 
       {activeModule === 'demand' && calculationLoadcase && resultSurface ? (
         <LoadcaseCalculationDialog

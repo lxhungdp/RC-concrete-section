@@ -64,7 +64,7 @@ export function ProjectInformationDialog({
             <h2 id="pm-project-dialog-title">Project information</h2>
             <p>Saved with the project and shown in exported reports.</p>
           </div>
-          <button type="button" className="pm-project-dialog__close" onClick={onClose} aria-label="Close project information">
+          <button type="button" className="ws-action ws-action--quiet ws-action--icon pm-project-dialog__close" onClick={onClose} aria-label="Close project information">
             <X size={18} />
           </button>
         </header>
@@ -72,7 +72,7 @@ export function ProjectInformationDialog({
         <form onSubmit={submit} className="pm-project-dialog__form">
           <div className="pm-project-dialog__rows">
             <label className="pm-project-dialog__field">
-              <span>Project Name</span>
+              <span>Project name</span>
               <input ref={firstInputRef} value={name} maxLength={160} onChange={(event) => setName(event.target.value)} />
             </label>
 
@@ -110,8 +110,8 @@ export function ProjectInformationDialog({
           </div>
 
           <footer className="pm-project-dialog__actions">
-            <button type="button" className="pm-secondary-btn" onClick={onClose}>Cancel</button>
-            <button type="submit" className="pm-primary-btn"><Save size={14} /> Save changes</button>
+            <button type="button" className="ws-action pm-secondary-btn" onClick={onClose}>Cancel</button>
+            <button type="submit" className="ws-action ws-action--primary pm-primary-btn"><Save size={14} /> Save changes</button>
           </footer>
         </form>
       </section>

@@ -1,6 +1,7 @@
 'use client'
 
-import { AlertTriangle, CheckCircle2, Download, Loader2 } from 'lucide-react'
+import { TransferIcon } from '../shared/WorkspaceIcons'
+import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react'
 import type {
   InversePreviewResult,
   LoadcaseQuickCheckResult,
@@ -103,13 +104,13 @@ export function LoadcaseCalculationDialog({
       onClose={onClose}
       headerAction={<button
         type="button"
-        className="pm-calc-excel-button pm-calc-excel-button--report"
+        className="ws-action pm-calc-excel-button pm-calc-excel-button--report"
         disabled={exporting}
         onClick={() => void onExportExcel()}
         title="Download the existing Demand Check workbook with this combination worked through in full"
       >
         <span>Excel</span>
-        {exporting ? <Loader2 size={15} className="pm-spin" /> : <Download size={15} />}
+        {exporting ? <Loader2 size={15} className="pm-spin" /> : <TransferIcon direction="export" />}
       </button>}
       controls={<div className="pm-calculation-dialog__selectors pm-calculation-dialog__selectors--loadcase" aria-label="Loadcase calculation trace selection">
         <label className="pm-calculation-dialog__selector pm-calculation-dialog__selector--row">
