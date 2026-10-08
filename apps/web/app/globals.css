@@ -1078,43 +1078,7 @@ body[data-jscad-theme="dark"] .pm-rebar-params select {
   text-align: center;
 }
 
-.pm-rebar-list-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-  flex: 0 0 auto;
-  min-height: 0;
-}
-
-.pm-rebar-table-wrap {
-  flex: 0 1 auto;
-  max-height: min(42vh, 360px);
-  overflow: auto;
-}
-
 /* Rebar widths: see `.pm-rebar-col--*` in side-panel.css (plain % only). */
-
-.pm-rebar-list-footer {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  flex: 0 0 auto;
-  margin-top: var(--sp-1);
-}
-
-.pm-rebar-remove-all {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: auto;
-  min-width: 0;
-  cursor: pointer;
-}
-
-.pm-rebar-remove-all:disabled {
-  cursor: not-allowed;
-  opacity: 0.42;
-}
 
 .pm-rebar-dot {
   fill: #b45309;
@@ -2365,13 +2329,6 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   text-align: center;
 }
 
-.pm-loadcase-table-region {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-0);
-  min-width: 0;
-}
-
 .pm-loadcase-update-slot {
   display: flex;
   flex: 0 0 16px;
@@ -2416,7 +2373,6 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
 
 .pm-loadcase-table-wrap {
   min-height: 0;
-  max-height: min(58vh, 560px);
   overflow: auto;
   overscroll-behavior: contain;
   border: 1px solid color-mix(in srgb, var(--foreground) 9%, var(--border));
@@ -2429,27 +2385,6 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
-}
-
-.pm-loadcase-header-actions .pm-loadcase-file-btn {
-  display: inline-flex;
-  width: 26px;
-  min-width: 26px;
-  height: 24px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid var(--btn-secondary-border);
-  border-radius: var(--r-sm);
-  background: var(--btn-secondary-bg);
-  color: var(--foreground-secondary);
-  cursor: pointer;
-}
-
-.pm-loadcase-header-actions .pm-loadcase-file-btn:hover {
-  border-color: color-mix(in srgb, var(--foreground) 14%, var(--border));
-  background: var(--btn-secondary-hover-bg);
-  color: var(--foreground);
 }
 
 .pm-loadcase-units {

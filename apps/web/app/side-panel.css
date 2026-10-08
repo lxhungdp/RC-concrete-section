@@ -143,6 +143,7 @@
 
 .pm-side-panel .pm-section-title {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: var(--sp-2);
   min-width: 0;
@@ -697,9 +698,11 @@
 
 .pm-side-panel .pm-boundary-detail-header {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--sp-2);
   min-width: 0;
+  overflow-x: auto;
 }
 
 .pm-side-panel .pm-section-title > .pm-boundary-detail-heading {
@@ -707,11 +710,12 @@
   flex: 1 1 auto;
   flex-direction: column;
   gap: 1px;
-  min-width: 0;
+  min-width: min-content;
 }
 
 .pm-side-panel .pm-boundary-detail-name {
   display: block;
+  contain: inline-size;
   min-width: 0;
   line-height: 1.15;
 }
@@ -722,7 +726,11 @@
   align-items: center;
   gap: var(--sp-1);
   min-width: 0;
+  flex-wrap: nowrap;
 }
+
+.pm-side-panel .pm-boundary-selection-row { flex-wrap: wrap; }
+.pm-side-panel .pm-boundary-drawing-import { margin-inline-start: var(--sp-3); }
 
 /* ---------------------------------------------------------------------------
    Tables
@@ -1193,15 +1201,6 @@
    the chart-data table stretches to the bottom and becomes the scroll owner. */
 .pm-side-panel-body:has(> .pm-chart-data-section) {
   overflow: hidden;
-}
-
-/* The report picker is a wrapping list of chips, not a track. */
-.pm-side-panel .pm-chart-toggle-list {
-  align-content: start;
-  max-height: 148px;
-  overflow: hidden auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--sp-line) transparent;
 }
 
 .pm-side-panel .pm-chart-visibility-row,
@@ -2014,19 +2013,6 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   white-space: nowrap;
 }
 
-.pm-side-panel .pm-rebar-list-section {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  gap: var(--sp-4);
-  min-height: 0;
-}
-
-.pm-side-panel .pm-rebar-table-wrap {
-  flex: 0 1 auto;
-  max-height: min(42vh, 360px);
-}
-
 /*
   Rebar column widths — plain % / px only.
 
@@ -2086,20 +2072,6 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-rebar-table input[type='number']::-webkit-outer-spin-button {
   margin: 0;
   -webkit-appearance: none;
-}
-
-.pm-side-panel .pm-rebar-list-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--sp-3);
-}
-
-.pm-side-panel .pm-rebar-remove-all {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
 }
 
 .pm-side-panel .pm-user-curve-editor {
@@ -2226,14 +2198,28 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 }
 
 /* Keep the narrow Check panel useful: spend width on data, not nested cell gutters. */
+.pm-side-panel .pm-loadcase-heading {
+  flex-wrap: wrap;
+}
+
+.pm-side-panel .pm-section-title > .pm-loadcase-title-copy {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.pm-side-panel .pm-loadcase-header-actions {
+  flex-wrap: nowrap;
+}
+
 .pm-side-panel .pm-loadcase-units {
-  align-self: flex-end;
-  margin-top: -4px;
-  margin-bottom: -6px;
+  flex-shrink: 0;
+  padding: 0;
   color: var(--sp-text-3);
   font-size: var(--sp-fs-1);
   font-weight: var(--weight-normal);
   line-height: 1;
+  white-space: nowrap;
 }
 
 .pm-side-panel .pm-panel-section .pm-loadcase-table-wrap {

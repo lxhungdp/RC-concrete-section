@@ -214,7 +214,7 @@ export function RebarPanel({
         </div>
       </section>
 
-      <section className="pm-panel-section pm-rebar-list-section">
+      <section className="pm-panel-section ws-table-editor">
         <div className="pm-section-title pm-section-title--with-action">
           <div>
             <h2>
@@ -254,7 +254,7 @@ export function RebarPanel({
             />
           </div>
         </div>
-        <div className="pm-point-table-wrap pm-rebar-table-wrap">
+        <div className="pm-point-table-wrap ws-table-scroll">
           <table className="pm-point-table pm-rebar-table">
             {/*
               Root cause of earlier no-ops: browsers discard calc((100% - Npx) * k)
@@ -277,18 +277,14 @@ export function RebarPanel({
                 <th>Mat</th>
                 <th>X</th>
                 <th>Y</th>
-                <th>
-                  <button type="button" className="ws-action ws-action--primary ws-action--compact ws-action--icon pm-table-add-icon-btn" onClick={addManualRebar} title="Add bar">
-                    <AddIcon />
-                  </button>
-                </th>
+                <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
               {rebars.length === 0 && (
                 <tr>
                   <td colSpan={6} className="pm-rebar-empty">
-                    No bars yet. Use Quick generate.
+                    No bars yet. Use Add or Quick generate.
                   </td>
                 </tr>
               )}
@@ -359,14 +355,22 @@ export function RebarPanel({
             </tbody>
           </table>
         </div>
-        <div className="pm-rebar-list-footer">
+        <div className="ws-table-actions">
           <button
             type="button"
-            className="ws-action ws-action--danger pm-rebar-remove-all"
+            className="ws-action ws-action--danger"
             disabled={rebars.length === 0}
             onClick={removeAllRebars}
           >
             Remove all
+          </button>
+          <button
+            type="button"
+            className="ws-action ws-action--primary"
+            onClick={addManualRebar}
+            title="Add bar"
+          >
+            <span className="ws-action-content"><AddIcon />Add</span>
           </button>
         </div>
       </section>

@@ -7,5 +7,9 @@ description: Design, implement or review P-M workspace UI, toolbar menus, side p
 
 Read the [canonical skill](../../../.agents/skills/workspace-style-design/SKILL.md)
 completely, resolve its relative links from its directory and follow it as this
-skill. Read its linked design standard and role matrix completely before UI work. Do not act
+skill. Read its linked design standard and role matrix, including Rebar,
+Outer/Hole and Loadcase table layout, bounded option lists and inline unit notes,
+file actions, transfer icons, toolbar basis states and header layout exceptions,
+and chart metric rows,
+completely before UI work. Do not act
 from this adapter alone or duplicate the workflow or visual rules here.

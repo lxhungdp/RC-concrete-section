@@ -45,7 +45,7 @@ table/import
   -> persist definition / send immutable snapshot to engine
 ```
 
-The current UI supports add/edit/delete and CSV import/export in `LoadingsPanel`, owned by the
+The current UI supports add/edit/delete and Excel import/export in `LoadingsPanel`, owned by the
 dedicated `Demand Check` workspace. The current persistence helpers live in `@pm/project`; a future
 `@pm/loadings` extraction will own richer source-case validation and transformations. Demand Check
 retains input order while using stable IDs.

@@ -1951,11 +1951,15 @@ export function ResultsWorkspace({
                       </>
                     )}
                     <div>
-                      <span>ε max / min</span>
+                      <span>ε max</span>
                       <strong className="ws-num">
-                        {fieldExtremes
-                          ? `${fmt(fieldExtremes.epsMax, 6)} / ${fmt(fieldExtremes.epsMin, 6)}`
-                          : '—'}
+                        {fieldExtremes ? fmt(fieldExtremes.epsMax, 6) : '—'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>ε min</span>
+                      <strong className="ws-num">
+                        {fieldExtremes ? fmt(fieldExtremes.epsMin, 6) : '—'}
                       </strong>
                     </div>
                   </div>

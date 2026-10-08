@@ -45,11 +45,18 @@ presentation does not change validation, units, engineering states or data.
 
 Inspect populated Section/Rebar, Materials, Capacity, Demand Check, Options,
 project menus/dialogs and calculation dialogs in both themes. Measure actual
-actions/fields/tabs/expanded options; inspect hover/focus/disabled/selection,
-long text and signed decimal values. Exercise narrow layouts, whole-group
+actions/fields/tabs/expanded options; inspect the toolbar basis frame in resting,
+hover and expanded states, plus hover/focus/disabled/selection,
+terminal Rebar, Outer/Hole and Loadcase table sizing and footer actions that
+follow the table, including inline table units, labelled file actions and bounded
+option lists that precede the table,
+long text and signed decimal values, including the fixed single-row Detail
+header and its truncated section name. Exercise narrow layouts, whole-group
 wrapping, sidebar pointer/keyboard resizing, cancellation/reset and a theme
-round trip. Compare CAD colours with the populated baseline and confirm the
-mesh has one panel background. Exercise fixture imports/exports.
+round trip. Check separate extrema rows in chart metric summaries. Compare CAD
+colours with the populated baseline and confirm the
+mesh has one panel background. Exercise fixture imports/exports and distinguish
+the shared quarter-turn Import vector from the upward Export vector.
 
 Run AGENTS.md's structure/typecheck, focused owner tests, application tests,
 production build and bundle gate. Validate canonical/adapter parity and skill

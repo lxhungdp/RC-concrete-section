@@ -16,7 +16,9 @@ export function TransferIcon({ direction = 'import', className = '', size = 14 }
   return <svg className={`ws-transfer-icon ${className}`} width={size} height={size} viewBox="0 0 24 24"
     fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
     aria-hidden="true" focusable="false">
-    <path d={direction === 'export' ? 'M12 15V3m-4 4 4-4 4 4' : 'M12 3v12m-4-4 4 4 4-4'} />
-    <path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+    <g transform={direction === 'import' ? 'rotate(-90 12 12)' : undefined}>
+      <path d={direction === 'export' ? 'M12 15V3m-4 4 4-4 4 4' : 'M12 3v12m-4-4 4 4 4-4'} />
+      <path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+    </g>
   </svg>
 }

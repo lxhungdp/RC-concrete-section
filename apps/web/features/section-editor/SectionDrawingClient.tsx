@@ -157,6 +157,7 @@ import { DesignBasisPanel } from './design/DesignBasisPanel'
 import { MaterialPanel } from './materials/MaterialPanel'
 import { RebarPanel } from './geometry/RebarPanel'
 import { boundarySelectionStatus, shouldHandleBoundaryDelete } from './geometry/boundary-selection'
+import { prepareBoundaryDraftForApply } from './geometry/boundary-draft'
 import { DemandCheckPanel } from './results/DemandCheckPanel'
 import { preloadPlotly } from './results/PlotlyChart'
 import { WorkspaceLoading } from './shared/WorkspaceLoading'
@@ -580,6 +581,7 @@ const fitCameraToPointsWithInsets = (
 export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: boolean }) {
   const svgRef = useRef<SVGSVGElement | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const drawingImportInputRef = useRef<HTMLInputElement | null>(null)
   const projectMenuRef = useRef<HTMLDivElement | null>(null)
   const aboutMenuRef = useRef<HTMLDivElement | null>(null)
   const rotationSessionRef = useRef<BoundaryObject | null>(null)
@@ -599,6 +601,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
   const [projectFileFormat, setProjectFileFormat] = useState<'excel' | 'json'>('excel')
   const [projectFileBusy, setProjectFileBusy] = useState(false)
+  const [drawingFileBusy, setDrawingFileBusy] = useState(false)
   const [aboutMenuOpen, setAboutMenuOpen] = useState(false)
   const [projectInformationOpen, setProjectInformationOpen] = useState(false)
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([])
@@ -1457,6 +1460,54 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     }
   }
 
+  const exportBoundaryDrawing = async (boundary: BoundaryObject) => {
+    setDrawingFileBusy(true)
+    try {
+      const { buildSectionDxf, sectionDrawingFileName } = await import('./geometry/section-dxf')
+      const result = buildSectionDxf(boundary)
+      if (!result.ok) throw new Error(result.issue.message)
+      downloadBlob(new Blob([result.value], { type: 'application/dxf' }), sectionDrawingFileName(boundary.name))
+    } catch (error) {
+      window.alert(`Drawing export failed:\n${error instanceof Error ? error.message : String(error)}`)
+    } finally { setDrawingFileBusy(false) }
+  }
+
+  const importBoundaryDrawing = async (file: File) => {
+    setDrawingFileBusy(true)
+    try {
+      const { importSectionDxf } = await import('./geometry/section-dxf')
+      const { readSectionDrawingFile } = await import('./geometry/section-drawing-file')
+      const decoded = await readSectionDrawingFile(file)
+      if (!decoded.ok) throw new Error(decoded.issue.message)
+      const text = decoded.value
+      let result = importSectionDxf(text)
+      if (!result.ok && result.issue.code === 'UNITS_REQUIRED') {
+        if (!window.confirm('This drawing has no declared units. Import with 1 drawing unit = 1 mm?\nCancel if the drawing uses other units.')) return
+        result = importSectionDxf(text, { unitlessMillimetres: true })
+      }
+      if (!result.ok) throw new Error(result.issue.message)
+      const { prepareDrawingImport } = await import('./geometry/section-drawing-import')
+      const prepared = prepareDrawingImport(result.value, materialStore, calculationProfileId)
+      if (!prepared.ok) throw new Error(prepared.issue.message)
+      const nextMaterials = prepared.value.materials
+      if (nextMaterials.concrete !== materialStore.concrete || nextMaterials.steel !== materialStore.steel ||
+        nextMaterials.defaults.steelMaterialId !== materialStore.defaults.steelMaterialId) setMaterialStore(nextMaterials)
+      addBoundary({
+        id: makeBoundaryId(boundaries.map(item => item.id)),
+        name: file.name.replace(/\.(?:dxf|dwg)$/i, '').trim() || 'Imported drawing',
+        ...prepared.value.drawing,
+        sourceKind: 'manual', source: { kind: 'manual' }, visible: true, locked: false
+      })
+      setDrawingDraft(null)
+      setSnapCursor(null)
+      setTool('select')
+      setLastBooleanWarning([...decoded.warnings, ...result.warnings, ...prepared.warnings].join(' '))
+      pendingFitAfterImportRef.current = true
+    } catch (error) {
+      window.alert(`Drawing import failed:\n${error instanceof Error ? error.message : String(error)}`)
+    } finally { setDrawingFileBusy(false) }
+  }
+
   const commitDrawnBoundary = (name: string, sourceKind: BoundaryObject['sourceKind'], ring: Point2[], source?: BoundarySource) => {
     if (ring.length < 3) return
     const boundary: BoundaryObject = {
@@ -1865,10 +1916,10 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
   }
 
   const addPointAfterSelected = () => {
-    if (!activeBoundary || activeBoundary.locked || activeRing.length < 3) return
+    if (!activeBoundary || activeBoundary.locked) return
     const selectedIndex = Math.max(0, activeRing.findIndex((point) => point.id === selectedPointId))
     const currentPoint = activeRing[selectedIndex] ?? { x: 0, y: 0 }
-    const nextPoint = activeRing[(selectedIndex + 1) % activeRing.length] ?? currentPoint
+    const nextPoint = activeRing.length ? activeRing[(selectedIndex + 1) % activeRing.length] ?? currentPoint : currentPoint
     const point = {
       id: makePointId(collectBoundaryPointIds(activeBoundary)),
       x: Math.round((currentPoint.x + nextPoint.x) / 2 / GRID_SPACING_MM) * GRID_SPACING_MM,
@@ -1890,6 +1941,17 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     setSelectedPointId(point.id)
   }
 
+  const removeAllRingPoints = () => {
+    if (!activeBoundary || activeBoundary.locked || activeRing.length === 0) return
+    setBoundaries((current) => current.map((boundary) =>
+      boundary.id !== activeBoundary.id ? boundary : withEditedOuters(
+        boundary,
+        mapOuterRing(boundary.outers, activeOuterIndex, activeRingIndex, () => [])
+      )
+    ))
+    setSelectedPointId(null)
+  }
+
   const deleteSelectedPoint = (pointId = selectedPointId) => {
     if (!activeBoundary || activeBoundary.locked || !pointId || activeRing.length <= 3) return
     const nextRing = activeRing.filter((point) => point.id !== pointId)
@@ -1906,19 +1968,17 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
   }
 
   const applyBoundaryAsSection = (boundaryToApply: BoundaryObject) => {
+    const prepared = prepareBoundaryDraftForApply(boundaryToApply)
+    if (!prepared.ok) {
+      setLastBooleanWarning(`Cannot apply boundary: ${prepared.issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ')}`)
+      return
+    }
     const summary = summarizeSection(boundaryToSectionGeometry(boundaryToApply))
     if (summary.area <= 0 || boundaryToApply.outers.every((outer) => (outer[0]?.length ?? 0) < 3)) return
     const appliedId = boundaryToApply.id
     const previousAppliedId = hasAppliedSection ? finalSection.id : 0
 
-    setAppliedGeometryInput(
-      geometryInputFromOuterRings(
-        appliedId,
-        boundaryToApply.name,
-        boundaryToApply.outers,
-        boundaryToApply.rebars
-      )
-    )
+    setAppliedGeometryInput(prepared.input)
     setLastBooleanWarning('')
     if (previousAppliedId && previousAppliedId !== appliedId) {
       setSelectedRebarId(null)
@@ -2674,7 +2734,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
               </div>
               <div className="pm-boundary-list">
                 {boundaries.length === 0 && (
-                  <p className="pm-boundary-empty">Create a default shape, import Excel, or draw on the canvas.</p>
+                  <p className="pm-boundary-empty">Create a shape, import DXF, or draw on the canvas.</p>
                 )}
                 {boundaries.map((boundary) => {
                   const isSelected = selectedBoundaryIds.includes(boundary.id)
@@ -2739,13 +2799,26 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                   <button type="button" title="Create circle" aria-label="Create circle" onClick={() => createDefaultBoundary('circle')} className="ws-action ws-action--compact ws-action--icon">
                     <Circle size={14} />
                   </button>
+                  <button type="button" className="ws-action ws-action--compact pm-file-btn pm-boundary-drawing-import"
+                    disabled={drawingFileBusy} aria-label="Import drawing from DXF"
+                    title="Import ASCII DXF · mm · layer pm · closed polylines = boundaries, circles = rebars"
+                    onClick={() => drawingImportInputRef.current?.click()}>
+                    <TransferIcon direction="import" />DXF
+                  </button>
+                  <input ref={drawingImportInputRef} type="file" accept=".dxf" hidden
+                    onChange={event => {
+                      const file = event.target.files?.[0]
+                      event.target.value = ''
+                      if (file) void importBoundaryDrawing(file)
+                    }} />
                 </div>
               </div>
               {lastBooleanWarning && <p className="pm-warning-text">{lastBooleanWarning}</p>}
             </section>
 
             {boundaries.length > 0 && (
-            <section className="pm-panel-section pm-vertex-section">
+            <section className={`pm-panel-section pm-vertex-section${activeBoundary && effectiveDetailTab === 'points' ? ' ws-table-editor' : ''}`}>
+              <div className="ws-table-editor-heading">
               <div className="pm-section-title pm-section-title--with-action pm-boundary-detail-header">
                 <div className="pm-boundary-detail-heading">
                   <h2>Detail</h2>
@@ -2786,6 +2859,12 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                     >
                       <TransferIcon direction="export" />
                       Excel
+                    </button>
+                    <button type="button" className="ws-action pm-file-btn"
+                      disabled={drawingFileBusy} aria-label="Export boundary and rebars to DXF"
+                      title="Export boundary and rebars to DXF · mm · layer pm"
+                      onClick={() => exportBoundaryDrawing(activeBoundary)}>
+                      <TransferIcon direction="export" />DXF
                     </button>
                   </div>
                 )}
@@ -3103,33 +3182,31 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                       })}
                     </div>
                   )}
-                  <div className="pm-point-table-wrap">
-                    <div className="pm-point-table-caption">
+                  <div className="pm-point-table-caption">
                       {activeRingIndex === 0
                         ? `Outer ${activeOuterIndex + 1}`
                         : `Outer ${activeOuterIndex + 1} · Hole ${activeRingIndex}`}
                       <span>{activeRing.length} pts</span>
                     </div>
+                </>
+              )}
+              </div>
+              {activeBoundary && effectiveDetailTab === 'points' && (
+                <>
+                  <div className="pm-point-table-wrap ws-table-scroll">
                     <table className="pm-point-table">
                       <thead>
                         <tr>
                           <th>id</th>
                           <th>X</th>
                           <th>Y</th>
-                          <th>
-                            <button
-                              type="button"
-                              className="ws-action ws-action--primary ws-action--compact ws-action--icon pm-table-add-icon-btn"
-                              onClick={addPointAfterSelected}
-                              disabled={activeBoundary.locked}
-                              title="Add point"
-                            >
-                              <AddIcon />
-                            </button>
-                          </th>
+                          <th aria-label="Actions" />
                         </tr>
                       </thead>
                       <tbody>
+                        {activeRing.length === 0 && (
+                          <tr><td colSpan={4}>No points yet. Use Add to rebuild this ring.</td></tr>
+                        )}
                         {activeRing.map((point) => (
                             <tr className={selectedPointId === point.id ? 'is-selected' : ''} key={point.id}>
                               <td>
@@ -3169,6 +3246,17 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                           ))}
                       </tbody>
                     </table>
+                  </div>
+                  <div className="ws-table-actions">
+                    <button type="button" className="ws-action ws-action--danger"
+                      disabled={activeBoundary.locked || activeRing.length === 0}
+                      onClick={removeAllRingPoints} title="Remove all points from the selected ring">
+                      Remove all
+                    </button>
+                    <button type="button" className="ws-action ws-action--primary"
+                      disabled={activeBoundary.locked} onClick={addPointAfterSelected} title="Add point">
+                      <span className="ws-action-content"><AddIcon />Add</span>
+                    </button>
                   </div>
                 </>
               )}

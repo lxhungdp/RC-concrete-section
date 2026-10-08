@@ -137,7 +137,7 @@ button svg { color: currentColor; }
   min-width: 0;
   padding: 0 var(--sp-3);
   overflow: hidden;
-  border: 1px solid var(--input-border);
+  border: 1px solid var(--accent);
   border-radius: var(--r-sm);
   background: var(--input-bg);
   color: var(--foreground);
@@ -145,7 +145,7 @@ button svg { color: currentColor; }
   text-align: left;
 }
 .pm-calculation-summary:hover,
-.pm-calculation-summary[aria-expanded='true'] { border-color: var(--accent); background: var(--card-hover); }
+.pm-calculation-summary[aria-expanded='true'] { background: var(--card-hover); }
 .pm-calculation-code { flex: 0 0 auto; max-width: 130px; overflow: hidden; color: var(--foreground); font-weight: var(--weight-strong); text-overflow: ellipsis; white-space: nowrap; }
 .pm-calculation-options { display: flex; flex: 1 1 auto; align-items: center; gap: var(--sp-2); min-width: 0; overflow: hidden; color: var(--foreground-muted); font-size: var(--fs-xs); white-space: nowrap; }
 .pm-calculation-options > span { overflow: hidden; text-overflow: ellipsis; }
@@ -211,6 +211,12 @@ button svg { color: currentColor; }
 .pm-side-panel .pm-boundary-row.is-applied.is-active { background: var(--geometry-final-muted); box-shadow: inset 2px 0 0 var(--geometry-final); }
 
 /* Tables: one boundary, quiet row separators, no boxed cell grid. */
+.pm-side-panel .ws-table-editor { display: grid; flex: 0 1 auto; grid-template-rows: auto minmax(calc(2 * var(--table-field-h)), 1fr) auto; gap: var(--sp-4); min-height: 0; overflow: visible; }
+.ws-table-editor-heading { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.ws-table-editor > .ws-table-scroll { min-height: 0; max-height: none; overflow: auto; }
+.ws-table-editor > .ws-table-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin: 0; }
+.ws-table-editor > .ws-table-actions > :last-child { margin-inline-start: auto; }
+.ws-scroll-list { max-height: var(--ws-list-max-height); overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .pm-side-panel :is(.pm-point-table-wrap, .pm-loadcase-table-wrap, .pm-table-wrap, .pm-chart-data-table-wrap, .pm-user-curve-editor) { border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--entity-surface); box-shadow: none; }
 .pm-side-panel :is(.pm-point-table, .pm-loadcase-table, .pm-chart-data-table, .pm-user-curve-table) th { border-bottom: 1px solid var(--border); background: var(--background-muted); font-size: var(--fs-xs); font-weight: var(--weight-strong); letter-spacing: 0; text-transform: none; }
 .pm-side-panel :is(.pm-point-table, .pm-loadcase-table, .pm-chart-data-table, .pm-user-curve-table) td { border: 0; border-bottom: 1px solid var(--group-separator); background: transparent; font-size: var(--fs-sm); }

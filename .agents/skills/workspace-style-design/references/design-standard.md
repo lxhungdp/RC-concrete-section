@@ -102,6 +102,8 @@ feature composes those definitions; it must not copy them into its own CSS.
 | `ws-compact-status` | Noninteractive Final status | Compact geometry; preserved status palette |
 | `ws-action-content` | SVG + text within an action | Centres the combined content |
 | `ws-num` | Quantities, counts, ratios, numeric summaries | Technical face, 400, tabular figures |
+| `ws-table-editor` | Terminal sidebar table with a footer | Content-sized table up to available height, following footer |
+| `ws-scroll-list` | Bounded sidebar option/selection list | Content-sized up to the shared 148px limit, then internal scrolling |
 
 ### Interaction rules
 
@@ -164,9 +166,11 @@ information, import/export, recent files and examples; do not label this menu
 Inside the menu, `Project information` is a text-only action with no icon or
 chevron; it retains the existing hover/focus style and dialog-opening handler.
 
-The calculation-basis summary retains the old visible field frame: 28px height,
-1px `--input-border`, `--input-bg` surface and 6px corners, with accent border on
-hover/expanded state. Use 330px width when room permits so code, mechanics and
+The calculation-basis summary uses an emphasized field frame: 28px height,
+1px `--accent` border in resting, hover and expanded states, `--input-bg` resting
+surface and 6px corners. Hover/expanded states use `--card-hover` without changing
+the border or geometry. Keep the shared keyboard focus ring. Use 330px width
+when room permits so code, mechanics and
 resistance format are visible; reduce to 286px below 1200px and use the 130px
 code-only layout below 900px. Keep the existing narrow-screen toolbar omission.
 Keep all labels, tooltips, popup controls and calculation-selection handlers.
@@ -253,11 +257,42 @@ Numeric displays in Capacity, Demand Check and Options use `ws-num`, the same
 technical font/400/tabular figures as Section inputs. Verbal statuses and names
 stay sans; quantities and their formatted value groups keep their full text.
 Icons inherit the whole action's colour in every state. Shared Add is 12px/1.2
-stroke; transfer is 14px/1.5 stroke with an arrow and open tray. Import points
-into the tray and Export points out; visible labels remove ambiguity.
+stroke; transfer is 14px/1.5 stroke. Import uses the original downward arrow
+and open-tray vector rotated exactly 90 degrees counterclockwise as one group,
+so the arrow enters from the left toward the right. Preserve its paths, rounded
+stroke ends, joins and tray dimensions. Export retains the upward arrow and
+open tray. Visible format/action labels
+and accessible Import/Export names retain the command's meaning.
 Ordinary action SVGs use the shared 14px icon role; compact/table and dense
 chart action SVGs use 12px; CAD navigation targets use 16px. Shared Add/transfer
 vectors retain their named 12px/14px roles outside dense chart chrome.
+
+Section headers retain their intrinsic height and do not shrink when trailing
+control groups wrap. Constrained content scrolls below them without overlapping
+header text or actions. This is a shared section-header layout rule.
+
+The Concrete Detail header is a fixed single-row layout: title/name on the left,
+then Basic/Point, then Excel/DXF on the right. Long section names use ellipsis
+within the remaining title width and expose their full text through a title
+attribute; they never move the actions onto another row. The name contributes
+no intrinsic inline size, so the title determines the minimum copy width.
+Keep all four actions at their shared standard size with no wrapping or
+shrinking. If the sidebar is narrower than that minimum row, the header scrolls
+horizontally. This functional layout exception is owned by `side-panel.css`;
+other section headers retain their whole-group wrapping behaviour.
+
+Related file formats share one action group, with visible format labels and
+named Import/Export semantics using the shared transfer icons. Use the density
+of the surrounding actions: Concrete drawing import is compact beside Create
+boundary, separated with a shared spacing token; drawing export is standard
+beside Excel export. Wrap complete choice/file groups on narrow sidebars rather
+than shrinking controls or cropping actions, except for the fixed Detail header
+above. Feature CSS owns placement only.
+
+Table headings keep their unit note beside the title on the same row rather
+than spending a separate line on units. Keep that title/unit group together;
+file-action groups may wrap as a whole on narrow sidebars. Loadcase Import and
+Export use visible Excel labels and their existing accessible command names.
 
 Exclusive choice switches use `ws-joined-buttons`: the same 26px height,
 13px/400 type, 10px horizontal padding and 6px icon gap as standard actions.
@@ -288,7 +323,10 @@ padding and borders, leaving room for signed values, decimals and native
 steppers instead of cropping them into a two-digit slot. Selected/disabled
 states retain dimensions.
 Chart titles use 12px/600; metric captions use 11px/600, ordinary labels/values
-11px/400 with the existing technical face on quantities. Apply this to custom
+11px/400 with the existing technical face on quantities. Show strain and stress
+extrema as separate maximum and minimum label/value rows in the shared metric
+layout; do not combine those distinct values into one slash-separated row.
+Preserve each value's existing precision and unavailable marker. Apply this to custom
 headers/toolbars/metric and mesh-overlay text, including mesh-navigation buttons,
 not Plotly modebars, plotted axes, legends or SVG
 drawing annotations. Narrow charts wrap whole controls without changing this
@@ -338,6 +376,36 @@ One hairline separates groups. Semantic status cards, entity selections,
 tables and floating dialogs may own an intentional surface. Tables use one
 outer boundary and row separators, without boxed cell grids. Selected rows keep
 their surface while hovered; Final boundaries keep their explicit status cue.
+
+A terminal editable table with footer actions uses `ws-table-editor`: its header
+and `ws-table-actions` footer retain their content height; `ws-table-scroll`
+fits its rows until the editor reaches the remaining sidebar height. The footer
+follows immediately below the table, not at a fixed panel-bottom position.
+The editor must allow shrinking (`min-height: 0`); adding rows cannot move the
+footer past the sidebar's usable bottom. Only the table scrolls at that limit.
+Do not cap the table by viewport fraction or a fixed pixel height. Reserve at
+least two table-field heights for the scroll area; on short screens the sidebar
+can scroll so header/footer actions remain
+reachable. The table owns row scrolling once its contents exceed that area.
+The footer uses shared spacing and standard actions, matching Generate:
+bulk removal on the left, Add with its shared icon and visible label on the
+right; a sole Add action also stays on the right. Rebar, Concrete Outer/Hole
+Point and Loadcase tables use this same role, without a duplicate Add action
+in the table header. A compound heading uses
+`ws-table-editor-heading` to keep the Detail actions, ring navigation and
+point-count caption or a stable update-status slot above row scrolling. Changing the selected ring fits the
+table to that ring's rows. Bulk actions affect only the displayed entity; locks
+and validation retain their meaning. Incomplete geometry stays in the draft
+editor and cannot bypass the owning Apply validation. The outer editor must not
+introduce a second scrollbar; short-screen reachability belongs to the sidebar.
+
+A sidebar option/selection list uses `ws-scroll-list` so its content cannot
+consume the whole sidebar ahead of a terminal table. It fits short lists and
+scrolls internally at `--ws-list-max-height` (148px), retaining the existing
+bounded-list scale. Demand Check's Report loadcase picker uses this role; its
+checkboxes, All/None actions and selected state retain their existing semantics.
+Feature layout still owns wrapping and placement; list scrolling adds no
+control density, surface palette or selection behaviour.
 
 Light/dark share sizes, weights, spacing, radii, icons and interactions. Only
 colour tokens change. Existing PASS/FAIL/indeterminate/preview text and colours

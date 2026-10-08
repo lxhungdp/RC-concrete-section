@@ -122,7 +122,7 @@ export function DemandCheckPanel({
             </button>
           </div>
         </div>
-        <div className="pm-report-pick-box" aria-label="Loadcases included in report">
+        <div className="pm-report-pick-box ws-scroll-list" aria-label="Loadcases included in report">
           {loadcases.map((loadcase) => (
             <label
               key={loadcase.id}

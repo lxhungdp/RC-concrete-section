@@ -149,45 +149,43 @@ export function LoadingsPanel({
   }
 
   return (
-    <section className="pm-panel-section">
-      <div className="pm-section-title pm-section-title--with-action">
-        <h2>Loadcases</h2>
-        <div className="pm-loadcase-header-actions">
-          <button
-            type="button"
-            className="ws-action pm-file-btn pm-loadcase-file-btn"
-            onClick={() => void exportExcel()}
-            title="Export loadcases to Excel"
-            aria-label="Export loadcases to Excel"
-          >
-            <TransferIcon direction="export" />
-          </button>
-          <button
-            type="button"
-            className="ws-action pm-file-btn pm-loadcase-file-btn"
-            onClick={() => excelInputRef.current?.click()}
-            title="Import loadcases from Excel"
-            aria-label="Import loadcases from Excel"
-          >
-            <TransferIcon direction="import" />
-          </button>
-          <button type="button" className="ws-action ws-action--primary pm-table-add-btn" onClick={addCombination}>
-            <AddIcon />
-            Add
-          </button>
-          <input
-            ref={excelInputRef}
-            type="file"
-            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            hidden
-            onChange={importExcel}
-          />
+    <section className="pm-panel-section ws-table-editor">
+      <div className="ws-table-editor-heading">
+        <div className="pm-section-title pm-section-title--with-action pm-loadcase-heading">
+          <div className="pm-loadcase-title-copy">
+            <h2>Loadcases</h2>
+            <span className="pm-loadcase-units" aria-label="Load units">kN, kN·m</span>
+          </div>
+          <div className="pm-loadcase-header-actions" role="group" aria-label="Loadcase Excel tools">
+            <button
+              type="button"
+              className="ws-action pm-file-btn"
+              onClick={() => void exportExcel()}
+              title="Export loadcases to Excel"
+              aria-label="Export loadcases to Excel"
+            >
+              <TransferIcon direction="export" />
+              Excel
+            </button>
+            <button
+              type="button"
+              className="ws-action pm-file-btn"
+              onClick={() => excelInputRef.current?.click()}
+              title="Import loadcases from Excel"
+              aria-label="Import loadcases from Excel"
+            >
+              <TransferIcon direction="import" />
+              Excel
+            </button>
+            <input
+              ref={excelInputRef}
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              hidden
+              onChange={importExcel}
+            />
+          </div>
         </div>
-      </div>
-      <div className="pm-loadcase-units" aria-label="Load units">
-        Units · kN, kN·m
-      </div>
-      <div className="pm-loadcase-table-region">
         {/* Keep this inline slot mounted so status visibility never moves the table. */}
         <div className={`pm-loadcase-update-slot${updateStatus.active ? ' is-active' : ''}`}>
           <div
@@ -201,8 +199,9 @@ export function LoadingsPanel({
             <span>{updateStatus.message}</span>
           </div>
         </div>
-        <div className="pm-loadcase-table-wrap">
-          <table className="pm-loadcase-table" aria-label="Loadcase demand table">
+      </div>
+      <div className="pm-loadcase-table-wrap ws-table-scroll">
+        <table className="pm-loadcase-table" aria-label="Loadcase demand table">
           <colgroup>
             <col className="pm-col-name" />
             <col className="pm-col-detail" />
@@ -334,8 +333,13 @@ export function LoadingsPanel({
               )
             })}
           </tbody>
-          </table>
-        </div>
+        </table>
+      </div>
+      <div className="ws-table-actions">
+        <button type="button" className="ws-action ws-action--primary" onClick={addCombination}>
+          <AddIcon />
+          Add
+        </button>
       </div>
     </section>
   )
