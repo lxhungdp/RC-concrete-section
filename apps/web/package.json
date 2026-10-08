@@ -21,9 +21,9 @@
     "@pm/report": "0.1.0",
     "@structures/cad-drawing": "0.1.0",
     "@vercel/analytics": "^2.0.1",
-    "katex": "0.16.47",
+    "katex": "0.18.2",
     "lucide-react": "1.25.0",
-    "next": "16.3.5",
+    "next": "16.3.8",
     "plotly.js-dist-min": "3.7.0",
     "react": "19.2.7",
     "react-dom": "19.2.7"

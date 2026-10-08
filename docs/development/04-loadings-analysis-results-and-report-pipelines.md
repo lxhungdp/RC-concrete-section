@@ -272,7 +272,7 @@ and Preview statement, expands the scroll surface, and omits navigation and inte
 it does not create or promote an accepted/released engineering report. Neither export presentation
 path can request, recalculate, factor, classify, or mutate an engineering result.
 
-KaTeX `0.16.47` (MIT) is the bounded presentation dependency for authored TeX equations in these
+KaTeX `0.18.2` (MIT) is the bounded presentation dependency for authored TeX equations in these
 inspectors. It is wrapped by the web-only `TechnicalEquation` component with trusted commands
 disabled and HTML+MathML output enabled. KaTeX has no numerical, material, resistance, solver,
 classification, persistence, worker, Excel, or PDF role; the visible values remain copies of the
