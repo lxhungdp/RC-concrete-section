@@ -1,5 +1,7 @@
 'use client'
 
+import { QuantityValue, UnitLabel, useQuantityFormatters } from '../shared/DisplayUnits'
+
 import { TransferIcon } from '../shared/WorkspaceIcons'
 import { useEffect, useState } from 'react'
 import { Loader2, RotateCw } from 'lucide-react'
@@ -43,6 +45,8 @@ export function AnalysisMeshWorkspace({
   materialStore,
   analysisOptions
 }: Props) {
+  const { displayUnits, qfmt, unit } = useQuantityFormatters()
+
   const [mesh, setMesh] = useState<SectionMeshView | null>(null)
   const [working, setWorking] = useState(false)
   const [message, setMessage] = useState('')
@@ -83,6 +87,7 @@ export function AnalysisMeshWorkspace({
     setExportMessage('')
     setExportError(false)
     const payload = {
+      presentationUnits: displayUnits,
       projectName,
       sectionName: section.name,
       section,
@@ -205,9 +210,9 @@ export function AnalysisMeshWorkspace({
           </div>
           {mesh ? (
             <div className="pm-section-mesh-quality">
-              <span>h = <span className="ws-num">{fmt(mesh.report.cellSize, 3)}</span> mm</span>
+              <span>h = <span className="ws-num">{qfmt('length', mesh.report.cellSize, 3)}</span> {unit('length')}</span>
               <span><span className="ws-num">{mesh.report.points.toLocaleString('en-US')}</span> integration points</span>
-              <span>area error = <span className="ws-num">{sci(mesh.report.areaError, 2)}</span> mm²</span>
+              <span>area error = <span className="ws-num">{qfmt('area', mesh.report.areaError, 8)}</span> {unit('area')}</span>
               <strong className={mesh.report.ok ? 'is-ok' : 'is-bad'}>
                 {mesh.report.ok ? 'Verified' : 'Check mesh'}
               </strong>

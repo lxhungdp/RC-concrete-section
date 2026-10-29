@@ -28,6 +28,20 @@ const coordinates = (drawing: SectionDrawing) => ({
 })
 const hollow = polygon(rect(-200,-300,400,600)) + polygon(rect(-50,-50,100,100))
 
+test('REBAR-AS-003: DXF rejects independent areas instead of silently losing an engineering input', () => {
+  const drawing = value(importSectionDxf(fixture(polygon(rect(0,0,400,600)) + circle(100,100,10))))
+  drawing.rebars[0].area = 300
+  const lostArea = buildSectionDxf(drawing)
+  assert.equal(lostArea.ok, false)
+  if (!lostArea.ok) assert.equal(lostArea.issue.code, 'UNSUPPORTED_REBAR_AREA')
+  drawing.rebars[0].area = (Math.PI * 20 * 20) / 4
+  assert.equal(buildSectionDxf(drawing).ok, true)
+  drawing.rebars[0].area = 0
+  const invalid = buildSectionDxf(drawing)
+  assert.equal(invalid.ok, false)
+  if (!invalid.ok) assert.equal(invalid.issue.code, 'INVALID_GEOMETRY')
+})
+
 test('DXF-001/002: single pm layer infers holes before outers; analytic area/centroid and actual circle diameter', () => {
   const drawing = value(importSectionDxf(fixture(polygon(rect(-50,-50,100,100),'PM') + polygon(rect(-200,-300,400,600)) + circle(-140,-240,12.5))))
   assert.equal(drawing.outers.length,1)

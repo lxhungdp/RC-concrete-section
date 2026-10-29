@@ -1,3 +1,5 @@
+import { UNIT_PRESETS } from '@pm/units'
+import { writeWorkbookUnits } from '../../features/section-editor/shared/workbook-units'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createLoadCombination } from '@pm/project'
@@ -29,7 +31,7 @@ test('loadcase workbook exports Excel headers and display units', async () => {
 
   assert.deepEqual(
     [1, 2, 3, 4, 5].map((column) => sheet.getRow(1).getCell(column).value),
-    ['ID', 'Name', 'Pu (kN)', 'Mux (kNm)', 'Muy (kNm)']
+    ['ID', 'Name', 'Pu (kN)', 'Mux (kN·m)', 'Muy (kN·m)']
   )
   assert.deepEqual(
     [1, 2, 3, 4, 5].map((column) => sheet.getRow(2).getCell(column).value),
@@ -50,8 +52,9 @@ test('loadcase workbook round-trips ids, names and internal units', async () => 
 test('loadcase workbook rejects duplicate ids', async () => {
   const ExcelJS = await import('exceljs')
   const workbook = new (ExcelJS.default ?? ExcelJS).Workbook()
+  writeWorkbookUnits(workbook, UNIT_PRESETS.metric, 'pm-loadcases')
   const sheet = workbook.addWorksheet('Loadcases')
-  sheet.addRow(['ID', 'Name', 'Pu (kN)', 'Mux (kNm)', 'Muy (kNm)'])
+  sheet.addRow(['ID', 'Name', 'Pu (kN)', 'Mux (kN·m)', 'Muy (kN·m)'])
   sheet.addRow([1, 'LC1', 100, 20, 0])
   sheet.addRow([1, 'LC2', 200, 30, 0])
   const bytes = await workbook.xlsx.writeBuffer()

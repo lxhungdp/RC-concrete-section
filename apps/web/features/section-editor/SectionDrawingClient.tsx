@@ -1,5 +1,7 @@
 'use client'
 
+import { QuantityInput, QuantityValue, UnitLabel, useDisplayUnits, DisplayUnitsProvider, DisplayUnitsPanel } from './shared/DisplayUnits'
+
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition, type CSSProperties } from 'react'
 import dynamic from 'next/dynamic'
 import {
@@ -43,6 +45,8 @@ import {
   solidRings,
   summarizeSection,
   updateGeometryInputRebars,
+  rebarArea,
+  withStoredRebarArea,
   type GeometryInput,
   type GeometryInputRebarView,
   type Point2,
@@ -72,6 +76,7 @@ import {
   type CalculationAnalysisOptions,
   type CalculationProfileId,
   type LoadingsInput,
+  type LoadReference,
   type ProjectInformation
 } from '@pm/project'
 import {
@@ -152,10 +157,21 @@ const LoadcaseCalculationDialog = dynamic(
   () => import('./results/LoadcaseCalculationDialog').then((module) => module.LoadcaseCalculationDialog),
   { ssr: false }
 )
-import { AnalysisOptionsPanel } from './analysis/AnalysisOptionsPanel'
-import { DesignBasisPanel } from './design/DesignBasisPanel'
-import { MaterialPanel } from './materials/MaterialPanel'
-import { RebarPanel } from './geometry/RebarPanel'
+const AnalysisOptionsPanel = dynamic(
+  () => import('./analysis/AnalysisOptionsPanel').then(module => module.AnalysisOptionsPanel),
+  { ssr: false, loading: () => <p role="status">Loading analysis options…</p> }
+)
+const DesignBasisPanel = dynamic(
+  () => import('./design/DesignBasisPanel').then(module => module.DesignBasisPanel),
+  { ssr: false, loading: () => <p role="status">Loading resistance options…</p> }
+)
+const MaterialPanel = dynamic(
+  () => import('./materials/MaterialPanel').then(module => module.MaterialPanel),
+  { ssr: false, loading: () => <p role="status">Loading materials…</p> }
+)
+import { createRebarGeneratorState } from './geometry/rebar-generator-state'
+const RebarPanel = dynamic(() => import('./geometry/RebarPanel').then(module => module.RebarPanel),
+  { ssr: false, loading: () => <p role="status">Loading reinforcement…</p> })
 import { boundarySelectionStatus, shouldHandleBoundaryDelete } from './geometry/boundary-selection'
 import { prepareBoundaryDraftForApply } from './geometry/boundary-draft'
 import { DemandCheckPanel } from './results/DemandCheckPanel'
@@ -252,7 +268,7 @@ type WorkspaceModule = 'geometry' | 'materials' | 'analysis' | 'section' | 'dema
 const isResultsModule = (module: WorkspaceModule) => module === 'section' || module === 'demand'
 const APP_VERSION = webPackage.version
 type GeometrySubTab = 'concrete' | 'rebar'
-type AnalysisSubTab = 'points' | 'mesh' | 'resistance'
+type AnalysisSubTab = 'points' | 'mesh' | 'resistance' | 'units'
 type BuilderShape = 'rectangle' | 'circle' | 'capsule'
 type BooleanAction = 'union' | 'subtract' | 'intersect'
 type BoundarySource =
@@ -578,7 +594,12 @@ const fitCameraToPointsWithInsets = (
   }
 }
 
-export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: boolean }) {
+export function SectionDrawingClient(props: { geometryOnly?: boolean }) {
+  return <DisplayUnitsProvider><SectionDrawingWorkspace {...props} /></DisplayUnitsProvider>
+}
+
+function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: boolean }) {
+  const { selection: displayUnits } = useDisplayUnits()
   const svgRef = useRef<SVGSVGElement | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const drawingImportInputRef = useRef<HTMLInputElement | null>(null)
@@ -611,6 +632,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
   const [moduleSwitching, startModuleTransition] = useTransition()
   const [geometrySubTab, setGeometrySubTab] = useState<GeometrySubTab>('concrete')
   const [selectedRebarId, setSelectedRebarId] = useState<number | null>(null)
+  const [rebarGenerator, setRebarGenerator] = useState(createRebarGeneratorState)
   const [boundaries, setBoundaries] = useState<BoundaryObject[]>([])
   const [selectedBoundaryIds, setSelectedBoundaryIds] = useState<number[]>([])
   const [activeBoundaryId, setActiveBoundaryId] = useState<number>(0)
@@ -625,6 +647,8 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
   const [materialStore, setMaterialStore] = useState<MaterialStore>(() => createDefaultMaterialStore())
   const [calculationProfileId, setCalculationProfileId] = useState<CalculationProfileId>(DEFAULT_CALCULATION_PROFILE_ID)
   const [loadingsInput, setLoadingsInput] = useState<LoadingsInput>(() => createEmptyLoadingsInput())
+  const [loadReferencePreview, setLoadReferencePreview] = useState<LoadReference | null>(null)
+  const [loadReferenceEditorVersion, setLoadReferenceEditorVersion] = useState(0)
   const loadcaseDemandRevision = loadingsInput.combinations
     .map((item) => `${item.id}:${item.P}:${item.Mx}:${item.My}:${item.actionBasis}`)
     .join('|')
@@ -734,7 +758,8 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     () => sectionGeometryFromGeometryInput(appliedGeometryInput),
     [appliedGeometryInput]
   )
-  const rebars = useMemo(() => geometryInputRebars(appliedGeometryInput), [appliedGeometryInput])
+  const rebars = useMemo(() => geometryInputRebars(appliedGeometryInput).map(bar => withStoredRebarArea(bar,
+    isEquivalentBlockProfileId(calculationProfileId) ? 'equivalent-block' : 'stress-strain')), [appliedGeometryInput, calculationProfileId])
   const selectedLoadcase = selectedLoadcaseId == null
     ? null
     : loadingsInput.combinations.find((item) => item.id === selectedLoadcaseId) ?? null
@@ -960,8 +985,9 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
   }, [analysisOptions, calculationProfileId, designBasis, finalSection, hasAppliedSection, materialStore, rebars])
   const appliedSummary = useMemo(() => summarizeSection(finalSection), [finalSection])
   const steelArea = useMemo(
-    () => rebars.reduce((sum, bar) => sum + (Math.PI * bar.dia * bar.dia) / 4, 0),
-    [rebars]
+    () => rebars.reduce((sum, bar) => sum + rebarArea(bar,
+      isEquivalentBlockProfileId(calculationProfileId) ? 'equivalent-block' : 'stress-strain'), 0),
+    [rebars, calculationProfileId]
   )
   const betaCount = useMemo(() => {
     if (!resultSurface) return 0
@@ -1240,6 +1266,8 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     setReportMessage('')
     try {
       const { blob, fileName } = await exportColumnReportPdfAsync({
+        loadReference: loadingsInput.reference,
+        presentationUnits: displayUnits,
         projectName: projectMeta.name || appliedGeometryInput.name || 'Column project',
         projectInformation: projectMeta.information,
         sectionName: appliedGeometryInput.name || 'Section',
@@ -1280,6 +1308,8 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     setExcelMessage('')
     try {
       const payload = {
+        loadReference: loadingsInput.reference,
+        presentationUnits: displayUnits,
         projectName: projectMeta.name || appliedGeometryInput.name || 'Column project',
         projectInformation: projectMeta.information,
         sectionName: finalSection.name,
@@ -1320,6 +1350,8 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     setCalculationExportError(null)
     try {
       const payload = {
+        loadReference: loadingsInput.reference,
+        presentationUnits: displayUnits,
         projectName: projectMeta.name || appliedGeometryInput.name || 'Column project',
         projectInformation: projectMeta.information,
         sectionName: finalSection.name,
@@ -1450,6 +1482,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
   const exportBoundaryExcel = async (boundary: BoundaryObject) => {
     try {
       await downloadSectionWorkbook({
+        units: displayUnits,
         name: boundary.name,
         outers: boundary.outers,
         rebars: boundary.rebars,
@@ -1996,6 +2029,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     if (!hasAppliedSection) return
     try {
       await downloadRebarWorkbook({
+        units: displayUnits,
         sectionName: finalSection.name,
         rebars,
         steelMaterials: materialStore.steel
@@ -2067,7 +2101,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     try {
       if (projectFileFormat === 'excel') {
         const { buildProjectWorkbook, projectWorkbookFileName } = await import('./project/project-xlsx')
-        const bytes = await buildProjectWorkbook(document)
+        const bytes = await buildProjectWorkbook(document, displayUnits)
         const copy = new Uint8Array(bytes)
         downloadBlob(new Blob([copy.buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), projectWorkbookFileName(document))
       } else {
@@ -2094,9 +2128,12 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
     const hasGeometry = geometry.outers.some((outer) => outer.points.length >= 3)
 
     setAppliedGeometryInput(geometry)
+    setRebarGenerator(createRebarGeneratorState())
     setCalculationProfileId(document.inputs.calculationProfileId)
     setMaterialStore(document.inputs.materials)
     setLoadingsInput(document.inputs.loadings)
+    setLoadReferencePreview(null)
+    setLoadReferenceEditorVersion(current => current + 1)
     setAnalysisOptions(document.inputs.analysis)
     setDesignBasis(document.inputs.design)
     setSelectedLoadcaseId(document.inputs.loadings.combinations[0]?.id ?? null)
@@ -2367,17 +2404,20 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
    * Start the results chunk download on intent, not on click.
    *
    * Hover or keyboard focus gives the browser a head start of a few hundred milliseconds, which is
-   * usually the whole perceived delay of opening a results menu for the first time.
+   * usually the whole perceived delay of opening a results menu for the first time. This is a
+   * best-effort hint: next/dynamic owns retries and visible loading errors on actual navigation.
    */
   const preloadModule = (module: WorkspaceModule) => {
     if (isResultsModule(module)) {
       preloadPlotly()
-      void import('./results/ResultsWorkspace')
+      void import('./results/ResultsWorkspace').catch(() => {})
       return
     }
     if (module === 'analysis') {
-      void import('./analysis/AnalysisMeshWorkspace')
-      void import('./analysis/EquivalentBlockGeometryWorkspace')
+      void Promise.all([
+        import('./analysis/AnalysisMeshWorkspace'),
+        import('./analysis/EquivalentBlockGeometryWorkspace')
+      ]).catch(() => {})
     }
   }
 
@@ -2881,15 +2921,15 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                     <>
                       <label className="pm-field">
                         <span>Center X</span>
-                        <input
+                        <QuantityInput quantity="length"
                           type="number"
                           disabled={activeBoundary.locked}
                           value={activeBoundary.source.center.x}
-                          onChange={(event) =>
+                          onValueChange={(canonical) =>
                             updateActiveRectangleSource({
                               center: {
                                 ...(activeBoundary.source as Extract<BoundarySource, { kind: 'rectangle' }>).center,
-                                x: Number(event.target.value) || 0
+                                x: canonical
                               }
                             })
                           }
@@ -2897,15 +2937,15 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                       </label>
                       <label className="pm-field">
                         <span>Center Y</span>
-                        <input
+                        <QuantityInput quantity="length"
                           type="number"
                           disabled={activeBoundary.locked}
                           value={activeBoundary.source.center.y}
-                          onChange={(event) =>
+                          onValueChange={(canonical) =>
                             updateActiveRectangleSource({
                               center: {
                                 ...(activeBoundary.source as Extract<BoundarySource, { kind: 'rectangle' }>).center,
-                                y: Number(event.target.value) || 0
+                                y: canonical
                               }
                             })
                           }
@@ -2913,22 +2953,22 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                       </label>
                       <label className="pm-field">
                         <span>Width</span>
-                        <input
+                        <QuantityInput quantity="length"
                           type="number"
                           min={1}
                           disabled={activeBoundary.locked}
                           value={activeBoundary.source.width}
-                          onChange={(event) => updateActiveRectangleSource({ width: Number(event.target.value) || 1 })}
+                          onValueChange={(canonical) => updateActiveRectangleSource({ width: canonical })}
                         />
                       </label>
                       <label className="pm-field">
                         <span>Height</span>
-                        <input
+                        <QuantityInput quantity="length"
                           type="number"
                           min={1}
                           disabled={activeBoundary.locked}
                           value={activeBoundary.source.height}
-                          onChange={(event) => updateActiveRectangleSource({ height: Number(event.target.value) || 1 })}
+                          onValueChange={(canonical) => updateActiveRectangleSource({ height: canonical })}
                         />
                       </label>
                     </>
@@ -2938,15 +2978,15 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                     <>
                       <label className="pm-field">
                         <span>Center X</span>
-                        <input
+                        <QuantityInput quantity="length"
                           type="number"
                           disabled={activeBoundary.locked}
                           value={activeBoundary.source.center.x}
-                          onChange={(event) =>
+                          onValueChange={(canonical) =>
                             updateActiveCircleSource({
                               center: {
                                 ...(activeBoundary.source as Extract<BoundarySource, { kind: 'circle' }>).center,
-                                x: Number(event.target.value) || 0
+                                x: canonical
                               }
                             })
                           }
@@ -2954,15 +2994,15 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                       </label>
                       <label className="pm-field">
                         <span>Center Y</span>
-                        <input
+                        <QuantityInput quantity="length"
                           type="number"
                           disabled={activeBoundary.locked}
                           value={activeBoundary.source.center.y}
-                          onChange={(event) =>
+                          onValueChange={(canonical) =>
                             updateActiveCircleSource({
                               center: {
                                 ...(activeBoundary.source as Extract<BoundarySource, { kind: 'circle' }>).center,
-                                y: Number(event.target.value) || 0
+                                y: canonical
                               }
                             })
                           }
@@ -2970,12 +3010,12 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                       </label>
                       <label className="pm-field">
                         <span>Radius</span>
-                        <input
+                        <QuantityInput quantity="length"
                           type="number"
                           min={1}
                           disabled={activeBoundary.locked}
                           value={activeBoundary.source.radius}
-                          onChange={(event) => updateActiveCircleSource({ radius: Number(event.target.value) || 1 })}
+                          onValueChange={(canonical) => updateActiveCircleSource({ radius: canonical })}
                         />
                       </label>
                       <label className="pm-field">
@@ -3008,15 +3048,15 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                     <>
                       <label className="pm-field">
                         <span>Center X</span>
-                        <input
+                        <QuantityInput quantity="length"
                           type="number"
                           disabled={activeBoundary.locked}
                           value={activeBoundary.source.center.x}
-                          onChange={(event) =>
+                          onValueChange={(canonical) =>
                             updateActiveCapsuleSource({
                               center: {
                                 ...(activeBoundary.source as Extract<BoundarySource, { kind: 'capsule' }>).center,
-                                x: Number(event.target.value) || 0
+                                x: canonical
                               }
                             })
                           }
@@ -3024,15 +3064,15 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                       </label>
                       <label className="pm-field">
                         <span>Center Y</span>
-                        <input
+                        <QuantityInput quantity="length"
                           type="number"
                           disabled={activeBoundary.locked}
                           value={activeBoundary.source.center.y}
-                          onChange={(event) =>
+                          onValueChange={(canonical) =>
                             updateActiveCapsuleSource({
                               center: {
                                 ...(activeBoundary.source as Extract<BoundarySource, { kind: 'capsule' }>).center,
-                                y: Number(event.target.value) || 0
+                                y: canonical
                               }
                             })
                           }
@@ -3040,22 +3080,22 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                       </label>
                       <label className="pm-field">
                         <span>Width</span>
-                        <input
+                        <QuantityInput quantity="length"
                           type="number"
                           min={1}
                           disabled={activeBoundary.locked}
                           value={activeBoundary.source.width}
-                          onChange={(event) => updateActiveCapsuleSource({ width: Number(event.target.value) || 1 })}
+                          onValueChange={(canonical) => updateActiveCapsuleSource({ width: canonical })}
                         />
                       </label>
                       <label className="pm-field">
                         <span>Height</span>
-                        <input
+                        <QuantityInput quantity="length"
                           type="number"
                           min={1}
                           disabled={activeBoundary.locked}
                           value={activeBoundary.source.height}
-                          onChange={(event) => updateActiveCapsuleSource({ height: Number(event.target.value) || 1 })}
+                          onValueChange={(canonical) => updateActiveCapsuleSource({ height: canonical })}
                         />
                       </label>
                     </>
@@ -3065,40 +3105,40 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                     <>
                       <label className="pm-field">
                         <span>Center X</span>
-                        <input
+                        <QuantityInput quantity="length"
                           type="number"
                           disabled={activeBoundary.locked}
-                          value={Number(activeFreeformBounds.centerX.toFixed(3))}
-                          onChange={(event) => updateActiveFreeformBounds({ centerX: Number(event.target.value) || 0 })}
+                          value={activeFreeformBounds.centerX}
+                          onValueChange={(canonical) => updateActiveFreeformBounds({ centerX: canonical })}
                         />
                       </label>
                       <label className="pm-field">
                         <span>Center Y</span>
-                        <input
+                        <QuantityInput quantity="length"
                           type="number"
                           disabled={activeBoundary.locked}
-                          value={Number(activeFreeformBounds.centerY.toFixed(3))}
-                          onChange={(event) => updateActiveFreeformBounds({ centerY: Number(event.target.value) || 0 })}
+                          value={activeFreeformBounds.centerY}
+                          onValueChange={(canonical) => updateActiveFreeformBounds({ centerY: canonical })}
                         />
                       </label>
                       <label className="pm-field">
                         <span>Width</span>
-                        <input
+                        <QuantityInput quantity="length"
                           type="number"
                           min={1}
                           disabled={activeBoundary.locked}
-                          value={Number(Math.max(1, activeFreeformBounds.width).toFixed(3))}
-                          onChange={(event) => updateActiveFreeformBounds({ width: Number(event.target.value) || 1 })}
+                          value={Math.max(1, activeFreeformBounds.width)}
+                          onValueChange={(canonical) => updateActiveFreeformBounds({ width: canonical })}
                         />
                       </label>
                       <label className="pm-field">
                         <span>Height</span>
-                        <input
+                        <QuantityInput quantity="length"
                           type="number"
                           min={1}
                           disabled={activeBoundary.locked}
-                          value={Number(Math.max(1, activeFreeformBounds.height).toFixed(3))}
-                          onChange={(event) => updateActiveFreeformBounds({ height: Number(event.target.value) || 1 })}
+                          value={Math.max(1, activeFreeformBounds.height)}
+                          onValueChange={(canonical) => updateActiveFreeformBounds({ height: canonical })}
                         />
                       </label>
                     </>
@@ -3113,7 +3153,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                     <span>
                       Rotate
                       <small>
-                        X {formatNumber(activeSummary.centroid.x, 3)} · Y {formatNumber(activeSummary.centroid.y, 3)}
+                        X <QuantityValue quantity="length" value={activeSummary.centroid.x} /> · Y <QuantityValue quantity="length" value={activeSummary.centroid.y} />
                       </small>
                     </span>
                     <span className="pm-boundary-rotation-input ws-field-group">
@@ -3198,8 +3238,8 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                       <thead>
                         <tr>
                           <th>id</th>
-                          <th>X</th>
-                          <th>Y</th>
+                          <th>X (<UnitLabel quantity="length" />)</th>
+                          <th>Y (<UnitLabel quantity="length" />)</th>
                           <th aria-label="Actions" />
                         </tr>
                       </thead>
@@ -3213,23 +3253,23 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                                 <span className="pm-point-index">{point.id}</span>
                               </td>
                               <td>
-                                <input
+                                <QuantityInput showUnit={false} quantity="length"
                                   aria-label={`Point ${point.id} X`}
                                   value={point.x}
                                   type="number"
                                   readOnly={activeBoundary.locked}
                                   onFocus={() => setSelectedPointId(point.id)}
-                                  onChange={(event) => updateActivePoint(point.id, { x: Number(event.target.value) })}
+                                  onValueChange={(canonical) => updateActivePoint(point.id, { x: canonical })}
                                 />
                               </td>
                               <td>
-                                <input
+                                <QuantityInput showUnit={false} quantity="length"
                                   aria-label={`Point ${point.id} Y`}
                                   value={point.y}
                                   type="number"
                                   readOnly={activeBoundary.locked}
                                   onFocus={() => setSelectedPointId(point.id)}
-                                  onChange={(event) => updateActivePoint(point.id, { y: Number(event.target.value) })}
+                                  onValueChange={(canonical) => updateActivePoint(point.id, { y: canonical })}
                                 />
                               </td>
                               <td>
@@ -3267,6 +3307,8 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
 
             {geometrySubTab === 'rebar' && (
               <RebarPanel
+                generator={rebarGenerator}
+                onGeneratorChange={setRebarGenerator}
                 hasAppliedSection={hasAppliedSection}
                 appliedSection={finalSection}
                 rebars={rebars}
@@ -3299,7 +3341,8 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
               {([
                 ['points', 'Points'],
                 ['mesh', analysisOptions.methodId === 'equivalent-block-surface-v1' ? 'Block' : 'Mesh'],
-                ['resistance', 'Resistance']
+                ['resistance', 'Resistance'],
+                ['units', 'Units']
               ] as const).map(([id, label]) => (
                 <button
                   key={id}
@@ -3313,7 +3356,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                 </button>
               ))}
             </div>
-            {analysisSubTab === 'resistance' ? (
+            {analysisSubTab === 'units' ? <DisplayUnitsPanel /> : analysisSubTab === 'resistance' ? (
               <DesignBasisPanel value={designBasis} onChange={setDesignBasis} />
             ) : (
               <AnalysisOptionsPanel
@@ -3327,6 +3370,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
 
         {activeModule === 'section' && (
           <SectionResultsPanel
+            loadReference={loadingsInput.reference}
             summary={sectionResultsSummary}
             view={sectionResultsView}
             onViewChange={updateSectionResultsView}
@@ -3346,6 +3390,10 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
         {activeModule === 'demand' && (
           <>
             <DemandCheckPanel
+              key={loadReferenceEditorVersion}
+              loadingsInput={loadingsInput}
+              onLoadingsChange={setLoadingsInput}
+              onReferencePreviewChange={setLoadReferencePreview}
               view={demandCheckView}
               onViewChange={updateDemandCheckView}
               surfaceReady={Boolean(resultSurface)}
@@ -3413,6 +3461,8 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
           />
         ) : isResultsModule(activeModule) ? (
           <ResultsWorkspace
+            axesReference={loadReferencePreview ?? loadingsInput.reference}
+            loadReference={loadingsInput.reference}
             busy={surfaceStatus === 'working' || moduleSwitching}
             theme={theme}
             ready={hasAppliedSection}
@@ -3426,6 +3476,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
             designBasis={activeModule === 'demand' ? chartSnapshot?.designBasis ?? designBasis : designBasis}
             loadcases={loadingsInput.combinations}
             projectName={projectMeta.name || appliedGeometryInput.name || 'Column project'}
+            checksById={quickCheckSurfaceRef.current === resultSurface ? currentQuickChecksById : {}}
             selectedLoadcaseId={activeModule === 'demand' ? chartLoadcaseId : selectedLoadcaseId}
             inverseResult={activeModule === 'demand'
               ? chartSnapshot?.result ?? null
@@ -3570,7 +3621,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                   <line x1={snapCursorView.screen.x} y1={snapCursorView.screen.y - 10} x2={snapCursorView.screen.x} y2={snapCursorView.screen.y + 10} />
                   <circle cx={snapCursorView.screen.x} cy={snapCursorView.screen.y} r="4" />
                   <text x={snapCursorView.screen.x + 12} y={snapCursorView.screen.y - 12}>
-                    {formatNumber(snapCursorView.world.x, 0)}, {formatNumber(snapCursorView.world.y, 0)}
+                    <QuantityValue quantity="length" value={snapCursorView.world.x} digits={2} unit={false} />, <QuantityValue quantity="length" value={snapCursorView.world.y} digits={2} />
                   </text>
                 </g>
               )}
@@ -3650,15 +3701,15 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
         <div className="pm-boundary-hud" aria-label="Active boundary summary">
           <div className="pm-boundary-hud-row">
             <span>Area</span>
-            <strong>{formatNumber(activeSummary.area, 0)} mm²</strong>
+            <strong><QuantityValue quantity="area" value={activeSummary.area} digits={0} /></strong>
           </div>
           <div className="pm-boundary-hud-row">
             <span>Center X</span>
-            <strong>{formatNumber(activeSummary.centroid.x)} mm</strong>
+            <strong><QuantityValue quantity="length" value={activeSummary.centroid.x} /></strong>
           </div>
           <div className="pm-boundary-hud-row">
             <span>Center Y</span>
-            <strong>{formatNumber(activeSummary.centroid.y)} mm</strong>
+            <strong><QuantityValue quantity="length" value={activeSummary.centroid.y} /></strong>
           </div>
         </div>
         {geometryOnly && (
@@ -3672,7 +3723,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
                     ? 'Click center, then radius point'
                     : 'Click two opposite corners'}
             </span>
-            <span>Units: mm</span>
+            <span>Units: <UnitLabel quantity="length" /></span>
           </div>
         )}
         </>
@@ -3682,6 +3733,7 @@ export function SectionDrawingClient({ geometryOnly = false }: { geometryOnly?: 
 
       {activeModule === 'demand' && calculationLoadcase && resultSurface ? (
         <LoadcaseCalculationDialog
+          loadReference={loadingsInput.reference}
           projectName={projectMeta.name || appliedGeometryInput.name || 'Column project'}
           sectionName={finalSection.name}
           loadcase={calculationLoadcase}

@@ -300,7 +300,8 @@ export const validatePolygonSection = (
   rebars.forEach((bar, index) => {
     const radius = rebarRadius(bar)
     const path = `rebars[${index}]`
-    if (!Number.isFinite(bar.x) || !Number.isFinite(bar.y) || !Number.isFinite(radius) || !(radius > 0)) {
+    if (!Number.isFinite(bar.x) || !Number.isFinite(bar.y) || !Number.isFinite(radius) || !(radius > 0) ||
+        (bar.area !== undefined && (!Number.isFinite(bar.area) || bar.area <= 0))) {
       issues.push({ code: 'INVALID_REBAR', path, message: 'requires finite coordinates and a positive diameter or area' })
       return
     }

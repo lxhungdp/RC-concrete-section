@@ -1,13 +1,17 @@
-import { createDesignBasisForCalculationProfile, createLoadCombination, parseProjectDocument, projectDocumentFileName, type ParseProjectResult, type PmProjectDocument } from '@pm/project'
-import { allocateIds } from '@pm/geometry'
+import { CANONICAL_UNITS, fieldQuantity, fromCanonical, toCanonical, quantityUnit, type Quantity, type UnitSelection } from '@pm/units'
+import { CANONICAL_WORKBOOK_UNITS, quantityCell, readQuantityCell, writeQuantityCell, readWorkbookUnits, writeWorkbookUnits, type QuantityCell } from '../shared/workbook-units'
+import { createDesignBasisForCalculationProfile, createLoadCombination, loadReferenceOf, resultantAtCentroid, resultantAtLoadReference, parseProjectDocument, projectDocumentFileName, type ParseProjectResult, type PmProjectDocument } from '@pm/project'
+import { readLoadReferenceSheet, writeLoadReferenceSheet } from '../loadings/loadcase-xlsx'
+import { allocateIds, rebarAreaSource } from '@pm/geometry'
 import type { CellValue, Workbook, Worksheet } from 'exceljs'
 
 const FORMAT = 'pm-column-input-workbook'
-const VERSION = 3
+const VERSION = 6
 export const PROJECT_WORKBOOK_MAX_BYTES = 10 * 1024 * 1024
 const MAX_EXPANDED_BYTES = 64 * 1024 * 1024
 const MAX_ROWS = 100_000
 type Scalar = string | number | boolean | null
+type ExportCell = Scalar | QuantityCell
 type Fields = Record<string, unknown>
 type WorkbookIssueCode = 'WORKBOOK_FORMAT' | 'WORKBOOK_CELL' | 'WORKBOOK_RESOURCE_LIMIT' | 'PROJECT_INPUT'
 export type ProjectWorkbookResult =
@@ -114,29 +118,32 @@ declare('resistance', 'number', ['basisVersion',
   'factors.concrete.components.#.value', 'factors.reinforcement.components.#.value'])
 declare('resistance', 'boolean', ['modified', 'materialModelModified', 'axialCapEnabled'])
 declare('resistance', 'array', ['factors.concrete.components', 'factors.reinforcement.components'])
-const specFor = (scope: Scope, path: string, context: string): FieldSpec => {
+const specFor = (scope: Scope, path: string, context: string, units: UnitSelection = CANONICAL_WORKBOOK_UNITS): FieldSpec => {
   const type = specifications[scope].get(path.replace(/\.\d+(?=\.|$)/g, '.#'))
   if (!type) return fail('WORKBOOK_CELL', `${context}: unknown field "${path}" in ${scope}.`)
-  const unit = type === 'number' ? unitFor(path) : ''
+  const quantity = type === 'number' ? fieldQuantity(path) : null
+  const unit = quantity ? quantityUnit(quantity, units) : type === 'number' ? unitFor(path) : ''
   return { path, type, label: scope === 'projectInformation' ? PROJECT_LABELS[path] : unit ? `${path} (${unit})` : path }
 }
-const flatten = (scope: Scope, value: unknown, prefix = ''): Scalar[][] => {
+const flatten = (scope: Scope, value: unknown, prefix = '', units: UnitSelection = CANONICAL_WORKBOOK_UNITS): ExportCell[][] => {
   if (value === undefined) return []
   if (value !== null && typeof value === 'object') {
     const entries = Object.entries(value).filter(([, child]) => child !== undefined)
-    if (entries.length) return entries.flatMap(([key, child]) => flatten(scope, child, prefix ? `${prefix}.${key}` : key))
+    if (entries.length) return entries.flatMap(([key, child]) => flatten(scope, child, prefix ? `${prefix}.${key}` : key, units))
   }
-  const spec = specFor(scope, prefix, 'Export')
+  const spec = specFor(scope, prefix, 'Export', units)
   if (spec.type === 'array' || spec.type === 'object') {
     if (value === null || typeof value !== 'object' || Array.isArray(value) !== (spec.type === 'array')) return fail('WORKBOOK_CELL', `${prefix}: invalid container.`)
     return [[spec.label, spec.type === 'array' ? '[]' : '{}']]
   }
   if (typeof value !== spec.type) return fail('WORKBOOK_CELL', `${prefix}: invalid ${spec.type} input.`)
-  return [[spec.label, typeof value === 'boolean' ? (value ? 'TRUE' : 'FALSE') : value as Scalar]]
+  const quantity = spec.type === 'number' ? fieldQuantity(prefix) : null
+  return [[spec.label, quantity && typeof value === 'number' ? quantityCell(quantity, value, units)
+    : typeof value === 'boolean' ? (value ? 'TRUE' : 'FALSE') : value as Scalar]]
 }
 const FIELD_HEADERS = ['Field', 'Value']
 const POINT_HEADERS = ['X', 'Y', 'ID']
-const BAR_HEADERS = ['Diameter', 'X', 'Y', 'Steel Material ID', 'ID']
+const BAR_HEADERS = ['Diameter', 'X', 'Y', 'Steel Material ID', 'ID', 'As', 'As source']
 const LOAD_HEADERS = ['Name', 'P', 'Mx', 'My', 'ID']
 const STATION_HEADERS = ['ID', 'Label', 'Type', 'Ratio (1)', 'Strain (1)']
 const CURVE_HEADERS = ['Strain (1)', 'Stress (MPa)']
@@ -152,21 +159,25 @@ const sheetKeywords: Record<string, string[]> = {
   Loadings: ['LOADINGS'], Analysis: ['PROJECT_METADATA', 'SECTION_METADATA', 'ANALYSIS', 'STATIONS'], Resistance: ['RESISTANCE']
 }
 const optionalColumns = (keyword: string) => ['OUTER', 'HOLE', 'LOADINGS'].includes(keyword) ? ['ID']
-  : keyword === 'REBAR' ? ['ID', 'Steel Material ID'] : []
+  : keyword === 'REBAR' ? ['ID', 'Steel Material ID', 'As source'] : []
 const sheet = (book: Workbook, name: string, note: string, widths: number[]) => {
   const ws = book.addWorksheet(name)
   ws.addRow([`# ${note}`])
   widths.forEach((width, i) => { ws.getColumn(i + 1).width = width })
   return ws
 }
-const addBlock = (ws: Worksheet, keyword: string, args: Scalar[], data: Scalar[][]) => {
+const addBlock = (ws: Worksheet, keyword: string, args: Scalar[], data: ExportCell[][], units?: UnitSelection) => {
   if (ws.rowCount > 1) ws.addRow([])
   ws.addRow(keyword === 'OUTER' || keyword === 'HOLE' ? [`${keyword.toLowerCase()} #${args[0]}`] : [keyword, ...args]).font = { bold: true }
-  ws.addRow(blockHeaders[keyword]).font = { bold: true }
+  ws.addRow(units && keyword.endsWith('_CURVE') ? ['Strain (1)', `Stress (${quantityUnit('stress', units)})`] : blockHeaders[keyword]).font = { bold: true }
   data.forEach((values) => {
-    const row = ws.addRow(values.map((v) => v === '' ? null : v))
+    const row = ws.addRow(values.map((v) => typeof v === 'object' && v !== null ? null : v === '' ? null : v))
     values.forEach((value, i) => {
       const cell = row.getCell(i + 1)
+      if (typeof value === 'object' && value !== null) {
+        writeQuantityCell(cell, value)
+        cell.numFmt = '0.###############'
+      }
       if (typeof value === 'number') cell.numFmt = Number.isInteger(value) ? '0' : '0.###############'
       // Keep dates, provenance identifiers and literal labels as editable text in Excel.
       if (typeof value === 'string') cell.numFmt = '@'
@@ -187,7 +198,7 @@ const assertInputStatus = (project: PmProjectDocument) => {
     return fail('WORKBOOK_CELL', `Resistance: input workbooks cannot grant reviewed/verified status. The selected profile declares ${declared}.`)
   }
 }
-export const buildProjectWorkbook = async (project: PmProjectDocument): Promise<Uint8Array> => {
+export const buildProjectWorkbook = async (project: PmProjectDocument, units: UnitSelection = CANONICAL_WORKBOOK_UNITS): Promise<Uint8Array> => {
   assertInputStatus(project)
   const ExcelJS = await excelModule()
   const book = new ExcelJS.Workbook()
@@ -195,22 +206,24 @@ export const buildProjectWorkbook = async (project: PmProjectDocument): Promise<
   const { geometry, materials, loadings, analysis, design, calculationProfileId } = project.inputs
   addBlock(sheet(book, 'Project', 'Edit values; save as .xlsx.', [20, 65]), 'PROJECT', [],
     flatten('projectInformation', { meta: { name: project.meta.name, information: project.meta.information } }))
-  const section = sheet(book, 'Section', 'Units: mm. Hole belongs to outer above.', [22, 22, 12])
+  const section = sheet(book, 'Section', `Units: ${quantityUnit('length', units)}. Hole belongs to outer above.`, [22, 22, 12])
   section.getColumn(3).hidden = true
   for (const outer of geometry.outers) {
-    addBlock(section, 'OUTER', [outer.id], outer.points.map((p) => [p.x, p.y, p.id]))
-    for (const hole of outer.holes) addBlock(section, 'HOLE', [hole.id], hole.points.map((p) => [p.x, p.y, p.id]))
+    addBlock(section, 'OUTER', [outer.id], outer.points.map((p) => [quantityCell('length', p.x, units), quantityCell('length', p.y, units), p.id]))
+    for (const hole of outer.holes) addBlock(section, 'HOLE', [hole.id], hole.points.map((p) => [quantityCell('length', p.x, units), quantityCell('length', p.y, units), p.id]))
   }
-  const rebarSheet = sheet(book, 'Rebar', 'Units: mm. Blank material uses the default steel.', [22, 22, 22, 23, 12])
-  addBlock(rebarSheet, 'REBAR', [], geometry.rebars.map((b) => [b.dia, b.x, b.y, b.steelMaterialId ?? null, b.id]))
+  const rebarSheet = sheet(book, 'Rebar', `Diameter: ${quantityUnit('barDiameter', units)}; As: ${quantityUnit('area', units)}; coordinates: ${quantityUnit('length', units)}. Blank material uses the default steel.`, [22, 22, 22, 23, 12, 22, 48])
+  addBlock(rebarSheet, 'REBAR', [], geometry.rebars.map((b) => [quantityCell('barDiameter', b.dia, units), quantityCell('length', b.x, units), quantityCell('length', b.y, units), b.steelMaterialId ?? null, b.id,
+    b.area === undefined ? null : quantityCell('area', b.area, units), b.areaSource ? JSON.stringify(rebarAreaSource(b)) : null]))
+  rebarSheet.getColumn(7).hidden = true
   rebarSheet.getColumn(5).hidden = true
   rebarSheet.getColumn(4).hidden = materials.steel.length <= 1
-  const materialSheet = sheet(book, 'Material', 'MPa, kg/m3; strain dimensionless. Material values are independent.', [40, 48])
+  const materialSheet = sheet(book, 'Material', 'Units are declared beside fields and on the Units sheet; strain dimensionless. Material values are independent.', [40, 48])
   addBlock(materialSheet, 'MATERIAL', [], flatten('material', { strainSign: materials.strainSign, defaults: materials.defaults }))
   const addMaterial = (keyword: 'CONCRETE' | 'STEEL', material: typeof materials.concrete | typeof materials.steel[number]) => {
-    addBlock(materialSheet, keyword, [material.id], flatten(keyword === 'CONCRETE' ? 'concrete' : 'steel', withoutCurve(material)))
+    addBlock(materialSheet, keyword, [material.id], flatten(keyword === 'CONCRETE' ? 'concrete' : 'steel', withoutCurve(material), '', units))
     if (material.stressStrain.type === 'user-curve') addBlock(materialSheet, `${keyword}_CURVE`, [material.id],
-      material.stressStrain.points.map((p) => [p.strain, p.stress]))
+      material.stressStrain.points.map((p) => [p.strain, quantityCell('stress', p.stress, units)]), units)
   }
   addMaterial('CONCRETE', materials.concrete)
   materials.steel.forEach((m) => addMaterial('STEEL', m))
@@ -227,15 +240,20 @@ export const buildProjectWorkbook = async (project: PmProjectDocument): Promise<
     if (fixed || advanced || (settingsBlock && materials.steel.length <= 1 && !field.startsWith('#'))) row.hidden = true
   })
   for (const load of loadings.combinations) if (load.actionBasis !== 'factoredULS') return fail('WORKBOOK_CELL', 'Loadings: only factoredULS demand is supported.')
-  const loadSheet = sheet(book, 'Loadings', 'P: N; Mx, My: N.mm. Factored ULS; P compression positive.', [38, 24, 24, 24, 12])
-  addBlock(loadSheet, 'LOADINGS', [], loadings.combinations.map((l) => [l.name, l.P, l.Mx, l.My, l.id]))
+  const loadSheet = sheet(book, 'Loadings', `P: ${quantityUnit('force', units)}; Mx, My: ${quantityUnit('moment', units)}. Factored ULS; P compression positive.`, [38, 24, 24, 24, 12])
+  const reference = loadReferenceOf(loadings)
+  writeLoadReferenceSheet(book, reference, units)
+  addBlock(loadSheet, 'LOADINGS', [], loadings.combinations.map(canonical => {
+    const l = resultantAtLoadReference(canonical, reference)
+    return [l.name, quantityCell('force', l.P, units), quantityCell('moment', l.Mx, units), quantityCell('moment', l.My, units), l.id]
+  }))
   loadSheet.getColumn(5).hidden = true
   const analysisFields: Fields = structuredClone(analysis)
   const fibre = analysis.methodId === 'strain-domain-surface-v1'
   const stationOwner = analysisFields[fibre ? 'stations' : 'neutralAxisStations']
   if (isObject(stationOwner)) delete stationOwner[fibre ? 'intermediate' : 'values']
   const analysisSheet = sheet(book, 'Analysis', 'Advanced settings. Keep this sheet for import.', [49, 32, 38, 22, 22])
-  addBlock(analysisSheet, 'ANALYSIS', [], flatten('analysis', analysisFields))
+  addBlock(analysisSheet, 'ANALYSIS', [], flatten('analysis', analysisFields, '', units))
   const stationRows: Scalar[][] = fibre
     ? analysis.stations.intermediate.map((s) => [s.id, s.label, s.criterion.type,
       'ratio' in s.criterion ? s.criterion.ratio : null, 'strain' in s.criterion ? s.criterion.strain : null])
@@ -250,18 +268,19 @@ export const buildProjectWorkbook = async (project: PmProjectDocument): Promise<
   analysisSheet.state = 'hidden'
   const resistanceSheet = sheet(book, 'Resistance', 'Advanced design basis. Keep this sheet for import.', [58, 70])
   addBlock(resistanceSheet,
-    'RESISTANCE', [], flatten('resistance', design))
+    'RESISTANCE', [], flatten('resistance', design, '', units))
   resistanceSheet.state = 'hidden'
   if (book.worksheets.some((ws) => ws.rowCount > MAX_ROWS)) return fail('WORKBOOK_RESOURCE_LIMIT', 'Project exceeds the workbook row limit.')
+  writeWorkbookUnits(book, units, FORMAT)
   const bytes = new Uint8Array(await book.xlsx.writeBuffer())
   checkArchive(new Uint8Array(bytes).buffer)
   return bytes
 }
 
-type InputRow = { values: Scalar[]; context: string }
+type InputRow = { values: Scalar[]; notes: Array<import('exceljs').Cell['note'] | undefined>; context: string }
 type Block = { keyword: string; args: Scalar[]; rows: InputRow[]; context: string }
 // Scan populated rows and named headers. No absolute row/column location participates in import.
-const scanSheet = (book: Workbook, name: string): Block[] => {
+const scanSheet = (book: Workbook, name: string, units: UnitSelection): Block[] => {
   const ws = book.getWorksheet(name)
   if (!ws || (!['Analysis', 'Resistance'].includes(name) && ws.state !== 'visible')) return fail('WORKBOOK_FORMAT', `Missing worksheet: ${name}.`)
   if (ws.rowCount > MAX_ROWS || ws.columnCount > 64) return fail('WORKBOOK_RESOURCE_LIMIT', `${name}: worksheet exceeds the import size limit.`)
@@ -292,7 +311,7 @@ const scanSheet = (book: Workbook, name: string): Block[] => {
       return
     }
     if (!active) return fail('WORKBOOK_FORMAT', `${context}: expected a table keyword (or # comment).`)
-    const headers = blockHeaders[active.keyword]
+    const headers = active.keyword.endsWith('_CURVE') ? ['Strain (1)', `Stress (${quantityUnit('stress', units)})`] : blockHeaders[active.keyword]
     const names = cells.map((c) => normalized(c.value))
     const headerNames = headers.map((h) => normalized(h))
     const required = headers.filter((h) => !optionalColumns(active!.keyword).includes(h)).map((h) => normalized(h))
@@ -304,7 +323,8 @@ const scanSheet = (book: Workbook, name: string): Block[] => {
       return
     }
     if (cells.some((cell) => !columns!.includes(cell.col))) return fail('WORKBOOK_FORMAT', `${context}: data outside the table columns.`)
-    active.rows.push({ values: columns.map((col) => col === undefined ? null : cellScalar(source.getCell(col).value, context)), context })
+    active.rows.push({ values: columns.map((col) => col === undefined ? null : cellScalar(source.getCell(col).value, context)),
+      notes: columns.map(col => col === undefined ? undefined : source.getCell(col).note), context })
   })
   if (active && !columns) return fail('WORKBOOK_FORMAT', `${active.context}: missing column header.`)
   return blocks
@@ -351,18 +371,22 @@ const setField = (target: Fields, path: string, value: unknown, context: string)
     }
   }
 }
-const readFields = (block: Block, scope: Scope, markerValues = 0): Fields => {
+const readFields = (block: Block, scope: Scope, markerValues = 0, units: UnitSelection = CANONICAL_WORKBOOK_UNITS): Fields => {
   args(block, markerValues)
   const result: Fields = {}
-  for (const { values: [label, raw], context } of block.rows) {
+  for (const { values: [label, raw], notes, context } of block.rows) {
     const name = text(label, context).trim()
     const path = scope === 'projectInformation' ? Object.entries(PROJECT_LABELS).find(([, label]) => label === name)?.[0] ?? name : name.replace(/ \([^)]+\)$/, '')
-    const spec = specFor(scope, path, context)
+    const spec = specFor(scope, path, context, units)
     if (name !== spec.label) return fail('WORKBOOK_CELL', `${context}: expected field/unit label "${spec.label}".`)
     let value: unknown
     switch (spec.type) {
       case 'string': value = text(raw, context); break
-      case 'number': value = number(raw, context); break
+      case 'number': {
+        const quantity = fieldQuantity(spec.path)
+        value = quantity ? readQuantityCell(quantity, number(raw, context), units, notes[1]) : number(raw, context)
+        break
+      }
       case 'boolean':
         if (typeof raw === 'boolean') value = raw
         else if (typeof raw === 'string' && /^(true|false)$/i.test(raw.trim())) value = raw.trim().toLowerCase() === 'true'
@@ -401,12 +425,12 @@ const rowIds = (rows: InputRow[], column: number, warnings: string[], label: str
   if (copies) warnings.push(`${label}: assigned new technical IDs to ${copies} copied row(s).`)
   return new Map(rows.map((row, i) => [row, unique[i] ?? fresh[next++]]))
 }
-const readSection = (blocks: Block[], identity: Fields, warnings: string[]) => {
+const readSection = (blocks: Block[], identity: Fields, warnings: string[], units: UnitSelection) => {
   type Point = { id: number; x: number; y: number }
   type Outer = { id: number; points: Point[]; holes: Array<{ id: number; points: Point[] }> }
   const ids = rowIds(blocks.flatMap((b) => b.rows), 2, warnings, 'Section')
   const points = (b: Block): Point[] => b.rows.map((row) => ({
-    id: ids.get(row)!, x: number(row.values[0], row.context), y: number(row.values[1], row.context)
+    id: ids.get(row)!, x: readQuantityCell('length', number(row.values[0], row.context), units, row.notes[0]), y: readQuantityCell('length', number(row.values[1], row.context), units, row.notes[1])
   }))
   const outerIds = new Set<number>(), holeIds = new Set<number>()
   const outers: Outer[] = []
@@ -459,10 +483,12 @@ export const importProjectWorkbook = async (buffer: ArrayBuffer): Promise<Projec
     const ExcelJS = await excelModule()
     const book = new ExcelJS.Workbook()
     await book.xlsx.load(buffer)
-    const sheets = new Map(Object.keys(sheetKeywords).map((name) => [name, scanSheet(book, name)]))
+    const declaredUnits = readWorkbookUnits(book, FORMAT)
+    const sheets = new Map(Object.keys(sheetKeywords).map((name) => [name, scanSheet(book, name, declaredUnits)]))
     const blocks = (name: string) => sheets.get(name)!
     const raw = readFields(single(blocks('Analysis'), 'PROJECT_METADATA'), 'project')
-    if (raw.workbookFormat !== FORMAT || raw.workbookVersion !== VERSION) return fail('WORKBOOK_FORMAT', 'Unsupported project workbook format/version. Re-export the project with the current application.')
+    if (raw.workbookFormat !== FORMAT || (raw.workbookVersion !== 5 && raw.workbookVersion !== VERSION)) return fail('WORKBOOK_FORMAT', 'Unsupported project workbook format/version. Re-export the project with the current application.')
+    const workbookVersion = raw.workbookVersion
     delete raw.workbookFormat
     delete raw.workbookVersion
     if (!isObject(raw.inputs) || !isObject(raw.meta)) return fail('WORKBOOK_FORMAT', 'Project is missing metadata or the calculation profile.')
@@ -472,18 +498,20 @@ export const importProjectWorkbook = async (buffer: ArrayBuffer): Promise<Projec
     raw.meta = { ...raw.meta, ...information.meta }
     const inputs = raw.inputs
     const identityWarnings: string[] = []
-    const geometry: Fields = readSection(blocks('Section'), readFields(single(blocks('Analysis'), 'SECTION_METADATA'), 'section'), identityWarnings)
+    const geometry: Fields = readSection(blocks('Section'), readFields(single(blocks('Analysis'), 'SECTION_METADATA'), 'section'), identityWarnings, declaredUnits)
     inputs.geometry = geometry
     const barRows = recordRows(blocks('Rebar'), 'REBAR')
     const barIds = rowIds(barRows, 4, identityWarnings, 'Rebar')
     geometry.rebars = barRows.map((row) => ({
       id: barIds.get(row)!, ...(blank(row.values[3]) ? {} : { steelMaterialId: integer(row.values[3], row.context) }),
-      dia: number(row.values[0], row.context), x: number(row.values[1], row.context), y: number(row.values[2], row.context)
+      dia: readQuantityCell('barDiameter', number(row.values[0], row.context), declaredUnits, row.notes[0]), x: readQuantityCell('length', number(row.values[1], row.context), declaredUnits, row.notes[1]), y: readQuantityCell('length', number(row.values[2], row.context), declaredUnits, row.notes[2]),
+      ...(blank(row.values[5]) ? {} : { area: readQuantityCell('area', number(row.values[5], row.context), declaredUnits, row.notes[5]) }),
+      ...(blank(row.values[6]) ? {} : { areaSource: JSON.parse(text(row.values[6], `${row.context} As source`)) as unknown })
     }))
     const materialBlocks = blocks('Material')
     const materials = readFields(single(materialBlocks, 'MATERIAL'), 'material')
     inputs.materials = materials
-    const readMaterial = (b: Block, scope: 'concrete' | 'steel') => ({ ...readFields(b, scope, 1), id: integer(b.args[0], b.context) })
+    const readMaterial = (b: Block, scope: 'concrete' | 'steel') => ({ ...readFields(b, scope, 1, declaredUnits), id: integer(b.args[0], b.context) })
     const concrete = readMaterial(single(materialBlocks, 'CONCRETE'), 'concrete')
     materials.concrete = concrete
     const steelIds = new Set<number>()
@@ -502,7 +530,7 @@ export const importProjectWorkbook = async (buffer: ArrayBuffer): Promise<Projec
         if (seen.has(id)) return fail('WORKBOOK_CELL', `${b.context}: duplicate ${keyword} ID ${id}.`)
         seen.add(id)
         if (!material || !isObject(material.stressStrain) || material.stressStrain.type !== 'user-curve') return fail('WORKBOOK_CELL', `${b.context}: curve does not reference a user-curve material.`)
-        material.stressStrain.points = b.rows.map(({ values: v, context }) => ({ strain: number(v[0], context), stress: number(v[1], context) }))
+        material.stressStrain.points = b.rows.map(({ values: v, notes, context }) => ({ strain: number(v[0], context), stress: readQuantityCell('stress', number(v[1], context), declaredUnits, notes[1]) }))
       }
       for (const material of items as Fields[]) {
         if (isObject(material.stressStrain) && material.stressStrain.type === 'user-curve' && !seen.has(material.id as number)) {
@@ -512,11 +540,13 @@ export const importProjectWorkbook = async (buffer: ArrayBuffer): Promise<Projec
     }
     const loadRows = recordRows(blocks('Loadings'), 'LOADINGS')
     const loadIds = rowIds(loadRows, 4, identityWarnings, 'Loadings')
-    inputs.loadings = { combinations: loadRows.map((row) => createLoadCombination({ id: loadIds.get(row)!,
-      name: text(row.values[0], row.context), P: number(row.values[1], row.context),
-      Mx: number(row.values[2], row.context), My: number(row.values[3], row.context)
-    })) }
-    const analysis = readFields(single(blocks('Analysis'), 'ANALYSIS'), 'analysis')
+    const reference = readLoadReferenceSheet(book, declaredUnits, workbookVersion === VERSION || raw.version === 3)
+    if (raw.version !== 3 && (reference.offsetX !== 0 || reference.offsetY !== 0)) return fail('WORKBOOK_FORMAT', 'Offset load references require project version 3.')
+    inputs.loadings = { ...(raw.version === 3 ? { reference } : {}), combinations: loadRows.map((row) => resultantAtCentroid(createLoadCombination({ id: loadIds.get(row)!,
+      name: text(row.values[0], row.context), P: readQuantityCell('force', number(row.values[1], row.context), declaredUnits, row.notes[1]),
+      Mx: readQuantityCell('moment', number(row.values[2], row.context), declaredUnits, row.notes[2]), My: readQuantityCell('moment', number(row.values[3], row.context), declaredUnits, row.notes[3])
+    }), reference)) }
+    const analysis = readFields(single(blocks('Analysis'), 'ANALYSIS'), 'analysis', 0, declaredUnits)
     inputs.analysis = analysis
     const fibre = analysis.methodId === 'strain-domain-surface-v1'
     if (!fibre && analysis.methodId !== 'equivalent-block-surface-v1') return fail('WORKBOOK_FORMAT', 'Analysis method is unsupported.')
@@ -531,7 +561,7 @@ export const importProjectWorkbook = async (buffer: ArrayBuffer): Promise<Projec
     const owner = analysis[fibre ? 'stations' : 'neutralAxisStations']
     if (!isObject(owner)) return fail('WORKBOOK_FORMAT', 'Analysis is missing station settings.')
     owner[fibre ? 'intermediate' : 'values'] = stationRows
-    inputs.design = readFields(single(blocks('Resistance'), 'RESISTANCE'), 'resistance')
+    inputs.design = readFields(single(blocks('Resistance'), 'RESISTANCE'), 'resistance', 0, declaredUnits)
     const parsed = parseProjectDocument(raw)
     if (!parsed.ok) return { ...parsed, code: 'PROJECT_INPUT' }
     assertInputStatus(parsed.document)

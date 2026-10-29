@@ -1,5 +1,7 @@
 'use client'
 
+import { QuantityValue, UnitLabel, useQuantityFormatters } from '../shared/DisplayUnits'
+
 import { useId, useMemo, useState } from 'react'
 import {
   type GeometryInputRebarView,
@@ -45,6 +47,8 @@ export function EquivalentBlockGeometryWorkspace({
   designBasis,
   calculationProfileId
 }: Props) {
+  const { qfmt, unit } = useQuantityFormatters()
+
   const clipId = useId().replace(/:/g, '')
   const [angleDeg, setAngleDeg] = useState(30)
   const [depthRatio, setDepthRatio] = useState(0.6)
@@ -268,11 +272,11 @@ export function EquivalentBlockGeometryWorkspace({
           </div>
           <div className="pm-section-mesh-quality">
             <span>θ = <span className="ws-num">{angleDeg}</span>°</span>
-            <span>c = <span className="ws-num">{fmt(preview.c)}</span> mm</span>
+            <span>c = <span className="ws-num">{qfmt('length', preview.c)}</span> {unit('length')}</span>
             <span>{preview.factor.symbol} = <span className="ws-num">{fmt(preview.factor.value, 3)}</span></span>
-            <span>a = <span className="ws-num">{fmt(preview.a)}</span> mm</span>
-            <span>Dθ = <span className="ws-num">{fmt(preview.projectedDepth)}</span> mm</span>
-            <span>Ac = <span className="ws-num">{fmt(preview.blockArea, 1)}</span> mm²</span>
+            <span>a = <span className="ws-num">{qfmt('length', preview.a)}</span> {unit('length')}</span>
+            <span>Dθ = <span className="ws-num">{qfmt('length', preview.projectedDepth)}</span> {unit('length')}</span>
+            <span>Ac = <span className="ws-num">{qfmt('area', preview.blockArea, 1)}</span> {unit('area')}</span>
             <strong className="is-ok">Exact block</strong>
           </div>
         </div>

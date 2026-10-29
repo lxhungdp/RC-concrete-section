@@ -1,11 +1,15 @@
+import type { UnitSelection } from '@pm/units'
+import { appendPresentationSummary } from '../excel/presentation-summary'
 import type {
   ConcreteMesh,
   GeometryInputRebarView,
   SectionGeometry
 } from '@pm/geometry'
 import type { Worksheet } from 'exceljs'
+import { rebarArea, rebarAreaSourceLabel } from '@pm/geometry'
 
 export type MeshAuditExportInput = {
+  presentationUnits?: UnitSelection
   projectName: string
   sectionName: string
   section: SectionGeometry
@@ -223,11 +227,13 @@ export const buildMeshAuditWorkbook = async (input: MeshAuditExportInput) => {
     { header: 'Diameter (mm)', key: 'diameter', width: 16 },
     { header: 'x (mm)', key: 'x', width: 16 },
     { header: 'y (mm)', key: 'y', width: 16 },
-    { header: 'Steel material ID', key: 'material', width: 18 }
+    { header: 'Steel material ID', key: 'material', width: 18 },
+    { header: 'As (mm²)', key: 'area', width: 18 },
+    { header: 'As source', key: 'source', width: 32 }
   ]
-  applyTableHeader(rebarSheet, 5)
+  applyTableHeader(rebarSheet, 7)
   rebars.forEach((bar) =>
-    rebarSheet.addRow([bar.id, bar.dia, bar.x, bar.y, bar.steelMaterialId ?? 'Default'])
+    rebarSheet.addRow([bar.id, bar.dia, bar.x, bar.y, bar.steelMaterialId ?? 'Default', rebarArea(bar), rebarAreaSourceLabel(bar)])
   )
   for (let column = 1; column <= 4; column++) rebarSheet.getColumn(column).numFmt = '0.000000'
 
@@ -330,6 +336,7 @@ export const buildMeshAuditWorkbook = async (input: MeshAuditExportInput) => {
   summary.eachRow((row) => {
     row.alignment = { vertical: 'middle' }
   })
+  appendPresentationSummary(workbook, input)
   return workbook
 }
 

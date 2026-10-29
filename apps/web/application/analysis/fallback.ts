@@ -12,6 +12,7 @@ import {
   sliceActiveDesignPContour,
   solveInversePreviewFromPrepared,
   type ExactDirectionCurve,
+  type CapacityFieldResult,
   type InversePreviewResult,
   type LoadcaseQuickCheckResult,
   type PreparedAnalysis,
@@ -142,7 +143,7 @@ export const buildExactDirectionFallback = (payload: BuildExactDirectionPayload)
 export const checkLoadcasesFallback = (payload: CheckLoadcasesPayload): LoadcaseQuickCheckResult[] =>
   checkLoadcasesUtilizationFromSurface(payload.surface, payload.loadcases)
 
-export const checkLoadcaseFallback = (payload: CheckLoadcasePayload): InversePreviewResult => {
+export const checkLoadcaseFallback = async (payload: CheckLoadcasePayload): Promise<InversePreviewResult> => {
   if (isEquivalentBlockAnalysisOptions(payload.surface.analysisOptions)) {
     return applyDesignCheckToInverse(
       solveEquivalentBlockDemandFromPrepared(blockFor(payload), payload.surface.analysisOptions, payload.loadcase),
@@ -151,13 +152,23 @@ export const checkLoadcaseFallback = (payload: CheckLoadcasePayload): InversePre
   }
   const contour = sliceActiveDesignPContour(payload.surface, payload.loadcase.P)
   const designCheck = checkLoadcaseUtilizationFromSurface(payload.surface, payload.loadcase)
+  const prepared = preparedFor({ ...payload, analysisOptions: payload.surface.analysisOptions })
   const inverse = solveInversePreviewFromPrepared(
-    preparedFor({ ...payload, analysisOptions: payload.surface.analysisOptions }),
+    prepared,
     payload.loadcase,
     contour,
     codeAdjustedDemandOfCheck(designCheck)
   )
-  return applyDesignCheckToInverse(inverse, designCheck)
+  let capacityField: CapacityFieldResult
+  try {
+    const { solveStressStrainCapacityFieldFromPrepared } = await import('@pm/analysis/capacity-field')
+    capacityField = solveStressStrainCapacityFieldFromPrepared(prepared, payload.materialStore,
+      payload.designBasis, payload.surface, designCheck.codeAdjustedDemand ?? payload.loadcase)
+  } catch {
+    capacityField = { status: 'unavailable', reason: 'evaluation-error', iterations: 0,
+      message: 'Capacity-field evaluation failed.' }
+  }
+  return { ...applyDesignCheckToInverse(inverse, designCheck), capacityField }
 }
 
 export const buildSectionFieldMapFallback = (payload: BuildFieldMapPayload): SectionFieldMap => {
@@ -202,6 +213,7 @@ export const exportMeshAuditFallback = async (
 ): Promise<ArrayBuffer> => {
   const mesh = preparedFor(payload).mesh
   const input = {
+    presentationUnits: payload.presentationUnits,
     projectName: payload.projectName,
     sectionName: payload.sectionName,
     section: payload.section,

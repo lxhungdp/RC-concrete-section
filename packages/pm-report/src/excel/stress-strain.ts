@@ -1,3 +1,5 @@
+import type { UnitSelection } from '@pm/units'
+import { appendPresentationSummary } from './presentation-summary'
 /**
  * Excel export of the nominal section calculation, laid out after the historical external workbook
  * the stress-strain analysis pipeline and its current calculation-audit DTOs.
@@ -28,6 +30,8 @@
 import {
   buildConcreteMesh,
   netConcreteCentroid,
+  rebarArea,
+  rebarAreaSourceLabel,
   type GeometryInputRebarView,
   type SectionGeometry
 } from '@pm/geometry'
@@ -77,6 +81,7 @@ import {
 export { ExcelExportError, invalidDefinedNameReason, type LawSample } from './workbook-common'
 
 export type ExcelExportInput = {
+  presentationUnits?: UnitSelection
   projectName: string
   sectionName: string
   section: SectionGeometry
@@ -189,7 +194,9 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     dia: bar.dia,
     x: bar.x - origin.x,
     y: bar.y - origin.y,
-    area: (Math.PI * bar.dia * bar.dia) / 4
+    area: rebarArea(bar),
+    storedArea: bar.area !== undefined,
+    areaSource: rebarAreaSourceLabel(bar)
   }))
   const fibers = mesh.points.map((point, index) => ({
     no: index + 1,
@@ -760,7 +767,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
 
   sectionHeading(geomSheet, geomRow, 'Reinforcement', 7)
   const barHead = geomRow + 1
-  ;['No.', 'Dia (mm)', 'X (mm)', 'Y (mm)', 'As (mm²)', 'u = Y·cosθ + X·sinθ'].forEach((text, index) => {
+  ;['No.', 'Dia (mm)', 'X (mm)', 'Y (mm)', 'As (mm²)', 'u = Y·cosθ + X·sinθ', 'As source'].forEach((text, index) => {
     const cell = geomSheet.getCell(barHead, 2 + index)
     cell.value = text
     cell.font = { bold: true, size: 10 }
@@ -778,7 +785,8 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       geomSheet.getCell(r, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CONST_FILL } }
       geomSheet.getCell(r, c).numFmt = '#,##0.000'
     }
-    geomSheet.getCell(r, 6).value = { formula: `PI()*C${r}^2/4` }
+    geomSheet.getCell(r, 6).value = bar.storedArea ? bar.area : { formula: `PI()*C${r}^2/4` }
+    geomSheet.getCell(r, 8).value = bar.areaSource
     geomSheet.getCell(r, 6).numFmt = '#,##0.000'
     geomSheet.getCell(r, 7).value = { formula: `E${r}*COS(RADIANS(beta))+D${r}*SIN(RADIANS(beta))` }
     geomSheet.getCell(r, 7).numFmt = '#,##0.000'
@@ -1896,6 +1904,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     eqSheet.getCell(normRow + 1, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
   }
 
+  appendPresentationSummary(workbook, { ...input, surface: auditSurface })
   return workbook
 }
 

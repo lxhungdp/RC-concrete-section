@@ -1,3 +1,5 @@
+import type { UnitSelection } from '@pm/units'
+import { appendPresentationSummary } from './presentation-summary'
 import {
   buildStressStrainPointCalculationAudit,
   prepareAnalysisFromMesh,
@@ -48,6 +50,7 @@ type PhysicalPointCalculationAudit = Exclude<
 >
 
 export type ConcretePointAuditWorkbookInput = {
+  presentationUnits?: UnitSelection
   projectName: string
   sectionName: string
   calculationProfileId: CalculationProfileId
@@ -490,6 +493,7 @@ export const buildConcretePointAuditWorkbook = async (input: ConcretePointAuditW
     sheetName: isEquivalentBlockAnalysisOptions(input.analysisOptions) ? 'Concrete_Block' : 'Concrete'
   })
   workbook.calcProperties.fullCalcOnLoad = true
+  appendPresentationSummary(workbook, input)
   return workbook
 }
 

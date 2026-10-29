@@ -161,5 +161,5 @@ test('an arbitrary adaptive direction is recalculated with its own adaptive stat
   assert.ok(curve.designAdaptive.length > ADAPTIVE_INITIAL_STATION_COUNT)
   assert.ok(curve.designAdaptive.some((point) => point.stationId?.startsWith('adaptive-station-')))
   assert.equal(curve.designAdaptive.length, curve.designFixed.length)
-  assert.equal(curve.designAdaptive.length, curve.nominalFixed.length)
+  assert.equal(curve.beforeAxialCap?.length, curve.nominalFixed.length)
 })

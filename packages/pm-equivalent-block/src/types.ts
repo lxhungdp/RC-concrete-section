@@ -13,6 +13,8 @@ export type EquivalentBlockRebar = {
   x: number
   y: number
   area: number
+  /** Declared geometric diameter; omitted only by area-only legacy reference inputs. */
+  dia?: number
   steelLawId: string
 }
 
@@ -109,6 +111,7 @@ export type BarBlockEvaluation = {
   x: number
   y: number
   area: number
+  dia?: number
   steelLawId: string
   projectedDepth: number
   strain: number

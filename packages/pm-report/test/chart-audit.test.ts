@@ -345,7 +345,7 @@ test('vertical chart audit has four traceable sheets and formula-driven result v
     [
       ['Project and calculation identity', 2],
       ['Section boundary', 7],
-      ['Reinforcement', 9],
+      ['Reinforcement', 10],
       ['Project load cases', 6]
     ]
   )
@@ -377,11 +377,12 @@ test('vertical chart audit has four traceable sheets and formula-driven result v
     activeDesignSurfaceDataset(surface).points,
     input.sliceAngleDeg,
     false
-  ).primary.filter((point) => point.sectionPointRole === 'surface-vertex' && point.stationId !== null)
+  ).primary.filter((point) => point.sectionPointRole === 'surface-vertex' &&
+    (point.stationId !== null || point.surfaceRole === 'axial-cap' && point.axialCapTrace !== undefined))
   let exportedStations = 0
   while (typeof result.getCell(head + 1 + exportedStations, 1).value === 'number') exportedStations++
   assert.equal(exportedStations, expectedStations.length)
-  assert.ok(expectedStations.filter((point) => point.surfaceRole === 'axial-cap').length > 1)
+  assert.equal(expectedStations.filter((point) => point.surfaceRole === 'axial-cap').length, 1)
   for (const sheet of workbook.worksheets) {
     sheet.eachRow((row) => row.eachCell((cell) => {
       if (cell.formula) {
@@ -512,7 +513,7 @@ test('Fixed-P chart audit exports one selected P and interpolates the displayed 
   }
 })
 
-test('Fixed-P Pmax rows keep distinct branch IDs for multiple points on one direction', async () => {
+test('Fixed-P Pmax rows contain exact boundary points without artificial radial branches', async () => {
   const input = workbookInput('fixedP')
   const dataset = activeDesignSurfaceDataset(input.surface)
   input.fixedP = Math.max(...dataset.points.map((point) => point.P))
@@ -526,13 +527,11 @@ test('Fixed-P Pmax rows keep distinct branch IDs for multiple points on one dire
     const key = Number(result.getCell(row, 2).value).toFixed(6)
     betaGroups.set(key, [...(betaGroups.get(key) ?? []), row])
   }
-  const repeated = [...betaGroups.values()].find((group) => group.length > 1)
-  assert.ok(repeated)
-  assert.deepEqual(
-    repeated.map((row) => result.getCell(row, 3).value),
-    repeated.map((_, index) => index + 1)
-  )
-  for (const row of repeated) assert.equal(result.getCell(row, 12).result, 'Exact station')
+  assert.ok([...betaGroups.values()].every(group=>group.length===1))
+  for (const row of rows) {
+    assert.equal(result.getCell(row,3).value,1)
+    assert.equal(result.getCell(row,12).result,'Exact station')
+  }
 
   const { readBack, engine } = await recalculateWorkbook(workbook)
   assert.deepEqual(formulaErrors(readBack, engine), [])
@@ -541,14 +540,17 @@ test('Fixed-P Pmax rows keep distinct branch IDs for multiple points on one dire
   const lower = readBack.getWorksheet('FixedP_Lower')!
   const lowerHead = headerRowOf(lower)
   const capRows = Array.from({ length: lower.rowCount - lowerHead }, (_, index) => index + lowerHead + 1)
-    .filter((row) => String(lower.getCell(row, 35).value).startsWith('axial-cap projected-ledger anchor'))
+    .filter((row) => String(lower.getCell(row, 35).value).startsWith('axial-cap geometric-ledger anchor'))
   assert.ok(capRows.length > 1)
   for (const row of capRows) {
     assert.deepEqual(
       [lower.getCell(row, 24).value, lower.getCell(row, 25).value, lower.getCell(row, 26).value],
       [1, 1, 1]
     )
-    assert.match(String(lower.getCell(row, 4).value), /^retained /)
+    assert.match(String(lower.getCell(row, 4).value), /^geometric Pmax intersection/)
+    for (const column of [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]) {
+      assert.equal(lower.getCell(row, column).value, null, `Cap row ${row} column ${column} must not claim strain data`)
+    }
   }
 })
 
@@ -592,7 +594,12 @@ test('equivalent-block chart audit uses its total ledger, omits the unused Mesh 
     const result = workbook.getWorksheet('Result')!
     const first = headerRowOf(result) + 1
     assert.equal(result.getCell(first, 23).formula, `AL${first}`)
-    assert.match(String(result.getCell(first, 37).value), /^equivalent-block total-ledger anchor/)
+    assert.equal(result.getCell(first, 2).value, 'Pmax intersection')
+    assert.match(String(result.getCell(first, 37).value), /^axial-cap geometric-ledger anchor/)
+    assert.match(String(result.getCell(first + 1, 37).value), /^equivalent-block total-ledger anchor/)
+    for (const column of [7, 8, 9, 10, 11, 12, 13, 14, 15, 16]) {
+      assert.equal(result.getCell(first, column).value, null, `Geometric cap column ${column} must be blank`)
+    }
     assert.notEqual(Number(result.getCell(first, 29).result), 0)
 
     const { readBack, engine } = await recalculateWorkbook(workbook)
@@ -647,7 +654,7 @@ test('adaptive stations export a resolved physical criterion and derive the stra
   const head = headerRowOf(result)
   const rows = Array.from({ length: result.rowCount - head }, (_, index) => index + head + 1)
     .filter((row) => typeof result.getCell(row, 1).value === 'number')
-  const resolved = rows.filter((row) => !String(result.getCell(row, 6).value).startsWith('retained '))
+  const resolved = rows.filter((row) => !String(result.getCell(row, 6).value).startsWith('geometric '))
   assert.ok(resolved.length > 0)
   for (const row of resolved) {
     const basis: string = String(result.getCell(row, 6).value)

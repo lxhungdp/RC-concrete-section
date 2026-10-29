@@ -107,6 +107,9 @@ strain, and adapter provenance.
 
 Fixed mode does not evaluate hidden midpoint probes. It calculates only the 27 × 36 requested
 states, so changing to Capacity does not pay for a second error-measurement grid.
+These counts describe physical states before geometric clipping. Applying Pmax retains the
+original permitted points and introduces exact geometric edge intersections, so the clipped
+Design vertex count and per-meridian point count need not equal the physical station count.
 Fixed-mode stress-strain demand checks use that mechanics' 2% regression screening margin owned by
 `@pm/results`; cases whose resulting UR interval crosses 1.0 are visibly `indeterminate`, not
 silently passed or failed. Fixed equivalent-block checks currently have no validated screening
@@ -153,8 +156,10 @@ nearby adaptive direction. Typing an arbitrary angle explicitly launches a new e
 calculation; there is no angular interpolation.
 
 For a valid demand inverse, beta is recovered from the exact strain gradient and the same exact
-direction calculation is run again for the demand chart. Uniform-strain, axial-cap, failed, or
-inadmissible states have no unique neutral-axis direction and must not invent one.
+direction calculation can inspect that physical state. Demand Check defaults to the geometric
+demand-moment-plane slice and separately offers Direct beta at the selected demand/capacity field angle.
+Neither curve is gated by demand-equilibrium convergence. A direction without a unique physical
+strain gradient remains an explicitly selected inspection angle, not an inferred neutral axis.
 
 ## 9. Governing factored-demand check
 
@@ -169,7 +174,76 @@ and reports utilization from the boundary intersection. Nominal capacity, Design
 factored Demand remain distinct in the UI and report. No chart is allowed to relabel Nominal as
 Design or apply a resistance factor to factored Demand.
 
+The origin-to-demand ray and stored governing crossing remain visible for outside demands.
+Demand-plane plots use the checked demand direction, including any declared code adjustment;
+Direct beta is a separate view and any load-path projection there is labelled as a projection.
+Fixed-P retains the actual Pu; a plane outside the axial range has no contour and must not be
+silently clamped. The governing UR still comes only from the unchanged Design-surface query.
+
+When a maximum axial-resistance cap clips the Design domain, retain the Design dataset before
+that cap as separate diagnostic geometry, with its own original topology. Draw only its portion
+above the cap as dotted lines in the same colour as the corresponding Design curve. This is
+already reduced Design resistance before the axial-domain operation, not Nominal resistance.
+The capped domain is the intersection of that same pre-cap domain with `P <= Pmax`. For every
+straddling source edge A-B, calculate `t = (Pmax - PA)/(PB - PA)` and retain the exact linear
+intersection `(Pmax, MA + t(MB - MA))`. Keep every vertex and side-face portion below Pmax
+unchanged, insert the edge crossings into the topology, and close the actual cap boundary. Do
+not redistribute moments radially by station index. Synthetic cap vertices are geometric points,
+not additional physical strain stations. The solid and dotted curves must share their cut endpoint.
+When a plane-cut graph welds nearby numerical nodes, an exact stored cap-plane intersection takes
+precedence over a nearby side-edge interpolation; welding must not move the cut below Pmax.
+The previous radial-fill cap algorithm violated this invariant near the cut; its correction is
+recorded in [development/15](development/15-exact-axial-cap-intersections.md). It can change
+governing results in the previously distorted band; it does not change the Pmax value or physical
+pre-cap states. A Fixed-P
+plane above the cap can show an uncapped dotted contour only when that plane intersects the
+retained pre-cap geometry; it still has no permitted Design contour. No sampling, extrapolation or
+new governing resistance is introduced by this overlay.
+
+### Load-input origin
+
+The applied load origin changes only the input-reference adapter specified by engineering/02 §2.
+Direct meridians, Fixed-P contours, demand-direction planes, 3D surfaces, governing intersections
+and their displayed demand vectors remain centroidal. Never shear/translate those capacity datasets
+for the input offset. A draft can preview the LOAD axes on the section drawing while the physical
+strain plane and epsilon-zero neutral axis remain evaluated in the centroidal frame. Apply and
+Convert semantics are recorded in development/16.
+
 ## 10. Field display
+
+Demand Check selects its section field from the unchanged governing Design check. A case classified
+`inadequate` shows **Field at capacity**. Every other checked case shows **Field at demand** only
+when a converged, admissible equilibrium at the checked entered demand is available. An
+`indeterminate` classification remains indeterminate even when its diagnostic demand field exists.
+Failure of a demand inverse must not silently substitute a capacity field for a non-NG case.
+The stress-strain inverse supplies demand equilibrium. The equivalent-block inverse supplies a
+capacity-ray state, not demand equilibrium, so its non-NG demand field is explicitly unavailable;
+do not scale that boundary strain plane or introduce another constitutive law to manufacture one.
+
+For an NG capacity field, the field requires an admissible compatible state whose independently evaluated Design resultants
+are proportional to the checked demand. A faceted ray intersection is a seed, not a physical field.
+Stress-strain refines beta, the existing compatible station coordinate, and a positive load factor
+with bounded damped Newton; it reuses the same station-state and Design-resistance evaluators as
+the surface. At the final finite-state-to-tension-pole chord, a declared steel rupture limit uses
+the existing compatible tension-pole transition and must actually reach that material limit when
+concrete no longer governs. With no declared rupture limit, the diagnostic instead continues the
+existing concrete-limit neutral-axis-depth branch toward zero depth; an assumed pole strain must
+not become an invented steel limit. It never assigns interpolated facet strains to a physical
+field. This diagnostic adds no production sampling stations and claims no unique tensile strain
+path. Equivalent block reuses its existing converged physical capacity-ray state. The
+refined physical point and multiplier remain diagnostic evidence and do not replace the faceted
+governing crossing, UR, interval, or verdict. Stress fields follow the existing constitutive laws
+at that compatible state; global resultant factors are not applied to constitutive stress twice.
+If the governing crossing is on the axial-cap face, continue the same checked three-component
+proportional ray to the retained Design boundary before the cap and refine that physical state
+using the same mechanics. The field may exceed Pmax and must carry explicit before-cap evidence,
+the cap limit, the label **Field at capacity — before Pmax cap**, and a visible explanation that
+it exceeds permitted Design resistance. Mark the field point separately from the unchanged
+governing crossing. A near-cap refined physical state that exceeds the cap receives the same
+qualification. Never use an interpolated/projected cap-face strain plane, select an arbitrary
+point along the excluded curve, remove the cap from the governing check, or substitute Nominal.
+Zero demand, missing pre-cap evidence, unresolved refinement and inadmissibility return typed
+unavailable-field evidence. Geometry and demand plots remain available without fabricated strains.
 
 Stress-strain model:
 

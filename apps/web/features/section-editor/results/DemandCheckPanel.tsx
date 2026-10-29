@@ -2,7 +2,9 @@
 
 import { TransferIcon } from '../shared/WorkspaceIcons'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
-import type { LoadCombination } from '@pm/project'
+import type { LoadCombination, LoadingsInput, LoadReference } from '@pm/project'
+import dynamic from 'next/dynamic'
+const LoadReferencePanel = dynamic(() => import('../loadings/LoadReferencePanel').then(module => module.LoadReferencePanel), { ssr: false })
 import {
   DEMAND_CHART_IDS,
   demandChartLabel,
@@ -15,6 +17,9 @@ type Props = {
   onViewChange: (patch: Partial<DemandCheckView>) => void
   surfaceReady: boolean
   loadcases: readonly LoadCombination[]
+  loadingsInput: LoadingsInput
+  onLoadingsChange: (input: LoadingsInput) => void
+  onReferencePreviewChange: (value: LoadReference | null) => void
   /** Combinations to work through in full in the PDF; may be none, some, or all. */
   reportDetailIds: readonly number[]
   onReportDetailIdsChange: (ids: number[]) => void
@@ -35,6 +40,9 @@ export function DemandCheckPanel({
   onViewChange,
   surfaceReady,
   loadcases,
+  loadingsInput,
+  onLoadingsChange,
+  onReferencePreviewChange,
   reportDetailIds,
   onReportDetailIdsChange,
   onExportReport,
@@ -75,6 +83,7 @@ export function DemandCheckPanel({
         </div>
       </section>
 
+      <LoadReferencePanel key={`${loadingsInput.reference?.offsetX ?? 0}:${loadingsInput.reference?.offsetY ?? 0}`} input={loadingsInput} onChange={onLoadingsChange} onPreviewChange={onReferencePreviewChange} />
       <section className="pm-panel-section pm-report-section">
         <div className="pm-section-title pm-section-title--with-action">
           <h2>Report</h2>
@@ -84,7 +93,7 @@ export function DemandCheckPanel({
               className="ws-action pm-file-btn"
               onClick={onExportReport}
               disabled={reportState === 'working' || !surfaceReady}
-              title={`Export the column design report as PDF · every combination gets its two curves, ${reportDetailIds.length} worked through`}
+              title={`Export the column design report as PDF 쨌 every combination gets its two curves, ${reportDetailIds.length} worked through`}
             >
               {reportState === 'working' ? <Loader2 size={13} className="pm-spin" /> : <TransferIcon direction="export" />}
               PDF
@@ -94,7 +103,7 @@ export function DemandCheckPanel({
               className="ws-action pm-file-btn"
               onClick={onExportExcel}
               disabled={excelState === 'working' || !excelReady}
-              title={`Export the demand check to Excel with live formulas · inverse, vertical and fixed-P sheets for ${reportDetailIds.length} combination(s)`}
+              title={`Export the demand check to Excel with live formulas 쨌 inverse, vertical and fixed-P sheets for ${reportDetailIds.length} combination(s)`}
             >
               {excelState === 'working' ? <Loader2 size={13} className="pm-spin" /> : <TransferIcon direction="export" />}
               Excel

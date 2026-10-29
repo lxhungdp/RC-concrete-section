@@ -1,6 +1,51 @@
-import { createLoadCombination, type LoadCombination } from '@pm/project'
+import { UNIT_PRESETS, fromCanonical, toCanonical, quantityUnit, parseNumericText, type UnitSelection } from '@pm/units'
+import { quantityCell, readQuantityCell, writeQuantityCell, readWorkbookUnits, writeWorkbookUnits } from '../shared/workbook-units'
+import { CENTROID_LOAD_REFERENCE, createLoadCombination, parseLoadReference, resultantAtCentroid, resultantAtLoadReference, type LoadCombination, type LoadReference } from '@pm/project'
 
-const HEADERS = ['ID', 'Name', 'Pu (kN)', 'Mux (kNm)', 'Muy (kNm)']
+/** Explicit frame transport. Older workbooks without this sheet contain centroidal moments. */
+export const writeLoadReferenceSheet = (book: import('exceljs').Workbook, reference: LoadReference, units: UnitSelection) => {
+  const frame = parseLoadReference(reference)
+  const sheet = book.addWorksheet('Load reference')
+  sheet.addRow(['LOAD_REFERENCE', 1])
+  sheet.addRow(['Moment basis', 'load-reference'])
+  sheet.addRow(['Kind', frame.kind])
+  for (const [label, value] of [['Offset X', frame.offsetX], ['Offset Y', frame.offsetY]] as const) {
+    const row = sheet.addRow([`${label} (${quantityUnit('length', units)})`, null])
+    writeQuantityCell(row.getCell(2), quantityCell('length', value, units))
+  }
+  sheet.getColumn(1).width = 25; sheet.getColumn(2).width = 25
+}
+export const readLoadReferenceSheet = (book: import('exceljs').Workbook, units: UnitSelection, required = false): LoadReference => {
+  const sheet = book.getWorksheet('Load reference')
+  if (!sheet) {
+    if (required) throw Error('The load-reference declaration is required.')
+    return CENTROID_LOAD_REFERENCE
+  }
+  const normalized = (value: unknown) => typeof value === 'string' ? value.trim().toUpperCase() : ''
+  let fieldColumn: number | null = null
+  const fields = new Map<string, import('exceljs').Cell>()
+  for (let row = 1; row <= sheet.rowCount; row++) {
+    const nonblank: number[] = []
+    sheet.getRow(row).eachCell((cell, column) => { if (cell.value != null && String(cell.value).trim() !== '') nonblank.push(column) })
+    if (!nonblank.length || normalized(sheet.getCell(row, nonblank[0]).value).startsWith('#')) continue
+    const column = nonblank[0]
+    const key = normalized(sheet.getCell(row, column).value)
+    if (key === 'LOAD_REFERENCE') {
+      if (fieldColumn !== null || sheet.getCell(row, column + 1).value !== 1) throw Error('Unsupported load-reference declaration.')
+      fieldColumn = column; continue
+    }
+    if (fieldColumn === null || column !== fieldColumn || !key || fields.has(key) || nonblank.some(c => c > column + 1)) throw Error('Invalid or repeated load-reference field.')
+    fields.set(key, sheet.getCell(row, column + 1))
+  }
+  const x = fields.get(normalized(`Offset X (${quantityUnit('length', units)})`))
+  const y = fields.get(normalized(`Offset Y (${quantityUnit('length', units)})`))
+  if (fields.size !== 4 || fields.get('MOMENT BASIS')?.value !== 'load-reference' || !x || !y) throw Error('Invalid load-reference fields or units.')
+  return parseLoadReference({ kind: fields.get('KIND')?.value,
+    offsetX: readQuantityCell('length', readNumber(x.value, 'Load reference X'), units, x.note),
+    offsetY: readQuantityCell('length', readNumber(y.value, 'Load reference Y'), units, y.note) })
+}
+
+const headersFor = (units: UnitSelection) => ['ID', 'Name', `Pu (${quantityUnit('force', units)})`, `Mux (${quantityUnit('moment', units)})`, `Muy (${quantityUnit('moment', units)})`]
 
 const excelModule = async () => {
   const imported = await import('exceljs')
@@ -45,27 +90,31 @@ const findColumn = (
 }
 
 const readNumber = (value: unknown, label: string) => {
-  const number = typeof value === 'number' ? value : Number(String(value ?? '').trim())
+  const number = typeof value === 'number' ? value : parseNumericText(String(value ?? ''))
   if (!Number.isFinite(number)) throw new Error(`${label} must be a finite number.`)
   return number
 }
 
 export const loadcaseWorkbookFileName = 'loadcases.xlsx'
 
-export const buildLoadcaseWorkbook = async (loadcases: LoadCombination[]): Promise<Uint8Array> => {
+export const buildLoadcaseWorkbook = async (loadcases: LoadCombination[], units: UnitSelection = UNIT_PRESETS.metric, reference: LoadReference = CENTROID_LOAD_REFERENCE): Promise<Uint8Array> => {
   const ExcelJS = await excelModule()
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet('Loadcases')
 
-  sheet.addRow(HEADERS)
-  for (const loadcase of loadcases) {
-    sheet.addRow([
+  writeWorkbookUnits(workbook, units, 'pm-loadcases')
+  writeLoadReferenceSheet(workbook, reference, units)
+  sheet.addRow(headersFor(units))
+  for (const canonical of loadcases) {
+    const loadcase = resultantAtLoadReference(canonical, reference)
+    const row = sheet.addRow([
       loadcase.id,
       loadcase.name,
-      loadcase.P / 1000,
-      loadcase.Mx / 1_000_000,
-      loadcase.My / 1_000_000
+      null, null, null
     ])
+    writeQuantityCell(row.getCell(3), quantityCell('force', loadcase.P, units))
+    writeQuantityCell(row.getCell(4), quantityCell('moment', loadcase.Mx, units))
+    writeQuantityCell(row.getCell(5), quantityCell('moment', loadcase.My, units))
   }
 
   sheet.getRow(1).eachCell((cell) => {
@@ -81,8 +130,8 @@ export const buildLoadcaseWorkbook = async (loadcases: LoadCombination[]): Promi
   return toBytes(await workbook.xlsx.writeBuffer())
 }
 
-export const downloadLoadcaseWorkbook = async (loadcases: LoadCombination[]) => {
-  const bytes = await buildLoadcaseWorkbook(loadcases)
+export const downloadLoadcaseWorkbook = async (loadcases: LoadCombination[], units: UnitSelection = UNIT_PRESETS.metric, reference: LoadReference = CENTROID_LOAD_REFERENCE) => {
+  const bytes = await buildLoadcaseWorkbook(loadcases, units, reference)
   const copy = new Uint8Array(bytes.byteLength)
   copy.set(bytes)
   const blob = new Blob([copy.buffer], {
@@ -105,13 +154,16 @@ export const importLoadcaseWorkbook = async (
   const sheet = workbook.getWorksheet('Loadcases') ?? workbook.worksheets[0]
   if (!sheet) throw new Error('The workbook does not contain a worksheet.')
 
+  const units = readWorkbookUnits(workbook, 'pm-loadcases')
+  const reference = readLoadReferenceSheet(workbook, units)
+  const declaredHeaders = headersFor(units)
   const headers = new Map<string, number>()
   sheet.getRow(1).eachCell((cell, column) => headers.set(normalizeHeader(scalar(cell.value)), column))
   const idColumn = findColumn(headers, ['ID', 'No', 'Number'], false)
   const nameColumn = findColumn(headers, ['Name', 'Loadcase', 'Loadcase name'])!
-  const puColumn = findColumn(headers, ['Pu (kN)', 'Pu'])!
-  const muxColumn = findColumn(headers, ['Mux (kNm)', 'Mux'])!
-  const muyColumn = findColumn(headers, ['Muy (kNm)', 'Muy'])!
+  const puColumn = findColumn(headers, [declaredHeaders[2]])!
+  const muxColumn = findColumn(headers, [declaredHeaders[3]])!
+  const muyColumn = findColumn(headers, [declaredHeaders[4]])!
 
   const usedIds = new Set<number>()
   const imported: LoadCombination[] = []
@@ -138,14 +190,14 @@ export const importLoadcaseWorkbook = async (
       {
         id: requestedId,
         name,
-        P: readNumber(scalar(row.getCell(puColumn).value), `Row ${rowNumber}: Pu`) * 1000,
-        Mx: readNumber(scalar(row.getCell(muxColumn).value), `Row ${rowNumber}: Mux`) * 1_000_000,
-        My: readNumber(scalar(row.getCell(muyColumn).value), `Row ${rowNumber}: Muy`) * 1_000_000
+        P: readQuantityCell('force', readNumber(scalar(row.getCell(puColumn).value), `Row ${rowNumber}: Pu`), units, row.getCell(puColumn).note),
+        Mx: readQuantityCell('moment', readNumber(scalar(row.getCell(muxColumn).value), `Row ${rowNumber}: Mux`), units, row.getCell(muxColumn).note),
+        My: readQuantityCell('moment', readNumber(scalar(row.getCell(muyColumn).value), `Row ${rowNumber}: Muy`), units, row.getCell(muyColumn).note)
       },
       usedIds
     )
     usedIds.add(loadcase.id)
-    imported.push(loadcase)
+    imported.push(resultantAtCentroid(loadcase, reference))
   }
 
   if (imported.length === 0) throw new Error('The workbook must contain at least one loadcase.')

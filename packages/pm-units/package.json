@@ -1,0 +1,10 @@
+{
+  "name": "@pm/units",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@jscad/engineering-units": "file:../../vendor/jscad-engineering-units-1.0.0.tgz" }
+}

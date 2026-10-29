@@ -180,3 +180,28 @@ plateaus can make the inverse non-unique.
 - condition estimate detects constructed near-singular systems;
 - line search never accepts an inadmissible or residual-increasing state;
 - all loop counts and load-step retries have hard limits.
+
+## 10. Preview capacity-field refinement
+
+This is separate from demand equilibrium and does not change governing utilization. The existing
+surface-ray crossing seeds beta and the compatible station coordinate. Bounded damped Newton
+solves the three normalized Design resultant residuals against a positive proportional multiplier.
+State construction reuses the surface's station definitions and adaptive-state interpolation; no
+new material domain or extrapolation is introduced. At the last chord, declared steel rupture uses
+the existing compatible transition and requires an active declared limit after leaving the
+concrete-limit branch. Without rupture data, continue the existing concrete-limit c/D branch to
+zero depth rather than use the assumed uniform-pole strain as a steel limit. The finite interval
+gets four seed probes at fractions 0, 1/4, 1/2 and 3/4, with multiplier projected onto the same ray,
+to avoid starting on a yielded zero-tangent plateau. A collapsed compatible transition segment
+is skipped only when its endpoint strain states agree within the existing normalized 1e-8 limit.
+This does not add production stations or claim uniqueness. Reuse the inverse's 30-iteration and 1e-8
+normalized residual limits, with at most 12 backtracks. Central finite differences use a 1e-6
+parameter step (one-sided at domain endpoints); Newton increments are bounded to 0.25 rad and one seed-station interval per
+iteration. The multiplier column is analytic. A non-converged or inadmissible state is unavailable,
+never a successful field. The equivalent-block route retains its existing physical ray solver.
+For an axial-cap-governed crossing, the seed is the intersection of the same checked demand ray
+with the retained pre-cap Design dataset and its original topology. Refine on that physical
+boundary without imposing the cap on this diagnostic query. Return explicit before-cap evidence
+when its Design axial resultant exceeds the retained cap limit. The governing capped domain and
+its query are never replaced. The equivalent-block bridge uses the same separation and its own
+physical ray solver; neither mechanics borrows the other one's material law or strain state.

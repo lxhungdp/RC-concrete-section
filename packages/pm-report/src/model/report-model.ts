@@ -1,3 +1,4 @@
+import { UNIT_PRESETS, parseUnitSelection, toCanonical, fromCanonical, quantityUnit, type Quantity, type UnitSelection } from '@pm/units'
 /**
  * Format-neutral report model.
  *
@@ -51,6 +52,8 @@ import {
 import {
   netConcreteCentroid,
   summarizeSection,
+  rebarArea,
+  rebarAreaSourceLabel,
   type GeometryInputRebarView,
   type SectionGeometry
 } from '@pm/geometry'
@@ -63,6 +66,8 @@ import {
 import {
   calculationProfile,
   isEquivalentBlockProfileId,
+  resultantAtLoadReference,
+  type LoadReference,
   type CalculationAnalysisOptions,
   type CalculationProfileId,
   type LoadCombination,
@@ -72,6 +77,8 @@ import { ExcelExportError } from '../excel/workbook-common'
 import { solveLoadcases } from './loadcase-solutions'
 
 export type ReportInput = {
+  loadReference?: LoadReference
+  presentationUnits?: UnitSelection
   projectName: string
   projectInformation: ProjectInformation
   sectionName: string
@@ -113,7 +120,7 @@ export type SectionDrawing = {
 export type InteractionCurve = {
   kind: 'moment-plane' | 'direct-beta'
   thetaDeg: number
-  /** Signed moment about the θ direction, kN·m, against axial force in kN. */
+  /** Moment and axial force in the declared presentation units. */
   nominal: ReadonlyArray<{ m: number; p: number }>
   design: ReadonlyArray<{ m: number; p: number }>
 }
@@ -144,9 +151,9 @@ export type CurveMarker = {
  * at exactly this one.
  */
 export type FixedPCurve = {
-  /** Axial level of the cut, kN. Always the combination's own Pu. */
-  pKn: number
-  /** Closed contour in (Mx, My), kN·m. Empty when the cut misses the surface. */
+  /** Axial level of the cut in presentation force units. Always the combination's own Pu. */
+  p: number
+  /** Closed contour in (Mx, My), in presentation moment units. Empty when the cut misses the surface. */
   nominal: ReadonlyArray<{ mx: number; my: number }>
   design: ReadonlyArray<{ mx: number; my: number }>
   demand: { mx: number; my: number }
@@ -165,9 +172,9 @@ export type CurveTable = {
 export type CombinationRow = {
   id: number
   name: string
-  pKn: number
-  mxKnm: number
-  myKnm: number
+  p: number
+  mx: number
+  my: number
   thetaDeg: number
   utilization: number | null
   utilizationInterval: {
@@ -193,7 +200,7 @@ export type BarState = {
   depth: number
   strain: number
   stressMpa: number
-  forceKn: number
+  force: number
   insideBlock: boolean | null
 }
 
@@ -253,6 +260,7 @@ export type CombinationDetail = {
 }
 
 export type ColumnReportModel = {
+  presentationUnits: UnitSelection
   project: {
     name: string
     sectionName: string
@@ -276,14 +284,16 @@ export type ColumnReportModel = {
   capacityCurve: InteractionCurve
   /** Named states on `capacityCurve`, in meridian order from the compression pole down. */
   capacityMarkers: readonly CurveMarker[]
-  axialCapKn: number | null
+  axialCap: number | null
   combinations: readonly CombinationRow[]
   details: readonly CombinationDetail[]
   generated: string
 }
 
-const KN = 1e3
-const KNM = 1e6
+function createReportBuilder(displayUnits: UnitSelection) {
+const unit = (quantity: Quantity) => quantity === 'curvature' ? `1/${quantityUnit('length', displayUnits)}` : quantityUnit(quantity, displayUnits)
+const qfmt = (quantity: Quantity, value: number, digits = 2) => fmt(fromCanonical(quantity, value, displayUnits), digits)
+const q = (quantity: Quantity, value: number) => `${qfmt(quantity, value)} ${unit(quantity)}`
 
 const fmt = (value: number, digits = 2) =>
   Number.isFinite(value)
@@ -328,7 +338,7 @@ const planeCurve = (
     return !current || path.points.length > current.length ? { length: path.points.length, path } : current
   }, null)
   if (!best) return []
-  return best.path.points.map((point) => ({ m: point.M / KNM, p: point.P / KN }))
+  return best.path.points.map((point) => ({ m: fromCanonical('moment', point.M, displayUnits), p: fromCanonical('force', point.P, displayUnits) }))
 }
 
 const buildCurves = (surface: PreviewSurface, loadcases: readonly LoadCombination[]): InteractionCurve[] =>
@@ -408,7 +418,7 @@ const meridianStations = (
         surfaceRole: point.surfaceRole,
         phi: point.resistance?.factor ?? null,
         classification: point.resistance?.classification ?? '—',
-        point: { m: (point.Mx * cos + point.My * sin) / KNM, p: point.P / KN }
+        point: { m: fromCanonical('moment', (point.Mx * cos + point.My * sin), displayUnits), p: fromCanonical('force', point.P, displayUnits) }
       }
     })
 }
@@ -463,8 +473,8 @@ const capacityMarkersFor = (surface: PreviewSurface, thetaDeg: number): CurveMar
 
 const directMeridianCurve = (curve: ExactDirectionCurve): InteractionCurve => {
   const project = (point: ExactDirectionCurve['designAdaptive'][number]) => ({
-    m: (point.Mx * Math.cos(curve.beta) + point.My * Math.sin(curve.beta)) / KNM,
-    p: point.P / KN
+    m: fromCanonical('moment', (point.Mx * Math.cos(curve.beta) + point.My * Math.sin(curve.beta)), displayUnits),
+    p: fromCanonical('force', point.P, displayUnits)
   })
   return {
     kind: 'direct-beta',
@@ -481,9 +491,9 @@ const combinationRow = (loadcase: LoadCombination, result: InversePreviewResult 
   return {
     id: loadcase.id,
     name: loadcase.name,
-    pKn: loadcase.P / KN,
-    mxKnm: loadcase.Mx / KNM,
-    myKnm: loadcase.My / KNM,
+    p: fromCanonical('force', loadcase.P, displayUnits),
+    mx: fromCanonical('moment', loadcase.Mx, displayUnits),
+    my: fromCanonical('moment', loadcase.My, displayUnits),
     thetaDeg:
       Math.abs(loadcase.Mx) < 1e-9 && Math.abs(loadcase.My) < 1e-9
         ? 0
@@ -601,13 +611,13 @@ const interactionFor = (
   return {
     ...curve,
     demand: {
-      m: (loadcase.Mx * Math.cos(projectionAngle) + loadcase.My * Math.sin(projectionAngle)) / KNM,
-      p: loadcase.P / KN
+      m: fromCanonical('moment', (loadcase.Mx * Math.cos(projectionAngle) + loadcase.My * Math.sin(projectionAngle)), displayUnits),
+      p: fromCanonical('force', loadcase.P, displayUnits)
     },
     capacity: ray
       ? {
-          m: (ray.point.Mx * Math.cos(projectionAngle) + ray.point.My * Math.sin(projectionAngle)) / KNM,
-          p: ray.point.P / KN
+          m: fromCanonical('moment', (ray.point.Mx * Math.cos(projectionAngle) + ray.point.My * Math.sin(projectionAngle)), displayUnits),
+          p: fromCanonical('force', ray.point.P, displayUnits)
         }
       : null
   }
@@ -626,7 +636,7 @@ const fixedPCurveFor = (surface: PreviewSurface, loadcase: LoadCombination): Fix
   const designContour = sliceFixedPContour(design.points, loadcase.P, design.triangles)
   const nominalContour = sliceFixedPContour(nominal.points, loadcase.P, nominal.triangles)
   const ring = (contour: typeof designContour) => {
-    const points = contour.map((point) => ({ mx: point.Mx / KNM, my: point.My / KNM }))
+    const points = contour.map((point) => ({ mx: fromCanonical('moment', point.Mx, displayUnits), my: fromCanonical('moment', point.My, displayUnits) }))
     return points.length > 2 ? [...points, points[0]] : points
   }
   // The ray query uses the sampled-direction subset, exactly as the Demand Check chart does.
@@ -636,11 +646,11 @@ const fixedPCurveFor = (surface: PreviewSurface, loadcase: LoadCombination): Fix
       ? null
       : intersectFixedPContourWithMomentRay(samples, Math.atan2(loadcase.My, loadcase.Mx))
   return {
-    pKn: loadcase.P / KN,
+    p: fromCanonical('force', loadcase.P, displayUnits),
     design: ring(designContour),
     nominal: ring(nominalContour),
-    demand: { mx: loadcase.Mx / KNM, my: loadcase.My / KNM },
-    capacity: capacity ? { mx: capacity.Mx / KNM, my: capacity.My / KNM } : null
+    demand: { mx: fromCanonical('moment', loadcase.Mx, displayUnits), my: fromCanonical('moment', loadcase.My, displayUnits) },
+    capacity: capacity ? { mx: fromCanonical('moment', capacity.Mx, displayUnits), my: fromCanonical('moment', capacity.My, displayUnits) } : null
   }
 }
 
@@ -702,10 +712,10 @@ const curveTablesFor = (
   const verticalColumns = [
     { title: '#', width: 5, align: 'right' as const },
     { title: 'Criterion', width: 26 },
-    { title: 'P design (kN)', width: 15, align: 'right' as const },
-    { title: 'Mθ design (kN·m)', width: 17, align: 'right' as const },
-    { title: 'P nominal (kN)', width: 15, align: 'right' as const },
-    { title: 'Mθ nominal (kN·m)', width: 17, align: 'right' as const }
+    { title: `P design (${unit('force')})`, width: 15, align: 'right' as const },
+    { title: `Mθ design (${unit('moment')})`, width: 17, align: 'right' as const },
+    { title: `P nominal (${unit('force')})`, width: 15, align: 'right' as const },
+    { title: `Mθ nominal (${unit('moment')})`, width: 17, align: 'right' as const }
   ]
   const verticalRow = (
     index: number,
@@ -725,8 +735,8 @@ const curveTablesFor = (
       [...exactCurve.stations, ...(exactCurve.nominalStations ?? [])].map((station) => [station.id, station])
     )
     const project = (point: PreviewSurfacePoint) => ({
-      m: (point.Mx * Math.cos(exactCurve.beta) + point.My * Math.sin(exactCurve.beta)) / KNM,
-      p: point.P / KN
+      m: fromCanonical('moment', (point.Mx * Math.cos(exactCurve.beta) + point.My * Math.sin(exactCurve.beta)), displayUnits),
+      p: fromCanonical('force', point.P, displayUnits)
     })
     const criteria = new Map<string, string>()
     const staged = (points: readonly PreviewSurfacePoint[]) =>
@@ -767,7 +777,7 @@ const curveTablesFor = (
     branchKeyed(fixedP.nominal, (point) => contourAngle(point).toFixed(6))
   )
   tables.push({
-    title: `Fixed-P curve points — Mx-My contour at Pu = ${fmt(loadcase.P / KN, 1)} kN`,
+    title: `Fixed-P curve points — Mx-My contour at Pu = ${fmt(fromCanonical('force', loadcase.P, displayUnits), 1)} ${unit('force')}`,
     note: `Cut of the ${surface.analysisOptions.samplingMode} triangulated surface at this combination's own axial force, Design and Nominal paired on the moment direction. The last row repeats the first because the contour is drawn closed.` +
       (emptyStages.length > 0
         ? ` The ${emptyStages.join(' and ')} surface does not reach this axial force, so it contributes no rows and is absent from the diagram.`
@@ -810,19 +820,19 @@ const basicsFor = (
   const state = result.state
   const curvature = Math.hypot(state.kx, state.ky)
   return [
-    ['Pu', `${fmt(row.pKn, 1)} kN`],
-    ['Mux', `${fmt(row.mxKnm, 1)} kN·m`],
-    ['Muy', `${fmt(row.myKnm, 1)} kN·m`],
+    ['Pu', `${fmt(row.p, 1)} ${unit('force')}`],
+    ['Mux', `${fmt(row.mx, 1)} ${unit('moment')}`],
+    ['Muy', `${fmt(row.my, 1)} ${unit('moment')}`],
     ['Moment direction θL', `${fmt(row.thetaDeg, 2)}°`],
-    ['Resultant moment', `${fmt(Math.hypot(row.mxKnm, row.myKnm), 1)} kN·m`],
+    ['Resultant moment', `${fmt(Math.hypot(row.mx, row.my), 1)} ${unit('moment')}`],
     ['Strain-plane ε0', sci(state.e0, 4)],
-    ['Curvature κx', sci(state.kx, 4)],
-    ['Curvature κy', sci(state.ky, 4)],
+    ['Curvature κx', `${sci(fromCanonical('curvature', state.kx, displayUnits), 4)} ${unit('curvature')}`],
+    ['Curvature κy', `${sci(fromCanonical('curvature', state.ky, displayUnits), 4)} ${unit('curvature')}`],
     ['Strain direction βeq', curvature > 1e-14 ? `${fmt(deg(Math.atan2(state.ky, state.kx)), 3)}°` : 'uniform strain'],
-    ['Neutral-axis depth c', neutralAxisDepth === null ? '—' : `${fmt(neutralAxisDepth, 1)} mm`],
+    ['Neutral-axis depth c', neutralAxisDepth === null ? '—' : `${qfmt('length', neutralAxisDepth, 1)} ${unit('length')}`],
     ['Capacity at Pu', fixedP.capacity === null
       ? '—'
-      : `Mx ${fmt(fixedP.capacity.mx, 1)} · My ${fmt(fixedP.capacity.my, 1)} kN·m`],
+      : `Mx ${fmt(fixedP.capacity.mx, 1)} · My ${fmt(fixedP.capacity.my, 1)} ${unit('moment')}`],
     ['φ', row.phi === null ? '—' : fmt(row.phi, 4)],
     ['Classification', row.classification],
     ['Utilization UR', row.utilization === null ? '—' : fmt(row.utilization, 4)],
@@ -842,14 +852,24 @@ const basicsFor = (
   ]
 }
 
-export const buildColumnReportModel = (input: ReportInput): ColumnReportModel => {
+const build = (input: ReportInput): ColumnReportModel => {
   const profile = calculationProfile(input.calculationProfileId)
   const basis = input.designBasis
   const { section, rebars, materialStore } = input
   if (rebars.length === 0) throw new ExcelExportError('The section has no reinforcement to report.')
   const origin = netConcreteCentroid(section)
+  const reference = input.loadReference
+  const referenceIdentity: LabelledValue[] = reference ? [
+    ['Load reference offsets', `X=${q('length', reference.offsetX)}; Y=${q('length', reference.offsetY)}. Calculation moments and curves below are about the centroid.`],
+    ...input.loadcases.map(load => {
+      const atO = resultantAtLoadReference(load, reference)
+      return [`Input at O · ${load.name}`, `P=${q('force', atO.P)}; Mux=${q('moment', atO.Mx)}; Muy=${q('moment', atO.My)}`] as const
+    })
+  ] : []
   const summary = summarizeSection(section)
-  const steelArea = rebars.reduce((sum, bar) => sum + (Math.PI * bar.dia * bar.dia) / 4, 0)
+  const areaOfBar = (bar: GeometryInputRebarView) => rebarArea(bar,
+    profile.mechanics === 'equivalent-rectangular-block' ? 'equivalent-block' : 'stress-strain')
+  const steelArea = rebars.reduce((sum, bar) => sum + areaOfBar(bar), 0)
   const concrete = materialStore.concrete
   const steel =
     materialStore.steel.find((item) => item.id === materialStore.defaults.steelMaterialId) ?? materialStore.steel[0]
@@ -872,7 +892,8 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       id: String(bar.id),
       x: bar.x,
       y: bar.y,
-      area: (Math.PI * bar.dia * bar.dia) / 4,
+      dia: bar.dia,
+      area: areaOfBar(bar),
       steelLawId: String(bar.steelMaterialId ?? materialStore.defaults.steelMaterialId)
     })),
     referencePoint: origin,
@@ -944,6 +965,7 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       : null
 
   return {
+    presentationUnits: displayUnits,
     project: {
       name: input.projectName,
       sectionName: input.sectionName,
@@ -975,8 +997,9 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       ['Verification status', basis.verificationStatus],
       ['Concrete model basis', basis.materialModelModified ? 'User-defined / modified' : 'Code-default'],
       ['Method id', basis.identity.methodId],
-      ['Units', 'mm · N · MPa; forces reported in kN, moments in kN·m'],
-      ['Sign convention', 'Compression positive; Mx = ΣF·(y−yc); My = ΣF·(x−xc)']
+      ['Units', `Calculation: mm · N · MPa · N·mm. Display: length ${unit('length')}; bar diameter ${unit('barDiameter')}; force ${unit('force')}; moment ${unit('moment')}; stress ${unit('stress')}; modulus ${unit('modulus')}; mass density ${unit('density')}.`],
+      ['Sign convention', 'Compression positive; Mx = ΣF·(y−yc); My = ΣF·(x−xc)'],
+      ...referenceIdentity
     ],
     scopeStatements: [
       'This document reports a preview calculation. It is not an accepted design result and must not be released as a design report.',
@@ -1007,19 +1030,19 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
     warnings: input.surface.warnings ?? [],
     drawing,
     sectionProperties: [
-      ['Gross concrete area Ag', `${fmt(summary.area, 0)} mm²`],
-      ['Reinforcement area As', `${fmt(steelArea, 0)} mm²`],
+      ['Gross concrete area Ag', `${qfmt('area', summary.area, 0)} ${unit('area')}`],
+      ['Reinforcement area As', `${qfmt('area', steelArea, 0)} ${unit('area')}`],
       ['Reinforcement ratio ρ', `${fmt((steelArea / Math.max(1, summary.area)) * 100, 3)} %`],
       ['Bar count', String(rebars.length)],
-      ['Net centroid', `(${fmt(origin.x, 1)}, ${fmt(origin.y, 1)}) mm`],
-      ['Bounding box', `${fmt(bounds.maxX - bounds.minX, 1)} × ${fmt(bounds.maxY - bounds.minY, 1)} mm`],
+      ['Net centroid', `(${qfmt('length', origin.x, 1)}, ${qfmt('length', origin.y, 1)}) ${unit('length')}`],
+      ['Bounding box', `${qfmt('length', bounds.maxX - bounds.minX, 1)} × ${qfmt('length', bounds.maxY - bounds.minY, 1)} ${unit('length')}`],
       ['Solids / holes', `${section.solids.length} / ${section.solids.reduce((sum, solid) => sum + solid.holes.length, 0)}`],
-      ['Perimeter', `${fmt(summary.perimeter, 1)} mm`]
+      ['Perimeter', `${qfmt('length', summary.perimeter, 1)} ${unit('length')}`]
     ],
     concreteMaterial: [
       ['Name', concrete.name],
       ['Standard', concrete.standard],
-      ['fck', `${fmt(concrete.fck, 1)} MPa`],
+      ['fck', `${qfmt('stress', concrete.fck, 1)} ${unit('stress')}`],
       ['Model', concrete.stressStrain.type],
       ['εcu', fmt(concrete.limits.epsCu, 5)],
       ...(concrete.limits.eps0 !== undefined ? [['εc0', fmt(concrete.limits.eps0, 5)] as LabelledValue] : []),
@@ -1027,24 +1050,24 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
       ...(concrete.stressStrain.type === 'user-block'
         ? ([
             ['β1', fmt(concrete.stressStrain.beta1, 4)],
-            ['σblock', `${fmt(userBlockCompressionStress(concrete), 3)} MPa`]
+            ['σblock', `${qfmt('stress', userBlockCompressionStress(concrete), 3)} ${unit('stress')}`]
           ] as LabelledValue[])
         : []),
       ...(concrete.stressStrain.type === 'as3600-equivalent-block'
         ? ([
             ['alpha2', fmt(concrete.stressStrain.alpha2, 4)],
             ['gamma', fmt(concrete.stressStrain.gamma, 4)],
-            ["sigma_block", `${fmt(concrete.stressStrain.alpha2 * concrete.fck, 3)} MPa`]
+            ["sigma_block", `${qfmt('stress', concrete.stressStrain.alpha2 * concrete.fck, 3)} ${unit('stress')}`]
           ] as LabelledValue[])
         : []),
-      ...(concrete.elasticModulus !== undefined ? [['Ec', `${fmt(concrete.elasticModulus, 0)} MPa`] as LabelledValue] : []),
+      ...(concrete.elasticModulus !== undefined ? [['Ec', `${qfmt('modulus', concrete.elasticModulus, 0)} ${unit('modulus')}`] as LabelledValue] : []),
       ['Tension', concrete.limits.ignoreTension ? 'ignored' : 'included']
     ],
     steelMaterial: [
       ['Name', steel.name],
       ['Standard', steel.standard],
-      ['fy', `${fmt(steel.fy, 1)} MPa`],
-      ['Es', `${fmt(steel.elasticModulus, 0)} MPa`],
+      ['fy', `${qfmt('stress', steel.fy, 1)} ${unit('stress')}`],
+      ['Es', `${qfmt('modulus', steel.elasticModulus, 0)} ${unit('modulus')}`],
       ['Model', steel.stressStrain.type],
       ['εy', fmt(epsY, 6)],
       ['εu', steel.limits?.epsU === undefined ? 'not declared' : fmt(steel.limits.epsU, 5)],
@@ -1088,7 +1111,7 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
             ] as LabelledValue),
             ['Compression endpoint', basis.compressionEndpoint],
             ['Minimum eccentricity', basis.minimumEccentricity
-              ? `${basis.minimumEccentricity.constantMm} + ${basis.minimumEccentricity.depthFactor}h mm`
+              ? `${qfmt('length', basis.minimumEccentricity.constantMm)} + ${basis.minimumEccentricity.depthFactor}h ${unit('length')}`
               : 'not prescribed by this profile']
           ],
     sampling: [
@@ -1108,16 +1131,17 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
     barSchedule: rebars.map((bar, index) => [
       String(index + 1),
       String(bar.id),
-      fmt(bar.dia, 1),
-      fmt(bar.x - origin.x, 1),
-      fmt(bar.y - origin.y, 1),
-      fmt((Math.PI * bar.dia * bar.dia) / 4, 1),
-      materialStore.steel.find((item) => item.id === (bar.steelMaterialId ?? materialStore.defaults.steelMaterialId))?.name ?? '—'
+      qfmt('barDiameter', bar.dia, 1),
+      qfmt('length', bar.x - origin.x, 1),
+      qfmt('length', bar.y - origin.y, 1),
+      qfmt('area', areaOfBar(bar), 1),
+      materialStore.steel.find((item) => item.id === (bar.steelMaterialId ?? materialStore.defaults.steelMaterialId))?.name ?? '—',
+      rebarAreaSourceLabel(bar)
     ]),
     curves,
     capacityCurve,
     capacityMarkers: capacityMarkersFor(input.surface, capacityCurve.thetaDeg),
-    axialCapKn: axialCapPoint === null ? null : axialCapPoint / KN,
+    axialCap: axialCapPoint === null ? null : fromCanonical('force', axialCapPoint, displayUnits),
     combinations,
     details: detail
   }
@@ -1126,6 +1150,11 @@ export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
 // ---------------------------------------------------------------------------
 // Per-combination detail, one builder per mechanics
 // ---------------------------------------------------------------------------
+
+const declaredDiameter = (bar: { dia?: number }): number => {
+  if (bar.dia === undefined || !Number.isFinite(bar.dia) || bar.dia <= 0) throw new ExcelExportError('The report requires the declared rebar diameter.')
+  return bar.dia
+}
 
 const blockDetail = (
   prepared: ReturnType<typeof prepareBlockAnalysis>,
@@ -1192,7 +1221,7 @@ const blockDetail = (
     compressionZone: {
       kind: 'block',
       polygons: clipCompressionZone(drawingSection, normalX, normalY, blockOffset, origin),
-      label: `Equivalent block, a = β1·c = ${fmt(trace.blockDepth, 1)} mm`
+      label: `Equivalent block, a = β1·c = ${qfmt('length', trace.blockDepth, 1)} ${unit('length')}`
     },
     depthProfile: {
       projectedDepth: trace.projectedSectionDepth,
@@ -1209,37 +1238,37 @@ const blockDetail = (
       id: bar.id,
       x: bar.x - origin.x,
       y: bar.y - origin.y,
-      dia: 2 * Math.sqrt(bar.area / Math.PI),
+      dia: declaredDiameter(bar),
       area: bar.area,
       depth: bar.projectedDepth,
       strain: bar.strain,
       stressMpa: bar.steelStress,
-      forceKn: bar.force / KN,
+      force: fromCanonical('force', bar.force, displayUnits),
       insideBlock: bar.insideBlock
     })),
     concrete: [
-      ['Block area Ac,blk', `${fmt(nominal.concrete.area, 1)} mm²`],
-      ['Block centroid', `(${fmt(nominal.concrete.centroid.x - origin.x, 1)}, ${fmt(nominal.concrete.centroid.y - origin.y, 1)}) mm`],
-      ['Block stress σblock', `${fmt(nominal.concrete.stress, 3)} MPa`],
-      ['Concrete force Cc', `${fmt(nominal.concrete.force / KN, 1)} kN`],
-      ['Concrete Mcx', `${fmt(nominal.concrete.Mx / KNM, 1)} kN·m`],
-      ['Concrete Mcy', `${fmt(nominal.concrete.My / KNM, 1)} kN·m`]
+      ['Block area Ac,blk', `${qfmt('area', nominal.concrete.area, 1)} ${unit('area')}`],
+      ['Block centroid', `(${qfmt('length', nominal.concrete.centroid.x - origin.x, 1)}, ${qfmt('length', nominal.concrete.centroid.y - origin.y, 1)}) ${unit('length')}`],
+      ['Block stress σblock', `${qfmt('stress', nominal.concrete.stress, 3)} ${unit('stress')}`],
+      ['Concrete force Cc', `${fmt(fromCanonical('force', nominal.concrete.force, displayUnits), 1)} ${unit('force')}`],
+      ['Concrete Mcx', `${fmt(fromCanonical('moment', nominal.concrete.Mx, displayUnits), 1)} ${unit('moment')}`],
+      ['Concrete Mcy', `${fmt(fromCanonical('moment', nominal.concrete.My, displayUnits), 1)} ${unit('moment')}`]
     ],
     resultants: [
-      ['Nominal Pn', `${fmt(nominal.resultants.P / KN, 1)} kN`],
-      ['Nominal Mnx', `${fmt(nominal.resultants.Mx / KNM, 1)} kN·m`],
-      ['Nominal Mny', `${fmt(nominal.resultants.My / KNM, 1)} kN·m`],
+      ['Nominal Pn', `${fmt(fromCanonical('force', nominal.resultants.P, displayUnits), 1)} ${unit('force')}`],
+      ['Nominal Mnx', `${fmt(fromCanonical('moment', nominal.resultants.Mx, displayUnits), 1)} ${unit('moment')}`],
+      ['Nominal Mny', `${fmt(fromCanonical('moment', nominal.resultants.My, displayUnits), 1)} ${unit('moment')}`],
       ['φ', row.phi === null ? '—' : fmt(row.phi, 4)],
-      ['Design φPn', row.phi === null ? '—' : `${fmt((nominal.resultants.P * row.phi) / KN, 1)} kN`],
-      ['Design φMnx', row.phi === null ? '—' : `${fmt((nominal.resultants.Mx * row.phi) / KNM, 1)} kN·m`],
-      ['Design φMny', row.phi === null ? '—' : `${fmt((nominal.resultants.My * row.phi) / KNM, 1)} kN·m`]
+      ['Design φPn', row.phi === null ? '—' : `${fmt(fromCanonical('force', (nominal.resultants.P * row.phi), displayUnits), 1)} ${unit('force')}`],
+      ['Design φMnx', row.phi === null ? '—' : `${fmt(fromCanonical('moment', (nominal.resultants.Mx * row.phi), displayUnits), 1)} ${unit('moment')}`],
+      ['Design φMny', row.phi === null ? '—' : `${fmt(fromCanonical('moment', (nominal.resultants.My * row.phi), displayUnits), 1)} ${unit('moment')}`]
     ],
     evidence: [
       ['Neutral-axis angle θ', `${fmt(deg(trace.neutralAxisAngle), 4)}°`],
-      ['Neutral-axis depth c', `${fmt(trace.neutralAxisDepth, 3)} mm`],
-      ['Block depth a', `${fmt(trace.blockDepth, 3)} mm`],
+      ['Neutral-axis depth c', `${qfmt('length', trace.neutralAxisDepth, 3)} ${unit('length')}`],
+      ['Block depth a', `${qfmt('length', trace.blockDepth, 3)} ${unit('length')}`],
       ['β1', fmt(trace.beta1, 4)],
-      ['Projected depth Dθ', `${fmt(trace.projectedSectionDepth, 2)} mm`],
+      ['Projected depth Dθ', `${qfmt('length', trace.projectedSectionDepth, 2)} ${unit('length')}`],
       ['Controlling εt', trace.controllingTensileStrain === undefined ? '—' : fmt(trace.controllingTensileStrain, 6)],
       ['Controlling bar', trace.controllingBarId ?? '—'],
       ['Classification', row.classification],
@@ -1290,9 +1319,9 @@ const fibreDetail = (
       bars: [],
       concrete: [],
       resultants: [
-        ['Response P', `${fmt(result.response.P / KN, 1)} kN`],
-        ['Response Mx', `${fmt(result.response.Mx / KNM, 1)} kN·m`],
-        ['Response My', `${fmt(result.response.My / KNM, 1)} kN·m`]
+        ['Response P', `${fmt(fromCanonical('force', result.response.P, displayUnits), 1)} ${unit('force')}`],
+        ['Response Mx', `${fmt(fromCanonical('moment', result.response.Mx, displayUnits), 1)} ${unit('moment')}`],
+        ['Response My', `${fmt(fromCanonical('moment', result.response.My, displayUnits), 1)} ${unit('moment')}`]
       ],
       evidence: [['Solver', result.message]]
     }
@@ -1323,12 +1352,12 @@ const fibreDetail = (
       id: bar.id,
       x: bar.x - origin.x,
       y: bar.y - origin.y,
-      dia: 2 * Math.sqrt(bar.area / Math.PI),
+      dia: declaredDiameter(bar),
       area: bar.area,
       depth: extents.maximum - (normalX * bar.x + normalY * bar.y),
       strain,
       stressMpa: stress,
-      forceKn: (stress * bar.area) / KN,
+      force: fromCanonical('force', (stress * bar.area), displayUnits),
       insideBlock: null
     }
   })
@@ -1360,27 +1389,27 @@ const fibreDetail = (
     },
     bars,
     concrete: [
-      ['Concrete force', `${fmt(ledger.concrete.P / KN, 1)} kN`],
-      ['Concrete Mx', `${fmt(ledger.concrete.Mx / KNM, 1)} kN·m`],
-      ['Concrete My', `${fmt(ledger.concrete.My / KNM, 1)} kN·m`],
-      ['Steel force (gross)', `${fmt(ledger.steelGross.P / KN, 1)} kN`],
-      ['Displaced concrete', `${fmt(ledger.displacedConcrete.P / KN, 1)} kN`],
-      ['Steel net', `${fmt(ledger.steel.P / KN, 1)} kN`]
+      ['Concrete force', `${fmt(fromCanonical('force', ledger.concrete.P, displayUnits), 1)} ${unit('force')}`],
+      ['Concrete Mx', `${fmt(fromCanonical('moment', ledger.concrete.Mx, displayUnits), 1)} ${unit('moment')}`],
+      ['Concrete My', `${fmt(fromCanonical('moment', ledger.concrete.My, displayUnits), 1)} ${unit('moment')}`],
+      ['Steel force (gross)', `${fmt(fromCanonical('force', ledger.steelGross.P, displayUnits), 1)} ${unit('force')}`],
+      ['Displaced concrete', `${fmt(fromCanonical('force', ledger.displacedConcrete.P, displayUnits), 1)} ${unit('force')}`],
+      ['Steel net', `${fmt(fromCanonical('force', ledger.steel.P, displayUnits), 1)} ${unit('force')}`]
     ],
     resultants: [
-      ['Response P', `${fmt(result.response.P / KN, 1)} kN`],
-      ['Response Mx', `${fmt(result.response.Mx / KNM, 1)} kN·m`],
-      ['Response My', `${fmt(result.response.My / KNM, 1)} kN·m`],
-      ['Residual |ΔP|', `${sci(Math.abs(result.residual.P), 2)} N`],
-      ['Residual |ΔMx|', `${sci(Math.abs(result.residual.Mx), 2)} N·mm`],
-      ['Residual |ΔMy|', `${sci(Math.abs(result.residual.My), 2)} N·mm`]
+      ['Response P', `${fmt(fromCanonical('force', result.response.P, displayUnits), 1)} ${unit('force')}`],
+      ['Response Mx', `${fmt(fromCanonical('moment', result.response.Mx, displayUnits), 1)} ${unit('moment')}`],
+      ['Response My', `${fmt(fromCanonical('moment', result.response.My, displayUnits), 1)} ${unit('moment')}`],
+      ['Residual |ΔP|', `${sci(fromCanonical('force', Math.abs(result.residual.P), displayUnits), 2)} ${unit('force')}`],
+      ['Residual |ΔMx|', `${sci(fromCanonical('moment', Math.abs(result.residual.Mx), displayUnits), 2)} ${unit('moment')}`],
+      ['Residual |ΔMy|', `${sci(fromCanonical('moment', Math.abs(result.residual.My), displayUnits), 2)} ${unit('moment')}`]
     ],
     evidence: [
       ['Strain plane ε0', sci(state.e0, 4)],
-      ['Curvature kx', sci(state.kx, 4)],
-      ['Curvature ky', sci(state.ky, 4)],
+      ['Curvature kx', `${sci(fromCanonical('curvature', state.kx, displayUnits), 4)} ${unit('curvature')}`],
+      ['Curvature ky', `${sci(fromCanonical('curvature', state.ky, displayUnits), 4)} ${unit('curvature')}`],
       ['Neutral-axis line', `${fmt(deg(Math.atan2(normalY, normalX)) + 90, 4)}°`],
-      ['Compression depth c', `${fmt(compressionDepth, 3)} mm`],
+      ['Compression depth c', `${qfmt('length', compressionDepth, 3)} ${unit('length')}`],
       ['Iterations', String(result.iterations)],
       ['Relative residual', sci(result.residualNorm, 3)],
       ['Max concrete compression', fmt(result.admissibility.maxConcreteCompression, 6)],
@@ -1427,3 +1456,9 @@ const sampleFibreStress = (
   }
   return samples
 }
+
+return build
+}
+
+export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
+  createReportBuilder(parseUnitSelection(input.presentationUnits ?? UNIT_PRESETS.metric))(input)

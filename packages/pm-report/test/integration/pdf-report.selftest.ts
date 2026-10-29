@@ -163,7 +163,7 @@ const runCase = async (
   pass('every combination has a row', model.combinations.length === loadcases.length)
   pass('every combination carries both published curves and its parameter block',
     model.details.every((detail) =>
-      detail.fixedP.pKn === detail.row.pKn &&
+      detail.fixedP.p === detail.row.p &&
       detail.basics.length > 8 &&
       (detail.interaction.design.length > 0 || detail.interaction.nominal.length > 0)
     ))

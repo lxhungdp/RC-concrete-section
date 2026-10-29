@@ -1,5 +1,19 @@
 /* Shared visual primitives are unlayered; feature rules own layout and content. */
 @layer pm-feature {
+.pm-side-panel .pm-load-reference-offsets {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: end;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.pm-side-panel .pm-load-reference-actions,
+.pm-side-panel .pm-load-reference-convert {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.pm-side-panel .pm-load-reference-actions { justify-content: space-between; flex-wrap: wrap; }
 /* ===========================================================================
    Side panel design system
 
@@ -258,7 +272,7 @@
 }
 
 .pm-side-panel .pm-analysis-tabs {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .pm-side-panel .pm-page-tabs button,
@@ -1779,10 +1793,12 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-side-panel .pm-material-row-3,
 .pm-side-panel .pm-rebar-params {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--sp-3);
   min-width: 0;
 }
+
+.pm-side-panel .pm-material-row-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pm-side-panel .pm-rebar-params { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 .pm-side-panel .pm-rebar-params-full,
 .pm-side-panel .pm-material-field-full {
@@ -2021,24 +2037,46 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   equal leftover share and ratio edits appear to "do nothing".
 
   Fixed: id 30px, action 26px.
-  Flex (plain % of table): Dia 15% · Mat 35% · X 20% · Y 20%.
+  Flex (plain % of table): Dia 14% · As 18% · Mat 24% · X 17% · Y 17%.
 */
 .pm-side-panel .pm-rebar-col--id {
   width: 30px;
 }
 
 .pm-side-panel .pm-rebar-col--dia {
-  width: 15%;
+  width: 14%;
+}
+
+.pm-side-panel .pm-rebar-col--area {
+  width: 18%;
 }
 
 .pm-side-panel .pm-rebar-col--mat {
-  width: 35%;
+  width: 24%;
 }
 
 .pm-side-panel .pm-rebar-col--x,
 .pm-side-panel .pm-rebar-col--y {
-  width: 20%;
+  width: 17%;
 }
+
+.pm-side-panel .pm-rebar-table { min-width: 420px; }
+.pm-rebar-area { display: flex; align-items: end; flex-wrap: wrap; gap: var(--sp-1); }
+.pm-rebar-area > .pm-field { flex: 1 1 80px; min-width: 0; }
+.pm-rebar-area > .pm-field:nth-child(2) { flex: 1 1 90px; }
+.pm-rebar-area-actions { display: flex; gap: var(--sp-2); flex: 0 0 auto; }
+.pm-rebar-catalog { padding: 0; color: inherit; }
+.pm-rebar-catalog:not([open]) { display: none; }
+.pm-rebar-catalog::backdrop { background: var(--overlay-scrim); }
+.pm-rebar-catalog-body { overflow: auto; min-height: 0; padding: var(--sp-6); }
+.pm-side-panel .pm-rebar-catalog-tabs { display: flex; flex-wrap: nowrap; overflow-x: auto; }
+.pm-rebar-catalog-tabs > button { flex: 0 0 auto; white-space: nowrap; }
+.pm-rebar-catalog-table { width: 100%; }
+.pm-rebar-catalog-source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-side-panel .pm-rebar-catalog-table :is(th, td):nth-child(n+3) {
+  width: 30%; padding-inline: var(--sp-1); text-align: right;
+}
+.pm-rebar-catalog > .pm-project-dialog__actions { flex-shrink: 0; padding: var(--sp-6); }
 
 .pm-side-panel .pm-rebar-col--action {
   width: 26px;

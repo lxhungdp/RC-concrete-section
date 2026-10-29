@@ -1,5 +1,7 @@
 'use client'
 
+import { QuantityValue, UnitLabel, useQuantityFormatters } from '../shared/DisplayUnits'
+
 import { TransferIcon } from '../shared/WorkspaceIcons'
 import { useEffect, useId, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react'
@@ -68,16 +70,14 @@ const fmt = (value: number, digits = 2) => {
   const displayValue = Math.abs(value) < 0.5 * 10 ** -digits ? 0 : value
   return displayValue.toLocaleString('en-US', { maximumFractionDigits: digits })
 }
-const forceValue = (value: number) => fmt(value / 1000)
-const momentValue = (value: number) => fmt(value / 1_000_000)
-const force = (value: number) => `${forceValue(value)} kN`
-const moment = (value: number) => `${momentValue(value)} kN·m`
 const strain = (value: number) => Number.isFinite(value) ? value.toExponential(4) : '—'
 
 const ResultantComparisonTable = ({ nominal, factored }: {
   nominal: ResultantLedger
   factored: ResultantLedger | null
 }) => {
+  const { unit, forceValue, momentValue, force, moment } = useQuantityFormatters()
+
   const summaryRows: Array<[string, Resultant]> = [
     ['Concrete', nominal.concrete],
     ['Reinforcement, net', nominal.steel]
@@ -91,7 +91,7 @@ const ResultantComparisonTable = ({ nominal, factored }: {
     <div className="pm-calc-table-wrap"><table className="pm-calc-resultant-comparison">
       <thead>
         <tr><th rowSpan={2}>Contribution</th><th colSpan={3}>Nominal / reference</th><th colSpan={3}>Factored / Design</th></tr>
-        <tr><th>P (kN)</th><th>Mx (kN·m)</th><th>My (kN·m)</th><th>P (kN)</th><th>Mx (kN·m)</th><th>My (kN·m)</th></tr>
+        <tr><th>P ({unit('force')})</th><th>Mx ({unit('moment')})</th><th>My ({unit('moment')})</th><th>P ({unit('force')})</th><th>Mx ({unit('moment')})</th><th>My ({unit('moment')})</th></tr>
       </thead>
       <tbody>{summaryRows.map(([label, value], index) => (
           <tr key={label}><td>{label}</td>{cells(value)}{factoredCells(factoredRows[index] ?? null)}</tr>
@@ -104,19 +104,21 @@ const ResultantComparisonTable = ({ nominal, factored }: {
 const ConcreteSummary = ({ audit }: {
   audit: PhysicalPointCalculationAudit
 }) => {
+  const { qfmt, unit, forceValue, momentValue, force, moment } = useQuantityFormatters()
+
   const resultant = audit.displayedLedger.concrete
   const isStressStrain = audit.kind === 'stress-strain'
   return (
     <>
       <div className="pm-calc-table-wrap"><table className="pm-calc-concrete-summary">
         <thead><tr>
-          <th>Concrete basis</th><th>Detailed terms</th><th>Area (mm²)</th>
-          <th>Pc (kN)</th><th>Mcx (kN·m)</th><th>Mcy (kN·m)</th>
+          <th>Concrete basis</th><th>Detailed terms</th><th>Area ({unit('area')})</th>
+          <th>Pc ({unit('force')})</th><th>Mcx ({unit('moment')})</th><th>Mcy ({unit('moment')})</th>
         </tr></thead>
         <tbody><tr>
           <td>{isStressStrain ? 'Stress–strain mesh' : 'Equivalent block'}</td>
           <td>{isStressStrain ? `${fmt(audit.concreteSummary.pointCount, 0)} points` : 'Exact polygon'}</td>
-          <td>{fmt(isStressStrain ? audit.concreteSummary.area : audit.block.area)}</td>
+          <td>{qfmt('area', isStressStrain ? audit.concreteSummary.area : audit.block.area)}</td>
           <td>{forceValue(resultant.P)}</td><td>{momentValue(resultant.Mx)}</td><td>{momentValue(resultant.My)}</td>
         </tr></tbody>
       </table></div>
@@ -141,6 +143,8 @@ const CalculationDiagram = ({ section, rebars, audit, patternId }: {
   audit: PhysicalPointCalculationAudit
   patternId: string
 }) => {
+  const { qfmt, unit } = useQuantityFormatters()
+
   const bounds = sectionBounds(section, rebars)
   const box = { x: 22, y: 38, width: 290, height: 236 }
   const dx = Math.max(1, bounds.maxX - bounds.minX)
@@ -185,8 +189,8 @@ const CalculationDiagram = ({ section, rebars, audit, patternId }: {
   const outsideLabel = c === null
     ? 'Uniform strain · N.A. at infinity'
     : profile.neutralAxisInsideSection
-      ? `c = ${fmt(c)} mm`
-      : `N.A. outside section · c ≈ ${fmt(c)} mm`
+      ? `c = ${qfmt('length', c)} ${unit('length')}`
+      : `N.A. outside section · c ≈ ${qfmt('length', c)} ${unit('length')}`
   const naProfileY = c === null ? null : py(Math.min(depth, Math.max(0, c)))
 
   return (
@@ -225,7 +229,7 @@ const CalculationDiagram = ({ section, rebars, audit, patternId }: {
         <line x1={stressLeft} y1={profileTop} x2={stressLeft + chartWidth} y2={profileTop} className="pm-calc-profile-edge" />
         <line x1={stressLeft} y1={profileTop + profileHeight} x2={stressLeft + chartWidth} y2={profileTop + profileHeight} className="pm-calc-profile-edge" />
         <polyline points={stressLine} className="pm-calc-stress-line" />
-        <text x={stressLeft} y="285" className="pm-calc-svg-note">{fmt(stressMin)} → {fmt(stressMax)} MPa</text>
+        <text x={stressLeft} y="285" className="pm-calc-svg-note">{qfmt('stress', stressMin)} → {qfmt('stress', stressMax)} {unit('stress')}</text>
         {naProfileY === null ? null : (
           <g className="pm-calc-na-profile"><line x1="371" y1={naProfileY} x2="750" y2={naProfileY} /><text x="745" y={naProfileY - 4} textAnchor="end">{profile.neutralAxisInsideSection ? 'ε = 0 / N.A.' : 'N.A. estimated outside'}</text></g>
         )}
@@ -248,10 +252,12 @@ const materialUnitLabel = (unit: string) => {
 }
 
 const MaterialLaw = ({ title, law }: { title: string; law: MaterialLawAudit }) => {
+  const { unit } = useQuantityFormatters()
+
   const units = [...new Set(law.parameters.map((parameter) => parameter.unit))]
   return (
     <div className="pm-calc-law">
-      <h4>{title}</h4>
+      <h4>{title}</h4><p className="pm-calc-caption">Law parameters and authored equations below retain their declared calculation units.</p>
       <FormulaPanel>
         {law.equations.map((equation) => <Formula key={equation}><span className="pm-calc-math">{equation}</span></Formula>)}
       </FormulaPanel>
@@ -269,6 +275,8 @@ const MaterialLaw = ({ title, law }: { title: string; law: MaterialLawAudit }) =
 }
 
 const OriginStrainTrace = ({ trace }: { trace: CalculationAuditOriginStrainTrace }) => {
+  const { qfmt, unit } = useQuantityFormatters()
+
   if (trace.kind === 'uniform-strain') return (
     <div className="pm-calc-derivation">
       <h4>Compatible strain derivation</h4>
@@ -282,7 +290,7 @@ const OriginStrainTrace = ({ trace }: { trace: CalculationAuditOriginStrainTrace
       <FormulaPanel>
         <Formula><span className="pm-calc-math">
           {trace.yieldStrainBasis === 'effective-yield-stress-over-elastic-modulus'
-            ? <>εy = fy,eff / Es = {fmt(trace.effectiveYieldStress)} / {fmt(trace.elasticModulus, 0)} = {strain(trace.yieldStrain)}</>
+            ? <>εy = fy,eff / Es = {qfmt('stress', trace.effectiveYieldStress)} {unit('stress')} / {qfmt('modulus', trace.elasticModulus, 0)} {unit('modulus')} = {strain(trace.yieldStrain)}</>
             : <>εy = {strain(trace.yieldStrain)} (declared material yield-strain limit)</>}
           {'; '}εs,req = −({fmt(trace.strainRatio, 4)})εy = {strain(trace.requestedSteelStrain)}
           {trace.strainLimitApplied
@@ -290,10 +298,10 @@ const OriginStrainTrace = ({ trace }: { trace: CalculationAuditOriginStrainTrace
             : <>; εs = εs,req</>}
         </span></Formula>
         <Formula><span className="pm-calc-math">
-          d = uc − us = {fmt(trace.compressionEdgeProjection)} − ({fmt(trace.controllingBarProjection)}) = {fmt(trace.compressionEdgeToBarDepth)} mm
+          d = uc − us = {qfmt('length', trace.compressionEdgeProjection)} − ({qfmt('length', trace.controllingBarProjection)}) = {qfmt('length', trace.compressionEdgeToBarDepth)} {unit('length')}
         </span></Formula>
         <Formula><span className="pm-calc-math">
-          κ = (εc − εs) / d = {strain(trace.curvatureFromCompatibility)} mm⁻¹; c = εc / κ = {fmt(trace.neutralAxisDepth)} mm
+          κ = (εc − εs) / d = {qfmt('curvature', trace.curvatureFromCompatibility, 8)} {unit('curvature')}; c = εc / κ = {qfmt('length', trace.neutralAxisDepth)} {unit('length')}
         </span></Formula>
         <Formula><span className="pm-calc-math">
           ε₀ = εc − κuc = {strain(trace.calculatedE0)}
@@ -305,20 +313,22 @@ const OriginStrainTrace = ({ trace }: { trace: CalculationAuditOriginStrainTrace
   )
 
   const criterion = trace.derivation === 'declared-depth-ratio'
-    ? `${trace.criterionLabel ?? `c/D = ${fmt(trace.neutralAxisDepthRatio, 4)}`}; c = (${fmt(trace.neutralAxisDepthRatio, 4)})D = ${fmt(trace.neutralAxisDepth)} mm`
-    : `Resolved compatible state; c = uc − uNA = ${fmt(trace.neutralAxisDepth)} mm`
+    ? `${trace.criterionLabel ?? `c/D = ${fmt(trace.neutralAxisDepthRatio, 4)}`}; c = (${fmt(trace.neutralAxisDepthRatio, 4)})D = ${qfmt('length', trace.neutralAxisDepth)} ${unit('length')}`
+    : `Resolved compatible state; c = uc − uNA = ${qfmt('length', trace.neutralAxisDepth)} ${unit('length')}`
   return (
     <div className="pm-calc-derivation">
       <h4>{trace.derivation === 'declared-depth-ratio' ? 'Depth criterion → neutral-axis depth' : 'Resolved compatible strain state'}</h4>
       <FormulaPanel>
-        <Formula><span className="pm-calc-math">D = {fmt(trace.projectedSectionDepth)} mm; {criterion}</span></Formula>
-        <Formula><span className="pm-calc-math">κ = εc / c = {strain(trace.curvatureFromDepth)} mm⁻¹; ε₀ = εc − κuc = {strain(trace.calculatedE0)}</span></Formula>
+        <Formula><span className="pm-calc-math">D = {qfmt('length', trace.projectedSectionDepth)} {unit('length')}; {criterion}</span></Formula>
+        <Formula><span className="pm-calc-math">κ = εc / c = {qfmt('curvature', trace.curvatureFromDepth, 8)} {unit('curvature')}; ε₀ = εc − κuc = {strain(trace.calculatedE0)}</span></Formula>
       </FormulaPanel>
     </div>
   )
 }
 
-const RebarLedger = ({ bars, total }: { bars: CalculationAuditRebar[]; total: Resultant }) => (
+const RebarLedger = ({ bars, total }: { bars: CalculationAuditRebar[]; total: Resultant }) => {
+  const { qfmt, unit, forceValue, momentValue, force, moment } = useQuantityFormatters()
+  return (
   <>
     <FormulaPanel>
       <Formula numbered>
@@ -335,22 +345,25 @@ const RebarLedger = ({ bars, total }: { bars: CalculationAuditRebar[]; total: Re
       </Formula>
     </FormulaPanel>
     <div className="pm-calc-table-wrap"><table>
-      <thead><tr><th>Bar</th><th>x (mm)</th><th>y (mm)</th><th>d (mm)</th><th>As (mm²)</th><th>εs</th><th>σs (MPa)</th><th>−σc,disp (MPa)</th><th>σnet (MPa)</th><th>Fnet (kN)</th><th>Mx (kN·m)</th><th>My (kN·m)</th></tr></thead>
+      <thead><tr><th>Bar</th><th>x ({unit('length')})</th><th>y ({unit('length')})</th><th>d ({unit('barDiameter')})</th><th>As ({unit('area')})</th><th>εs</th><th>σs ({unit('stress')})</th><th>−σc,disp ({unit('stress')})</th><th>σnet ({unit('stress')})</th><th>Fnet ({unit('force')})</th><th>Mx ({unit('moment')})</th><th>My ({unit('moment')})</th></tr></thead>
       <tbody>{bars.map((bar) => <tr key={bar.id}>
-        <td>#{bar.id}</td><td>{fmt(bar.x)}</td><td>{fmt(bar.y)}</td><td>{fmt(bar.diameter)}</td><td>{fmt(bar.area)}</td>
-        <td>{strain(bar.strain)}</td><td>{fmt(bar.steelStress)}</td><td>{fmt(bar.displacedConcreteStress)}</td><td>{fmt(bar.netStress)}</td>
+        <td>#{bar.id}</td><td>{qfmt('length', bar.x)}</td><td>{qfmt('length', bar.y)}</td><td>{qfmt('barDiameter', bar.diameter)}</td><td>{qfmt('area', bar.area)}</td>
+        <td>{strain(bar.strain)}</td><td>{qfmt('stress', bar.steelStress)}</td><td>{qfmt('stress', bar.displacedConcreteStress)}</td><td>{qfmt('stress', bar.netStress)}</td>
         <td>{forceValue(bar.net.P)}</td><td>{momentValue(bar.net.Mx)}</td><td>{momentValue(bar.net.My)}</td>
       </tr>)}</tbody>
-      <tfoot><tr><td>Σ Rebar</td><td>—</td><td>—</td><td>—</td><td>{fmt(bars.reduce((sum, bar) => sum + bar.area, 0))}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>{forceValue(total.P)}</td><td>{momentValue(total.Mx)}</td><td>{momentValue(total.My)}</td></tr></tfoot>
+      <tfoot><tr><td>Σ Rebar</td><td>—</td><td>—</td><td>—</td><td>{qfmt('area', bars.reduce((sum, bar) => sum + bar.area, 0))}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>{forceValue(total.P)}</td><td>{momentValue(total.Mx)}</td><td>{momentValue(total.My)}</td></tr></tfoot>
     </table></div>
   </>
 )
+}
 
 const ResistanceTrace = ({ audit, point, designBasis }: {
   audit: PhysicalPointCalculationAudit
   point: PreviewSurfacePoint
   designBasis: DesignBasis
 }) => {
+
+
   const trace = point.resistance
   const materialReevaluation = audit.stage === 'design' && designBasis.format === 'designMaterialReevaluation'
   const factored = audit.stage === 'design' ? audit.displayedLedger : null
@@ -404,6 +417,8 @@ const AxialCapAudit = ({
   title: string
   startIndex: number
 }) => {
+  const { unit, forceValue, momentValue, force, moment } = useQuantityFormatters()
+
   const { trace } = audit
   const comparison = audit.preCap?.comparison
   const source = trace.source
@@ -444,7 +459,7 @@ const AxialCapAudit = ({
         </> : <Formula><span className="pm-calc-math">Rcap = Rcross = ({force(audit.displayedLedger.total.P)}, {moment(audit.displayedLedger.total.Mx)}, {moment(audit.displayedLedger.total.My)})</span></Formula>}
       </FormulaPanel>
       <div className="pm-calc-table-wrap"><table>
-        <thead><tr><th>Cap source</th><th>P (kN)</th><th>Mx (kN·m)</th><th>My (kN·m)</th></tr></thead>
+        <thead><tr><th>Cap source</th><th>P ({unit('force')})</th><th>Mx ({unit('moment')})</th><th>My ({unit('moment')})</th></tr></thead>
         <tbody>
           {sourceRows.map(([label, point]) => <tr key={label}><td>{label}</td><td>{forceValue(point.P)}</td><td>{momentValue(point.Mx)}</td><td>{momentValue(point.My)}</td></tr>)}
           <tr><td>Crossing at Pcap</td><td>{forceValue(crossing.P)}</td><td>{momentValue(crossing.Mx)}</td><td>{momentValue(crossing.My)}</td></tr>
@@ -478,6 +493,8 @@ const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, sect
   onExportConcreteExcel: Props['onExportConcreteExcel']
   startIndex?: number
 }) => {
+  const { qfmt, unit } = useQuantityFormatters()
+
   if (audit.kind === 'unavailable') return (
     <Step index={startIndex} title={`${title}: physical calculation evidence`}>
       <div className="pm-calc-note is-error"><AlertTriangle size={16} /><p>{audit.message}</p></div>
@@ -512,9 +529,9 @@ const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, sect
       <Step index={startIndex} title={`${title}: compatible strain and stress state`}>
         <div className="pm-calc-facts">
           <Fact label={<><span className="pm-calc-math">ε₀</span> at analysis origin</>}>{strain(audit.depthProfile.originStrainTrace.calculatedE0)}</Fact>
-          <Fact label="κx / κy">{strain(audit.state.kx)} / {strain(audit.state.ky)} mm⁻¹</Fact>
-          <Fact label="Projected depth D">{fmt(audit.depthProfile.projectedSectionDepth)} mm</Fact>
-          <Fact label="Neutral-axis depth c">{audit.depthProfile.neutralAxisDepth === null ? '∞ (uniform strain)' : `${fmt(audit.depthProfile.neutralAxisDepth)} mm${audit.depthProfile.neutralAxisInsideSection ? '' : ' · outside section'}`}</Fact>
+          <Fact label="κx / κy">{qfmt('curvature', audit.state.kx, 8)} / {qfmt('curvature', audit.state.ky, 8)} {unit('curvature')}</Fact>
+          <Fact label="Projected depth D">{qfmt('length', audit.depthProfile.projectedSectionDepth)} {unit('length')}</Fact>
+          <Fact label="Neutral-axis depth c">{audit.depthProfile.neutralAxisDepth === null ? '∞ (uniform strain)' : `${qfmt('length', audit.depthProfile.neutralAxisDepth)} ${unit('length')}${audit.depthProfile.neutralAxisInsideSection ? '' : ' · outside section'}`}</Fact>
         </div>
         <OriginStrainTrace trace={audit.depthProfile.originStrainTrace} />
         <FormulaPanel><Formula numbered>
@@ -565,15 +582,17 @@ const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, sect
   )
 }
 
-const IntegrationModel = ({ surface, geometricCap }: { surface: PreviewSurface; geometricCap: boolean }) => (
+const IntegrationModel = ({ surface, geometricCap }: { surface: PreviewSurface; geometricCap: boolean }) => {
+  const { qfmt, unit } = useQuantityFormatters()
+  return (
   <Step index={2} title="Mesh / integration summary">
     {surface.mechanics === 'equivalent-rectangular-block' ? (
       <div className="pm-calc-note"><CheckCircle2 size={16} /><p><b>Exact block clipping.</b> No concrete fibre mesh is used. The physical section and holes are clipped against the active block half-plane; its exact polygon area and centroid are shown in the point calculation below.</p></div>
     ) : (
       <>
         <div className="pm-calc-facts">
-          <Fact label="Base cell h">{fmt(surface.mesh.cellSize)} mm</Fact><Fact label="Clipped cells">{fmt(surface.mesh.cells, 0)}</Fact>
-          <Fact label="Exact / integrated area">{fmt(surface.mesh.exact.area)} / {fmt(surface.mesh.meshed.area)} mm²</Fact><Fact label="Area difference">{fmt(surface.mesh.areaError)} mm²</Fact>
+          <Fact label="Base cell h">{qfmt('length', surface.mesh.cellSize)} {unit('length')}</Fact><Fact label="Clipped cells">{fmt(surface.mesh.cells, 0)}</Fact>
+          <Fact label="Exact / integrated area">{qfmt('area', surface.mesh.exact.area)} / {qfmt('area', surface.mesh.meshed.area)} {unit('area')}</Fact><Fact label="Area difference">{qfmt('area', surface.mesh.areaError)} {unit('area')}</Fact>
         </div>
         <p className="pm-calc-caption">The exact boundary remains authoritative for section properties and extreme fibres. {geometricCap
           ? 'The retained physical criterion state is integrated in full below; the final cap face is then audited through its source crossing without inventing another strain state.'
@@ -582,8 +601,11 @@ const IntegrationModel = ({ surface, geometricCap }: { surface: PreviewSurface; 
     )}
   </Step>
 )
+}
 
 const FixedPSchematic = ({ row }: { row: ChartTableFixedPRow }) => {
+  const { force } = useQuantityFormatters()
+
   const bracket = row.evidence.bracket
   if (!bracket) return null
   return (
@@ -604,6 +626,8 @@ const calculationAuditStepCount = (audit: PointCalculationAudit | undefined) => 
 }
 
 const VerticalResult = ({ row, index }: { row: ChartTableVerticalRow; index: number }) => {
+  const { force, moment } = useQuantityFormatters()
+
   const selected = row.evidence.stage === 'design' ? row.design : row.nominal
   if (!selected) return null
   return <Step index={index} title="Value shown in the Vertical table">
@@ -618,6 +642,8 @@ const VerticalResult = ({ row, index }: { row: ChartTableVerticalRow; index: num
 }
 
 const FixedPResult = ({ row, index }: { row: ChartTableFixedPRow; index: number }) => {
+  const { unit, momentValue, force, moment } = useQuantityFormatters()
+
   const { bracket, fixedP, sample, stage } = row.evidence
   const selected = stage === 'design' ? row.design : row.nominal
   return <Step index={index} title="Fixed-P interpolation and value shown in the table">
@@ -633,13 +659,13 @@ const FixedPResult = ({ row, index }: { row: ChartTableFixedPRow; index: number 
         </Formula>
         <Formula id="equation-fixed-p-mx" numbered>
           <TechnicalEquation
-            latex={String.raw`M_x=M_{x,\mathrm{below}}+t(M_{x,\mathrm{above}}-M_{x,\mathrm{below}})=${momentValue(sample.Mx)}\ \mathrm{kN\,m}`}
+            latex={String.raw`M_x=M_{x,\mathrm{below}}+t(M_{x,\mathrm{above}}-M_{x,\mathrm{below}})=${momentValue(sample.Mx)}\ \mathrm{${unit('moment').replace('·', String.raw`\,`)}}`}
             ariaLabel={`Interpolated M x equals ${moment(sample.Mx)}`}
           />
         </Formula>
         <Formula id="equation-fixed-p-my" numbered>
           <TechnicalEquation
-            latex={String.raw`M_y=M_{y,\mathrm{below}}+t(M_{y,\mathrm{above}}-M_{y,\mathrm{below}})=${momentValue(sample.My)}\ \mathrm{kN\,m}`}
+            latex={String.raw`M_y=M_{y,\mathrm{below}}+t(M_{y,\mathrm{above}}-M_{y,\mathrm{below}})=${momentValue(sample.My)}\ \mathrm{${unit('moment').replace('·', String.raw`\,`)}}`}
             ariaLabel={`Interpolated M y equals ${moment(sample.My)}`}
           />
         </Formula>
@@ -651,6 +677,8 @@ const FixedPResult = ({ row, index }: { row: ChartTableFixedPRow; index: number 
 }
 
 export function ChartCalculationDialog({ row, rows, source, resistanceStage, summary, surface, projectName, section, rebars, materialStore, designBasis, exportingConcreteKey, exportingCalculationTrace, exportError, onExportConcreteExcel, onExportCalculationTraceExcel, onSourceChange, onResistanceStageChange, onRowChange, onClose }: Props) {
+  const { qfmt, unit, force } = useQuantityFormatters()
+
   const patternId = useId().replace(/:/g, '')
   const stage = row?.evidence.stage ?? resistanceStage
   const [audits, setAudits] = useState<Map<string, PointCalculationAudit>>(new Map())
@@ -782,13 +810,13 @@ export function ChartCalculationDialog({ row, rows, source, resistanceStage, sum
           <Step index={1} title="Basic inputs">
             <div className="pm-calc-facts">
               <Fact label="Project / section">{projectName || 'Untitled project'} · {section.name}</Fact>
-              <Fact label="Section">Ac = {fmt(summary.concreteArea)} mm² · {summary.rebarCount} bars · As = {fmt(summary.steelArea)} mm²</Fact>
+              <Fact label="Section">Ac = {qfmt('area', summary.concreteArea)} {unit('area')} · {summary.rebarCount} bars · As = {qfmt('area', summary.steelArea)} {unit('area')}</Fact>
               {surface.mechanics === 'stress-strain-integration' ? (
-                <Fact label="Concrete">{basicConcrete.name} · fck = {fmt(basicConcrete.fck)} MPa · {basicConcrete.stressStrain.type} · εcu = {strain(basicConcrete.limits.epsCu)}</Fact>
+                <Fact label="Concrete">{basicConcrete.name} · fck = {qfmt('stress', basicConcrete.fck)} {unit('stress')} · {basicConcrete.stressStrain.type} · εcu = {strain(basicConcrete.limits.epsCu)}</Fact>
               ) : (
-                <Fact label="Concrete">{basicConcrete.name} · fck = {fmt(basicConcrete.fck)} MPa · equivalent block · εcu = {strain(basicConcrete.limits.epsCu)}</Fact>
+                <Fact label="Concrete">{basicConcrete.name} · fck = {qfmt('stress', basicConcrete.fck)} {unit('stress')} · equivalent block · εcu = {strain(basicConcrete.limits.epsCu)}</Fact>
               )}
-              <Fact label="Steel">{materialStore.steel.map((steel) => `${steel.name}: fy=${fmt(steel.fy)}, Es=${fmt(steel.elasticModulus, 0)} MPa`).join(' · ')}</Fact>
+              <Fact label="Steel">{materialStore.steel.map((steel) => `${steel.name}: fy=${qfmt('stress', steel.fy)} ${unit('stress')}, Es=${qfmt('modulus', steel.elasticModulus, 0)} ${unit('modulus')}`).join(' · ')}</Fact>
               <Fact label="Design basis">{designBasis.identity.document.split(' · ')[0]}</Fact>
             </div>
           </Step>

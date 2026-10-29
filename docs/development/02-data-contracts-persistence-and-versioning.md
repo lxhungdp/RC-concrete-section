@@ -2,9 +2,10 @@
 
 ## 1. Current persisted contracts
 
-The project is pre-release. The outer schema remains v1, while nested contracts carry their own versions:
+The project is pre-release. New exports use outer schema v3; explicit centroidal v1/v2 read contracts
+remain available. Nested contracts carry their own versions:
 
-- project document `version: 1`;
+- project document `version: 3` (load reference), with v2 stored-area and v1 diameter-only readers;
 - design basis `basisVersion: 3`;
 - analysis `optionsVersion: 1`;
 - `strain-domain-surface-v1` and `equivalent-block-surface-v1` method IDs;
@@ -14,12 +15,12 @@ The project parser accepts only:
 
 ```text
 schema  = "pm-column-project"
-version = 1
+version = 1 | 2 | 3
 ```
 
 Unsupported schema, profile, method, and options discriminants fail. The parser migrates legacy
 DesignBasis v1 scalar EN factors to v2 expressions and the former v1/v2 EN `eps_cu` compression
-endpoint to the v3 `eps_c2` point-C pivot. Within project schema v1, the field-by-field parser also
+endpoint to the v3 `eps_c2` point-C pivot. The field-by-field parser also
 applies these documented defaults/repairs:
 
 - omitted `inputs.design` receives a material-derived default;
@@ -30,16 +31,19 @@ applies these documented defaults/repairs:
 - an omitted legacy user-curve `extrapolation` field is normalized to the previous `clamp`
   behaviour; canonical exports write the field explicitly.
 
-These are parser-v1 rules, not compatibility with another project version. New project exports
-write all canonical fields explicitly. Changing any of these rules requires fixture and round-trip
-test review, but no migration framework is part of the current project.
+New project exports write all canonical fields explicitly. Version 2 requires finite positive `area`
+in mm² on every rebar, independently of `dia` in mm. Optional `areaSource` records a one-time fill
+snapshot; it cannot override either number. Version 1 preserves diameter-only input and rejects
+stored-area fields. The isolated legacy adapter retains each mechanics' previous binary64 operation
+order; creating a v2 document materializes that selected route's area once. No general migration
+framework is introduced. See [stored-area contract](11-rebar-area-and-catalogs.md).
 
 ## 2. Canonical project document
 
 ```ts
 type PmProjectDocument = {
   schema: 'pm-column-project'
-  version: 1
+  version: 3 // canonical export; the reader also accepts explicit centroidal v1/v2
   meta: {
     id: number
     name: string
@@ -64,7 +68,7 @@ type PmProjectDocument = {
       | 'custom-equivalent-block'
     geometry: GeometryInput
     materials: MaterialStore
-    loadings: { combinations: LoadCombination[] }
+    loadings: { reference: LoadReference; combinations: LoadCombination[] }
     analysis: AnalysisOptions | EquivalentBlockAnalysisOptions
     design: DesignBasis
   }
@@ -208,6 +212,19 @@ Every current demand combination has `actionBasis: 'factoredULS'` and stores `P`
 canonical units. The design check rejects a different basis. Factored demand is compared with the
 Design surface; it is never multiplied by the resistance factor again.
 
+### Applied input reference
+
+V3 requires `loadings.reference = { kind: 'centroid-offset', offsetX, offsetY }` in canonical mm.
+Every persisted `LoadCombination` still contains moments about the exact net-concrete centroid.
+Input fields/workbooks show explicitly translated copies about the applied origin. All Direct,
+Fixed-P, demand-plane and 3D charts retain their centroidal frame, including the converted demand.
+@pm/project owns this pure translation; UI and reports introduce no independent equation.
+The draft offset and unchecked-by-default Convert option are not persisted. Apply is atomic:
+Convert retains the canonical combinations exactly; unchecked Apply reinterprets the previous
+displayed numbers at the new origin. Code demand corrections and all numerical checks remain
+centroidal. V1/v2 declare zero offset and reject a reference extension rather than silently dropping
+it. V3 rejects an omitted/unknown/non-finite reference. See [the task packet](16-load-reference-origin.md).
+
 ## 8. Parsing and validation
 
 Parsing is a boundary operation:
@@ -224,7 +241,7 @@ Every canonical concrete or steel `user-curve` records `interpolation: 'linear'`
 `extrapolation: 'clamp'`. Its strain coordinates are finite and strictly increasing in persisted
 order; the parser and compiler reject reordered or repeated ordinates instead of sorting them.
 
-The round-trip test serializes and parses schema v1 and requires exact equality of analysis/profile/
+Round-trip tests cover canonical v3, centroidal v2 and diameter-only v1, exact stored areas and unchanged analysis/profile/
 design inputs. Separate tests cover both mechanics and the code-aware transition rule.
 
 ## 9. Runtime results are not project input
@@ -238,15 +255,25 @@ input hash, kernel/profile versions, convergence evidence, and release policy.
 
 `Import Export` selects Excel (`.xlsx`, default) or JSON. Both export the same applied input
 snapshot and project metadata; unapplied geometry drafts are excluded. The web boundary adapter
-`features/section-editor/project/project-xlsx.ts` owns `pm-column-input-workbook`, version 3.
-The canonical project schema and its parser remain unchanged.
+`features/section-editor/project/project-xlsx.ts` owns `pm-column-input-workbook`, version 6.
+It retains the declared project version and adds editable As plus optional hidden source snapshots.
+Canonical v2/v3 rows require As. Explicit legacy v1 workbooks retain diameter-only rows until export
+through the canonical project creator.
+
+Version 6 includes a visible Load reference declaration. Loadings values are about that declared
+origin and normalize once to centroid on import. The explicit workbook-v5 reader declares zero
+offset; earlier versions require re-export. JSON keeps centroidal actions. Nonzero-frame Excel
+round trips retain full binary64 cell values without display rounding; subtraction/addition of
+lever-arm terms can incur ordinary roundoff. The zero-offset exact round-trip contract is unchanged.
+Standalone loadcase workbooks carry the same reference declaration; old files without it explicitly
+contain centroidal moments. Missing new-format declarations fail closed.
 
 The format selector sits above two explicitly labeled Import and Export buttons. Project share
 links are removed: the app neither creates project URL payloads nor reads project inputs from the
 URL fragment on startup. Recent-file storage and explicit Excel/JSON file imports retain their
 existing validation and apply paths. No URL-fragment compatibility or migration is provided.
 
-Visible sheets are Project, Section, Rebar, Material, and Loadings. Analysis and Resistance are
+Visible sheets are Project, Section, Rebar, Material, Loadings, and Load reference. Analysis and Resistance are
 hidden (not veryHidden); users may unhide them for advanced editing. Analysis also retains separate
 PROJECT_METADATA and SECTION_METADATA field/value blocks for workbook identity, project IDs/
 timestamps/profile and section identity. Those blocks cannot override the visible Project fields.
@@ -259,15 +286,17 @@ No JSON snapshot overrides the editable cells, including the explicitly retained
 
 Ordinary cells, bold markers/headers, gridlines, and basic widths/text/number formats support
 editing. There are no native Excel Tables, merges, background fills, or print layouts.
-Section and Rebar state mm once in the first note row; Loadings states P in N and Mx/My in N.mm.
-Their named column headers omit units. These labels do not change canonical values or conversions.
+Section/Rebar and Loadings state their declared display units in the first note row. The hidden
+Units sheet owns the strict version-1 transport selection. Named table headers remain stable;
+material/advanced dimensional field labels and curve stress headers carry their declared units.
+The UI passes its captured display selection; programmatic exports default to canonical units.
 
 | Sheet | Marker | User-facing inputs |
 |---|---|---|
 | Project | PROJECT | Name, Client, Company, Designed by, Checked by, Address, Date |
 | Section | `outer #1`, `outer #2`, ... | X, Y |
 | Section | `hole #1`, `hole #2`, ... | X, Y; belongs to the nearest preceding outer |
-| Rebar | REBAR | Diameter, X, Y; Steel Material ID shown when several grades exist |
+| Rebar | REBAR | Diameter, As, X, Y; Steel Material ID shown when several grades exist |
 | Material | MATERIAL; CONCRETE, ID; STEEL, ID | Independent material field/value inputs and default steel reference |
 | Material | CONCRETE_CURVE, ID; STEEL_CURVE, ID | Strain (1), Stress (MPa) |
 | Loadings | LOADINGS | Name, P, Mx, My |
@@ -301,22 +330,39 @@ Section may contain no polygon blocks for an empty project.
 
 Field/value tables use explicit per-block allowed-field/type maps; units appear in field names.
 Booleans accept TRUE/FALSE. Empty optional objects/arrays use {}/[]; numeric paths in advanced
-arrays require consecutive zero-based indexes. Version-1/2 previews require re-export; there is no
+arrays require consecutive zero-based indexes. Version-1/2/3/4 previews require re-export; there is no
 silent migration. Required hidden sheets/metadata must be retained; missing advanced settings are
 not reconstructed from defaults.
 
-Lengths remain mm, stresses/moduli MPa, density kg/m3, forces N, moments N.mm, and declared angles
-degrees. Compression-positive P/strain and canonical moment signs are unchanged. Stored doubles
+Workbook numbers use the declared per-quantity presentation units and convert once at the
+explicit typed field/column boundary. Canonical project lengths remain mm, stresses/moduli MPa,
+density kg/m3, forces N, moments N.mm, and declared angles degrees. Compression-positive P/strain and canonical moment signs are unchanged. Stored doubles
 retain full precision; cell formatting affects display only. Formulas, cached results, dates,
 errors and linked/rich text cells are rejected; paste values. Material parameters remain explicit
 independent inputs; editing strength does not derive a new modulus or code parameter.
 
 Import reconstructs raw definitions and uses `parseProjectDocument` for engineering validation
-and documented parser-v1 normalization. Missing sheets/markers/columns, duplicate authoritative
+and documented version-specific normalization. Missing sheets/markers/columns, duplicate authoritative
 fields/entities, malformed types/units, broken references and resource exhaustion return typed
 failures with sheet/row context. No project state changes until validation succeeds. Limits are
 10 MiB compressed, 64 MiB declared expanded ZIP content, 256 ZIP entries, 100,000 rows per sheet,
 and 64 columns: resource bounds, not engineering tolerances/defaults. Input workbooks contain no
 results and confer no acceptance or release status. Their verification status must match the
 selected registry profile (currently draft or user-defined); a workbook cannot grant reviewed/
-verified status. These boundary rules do not change JSON parser-v1 behavior.
+verified status. Source snapshots that disagree with edited diameter/As become Manual.
+
+### Exact no-op unit transport
+
+Unit-aware project, loadcase and section/rebar workbooks carry a strict Units declaration; missing,
+unknown or malformed declarations fail. None reads the browser preference on import. Native JSON
+retains canonical units. Section DXF cannot preserve independent As and rejects lossy exports.
+Standalone section/rebar workbooks use `pm-section-rebars-area-v2` and require As; earlier previews
+require re-export.
+
+When binary64 display conversion has no exact inverse for the original number, the numeric cell
+also carries a `pm-unit-source/v1` comment with its quantity, source display unit, canonical value
+and exported display value. The reader verifies this scalar record against the shared converter.
+Only an unchanged visible numeric value with a matching declared unit retains that original number.
+An edited cell always converts its visible value; an inconsistent record fails. This is exact
+no-op provenance, not a model snapshot or an override of edited cells. IDs, order, ratios and
+coefficients never receive quantity records. Moving an Excel cell carries its comment with it.

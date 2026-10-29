@@ -14,6 +14,7 @@ import {
   solveInversePreviewFromPrepared,
   surfaceInputKey,
   type PreparedAnalysis,
+  type CapacityFieldResult,
   type PreviewSurface
 } from '@pm/analysis'
 import {
@@ -297,19 +298,29 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
         activeSurface,
         loadcase
       )
-      const inverse = solveInversePreviewFromPrepared(
-        preparedFor({
+      const prepared = preparedFor({
           section,
           rebars,
           materialStore,
           analysisOptions,
           designBasis: request.payload.designBasis
-        }),
+        })
+      const inverse = solveInversePreviewFromPrepared(
+        prepared,
         loadcase,
         contour,
         codeAdjustedDemandOfCheck(designCheck)
       )
-      const result = applyDesignCheckToInverse(inverse, designCheck)
+      let capacityField: CapacityFieldResult
+      try {
+        const { solveStressStrainCapacityFieldFromPrepared } = await import('@pm/analysis/capacity-field')
+        capacityField = solveStressStrainCapacityFieldFromPrepared(prepared, materialStore,
+          request.payload.designBasis, activeSurface, designCheck.codeAdjustedDemand ?? loadcase)
+      } catch {
+        capacityField = { status: 'unavailable', reason: 'evaluation-error', iterations: 0,
+          message: 'Capacity-field evaluation failed.' }
+      }
+      const result = { ...applyDesignCheckToInverse(inverse, designCheck), capacityField }
       workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
       return
     }
@@ -377,6 +388,7 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
     if (request.type === 'exportMeshExcel' || request.type === 'exportMeshDxf') {
       const mesh = preparedFor(request.payload).mesh
       const exportInput = {
+        presentationUnits: request.payload.presentationUnits,
         projectName: request.payload.projectName,
         sectionName: request.payload.sectionName,
         section: request.payload.section,

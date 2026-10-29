@@ -90,13 +90,13 @@ test('all profile families, empty inputs, optional bar references, Unicode and b
 
 
 
-test('compact v3 hides advanced sheets/technical IDs and shows concise project/demand inputs', async () => {
+test('compact v5 hides advanced sheets/technical IDs and shows concise project/demand inputs', async () => {
   const project = example()
   project.meta.name = '=SUM(A1:A2)'
   project.inputs.loadings.combinations[0].name = '# literal loading name'
   project.inputs.loadings.combinations[1].name = 'LOADINGS'
   const book = await readBook(project)
-  assert.deepEqual(book.worksheets.filter((s) => s.state === 'visible').map((s) => s.name), ['Project', 'Section', 'Rebar', 'Material', 'Loadings'])
+  assert.deepEqual(book.worksheets.filter((s) => s.state === 'visible').map((s) => s.name), ['Project', 'Section', 'Rebar', 'Material', 'Loadings', 'Load reference'])
   assert.equal(book.getWorksheet('Analysis')!.state, 'hidden')
   assert.equal(book.getWorksheet('Resistance')!.state, 'hidden')
   assert.equal(book.getWorksheet('Section')!.getColumn(3).hidden, true)
@@ -106,14 +106,14 @@ test('compact v3 hides advanced sheets/technical IDs and shows concise project/d
   const projectSheet = book.getWorksheet('Project')!
   assert.equal(projectSheet.rowCount, 10)
   assert.equal(field(book, 'Project', 'Name').value, '=SUM(A1:A2)')
-  assert.equal(field(book, 'Analysis', 'workbookVersion').value, 3)
+  assert.equal(field(book, 'Analysis', 'workbookVersion').value, 6)
   assert.equal(book.getWorksheet('Section')!.getCell(marker(book, 'Section', 'OUTER'), 1).value, 'outer #1')
   assert.equal(book.getWorksheet('Section')!.getCell(marker(book, 'Section', 'HOLE'), 1).value, 'hole #1')
   const loadHeader = book.getWorksheet('Loadings')!.getRow(marker(book, 'Loadings', 'LOADINGS') + 1)
   assert.deepEqual([1, 2, 3, 4].map((c) => loadHeader.getCell(c).value), ['Name', 'P', 'Mx', 'My'])
   assert.equal(book.getWorksheet('Section')!.getCell(1, 1).value, '# Units: mm. Hole belongs to outer above.')
-  assert.equal(book.getWorksheet('Rebar')!.getCell(1, 1).value, '# Units: mm. Blank material uses the default steel.')
-  assert.equal(book.getWorksheet('Loadings')!.getCell(1, 1).value, '# P: N; Mx, My: N.mm. Factored ULS; P compression positive.')
+  assert.equal(book.getWorksheet('Rebar')!.getCell(1, 1).value, '# Diameter: mm; As: mm²; coordinates: mm. Blank material uses the default steel.')
+  assert.equal(book.getWorksheet('Loadings')!.getCell(1, 1).value, '# P: N; Mx, My: N·mm. Factored ULS; P compression positive.')
   assert.equal(field(book, 'Material', 'strainSign').worksheet.getRow(Number(field(book, 'Material', 'strainSign').row)).hidden, true)
   assert.equal(book.getWorksheet('Material')!.getRow(Number(field(book, 'Material', 'fck (MPa)').row)).hidden, false)
   assert.equal(book.getWorksheet('Material')!.getRow(Number(field(book, 'Material', 'limits.epsCu (1)').row)).hidden, true)
@@ -321,7 +321,7 @@ test('malformed keywords/cells/references and missing hidden settings fail close
     ['old long marker', (b) => { b.getWorksheet('Section')!.getRow(marker(b, 'Section', 'OUTER')).values = ['OUTER', 1] }, 'WORKBOOK_FORMAT'],
     ['partial row', (b) => { b.getWorksheet('Rebar')!.addRow([20, 0]) }, 'WORKBOOK_CELL'],
     ['malformed technical ID', (b) => { dataCell(b, 'Rebar', 'REBAR', 5).value = -1 }, 'WORKBOOK_CELL'],
-    ['extra column', (b) => { dataCell(b, 'Rebar', 'REBAR', 6).value = 'unowned input' }, 'WORKBOOK_FORMAT'],
+    ['extra column', (b) => { dataCell(b, 'Rebar', 'REBAR', 8).value = 'unowned input' }, 'WORKBOOK_FORMAT'],
     ['duplicate field', (b) => { b.getWorksheet('Material')!.spliceRows(marker(b, 'Material', 'CONCRETE') + 2, 0, ['fck (MPa)', 35]) }, 'WORKBOOK_CELL'],
     ['prototype key', (b) => { b.getWorksheet('Material')!.addRow(['constructor.bad', 'x']) }, 'WORKBOOK_CELL'],
     ['invalid strength', (b) => { field(b, 'Material', 'fck (MPa)').value = -30 }, 'PROJECT_INPUT'],

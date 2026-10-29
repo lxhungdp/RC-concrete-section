@@ -1,7 +1,9 @@
 import { nextAvailableId } from './ids'
 import type { LoadCombination, LoadingsInput } from './types'
+import { loadReferenceOf } from './load-reference'
 
 export const createEmptyLoadingsInput = (): LoadingsInput => ({
+  reference: { kind: 'centroid-offset', offsetX: 0, offsetY: 0 },
   combinations: []
 })
 
@@ -18,5 +20,6 @@ export const createLoadCombination = (
 })
 
 export const cloneLoadingsInput = (input: LoadingsInput): LoadingsInput => ({
+  reference: { ...loadReferenceOf(input) },
   combinations: input.combinations.map((item) => ({ ...item }))
 })

@@ -163,6 +163,7 @@ button svg { color: currentColor; }
 .pm-side-panel .ws-page-tabs button { height: var(--nav-control-h); min-height: var(--nav-control-h); padding: 0 var(--sp-1); border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--foreground-secondary); font-size: var(--fs-md); font-weight: var(--weight-normal); }
 .pm-side-panel .ws-page-tabs button:hover { background: transparent; color: var(--foreground); }
 .pm-side-panel .ws-page-tabs button.is-active { border-bottom-color: var(--accent); background: transparent; color: var(--foreground); font-weight: var(--weight-strong); }
+.pm-side-panel .ws-page-tabs--scroll { display: flex; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; }
 
 /* Group and ordinary-label roles. Functional labels are never helper text. */
 .pm-side-panel .pm-section-title h2,
@@ -299,6 +300,54 @@ body[data-jscad-theme='dark'] .pm-cad-surface { border-color: transparent; box-s
 .pm-results-toolbar-meta strong,
 .pm-results-plot-heading strong,
 .pm-results-topbar h2 { font-family: var(--font-sans); font-weight: var(--weight-strong); }
+/* NG composes the existing semantic failure tint with the shared chart surface in both themes. */
+.pm-shell .pm-results-plot.is-ng {
+  background: linear-gradient(var(--ui-danger-bg), var(--ui-danger-bg)), var(--menu-surface);
+}
+.pm-shell .pm-field-basis-label {
+  /* Before-cap qualification has a reserved, visible status area below the drawing. */
+  white-space: nowrap;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-sm);
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+.pm-shell .pm-field-basis-label[data-basis='capacity'] {
+  border-color: var(--ui-danger-border);
+  background: var(--ui-danger-bg);
+  color: var(--danger);
+}
+
+/* Demand changes replace content within stable chart slots. */
+.pm-results-frame-status {
+  position: absolute;
+  inset-block-start: var(--sp-1);
+  inset-inline-end: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--menu-surface);
+  color: var(--foreground-muted);
+  font-size: var(--chart-control-fs);
+  pointer-events: none;
+}
+.pm-results-plot[data-chart='heatmap'] .pm-results-plot-heading { flex: 0 0 18ch; }
+.pm-section-field-footer { min-width: 0; --field-metric-rows: 5; }
+.pm-section-field-footer[data-mechanics='equivalent-block-surface-v1'] { --field-metric-rows: 7; }
+.pm-section-field-status.pm-preview-hint {
+  box-sizing: border-box;
+  block-size: 4.5em;
+  margin: var(--sp-1) 0 0;
+  overflow: auto;
+  font-size: var(--chart-control-fs);
+  line-height: 1.5;
+}
+.pm-section-field-status p { margin: 0; }
+.pm-section-field-footer .pm-field-metric-rows {
+  grid-auto-rows: 1.35em;
+  min-block-size: calc(var(--field-metric-rows) * 1.35em + (var(--field-metric-rows) - 1) * 1px);
+}
+.pm-section-field-footer .pm-field-metric-rows > div > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .pm-loadcase-ur.is-fail,
 .pm-export-message.is-error,
 .pm-field-metric-rows strong.is-bad,

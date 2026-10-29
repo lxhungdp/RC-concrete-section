@@ -1,11 +1,14 @@
 import { nextAvailableId } from './ids'
 import type { Point2, SectionGeometry, SectionSolid } from './index'
+import { rebarAreaSource, type RebarAreaSource } from './rebar-area'
 
 export type Rebar = {
   id: number
   x: number
   y: number
   dia: number
+  area?: number
+  areaSource?: RebarAreaSource
   groupId?: number
   solidIndex?: number
 }
@@ -15,6 +18,8 @@ export type RebarPatternKind = 'top-bottom' | 'sides' | 'perimeter-spacing'
 export type RebarGenerateParams = {
   cover: number
   dia: number
+  area?: number
+  areaSource?: RebarAreaSource
   count?: number
   spacing?: number
   nx?: number
@@ -352,7 +357,10 @@ export const generateRebarsForSection = (
     }
   }
 
-  return bars
+  return params.area === undefined ? bars : bars.map((bar) => ({
+    ...bar, area: params.area,
+    areaSource: rebarAreaSource({ dia: bar.dia, area: params.area, areaSource: params.areaSource })
+  }))
 }
 
 export const REBAR_PATTERN_OPTIONS: Array<{

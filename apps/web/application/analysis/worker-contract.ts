@@ -1,3 +1,4 @@
+import type { UnitSelection } from '@pm/units'
 import type {
   AnalysisErrorCode,
   ExactDirectionCurve,
@@ -81,6 +82,7 @@ export type BuildPointAuditsPayload = BuildSurfacePayload & {
 }
 
 export type MeshAuditExportPayload = BuildSectionMeshPayload & {
+  presentationUnits?: UnitSelection
   projectName: string
   sectionName: string
 }

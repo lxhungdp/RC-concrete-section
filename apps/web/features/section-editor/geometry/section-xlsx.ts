@@ -1,7 +1,10 @@
-import { createSectionSolid, summarizeSection, type GeometryInputRebarView, type Point2 } from '@pm/geometry'
+import { UNIT_PRESETS, fromCanonical, toCanonical, parseNumericText, type UnitSelection } from '@pm/units'
+import { quantityCell, readQuantityCell, writeQuantityCell, readWorkbookUnits, writeWorkbookUnits } from '../shared/workbook-units'
+import { createSectionSolid, summarizeSection, rebarArea, rebarAreaSource, parseRebarAreaSource, type GeometryInputRebarView, type Point2 } from '@pm/geometry'
 import type { SteelMaterial } from '@pm/materials'
 
 export type SectionWorkbookInput = {
+  units?: UnitSelection
   name: string
   outers: Point2[][][]
   rebars: GeometryInputRebarView[]
@@ -16,6 +19,7 @@ export type ImportedSectionWorkbook = {
 }
 
 export type RebarWorkbookInput = {
+  units?: UnitSelection
   sectionName: string
   rebars: GeometryInputRebarView[]
   steelMaterials: SteelMaterial[]
@@ -77,13 +81,15 @@ const styleDataSheet = (sheet: import('exceljs').Worksheet, widths: number[]) =>
   styleHeader(sheet.getRow(1))
 }
 
-const addBoundarySheet = (workbook: import('exceljs').Workbook, outers: Point2[][][]) => {
+const addBoundarySheet = (workbook: import('exceljs').Workbook, outers: Point2[][][], units: UnitSelection) => {
   const sheet = workbook.addWorksheet('Boundary')
   sheet.addRow(['Outer', 'Hole', 'id', 'X', 'Y'])
   outers.forEach((rings, outerIndex) => {
     rings.forEach((ring, ringIndex) => {
       ring.forEach((point) => {
-        sheet.addRow([outerIndex + 1, ringIndex, point.id, point.x, point.y])
+        const row = sheet.addRow([outerIndex + 1, ringIndex, point.id])
+        writeQuantityCell(row.getCell(4), quantityCell('length', point.x, units))
+        writeQuantityCell(row.getCell(5), quantityCell('length', point.y, units))
       })
     })
   })
@@ -97,16 +103,25 @@ const addBoundarySheet = (workbook: import('exceljs').Workbook, outers: Point2[]
 const addRebarSheet = (
   workbook: import('exceljs').Workbook,
   rebars: GeometryInputRebarView[],
-  steelMaterials: SteelMaterial[]
+  steelMaterials: SteelMaterial[],
+  units: UnitSelection
 ) => {
   const materialById = new Map(steelMaterials.map((material) => [material.id, material]))
   const sheet = workbook.addWorksheet('Rebars')
-  sheet.addRow(['id', 'Dia', 'Mat', 'X', 'Y'])
+  sheet.addRow(['id', 'Dia', 'Mat', 'X', 'Y', 'As', 'As source'])
   rebars.forEach((bar) => {
     const material = bar.steelMaterialId == null ? undefined : materialById.get(bar.steelMaterialId)
-    sheet.addRow([bar.id, bar.dia, material?.name ?? bar.steelMaterialId ?? '', bar.x, bar.y])
+    const row = sheet.addRow([bar.id, null, material?.name ?? bar.steelMaterialId ?? ''])
+    writeQuantityCell(row.getCell(2), quantityCell('barDiameter', bar.dia, units))
+    writeQuantityCell(row.getCell(4), quantityCell('length', bar.x, units))
+    writeQuantityCell(row.getCell(5), quantityCell('length', bar.y, units))
+    writeQuantityCell(row.getCell(6), quantityCell('area', rebarArea(bar), units))
+    row.getCell(7).value = JSON.stringify(rebarAreaSource(bar))
   })
   styleDataSheet(sheet, [10, 10, 18, 14, 14])
+  sheet.getColumn(6).width = 16
+  sheet.getColumn(6).numFmt = '0.000'
+  sheet.getColumn(7).hidden = true
   sheet.getColumn(1).numFmt = '0'
   sheet.getColumn(2).numFmt = '0.000'
   sheet.getColumn(4).numFmt = '0.000'
@@ -117,15 +132,19 @@ const addRebarSheet = (
 export const buildSectionWorkbook = async (input: SectionWorkbookInput): Promise<Uint8Array> => {
   const ExcelJS = await excelModule()
   const workbook = new ExcelJS.Workbook()
-  addBoundarySheet(workbook, input.outers)
-  if (input.rebars.length > 0) addRebarSheet(workbook, input.rebars, input.steelMaterials)
+  const units = input.units ?? UNIT_PRESETS.metric
+  writeWorkbookUnits(workbook, units, 'pm-section-rebars-area-v2')
+  addBoundarySheet(workbook, input.outers, units)
+  if (input.rebars.length > 0) addRebarSheet(workbook, input.rebars, input.steelMaterials, units)
   return toBytes(await workbook.xlsx.writeBuffer())
 }
 
 export const buildRebarWorkbook = async (input: RebarWorkbookInput): Promise<Uint8Array> => {
   const ExcelJS = await excelModule()
   const workbook = new ExcelJS.Workbook()
-  addRebarSheet(workbook, input.rebars, input.steelMaterials)
+  const units = input.units ?? UNIT_PRESETS.metric
+  writeWorkbookUnits(workbook, units, 'pm-section-rebars-area-v2')
+  addRebarSheet(workbook, input.rebars, input.steelMaterials, units)
   return toBytes(await workbook.xlsx.writeBuffer())
 }
 
@@ -154,7 +173,7 @@ const readCell = (row: import('exceljs').Row, headers: Map<string, number>, name
 }
 
 const finiteNumber = (value: unknown, label: string) => {
-  const number = typeof value === 'number' ? value : Number(String(value ?? '').trim())
+  const number = typeof value === 'number' ? value : parseNumericText(String(value ?? ''))
   if (!Number.isFinite(number)) throw new Error(`${label} must be a finite number.`)
   return number
 }
@@ -199,11 +218,12 @@ const parseRebarsSheet = (
   sheet: import('exceljs').Worksheet | undefined,
   materials: SteelMaterial[],
   defaultMaterialId: number,
-  warnings: string[]
+  warnings: string[],
+  units: UnitSelection
 ): GeometryInputRebarView[] => {
   if (!sheet) return []
   const headers = headerMap(sheet)
-  for (const header of ['id', 'Dia', 'X', 'Y']) {
+  for (const header of ['id', 'Dia', 'X', 'Y', 'As']) {
     if (!headers.has(normalizedHeader(header))) {
       throw new Error(`Rebars sheet is missing the "${header}" column.`)
     }
@@ -219,14 +239,21 @@ const parseRebarsSheet = (
     const id = positiveInteger(idValue, `Rebars row ${rowNumber} id`)
     if (usedIds.has(id)) throw new Error(`Rebars row ${rowNumber}: duplicate id ${id}.`)
     usedIds.add(id)
-    const dia = finiteNumber(readCell(row, headers, 'Dia'), `Rebars row ${rowNumber} Dia`)
+    const dia = readQuantityCell('barDiameter', finiteNumber(readCell(row, headers, 'Dia'), `Rebars row ${rowNumber} Dia`), units, row.getCell(headers.get(normalizedHeader('Dia'))!).note)
     if (dia <= 0) throw new Error(`Rebars row ${rowNumber}: Dia must be greater than zero.`)
+    const areaColumn = headers.get(normalizedHeader('As'))!
+    const area = readQuantityCell('area', finiteNumber(readCell(row, headers, 'As'), `Rebars row ${rowNumber} As`), units, row.getCell(areaColumn).note)
+    if (area <= 0) throw new Error(`Rebars row ${rowNumber}: As must be greater than zero.`)
+    const sourceText = readCell(row, headers, 'As source')
+    const source = sourceText == null || sourceText === '' ? undefined : parseRebarAreaSource(JSON.parse(String(sourceText)))
     rebars.push({
       id,
       solidIndex: 0,
       dia,
-      x: finiteNumber(readCell(row, headers, 'X'), `Rebars row ${rowNumber} X`),
-      y: finiteNumber(readCell(row, headers, 'Y'), `Rebars row ${rowNumber} Y`),
+      area,
+      areaSource: rebarAreaSource({ dia, area, areaSource: source }),
+      x: readQuantityCell('length', finiteNumber(readCell(row, headers, 'X'), `Rebars row ${rowNumber} X`), units, row.getCell(headers.get(normalizedHeader('X'))!).note),
+      y: readQuantityCell('length', finiteNumber(readCell(row, headers, 'Y'), `Rebars row ${rowNumber} Y`), units, row.getCell(headers.get(normalizedHeader('Y'))!).note),
       steelMaterialId: resolveMaterialId(
         readCell(row, headers, 'Mat'),
         materials,
@@ -254,7 +281,7 @@ const toRing = (entries: RingEntry[], label: string) => {
   return ordered.map((entry) => entry.point)
 }
 
-const parseBoundarySheet = (sheet: import('exceljs').Worksheet): Point2[][][] => {
+const parseBoundarySheet = (sheet: import('exceljs').Worksheet, units: UnitSelection): Point2[][][] => {
   const headers = headerMap(sheet)
   for (const header of ['Outer', 'Hole', 'id', 'X', 'Y']) {
     if (!headers.has(normalizedHeader(header))) {
@@ -282,8 +309,8 @@ const parseBoundarySheet = (sheet: import('exceljs').Worksheet): Point2[][][] =>
       order: ring.length + 1,
       point: {
         id,
-        x: finiteNumber(readCell(row, headers, 'X'), `Boundary row ${rowNumber} X`),
-        y: finiteNumber(readCell(row, headers, 'Y'), `Boundary row ${rowNumber} Y`)
+        x: readQuantityCell('length', finiteNumber(readCell(row, headers, 'X'), `Boundary row ${rowNumber} X`), units, row.getCell(headers.get(normalizedHeader('X'))!).note),
+        y: readQuantityCell('length', finiteNumber(readCell(row, headers, 'Y'), `Boundary row ${rowNumber} Y`), units, row.getCell(headers.get(normalizedHeader('Y'))!).note)
       }
     })
     entry.rings.set(holeNo, ring)
@@ -312,16 +339,17 @@ export const importSectionWorkbook = async (
   fallbackName = 'Imported section'
 ): Promise<ImportedSectionWorkbook> => {
   const workbook = await readWorkbook(buffer)
+  const units = readWorkbookUnits(workbook, 'pm-section-rebars-area-v2')
   const boundarySheet = workbook.getWorksheet('Boundary')
   if (!boundarySheet) throw new Error('The workbook does not contain a Boundary sheet.')
 
-  const outers = parseBoundarySheet(boundarySheet)
+  const outers = parseBoundarySheet(boundarySheet, units)
   const warnings: string[] = []
   const rebars = parseRebarsSheet(
     workbook.getWorksheet('Rebars'),
     materials,
     defaultMaterialId,
-    warnings
+    warnings, units
   )
   const name = fallbackName.trim() || 'Imported section'
   const summary = summarizeSection({
@@ -341,9 +369,10 @@ export const importRebarWorkbook = async (
   _outerCount: number
 ) => {
   const workbook = await readWorkbook(buffer)
+  const units = readWorkbookUnits(workbook, 'pm-section-rebars-area-v2')
   const sheet = workbook.getWorksheet('Rebars')
   if (!sheet) throw new Error('The workbook does not contain a Rebars sheet.')
   const warnings: string[] = []
-  const rebars = parseRebarsSheet(sheet, materials, defaultMaterialId, warnings)
+  const rebars = parseRebarsSheet(sheet, materials, defaultMaterialId, warnings, units)
   return { rebars, warnings }
 }

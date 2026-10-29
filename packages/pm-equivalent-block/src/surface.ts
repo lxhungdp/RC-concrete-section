@@ -1,3 +1,4 @@
+import { triangulateIndexedLoop } from '@pm/geometry'
 import type {
   BlockSectionState,
   CapacityResultants,
@@ -84,6 +85,8 @@ export type CapacitySurfaceTopology = {
 }
 
 export type CapacitySurface = {
+  /** Original physical Design surface retained by clipping for diagnostic queries only. */
+  beforeAxialCap?: CapacitySurface
   points: CapacitySurfacePoint[]
   triangles: CapacitySurfaceTriangle[]
   directions: number[]
@@ -1319,170 +1322,14 @@ export const intersectCapacitySurfaceWithRay = (
   return best
 }
 
-const signedAreaInMomentPlane = (indices: number[], points: CapacitySurfacePoint[]) => {
-  let area = 0
-  for (let index = 0; index < indices.length; index += 1) {
-    const current = points[indices[index]].resultants
-    const next = points[indices[(index + 1) % indices.length]].resultants
-    area += current.Mx * next.My - next.Mx * current.My
-  }
-  return area / 2
-}
-
-const pointInMomentTriangle = (
-  point: CapacityResultants,
-  a: CapacityResultants,
-  b: CapacityResultants,
-  c: CapacityResultants,
-  tolerance: number
-) => {
-  const cross2 = (p: CapacityResultants, q: CapacityResultants, r: CapacityResultants) =>
-    (q.Mx - p.Mx) * (r.My - p.My) - (q.My - p.My) * (r.Mx - p.Mx)
-  const ab = cross2(a, b, point)
-  const bc = cross2(b, c, point)
-  const ca = cross2(c, a, point)
-  // Only a point strictly inside blocks an ear. Treating points on an ear edge as
-  // interior can leave a numerically collinear final polygon with no selectable ear.
-  return ab > tolerance && bc > tolerance && ca > tolerance
-}
-
 const triangulateCapLoop = (
-  source: number[],
-  points: CapacitySurfacePoint[],
-  tolerance: number
+  loop: number[], points: CapacitySurfacePoint[], tolerance: number
 ): CapacitySurfaceTriangle[] => {
-  let momentScale = 1
-  for (const index of source) {
-    momentScale = Math.max(
-      momentScale,
-      Math.abs(points[index].resultants.Mx),
-      Math.abs(points[index].resultants.My)
-    )
+  try {
+    return triangulateIndexedLoop(loop, points.map(point => ({ x: point.resultants.Mx, y: point.resultants.My })), tolerance)
+  } catch (error) {
+    throw new EquivalentBlockInputError('SOLVER_INPUT', error instanceof Error ? error.message : 'Cap triangulation failed.')
   }
-  const distanceTolerance = Math.max(1e-12 * momentScale, tolerance)
-  const crossTolerance = Math.max(1e-12 * momentScale ** 2, tolerance ** 2)
-  const distinctIndices = source.filter((index, position, values) => position === 0 || index !== values[position - 1])
-  if (distinctIndices.length > 1 && distinctIndices[0] === distinctIndices[distinctIndices.length - 1]) {
-    distinctIndices.pop()
-  }
-  const boundary = signedAreaInMomentPlane(distinctIndices, points) >= 0
-    ? distinctIndices
-    : [...distinctIndices].reverse()
-  const cleaned = boundary.filter((index, position, values) => {
-    if (position === 0) return true
-    const current = points[index].resultants
-    const previous = points[values[position - 1]].resultants
-    return Math.hypot(current.Mx - previous.Mx, current.My - previous.My) > distanceTolerance
-  })
-  if (cleaned.length > 1) {
-    const first = points[cleaned[0]].resultants
-    const last = points[cleaned[cleaned.length - 1]].resultants
-    if (Math.hypot(first.Mx - last.Mx, first.My - last.My) <= distanceTolerance) cleaned.pop()
-  }
-  let removed = true
-  while (removed && cleaned.length > 3) {
-    removed = false
-    for (let index = 0; index < cleaned.length; index += 1) {
-      const previous = points[cleaned[(index - 1 + cleaned.length) % cleaned.length]].resultants
-      const current = points[cleaned[index]].resultants
-      const next = points[cleaned[(index + 1) % cleaned.length]].resultants
-      const leftX = current.Mx - previous.Mx
-      const leftY = current.My - previous.My
-      const rightX = next.Mx - current.Mx
-      const rightY = next.My - current.My
-      const cross = leftX * rightY - leftY * rightX
-      if (Math.abs(cross) > crossTolerance || leftX * rightX + leftY * rightY < 0) continue
-      cleaned.splice(index, 1)
-      removed = true
-      break
-    }
-  }
-  if (cleaned.length < 3) {
-    throw new EquivalentBlockInputError('SOLVER_INPUT', 'The axial-cap contour collapsed below three distinct moment points.')
-  }
-  const loop = [...cleaned]
-  const remaining = [...loop]
-  const triangles: CapacitySurfaceTriangle[] = []
-  let guard = 0
-  while (remaining.length > 3 && guard < loop.length * loop.length) {
-    let clipped = false
-    for (let index = 0; index < remaining.length; index += 1) {
-      const previousIndex = remaining[(index - 1 + remaining.length) % remaining.length]
-      const currentIndex = remaining[index]
-      const nextIndex = remaining[(index + 1) % remaining.length]
-      const previous = points[previousIndex].resultants
-      const current = points[currentIndex].resultants
-      const next = points[nextIndex].resultants
-      const convex =
-        (current.Mx - previous.Mx) * (next.My - current.My) -
-        (current.My - previous.My) * (next.Mx - current.Mx)
-      if (convex <= crossTolerance) continue
-      const contains = remaining.some((candidateIndex) =>
-        candidateIndex !== previousIndex && candidateIndex !== currentIndex && candidateIndex !== nextIndex &&
-        pointInMomentTriangle(points[candidateIndex].resultants, previous, current, next, crossTolerance)
-      )
-      if (contains) continue
-      triangles.push({ a: previousIndex, b: currentIndex, c: nextIndex })
-      remaining.splice(index, 1)
-      clipped = true
-      break
-    }
-    if (!clipped) break
-    guard += 1
-  }
-  if (remaining.length === 3) triangles.push({ a: remaining[0], b: remaining[1], c: remaining[2] })
-  if (triangles.length !== loop.length - 2) {
-    throw new EquivalentBlockInputError(
-      'SOLVER_INPUT',
-      `The axial-cap contour could not be triangulated reliably (${loop.length} vertices, ${remaining.length} unresolved).`
-    )
-  }
-  /**
-   * Ear clipping intentionally removes collinear cap vertices, but every such vertex still belongs
-   * to a clipped side-face edge. Restore them by subdividing the matching boundary triangle; otherwise
-   * a circular or straight-sided cap reports one open edge for every omitted intermediate vertex.
-   */
-  for (let edge = 0; edge < loop.length; edge += 1) {
-    const left = loop[edge]
-    const right = loop[(edge + 1) % loop.length]
-    const chain = [left]
-    let position = boundary.indexOf(left)
-    let guard = 0
-    while (boundary[position] !== right && guard <= boundary.length) {
-      position = (position + 1) % boundary.length
-      chain.push(boundary[position])
-      guard += 1
-    }
-    if (chain[chain.length - 1] !== right) {
-      throw new EquivalentBlockInputError('SOLVER_INPUT', 'The axial-cap boundary subdivision is inconsistent.')
-    }
-    if (chain.length <= 2) continue
-    const triangleIndex = triangles.findIndex((triangle) => {
-      const vertices = [triangle.a, triangle.b, triangle.c]
-      return vertices.includes(left) && vertices.includes(right)
-    })
-    if (triangleIndex < 0) {
-      throw new EquivalentBlockInputError('SOLVER_INPUT', 'A subdivided axial-cap edge has no adjacent triangle.')
-    }
-    const triangle = triangles[triangleIndex]
-    const third = [triangle.a, triangle.b, triangle.c].find((vertex) => vertex !== left && vertex !== right)
-    if (third === undefined) {
-      throw new EquivalentBlockInputError('SOLVER_INPUT', 'A subdivided axial-cap triangle is degenerate.')
-    }
-    const replacements = chain.slice(0, -1).map((vertex, index) => ({
-      a: vertex,
-      b: chain[index + 1],
-      c: third
-    }))
-    triangles.splice(triangleIndex, 1, ...replacements)
-  }
-  if (triangles.length !== boundary.length - 2) {
-    throw new EquivalentBlockInputError(
-      'SOLVER_INPUT',
-      `The axial-cap boundary subdivision is incomplete (${boundary.length} vertices, ${triangles.length} triangles).`
-    )
-  }
-  return triangles
 }
 
 export const clipCapacitySurfaceByAxialCap = (
@@ -1659,6 +1506,7 @@ export const clipCapacitySurfaceByAxialCap = (
     points,
     triangles: oriented,
     topology: evaluateSurfaceTopology(points, oriented),
-    axialCap
+    axialCap,
+    beforeAxialCap: surface.beforeAxialCap ?? surface
   }
 }

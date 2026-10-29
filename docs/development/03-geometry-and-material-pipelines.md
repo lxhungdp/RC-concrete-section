@@ -17,7 +17,7 @@ geometry
     id
     points[]
     holes[] -> points[]
-  rebars[] -> id, steelMaterialId?, dia, x, y
+  rebars[] -> id, steelMaterialId?, dia, area, areaSource?, x, y
 ```
 
 The UI keeps additional draft `BoundaryObject` data. Pressing Apply converts one active boundary to
@@ -46,6 +46,10 @@ Export uses R2000 ASCII DXF with closed straight-segment 2D LWPOLYLINE boundarie
 CIRCLE reinforcement. Export includes the active boundary's outers, holes and
 bars, including their full-precision coordinates; circle radius is `dia / 2`.
 It does not export an analysis mesh or acceptance status.
+An explicit As different from the circle equation blocks section DXF export with
+`UNSUPPORTED_REBAR_AREA`; a CIRCLE cannot carry that independent calculation input. Use project
+JSON or an area-aware workbook to preserve it. DXF imports remain explicit diameter-only drafts;
+the application materializes their area once before editing or canonical project export.
 The R2000 container includes HEADER, CLASSES, TABLES, BLOCKS, ENTITIES and
 OBJECTS, with all nine system symbol tables, the standard linetypes/styles/ACAD
 application entry, both space block records and the root/ACAD_GROUP dictionaries.
@@ -88,7 +92,7 @@ It changes no existing material parameters, profile, resistance basis or analysi
 options. Material validation and geometry validation must both succeed before
 any import state is published. Invalid existing material definitions are not silently
 replaced. The default concrete remains the single concrete definition supported
-by project schema v1.
+by project schema v2 and its legacy v1 reader.
 
 Autodesk format authorities, accessed 2026-10-08:
 [POLYLINE](https://help.autodesk.com/cloudhelp/2020/ENU/AutoCAD-DXF/files/GUID-ABF6B778-BE20-4B49-9B58-A94E64CEFFF3.htm),
@@ -120,6 +124,14 @@ evidence in its task packet, not an implemented product capability.
 | `GeometryInput` | `geometryInputRebars` | flattened UI rebar view with `solidIndex` |
 | section geometry | area/centroid/perimeter summaries | editor display/basic warnings |
 | section + pattern parameters | `generateRebarsForSection` | proposed bar locations |
+
+Quick-generator parameters, pattern and replace/append choice are transient workspace editor
+state. Canonical length parameters remain mm and survive Rebar-panel/menu unmounts and display-unit
+changes. Opening a project resets this helper state to its existing defaults; it is not serialized
+into project JSON. Existing bars change only through the Generate action or an explicit bar edit.
+The generator retains independent canonical diameter and As, with one-time Equation/Catalog fills.
+Generated bars copy both inputs. Later diameter edits do not derive As. The shared area owner and
+legacy boundary are described in [stored-area contracts](11-rebar-area-and-catalogs.md).
 
 These outputs are `implemented/preview`. `summarizeSection().isValid` remains an editor summary, not
 the analysis gate. `validateGeometryInput`/`validatePolygonSection` now provide the shared

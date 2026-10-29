@@ -1,5 +1,8 @@
 'use client'
 
+import { QuantityInput } from '../shared/DisplayUnits'
+import type { Quantity } from '@pm/units'
+
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ExternalLink, Info, RotateCcw } from 'lucide-react'
 import {
@@ -37,6 +40,7 @@ const profileDefaults = (profileId: DesignProfileId): DesignBasis => {
 
 const NumericFactor = ({
   label,
+  quantity,
   value,
   min,
   max,
@@ -46,6 +50,7 @@ const NumericFactor = ({
   onChange
 }: {
   label: string
+  quantity?: Quantity
   value: number
   min: number
   max: number
@@ -56,7 +61,7 @@ const NumericFactor = ({
 }) => (
   <label className="pm-design-factor" title={help}>
     <span>{label}</span>
-    <input
+    {quantity ? <QuantityInput quantity={quantity} value={value} min={min} max={max} step={step} readOnly={readOnly} onValueChange={onChange} /> : <input
       type="number"
       value={value}
       min={min}
@@ -67,7 +72,7 @@ const NumericFactor = ({
         const next = Number(event.target.value)
         if (Number.isFinite(next)) onChange(next)
       }}
-    />
+    />}
   </label>
 )
 
@@ -328,7 +333,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
               {!isAs3600Profile && draft.transition.type === 'fixed-or-yield-multiple' && (
                 <>
                   <NumericFactor
-                    label="fy threshold (MPa)"
+                    label="fy threshold" quantity="stress"
                     value={draft.transition.yieldStressThreshold}
                     min={100}
                     max={1000}
@@ -467,7 +472,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
               </div>
               <div className="pm-design-factor-grid">
                 <NumericFactor
-                  label="e min · constant (mm)"
+                  label="e min · constant" quantity="length"
                   value={draft.minimumEccentricity.constantMm}
                   min={0}
                   max={100}

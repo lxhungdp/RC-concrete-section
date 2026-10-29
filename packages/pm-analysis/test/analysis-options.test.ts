@@ -134,9 +134,10 @@ test('an exact stress-strain direction uses no angular interpolation and keeps i
   )
 
   assert.ok(Math.abs(curve.beta - beta) < 1e-14)
-  assert.equal(curve.designFixed.length, UNIFIED_STATION_COUNT)
+  assert.equal(curve.beforeAxialCap?.length, UNIFIED_STATION_COUNT)
   assert.equal(curve.nominalFixed.length, UNIFIED_STATION_COUNT)
-  assert.equal(curve.designAdaptive.length, UNIFIED_STATION_COUNT)
+  assert.equal(curve.designAdaptive.length, curve.designFixed.length)
+  assert.ok(curve.designFixed.some(point=>point.surfaceRole==='axial-cap'&&point.stationId===null))
   assert.equal(curve.stations.filter((station) => station.fixed).length, UNIFIED_STATION_COUNT)
   assert.ok(curve.designAdaptive.every((point) => Math.abs(point.beta - beta) < 1e-14))
   assert.ok(curve.designFixed.every((point) => point.stationId?.startsWith('adaptive-') !== true))

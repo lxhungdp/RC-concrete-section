@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "main": "src/index.ts",
-  "exports": { ".": "./src/index.ts" },
+  "exports": { ".": "./src/index.ts", "./capacity-field": "./src/capacity-field.ts" },
   "scripts": {
     "test": "node ../../tools/runtime/check-runtime.mjs && node --import tsx --test test/*.test.ts",
     "fixture:complex-section-json": "node ../../tools/runtime/check-runtime.mjs && tsx test/fixtures/write-complex-section.ts"

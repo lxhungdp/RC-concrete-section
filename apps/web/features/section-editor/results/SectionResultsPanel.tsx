@@ -1,5 +1,7 @@
 'use client'
 
+import { QuantityValue, UnitLabel, useQuantityFormatters } from '../shared/DisplayUnits'
+
 import { TransferIcon } from '../shared/WorkspaceIcons'
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import dynamic from 'next/dynamic'
@@ -13,7 +15,7 @@ import type {
 import type { DesignBasis } from '@pm/design'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
-import type { LoadCombination, ProjectInformation } from '@pm/project'
+import type { LoadCombination, LoadReference, ProjectInformation } from '@pm/project'
 import {
   SECTION_CHART_IDS,
   sectionChartLabel,
@@ -78,6 +80,7 @@ type Props = {
   materialStore: MaterialStore
   designBasis: DesignBasis
   loadcases: readonly LoadCombination[]
+  loadReference?: LoadReference
 }
 
 const integer = (value: number) => Math.round(value).toLocaleString('en-US')
@@ -88,10 +91,10 @@ const shortLabel = (id: SectionChartId) =>
 const fmt = (value: number, digits = 2) =>
   Number.isFinite(value) ? value.toLocaleString('en-US', { maximumFractionDigits: digits }) : '—'
 
-const fmtForce = (value: number) => fmt(formatChartTableForce(value), 1)
-const fmtMoment = (value: number) => fmt(formatChartTableMoment(value), 2)
 
 const SumCells = ({ stage }: { stage: ChartTableStageForces | null }) => {
+  const { fmtForce, fmtMoment } = useQuantityFormatters()
+
   if (!stage) {
     return (
       <>
@@ -109,6 +112,8 @@ const SumCells = ({ stage }: { stage: ChartTableStageForces | null }) => {
 }
 
 const MomentCells = ({ stage }: { stage: ChartTableMoments | null }) => {
+  const { fmtMoment } = useQuantityFormatters()
+
   if (!stage) {
     return (
       <>
@@ -138,8 +143,11 @@ export function SectionResultsPanel({
   rebars,
   materialStore,
   designBasis,
-  loadcases
+  loadcases,
+  loadReference
 }: Props) {
+  const { displayUnits, qfmt, unit, force, moment } = useQuantityFormatters()
+
   const [source, setSource] = useState<ChartTableSource>('vertical')
   const [resistanceStage, setResistanceStage] = useState<ChartTableResistanceStage>('design')
   const includeDesign = resistanceStage === 'design'
@@ -178,6 +186,7 @@ export function SectionResultsPanel({
     try {
       if (!surface) return
       await downloadChartAuditExcel({
+        presentationUnits: displayUnits,
         projectName,
         projectInformation,
         sectionName: section.name,
@@ -214,6 +223,7 @@ export function SectionResultsPanel({
     setCalculationExportError(null)
     try {
       await downloadConcretePointAuditExcel({
+        presentationUnits: displayUnits,
         projectName,
         sectionName: section.name,
         calculationProfileId: surface.calculationProfileId,
@@ -292,6 +302,7 @@ export function SectionResultsPanel({
     setCalculationExportError(null)
     try {
       await downloadCalculationTraceAuditExcel({
+        presentationUnits: displayUnits,
         projectName,
         sectionName: section.name,
         calculationProfileId: surface.calculationProfileId,
@@ -418,8 +429,8 @@ export function SectionResultsPanel({
           <span>Ac / As</span>
           <strong className="ws-num">
             {summary.hasAppliedSection
-              ? `${integer(summary.concreteArea)} / ${integer(summary.steelArea)} mm²`
-              : `— / ${integer(summary.steelArea)} mm²`}
+              ? `${qfmt('area', summary.concreteArea, 0)} / ${qfmt('area', summary.steelArea, 0)} ${unit('area')}`
+              : `— / ${qfmt('area', summary.steelArea, 0)} ${unit('area')}`}
           </strong>
           <span>Sampling mode</span>
           <strong>{summary.samplingMode === 'adaptive' ? 'Independent adaptive' : 'Fixed grid'}</strong>
@@ -455,6 +466,7 @@ export function SectionResultsPanel({
       </section>
 
       <section className="pm-panel-section pm-chart-data-section">
+        {loadReference && (loadReference.offsetX !== 0 || loadReference.offsetY !== 0) ? <p className="pm-field-note">Charts, audit tables and calculation traces use moments about centroid.</p> : null}
         <div className="pm-chart-data-toolbar">
           <div className="pm-chart-data-heading">
             <h2 className="pm-chart-visibility-title">Chart data</h2>
@@ -463,7 +475,7 @@ export function SectionResultsPanel({
                 ? exactDirectionCurve
                   ? `Exact β = ${fmt(exactDirectionCurve.beta * 180 / Math.PI, 3)}°`
                   : `Fixed β = ${fmt(view.sliceAngle, 0)}°`
-                : `P = ${fmt(fixedP / 1000, 1)} kN`}
+                : `P = ${qfmt('force', fixedP, 1)} ${unit('force')}`}
               {` · ${rows.length} row${rows.length === 1 ? '' : 's'}`}
             </span>
           </div>
@@ -538,14 +550,14 @@ export function SectionResultsPanel({
                   <th title="Sampled strain-plane direction β">β</th>
                   {includeDesign ? (
                     <>
-                      <th title="Design Mx">Mx <span className="pm-table-unit">(kN·m)</span></th>
-                      <th title="Design My">My <span className="pm-table-unit">(kN·m)</span></th>
+                      <th title="Design Mx">Mx <span className="pm-table-unit">({unit('moment')})</span></th>
+                      <th title="Design My">My <span className="pm-table-unit">({unit('moment')})</span></th>
                     </>
                   ) : null}
                   {includeNominal ? (
                     <>
-                      <th title="Nominal Mx">Mnx <span className="pm-table-unit">(kN·m)</span></th>
-                      <th title="Nominal My">Mny <span className="pm-table-unit">(kN·m)</span></th>
+                      <th title="Nominal Mx">Mnx <span className="pm-table-unit">({unit('moment')})</span></th>
+                      <th title="Nominal My">Mny <span className="pm-table-unit">({unit('moment')})</span></th>
                     </>
                   ) : null}
                 </tr>
@@ -583,14 +595,14 @@ export function SectionResultsPanel({
                   <th>Criterion</th>
                   {includeDesign ? (
                     <>
-                      <th title="Design sum P">P <span className="pm-table-unit">(kN)</span></th>
-                      <th title="Design sum M">M <span className="pm-table-unit">(kN·m)</span></th>
+                      <th title="Design sum P">P <span className="pm-table-unit">({unit('force')})</span></th>
+                      <th title="Design sum M">M <span className="pm-table-unit">({unit('moment')})</span></th>
                     </>
                   ) : null}
                   {includeNominal ? (
                     <>
-                      <th title="Nominal sum P">Pn <span className="pm-table-unit">(kN)</span></th>
-                      <th title="Nominal sum M">Mn <span className="pm-table-unit">(kN·m)</span></th>
+                      <th title="Nominal sum P">Pn <span className="pm-table-unit">({unit('force')})</span></th>
+                      <th title="Nominal sum M">Mn <span className="pm-table-unit">({unit('moment')})</span></th>
                     </>
                   ) : null}
                 </tr>

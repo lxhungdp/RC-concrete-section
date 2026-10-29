@@ -1,3 +1,4 @@
+import { appendPresentationSummary } from './presentation-summary'
 import {
   stationDefinitionLabel,
   type AxialCapPointCalculationAudit,
@@ -353,7 +354,7 @@ const addSteelSheet = (
     if (typeof value === 'number') cell.numFmt = index < 3 ? SCIENTIFIC_ENGINEERING : index === 3 ? OPTIONAL_COEFFICIENT : OPTIONAL_DECIMALS
   })
 
-  reportTitle(sheet, `REINFORCEMENT · ${audit.pointId}`, 16)
+  reportTitle(sheet, `REINFORCEMENT · ${audit.pointId}`, 17)
   sheetNote(
     sheet,
     2,
@@ -364,7 +365,7 @@ const addSteelSheet = (
   const headers = [
     'No.', 'Bar', 'Steel material', 'd (mm)', 'x local (mm)', 'y local (mm)', 'As (mm²)',
     'εs', 'σs (MPa)', 'Displaced concrete active', '−σc,disp (MPa)', 'σnet (MPa)', 'Fnet (N)',
-    'Ps (kN)', 'Msx (kN·m)', 'Msy (kN·m)'
+    'Ps (kN)', 'Msx (kN·m)', 'Msy (kN·m)', 'As source'
   ]
   const headerRow = 10
   const firstRow = headerRow + 1
@@ -389,7 +390,9 @@ const addSteelSheet = (
       if (typeof value === 'number') cell.numFmt = column < 3 ? '0' : OPTIONAL_DECIMALS
       styleGenerated(cell)
     })
-    setFormula(sheet.getCell(row, 7), `PI()*D${row}^2/4`, bar.area, CALCULATION_VALUE)
+    if (bar.storedArea) { sheet.getCell(row, 7).value = bar.area; styleInput(sheet.getCell(row, 7)); sheet.getCell(row, 7).numFmt = CALCULATION_VALUE }
+    else setFormula(sheet.getCell(row, 7), `PI()*D${row}^2/4`, bar.area, CALCULATION_VALUE)
+    sheet.getCell(row, 17).value = bar.areaSource ?? 'Legacy equation'
     setFormula(sheet.getCell(row, 8), `$A$4+$B$4*F${row}+$C$4*E${row}`, bar.strain, SCIENTIFIC_ENGINEERING)
     setFormula(
       sheet.getCell(row, 9),
@@ -417,7 +420,7 @@ const addSteelSheet = (
   setFormula(sheet.getCell(7, 15), sum('O'), displayed.Mx, CALCULATION_VALUE)
   setFormula(sheet.getCell(7, 16), sum('P'), displayed.My, CALCULATION_VALUE)
   for (const column of [14, 15, 16]) sheet.getCell(7, column).font = { ...sheet.getCell(7, column).font, bold: true, size: 11 }
-  sheet.columns = [14, 14, 26, 12, 16, 16, 18, 18, 20, 22, 20, 20, 22, 20, 20, 20].map((width) => ({ width }))
+  sheet.columns = [14, 14, 26, 12, 16, 16, 18, 18, 20, 22, 20, 20, 22, 20, 20, 20, 40].map((width) => ({ width }))
   if (lastRow >= firstRow) {
     sheet.autoFilter = `A${headerRow}:P${lastRow}`
     zebraRows(sheet, headerRow, audit.rebars.length, headers.length)
@@ -841,6 +844,7 @@ export const buildCalculationTraceAuditWorkbook = async (input: CalculationTrace
   }
   addSummarySheet(workbook, input, results)
   workbook.calcProperties.fullCalcOnLoad = true
+  appendPresentationSummary(workbook, input)
   return workbook
 }
 

@@ -524,7 +524,7 @@ for (const profileId of [
   })
 }
 
-test('schema v1 round-trips a block profile without migration', () => {
+test('schema v2 round-trips stored areas and the unchanged block profile', () => {
   const profileId = 'aci-318-19-22-equivalent-block' as const
   const input = build(profileId)
   const document = createProjectDocument({
@@ -535,7 +535,7 @@ test('schema v1 round-trips a block profile without migration', () => {
     design: input.design
   })
   const parsed = parseProjectDocument(serializeProjectDocument(document))
-  assert.equal(document.version, 1)
+  assert.equal(document.version, 3)
   assert.equal(parsed.ok, true)
   if (parsed.ok) {
     assert.equal(parsed.document.inputs.calculationProfileId, profileId)

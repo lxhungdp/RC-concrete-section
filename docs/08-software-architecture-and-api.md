@@ -63,17 +63,19 @@ Compile-time types do not validate JSON. Use the current local runtime parser fo
 boundary. Every persisted calculation contract in the repository is v1:
 
 ```ts
-PM_PROJECT_VERSION = 1
+PM_PROJECT_VERSION = 2
 DESIGN_BASIS_VERSION = 3
 ANALYSIS_OPTIONS_VERSION = 1
 STRAIN_DOMAIN_SURFACE_METHOD = 'strain-domain-surface-v1'
 EQUIVALENT_BLOCK_SURFACE_METHOD = 'equivalent-block-surface-v1'
 ```
 
-The project schema remains v1. Its embedded DesignBasis has explicit v1 -> v2 factor-expression
+Canonical project exports use v3 with a load reference and stored rebar area; explicit centroidal v1/v2 readers remain.
+Its embedded DesignBasis has explicit v1 -> v2 factor-expression
 and v1/v2 -> v3 EN compression-domain migrations; unsupported versions fail. Analysis-option and
-surface method IDs remain v1. A different project schema version is outside the current scope; an old standard edition
-or unit convention may never be reinterpreted silently.
+surface method IDs remain v1. The area materialization boundary is specified in
+[the persistence owner](development/02-data-contracts-persistence-and-versioning.md). An old standard
+edition or unit convention may never be reinterpreted silently.
 
 ## 5. Errors, warnings, and fail-closed behavior
 

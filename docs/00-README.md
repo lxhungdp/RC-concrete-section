@@ -29,13 +29,16 @@ Current UI note:
 - `Demand Check` owns loadcase entry and the governing check for the current simple `Pu/Mux/Muy`
   workflow. Selecting a combination anywhere — including a click on a demand marker in the Capacity
   3D plot — moves to this menu.
+- `Demand Check` also owns Load reference before Report: centroid-relative X/Y offset drafts preview
+  only the LOAD axes. Apply commits them, with an unchecked Convert existing loadcases option.
+  Only load input is translated; all numerical checks and Direct/Fixed-P/3D plots remain centroidal.
 - A separate `Loadings` workspace is intentionally avoided until source-load management becomes
   large enough to justify it.
 - `Options` is the last menu and separates its controls into `Points`, `Mesh`/`Block`, and
-  `Resistance` tabs. Points also owns direction sampling; Resistance applies valid
+  `Resistance` tabs, plus a presentation-only `Units` tab. Points also owns direction sampling; Resistance applies valid
   edits immediately without a separate action button. These settings are not edited in either
-  result workspace — the result sidebars carry presentation state only, never a value that changes a
-  resultant.
+  result workspace — the Capacity sidebar carries presentation state only. Demand Check additionally owns the explicit
+  applied load-reference input described above.
 - There is no top-level `Report` menu. Export commands are actions in the relevant preview
   workspace: `Demand Check` exports the PDF design report and the demand-check calculation
   workbook. One loadcase selection drives both — every combination is checked and plotted, and the

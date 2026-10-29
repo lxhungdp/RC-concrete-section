@@ -1,9 +1,11 @@
+import { fromCanonical, UNIT_PRESETS, type UnitSelection } from '@pm/units'
 import {
   activeDesignDirectionPoints,
   activeDesignSurfaceDataset,
   activeNominalDirectionPoints,
   activeNominalSurfaceDataset,
   buildDirectMeridianSection,
+  isMeridianAuditPoint,
   stationDefinitionLabel,
   traceFixedPContourSamples,
   type ExactDirectionCurve,
@@ -109,8 +111,8 @@ export const resolveChartTableRowSelection = (
   ) ?? null
 }
 
-const kn = (value: number) => value / 1000
-const knm = (value: number) => value / 1_000_000
+const kn = (value: number) => fromCanonical('force', value, UNIT_PRESETS.metric)
+const knm = (value: number) => fromCanonical('moment', value, UNIT_PRESETS.metric)
 
 const normalizeAngleDeg = (degrees: number) => ((degrees % 360) + 360) % 360
 
@@ -157,12 +159,10 @@ const collectVertical = (
   stage: ChartTableResistanceStage,
   drafts: Map<string, VerticalDraft>
 ) => {
-  const primary = buildDirectMeridianSection(points, angleDeg, false).primary.filter((point) =>
-    point.sectionPointRole === 'surface-vertex' && point.stationId !== null
-  )
+  const primary = buildDirectMeridianSection(points, angleDeg, false).primary.filter(isMeridianAuditPoint)
   const momentOf = (part: Resultant) => momentAlong(part, angleDeg)
   for (const point of primary) {
-    const key = `vertical-${point.stationId}`
+    const key = `vertical-${point.stationId ?? `cap-${point.id}`}`
     const forces = forcesFromLedger(point.ledger, momentOf)
     const station = descriptors.find((descriptor) => descriptor.id === point.stationId) ?? null
     const evidence: ChartTableVerticalRow['evidence'] = { stage, angleDeg, point, station }
@@ -173,7 +173,8 @@ const collectVertical = (
       existing.evidence = evidence
       continue
     }
-    const stationLabel = stationDefinitionLabel(
+    const stationLabel = point.stationId === null && point.surfaceRole === 'axial-cap'
+      ? 'Pmax intersection' : stationDefinitionLabel(
       station?.definition ??
       { kind: 'block-adaptive', label: 'Adaptive midpoint' }
     )
@@ -359,8 +360,8 @@ export const buildChartTableRows = (input: {
     }))
 }
 
-export const formatChartTableForce = (valueN: number) => kn(valueN)
-export const formatChartTableMoment = (valueNmm: number) => knm(valueNmm)
+export const formatChartTableForce = (valueN: number, units: UnitSelection = UNIT_PRESETS.metric) => fromCanonical('force', valueN, units)
+export const formatChartTableMoment = (valueNmm: number, units: UnitSelection = UNIT_PRESETS.metric) => fromCanonical('moment', valueNmm, units)
 
 const numOrBlank = (value: number, digits: number) =>
   Number.isFinite(value) ? Number(value.toFixed(digits)) : ''

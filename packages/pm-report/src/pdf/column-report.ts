@@ -1,3 +1,4 @@
+import { fromCanonical, quantityUnit, type Quantity, type UnitSelection } from '@pm/units'
 /**
  * Renders a `ColumnReportModel` to PDF.
  *
@@ -30,6 +31,15 @@ import type {
   InteractionCurve,
   XY
 } from '../model/report-model'
+
+export type ColumnReportRenderOptions = {
+  /** Browser-loaded, OFL-licensed fallback used for user-entered Unicode outside WinAnsi/Symbol. */
+  unicodeFontBytes?: Uint8Array
+}
+
+function createRenderer(displayUnits: UnitSelection) {
+const unit = (quantity: Quantity) => quantityUnit(quantity, displayUnits)
+const qnum = (quantity: Quantity, value: number, digits = 2) => num(fromCanonical(quantity, value, displayUnits), digits)
 
 const AXIS_COLOR = REPORT_COLORS.rule
 const num = (value: number, digits = 2) =>
@@ -139,7 +149,7 @@ const drawInteraction = (
   marks?: { demand: { m: number; p: number }; capacity: { m: number; p: number } | null }
 ) => {
   const { page } = frame
-  drawAxes(frame, bounds, { x: 'Mθ (kN·m)', y: 'P (kN)' })
+  drawAxes(frame, bounds, { x: `Mθ (${unit('moment')})`, y: `P (${unit('force')})` })
   page.save()
   page.clipRect(frame.left - 2, frame.bottom - 2, frame.width + 4, frame.height + 4)
 
@@ -261,7 +271,7 @@ const drawFixedPContour = (
   curve: FixedPCurve
 ) => {
   const { page } = frame
-  drawAxes(frame, bounds, { x: 'Mx (kN·m)', y: 'My (kN·m)' })
+  drawAxes(frame, bounds, { x: `Mx (${unit('moment')})`, y: `My (${unit('moment')})` })
   page.save()
   page.clipRect(frame.left - 2, frame.bottom - 2, frame.width + 4, frame.height + 4)
 
@@ -413,7 +423,7 @@ const drawDepthProfile = (frame: Frame, detail: CombinationDetail) => {
   page.setDash([3, 2])
   page.line(columnLeft, yOf(profile.neutralAxisDepth), stressLeft + stressWidth, yOf(profile.neutralAxisDepth))
   page.setDash([])
-  page.text(stressLeft + stressWidth + 2, yOf(profile.neutralAxisDepth) - 2, `c = ${num(profile.neutralAxisDepth, 1)}`, {
+  page.text(stressLeft + stressWidth + 2, yOf(profile.neutralAxisDepth) - 2, `c = ${qnum('length', profile.neutralAxisDepth, 1)}`, {
     size: 5.5,
     color: REPORT_COLORS.demand
   })
@@ -422,7 +432,7 @@ const drawDepthProfile = (frame: Frame, detail: CombinationDetail) => {
     page.setDash([1.6, 1.6])
     page.line(columnLeft, yOf(profile.blockDepth), stressLeft + stressWidth, yOf(profile.blockDepth))
     page.setDash([])
-    page.text(stressLeft + stressWidth + 2, yOf(profile.blockDepth) - 2, `a = ${num(profile.blockDepth, 1)}`, {
+    page.text(stressLeft + stressWidth + 2, yOf(profile.blockDepth) - 2, `a = ${qnum('length', profile.blockDepth, 1)}`, {
       size: 5.5,
       color: REPORT_COLORS.accent
     })
@@ -477,7 +487,7 @@ const drawDepthProfile = (frame: Frame, detail: CombinationDetail) => {
     page.setStroke(REPORT_COLORS.design)
     page.setLineWidth(0.9)
     page.rect(stressLeft, yOf(profile.blockDepth), width, top - yOf(profile.blockDepth), 'stroke')
-    page.text(stressLeft + width + 3, top - 8, `σ = ${num(profile.blockStressMpa, 2)} MPa`, {
+    page.text(stressLeft + width + 3, top - 8, `σ = ${qnum('stress', profile.blockStressMpa, 2)} ${unit('stress')}`, {
       size: 5.5,
       color: REPORT_COLORS.design
     })
@@ -492,7 +502,7 @@ const drawDepthProfile = (frame: Frame, detail: CombinationDetail) => {
         y: yOf(sample.depth)
       }))
     )
-    page.text(stressLeft + stressWidth * 0.74, top - 8, `peak ${num(peak, 2)} MPa`, {
+    page.text(stressLeft + stressWidth * 0.74, top - 8, `peak ${qnum('stress', peak, 2)} ${unit('stress')}`, {
       size: 5.5,
       color: REPORT_COLORS.design
     })
@@ -531,12 +541,8 @@ const barLegend = (doc: ReportDocument, bars: readonly BarState[]) => {
   )
 }
 
-export type ColumnReportRenderOptions = {
-  /** Browser-loaded, OFL-licensed fallback used for user-entered Unicode outside WinAnsi/Symbol. */
-  unicodeFontBytes?: Uint8Array
-}
 
-export const renderColumnReport = (
+const render = (
   model: ColumnReportModel,
   options: ColumnReportRenderOptions = {}
 ): Uint8Array => {
@@ -576,12 +582,16 @@ export const renderColumnReport = (
   ], 2)
 
   doc.heading('Calculation identity')
-  doc.keyValues(model.identity, 2)
+  const identityProse = new Set(['Units', 'Sign convention'])
+  doc.keyValues(model.identity.filter(([label]) => !identityProse.has(label)), 2)
+  for (const [label, value] of model.identity.filter(([label]) => identityProse.has(label))) {
+    doc.paragraph(`${label}: ${value}`, { size: 7 })
+  }
 
   doc.heading('Section')
   const figureHeight = 190
   const drawingFrame = doc.figure({
-    title: 'Cross-section (mm, about the net concrete centroid)',
+    title: `Cross-section (${unit('length')}, about the net concrete centroid)`,
     height: figureHeight,
     bounds: model.drawing.bounds,
     widthFraction: 0.48,
@@ -633,11 +643,12 @@ export const renderColumnReport = (
     columns: [
       { title: '#', width: 5, align: 'right' },
       { title: 'Bar id', width: 10 },
-      { title: 'Ø (mm)', width: 10, align: 'right' },
-      { title: 'X (mm)', width: 14, align: 'right' },
-      { title: 'Y (mm)', width: 14, align: 'right' },
-      { title: 'As (mm²)', width: 14, align: 'right' },
-      { title: 'Steel', width: 18 }
+      { title: `Ø (${unit('barDiameter')})`, width: 10, align: 'right' },
+      { title: `X (${unit('length')})`, width: 14, align: 'right' },
+      { title: `Y (${unit('length')})`, width: 14, align: 'right' },
+      { title: `As (${unit('area')})`, width: 14, align: 'right' },
+      { title: 'Steel', width: 14 },
+      { title: 'As source', width: 25 }
     ],
     rows: model.barSchedule
   })
@@ -649,8 +660,8 @@ export const renderColumnReport = (
   // for, so the θ = 0 meridian is drawn once, large enough to carry them.
   doc.newPage(A4_PORTRAIT)
   doc.title('2. Section capacity', 'Nominal reference and Design resistance. Only Design is compared with factored demand.')
-  if (model.axialCapKn !== null) {
-    doc.paragraph(`Maximum design axial resistance applied at ${num(model.axialCapKn, 1)} kN; it appears as the flat top of the diagram.`)
+  if (model.axialCap !== null) {
+    doc.paragraph(`Maximum design axial resistance applied at ${num(model.axialCap, 1)} ${unit('force')}; it appears as the flat top of the diagram.`)
   }
   const capacityCurve = model.capacityCurve
   const capacityBounds = curveBounds([capacityCurve.design, capacityCurve.nominal])
@@ -671,10 +682,10 @@ export const renderColumnReport = (
       columns: [
         { title: 'Mark', width: 14 },
         { title: 'Station criterion', width: 18 },
-        { title: 'P design (kN)', width: 13, align: 'right' },
-        { title: 'Mθ design (kN·m)', width: 15, align: 'right' },
-        { title: 'P nominal (kN)', width: 13, align: 'right' },
-        { title: 'Mθ nominal (kN·m)', width: 15, align: 'right' },
+        { title: `P design (${unit('force')})`, width: 13, align: 'right' },
+        { title: `Mθ design (${unit('moment')})`, width: 15, align: 'right' },
+        { title: `P nominal (${unit('force')})`, width: 13, align: 'right' },
+        { title: `Mθ nominal (${unit('moment')})`, width: 15, align: 'right' },
         { title: 'φ', width: 8, align: 'right' },
         { title: 'Class', width: 22 }
       ],
@@ -706,9 +717,9 @@ export const renderColumnReport = (
     columns: [
       { title: '#', width: 5, align: 'right' },
       { title: 'Combination', width: 26 },
-      { title: 'Pu (kN)', width: 13, align: 'right' },
-      { title: 'Mux (kN·m)', width: 14, align: 'right' },
-      { title: 'Muy (kN·m)', width: 14, align: 'right' },
+      { title: `Pu (${unit('force')})`, width: 13, align: 'right' },
+      { title: `Mux (${unit('moment')})`, width: 14, align: 'right' },
+      { title: `Muy (${unit('moment')})`, width: 14, align: 'right' },
       { title: 'θL (°)', width: 10, align: 'right' },
       { title: 'φ', width: 9, align: 'right' },
       { title: 'Class', width: 16 },
@@ -718,9 +729,9 @@ export const renderColumnReport = (
     rows: model.combinations.map((row, index) => [
       String(index + 1),
       row.name,
-      num(row.pKn, 1),
-      num(row.mxKnm, 1),
-      num(row.myKnm, 1),
+      num(row.p, 1),
+      num(row.mx, 1),
+      num(row.my, 1),
       num(row.thetaDeg, 1),
       row.phi === null ? '—' : num(row.phi, 3),
       row.classification,
@@ -771,7 +782,7 @@ export const renderColumnReport = (
     )
   }
   const combinationSubtitle = (detail: CombinationDetail) =>
-    `Pu = ${num(detail.row.pKn, 1)} kN · Mux = ${num(detail.row.mxKnm, 1)} kN·m · Muy = ${num(detail.row.myKnm, 1)} kN·m · θL = ${num(detail.row.thetaDeg, 2)}°`
+    `Pu = ${num(detail.row.p, 1)} ${unit('force')} · Mux = ${num(detail.row.mx, 1)} ${unit('moment')} · Muy = ${num(detail.row.my, 1)} ${unit('moment')} · θL = ${num(detail.row.thetaDeg, 2)}°`
 
   model.details.forEach((detail, index) => {
     doc.newPage(A4_PORTRAIT)
@@ -809,7 +820,7 @@ export const renderColumnReport = (
       [detail.fixedP.demand, ...(detail.fixedP.capacity ? [detail.fixedP.capacity] : [])]
     )
     const fixedFrame = doc.figure({
-      title: `Fixed-P Mx–My at Pu = ${num(detail.fixedP.pKn, 1)} kN`,
+      title: `Fixed-P Mx–My at Pu = ${num(detail.fixedP.p, 1)} ${unit('force')}`,
       height: curveHeight,
       bounds: fixedBounds,
       widthFraction: 0.48,
@@ -842,26 +853,26 @@ export const renderColumnReport = (
     doc.heading('Section state')
     const detailHeight = 200
     const sectionFrame = doc.figure({
-      title: 'Transverse section — neutral axis and compression zone',
+      title: 'Transverse section — compression zone',
       height: detailHeight,
       bounds: model.drawing.bounds,
       widthFraction: 0.48,
       // Kept short: the half-width figure shares its title line with this caption.
       caption: detail.compressionZone
         ? detail.compressionZone.kind === 'block'
-          ? `a=${num(detail.depthProfile?.blockDepth ?? 0, 0)}`
+          ? `a=${qnum('length', detail.depthProfile?.blockDepth ?? 0, 0)} ${unit('length')}`
           : 'ε>0'
         : '—'
     })
     drawSection(sectionFrame, model, detail)
     const elevationFrame = doc.figure({
-      title: 'Longitudinal section — strain and stress over the depth',
+      title: 'Depth profile — strain and concrete stress',
       height: detailHeight,
       bounds: { minX: 0, maxX: 1, minY: 0, maxY: 1 },
       widthFraction: 0.48,
       offsetFraction: 0.52,
       preserveAspect: false,
-      caption: detail.depthProfile ? `Dθ=${num(detail.depthProfile.projectedDepth, 0)}` : ''
+      caption: detail.depthProfile ? `Dθ=${qnum('length', detail.depthProfile.projectedDepth, 0)} ${unit('length')}` : ''
     })
     if (detail.depthProfile) drawDepthProfile(elevationFrame, detail)
     doc.endFigureRow(detailHeight)
@@ -875,24 +886,24 @@ export const renderColumnReport = (
       doc.table({
         columns: [
           { title: 'Bar', width: 10 },
-          { title: 'X (mm)', width: 13, align: 'right' },
-          { title: 'Y (mm)', width: 13, align: 'right' },
-          { title: 'As (mm²)', width: 13, align: 'right' },
-          { title: 'depth (mm)', width: 14, align: 'right' },
+          { title: `X (${unit('length')})`, width: 13, align: 'right' },
+          { title: `Y (${unit('length')})`, width: 13, align: 'right' },
+          { title: `As (${unit('area')})`, width: 13, align: 'right' },
+          { title: `depth (${unit('length')})`, width: 14, align: 'right' },
           { title: 'ε', width: 15, align: 'right' },
-          { title: 'σs (MPa)', width: 13, align: 'right' },
-          { title: 'F (kN)', width: 13, align: 'right' },
+          { title: `σs (${unit('stress')})`, width: 13, align: 'right' },
+          { title: `F (${unit('force')})`, width: 13, align: 'right' },
           { title: 'in block', width: 10, align: 'center' }
         ],
         rows: detail.bars.map((bar) => [
           bar.id,
-          num(bar.x, 1),
-          num(bar.y, 1),
-          num(bar.area, 1),
-          num(bar.depth, 1),
+          qnum('length', bar.x, 1),
+          qnum('length', bar.y, 1),
+          qnum('area', bar.area, 1),
+          qnum('length', bar.depth, 1),
           bar.strain.toExponential(3),
-          num(bar.stressMpa, 2),
-          num(bar.forceKn, 2),
+          qnum('stress', bar.stressMpa, 2),
+          num(bar.force, 2),
           bar.insideBlock === null ? '—' : bar.insideBlock ? 'yes' : 'no'
         ])
       })
@@ -917,6 +928,12 @@ export const renderColumnReport = (
 
   return doc.finish()
 }
+
+return render
+}
+
+export const renderColumnReport = (model: ColumnReportModel, options: ColumnReportRenderOptions = {}): Uint8Array =>
+  createRenderer(model.presentationUnits)(model, options)
 
 export const columnReportFileName = (model: ColumnReportModel) => {
   const stem = (model.project.name || 'column')

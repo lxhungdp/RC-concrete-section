@@ -1,5 +1,7 @@
 'use client'
 
+import { QuantityInput } from '../shared/DisplayUnits'
+
 import { AddIcon } from '../shared/WorkspaceIcons'
 import { useEffect, useMemo, useState } from 'react'
 import { RotateCcw, X } from 'lucide-react'
@@ -693,12 +695,12 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
         </label>
       ) : (
         <label className="pm-field">
-          <span>Cell size (mm)</span>
-          <NumericInput
+          <span>Cell size</span>
+          <QuantityInput quantity="length"
             min={0.000001}
             step="any"
             value={options.mesh.sizing.cellSize}
-            onCommit={(value) =>
+            onValueChange={(value) =>
               commit((draft) => {
                 if (draft.mesh.sizing.type === 'fixed') draft.mesh.sizing.cellSize = value
               })

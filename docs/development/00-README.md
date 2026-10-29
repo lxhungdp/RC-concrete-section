@@ -10,7 +10,7 @@ behavior, or package ownership.
 | Step | Document | Use it for |
 |---|---|---|
 | 1 | [`01-architecture-and-package-boundaries.md`](01-architecture-and-package-boundaries.md) | Package ownership, dependency direction, runtime separation. |
-| 2 | [`02-data-contracts-persistence-and-versioning.md`](02-data-contracts-persistence-and-versioning.md) | Sole current v1 project/options/method/schedule contracts and parser-v1 behavior; no migration/backward-compatibility layer. |
+| 2 | [`02-data-contracts-persistence-and-versioning.md`](02-data-contracts-persistence-and-versioning.md) | Canonical v2 project, explicit legacy v1 reader, nested options/method/schedule contracts and version-specific parsing. |
 | 3 | [`03-geometry-and-material-pipelines.md`](03-geometry-and-material-pipelines.md) | Validation, normalization, compilation, UI-to-domain boundaries. |
 | 4 | [`04-loadings-analysis-results-and-report-pipelines.md`](04-loadings-analysis-results-and-report-pipelines.md) | Loadcase data, engine orchestration, results, Plotly adapter, reports. |
 | 5 | [`05-coding-quality-and-ai-workflow.md`](05-coding-quality-and-ai-workflow.md) | Testing discipline, review workflow, AI coding constraints. |
@@ -18,6 +18,8 @@ behavior, or package ownership.
 | 7 | [`07-design-resistance-implementation.md`](07-design-resistance-implementation.md) | Nominal/design separation, factored ULS checks, UI, workbook and verification status. |
 | 8 | [`08-standard-code-method-model-registry.md`](08-standard-code-method-model-registry.md) | Code -> method -> concrete-model capabilities, EN factor ownership, AS fail-closed scope. |
 | 9 | [`09-workspace-design-system.md`](09-workspace-design-system.md) | Frame jscad workspace design, P-M accent/CAD exceptions, shared controls and theme parity. |
+| 10 | [`10-display-units.md`](10-display-units.md) | Selectable input/display units, fixed canonical values, workbook transport and verification evidence. |
+| 11 | [`11-rebar-area-and-catalogs.md`](11-rebar-area-and-catalogs.md) | Independent stored As, one-time equation/catalog fills, source qualification and verification evidence. |
 
 The numbered root files are technical references, not competing implementation instructions. The
 control map names the single owner for each rule or parameter.

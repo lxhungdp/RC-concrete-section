@@ -27,6 +27,8 @@ export type SectionResultsView = {
 
 export type DemandCheckView = {
   fieldMode: FieldMode
+  verticalMode: 'demand-plane' | 'direct-beta'
+  directAngle: number
   showNeutralAxis: boolean
   showMoments: boolean
   includeRebar: boolean
@@ -140,6 +142,8 @@ export const createSectionResultsView = (): SectionResultsView => ({
 
 export const createDemandCheckView = (): DemandCheckView => ({
   fieldMode: 'strain',
+  verticalMode: 'demand-plane',
+  directAngle: 0,
   showNeutralAxis: true,
   showMoments: true,
   includeRebar: false,

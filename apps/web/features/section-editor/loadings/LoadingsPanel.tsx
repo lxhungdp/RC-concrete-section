@@ -1,10 +1,12 @@
 'use client'
 
+import { QuantityInput, UnitLabel, useDisplayUnits } from '../shared/DisplayUnits'
+
 import { AddIcon, TransferIcon } from '../shared/WorkspaceIcons'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { CircleArrowRight, Loader2, X } from 'lucide-react'
 import type { LoadcaseQuickCheckResult } from '@pm/analysis'
-import { createLoadCombination, type LoadCombination, type LoadingsInput } from '@pm/project'
+import { createLoadCombination, editLoadAtReference, loadReferenceOf, resultantAtCentroid, resultantAtLoadReference, type LoadCombination, type LoadingsInput } from '@pm/project'
 import { downloadLoadcaseWorkbook, importLoadcaseWorkbook } from './loadcase-xlsx'
 import { selectLoadcaseFromRow } from './loadcase-selection'
 
@@ -21,8 +23,6 @@ type Props = {
   onDemandChanged?: (loadcase: LoadCombination) => void
 }
 
-const toKn = (value: number) => value / 1000
-const toKnM = (value: number) => value / 1_000_000
 const formatUr = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 })
 
 type SpreadsheetInputProps = {
@@ -83,7 +83,9 @@ export function LoadingsPanel({
   onChange,
   onDemandChanged
 }: Props) {
+  const { selection: displayUnits } = useDisplayUnits()
   const combinations = input.combinations
+  const reference = loadReferenceOf(input)
   const excelInputRef = useRef<HTMLInputElement | null>(null)
 
   const activateCombination = (combination: LoadCombination) => {
@@ -92,7 +94,7 @@ export function LoadingsPanel({
   }
 
   const updateCombination = (id: number, patch: Partial<LoadCombination>, refreshCheck = false) => {
-    const nextCombinations = combinations.map((item) => (item.id === id ? { ...item, ...patch } : item))
+    const nextCombinations = combinations.map((item) => (item.id === id ? editLoadAtReference(item, patch, reference) : item))
     onChange({
       ...input,
       combinations: nextCombinations
@@ -113,7 +115,7 @@ export function LoadingsPanel({
       },
       combinations.map((item) => item.id)
     )
-    onChange({ ...input, combinations: [...combinations, next] })
+    onChange({ ...input, combinations: [...combinations, resultantAtCentroid(next, reference)] })
     onSelectLoadcase(next.id)
   }
 
@@ -128,7 +130,7 @@ export function LoadingsPanel({
 
   const exportExcel = async () => {
     try {
-      await downloadLoadcaseWorkbook(combinations)
+      await downloadLoadcaseWorkbook(combinations, displayUnits, reference)
     } catch (error) {
       window.alert(`Excel export failed: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -154,7 +156,7 @@ export function LoadingsPanel({
         <div className="pm-section-title pm-section-title--with-action pm-loadcase-heading">
           <div className="pm-loadcase-title-copy">
             <h2>Loadcases</h2>
-            <span className="pm-loadcase-units" aria-label="Load units">kN, kN·m</span>
+            <span className="pm-loadcase-units" aria-label="Load units"><UnitLabel quantity="force" />, <UnitLabel quantity="moment" /></span>
           </div>
           <div className="pm-loadcase-header-actions" role="group" aria-label="Loadcase Excel tools">
             <button
@@ -215,9 +217,9 @@ export function LoadingsPanel({
             <tr>
               <th title="Load combination name">Name</th>
               <th className="pm-col-detail" aria-label="Calculation details" />
-              <th title="Factored axial force in kN">Pu</th>
-              <th title="Factored moment about x in kN·m">Mux</th>
-              <th title="Factored moment about y in kN·m">Muy</th>
+              <th title="Factored axial force: positive compression, negative tension">Pu</th>
+              <th title="Factored moment about X at the applied load reference.">Mux</th>
+              <th title="Factored moment about Y at the applied load reference.">Muy</th>
               <th className="pm-col-ur" title="Three-dimensional proportional utilization ratio">
                 UR
               </th>
@@ -233,6 +235,7 @@ export function LoadingsPanel({
               </tr>
             )}
             {combinations.map((item) => {
+              const displayed = resultantAtLoadReference(item, reference)
               const check = checksById[item.id]
               const ur = check?.utilization
               const hasUr = typeof ur === 'number' && Number.isFinite(ur)
@@ -270,27 +273,24 @@ export function LoadingsPanel({
                     </button>
                   </td>
                   <td>
-                    <SpreadsheetInput
-                      numeric
-                      value={String(Number(toKn(item.P).toFixed(3)))}
-                      ariaLabel={`Loadcase ${item.id} Pu`}
-                      onCommit={(value) => updateCombination(item.id, { P: Number(value) * 1000 }, true)}
+                    <QuantityInput showUnit={false} quantity="force"
+                      value={displayed.P}
+                      aria-label={`Loadcase ${item.id} Pu`}
+                      onValueChange={(value) => updateCombination(item.id, { P: value }, true)}
                     />
                   </td>
                   <td>
-                    <SpreadsheetInput
-                      numeric
-                      value={String(Number(toKnM(item.Mx).toFixed(3)))}
-                      ariaLabel={`Loadcase ${item.id} Mux`}
-                      onCommit={(value) => updateCombination(item.id, { Mx: Number(value) * 1_000_000 }, true)}
+                    <QuantityInput showUnit={false} quantity="moment"
+                      value={displayed.Mx}
+                      aria-label={`Loadcase ${item.id} Mux`}
+                      onValueChange={(value) => updateCombination(item.id, { Mx: value }, true)}
                     />
                   </td>
                   <td>
-                    <SpreadsheetInput
-                      numeric
-                      value={String(Number(toKnM(item.My).toFixed(3)))}
-                      ariaLabel={`Loadcase ${item.id} Muy`}
-                      onCommit={(value) => updateCombination(item.id, { My: Number(value) * 1_000_000 }, true)}
+                    <QuantityInput showUnit={false} quantity="moment"
+                      value={displayed.My}
+                      aria-label={`Loadcase ${item.id} Muy`}
+                      onValueChange={(value) => updateCombination(item.id, { My: value }, true)}
                     />
                   </td>
                   <td className="pm-col-ur">

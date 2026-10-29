@@ -1,12 +1,17 @@
 'use client'
 
+import { QuantityValue, UnitLabel, useQuantityFormatters } from '../shared/DisplayUnits'
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SectionGeometry } from '@pm/geometry'
+import { CENTROID_LOAD_REFERENCE, resolveLoadOrigin, type LoadReference } from '@pm/project'
 import type { SectionFieldMap, SectionFieldRebar, SectionFieldTriangle } from '@pm/analysis'
 import {
   neutralAxisAngleDeg,
   sectionFieldAngleComparison
 } from './section-field-angles'
+import { sectionFieldViewport } from './section-field-viewport'
+import { SectionMomentAxes, SECTION_MOMENT_AXES_PADDING, type SectionAxesFrame } from './SectionMomentAxes'
 
 type FieldMode = 'strain' | 'stress'
 
@@ -22,6 +27,8 @@ type Props = {
   showNeutralAxis: boolean
   showMoments: boolean
   includeRebar: boolean
+  loadReference?: LoadReference
+  axesReference?: LoadReference
 }
 
 type Rgb = [number, number, number]
@@ -246,12 +253,17 @@ export function SectionFieldChart({
   My,
   showNeutralAxis,
   showMoments,
-  includeRebar
+  includeRebar,
+  loadReference = CENTROID_LOAD_REFERENCE,
+  axesReference
 }: Props) {
+  const { displayUnits, qfmt, unit, force } = useQuantityFormatters()
+
   const hostRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const viewRef = useRef<ViewTransform | null>(null)
   const [hover, setHover] = useState<HoverInfo | null>(null)
+  const [axesFrame, setAxesFrame] = useState<SectionAxesFrame | null>(null)
   const angleComparison = useMemo(
     () => sectionFieldAngleComparison(state, Mx, My),
     [Mx, My, state]
@@ -317,26 +329,17 @@ export function SectionFieldChart({
       ctx.setTransform(1, 0, 0, 1, 0, 0)
       ctx.clearRect(0, 0, width, height)
 
-      const padL = 48 * dpr
-      const padR = 88 * dpr
-      const padT = 12 * dpr
-      const padB = 36 * dpr
-      const plotW = Math.max(1, width - padL - padR)
-      const plotH = Math.max(1, height - padT - padB)
-
+      const padL = SECTION_MOMENT_AXES_PADDING.left * dpr
+      const padT = SECTION_MOMENT_AXES_PADDING.top * dpr
+      const plotW = Math.max(1, width - padL - SECTION_MOMENT_AXES_PADDING.right * dpr)
+      const plotH = Math.max(1, height - padT - SECTION_MOMENT_AXES_PADDING.bottom * dpr)
       const { minX, maxX, minY, maxY } = fieldMap.bounds
-      const spanX = Math.max(1e-9, maxX - minX)
-      const spanY = Math.max(1e-9, maxY - minY)
-      const margin = 0.04
-      const worldMinX = minX - spanX * margin
-      const worldMaxX = maxX + spanX * margin
-      const worldMinY = minY - spanY * margin
-      const worldMaxY = maxY + spanY * margin
-      const worldW = worldMaxX - worldMinX
-      const worldH = worldMaxY - worldMinY
-      const scale = Math.min(plotW / worldW, plotH / worldH)
-      const offsetX = padL + (plotW - worldW * scale) / 2
-      const offsetY = padT + (plotH - worldH * scale) / 2
+      const axesOrigin = resolveLoadOrigin(fieldMap.origin, axesReference ?? loadReference)
+      const viewport = sectionFieldViewport(cssWidth, cssHeight, fieldMap.bounds, axesOrigin, SECTION_MOMENT_AXES_PADDING)
+      const { worldMinX, worldMaxX, worldMinY, worldMaxY } = viewport
+      const scale = viewport.scale * dpr
+      const offsetX = viewport.offsetX * dpr
+      const offsetY = viewport.offsetY * dpr
 
       viewRef.current = {
         dpr,
@@ -353,6 +356,15 @@ export function SectionFieldChart({
 
       const toPixelX = (x: number) => offsetX + (x - worldMinX) * scale
       const toPixelY = (y: number) => offsetY + (worldMaxY - y) * scale
+      const toCssX = (x: number) => toPixelX(x) / dpr
+      const toCssY = (y: number) => toPixelY(y) / dpr
+
+      setAxesFrame({
+        width: cssWidth, height: cssHeight,
+        origin: { x: toCssX(axesOrigin.x), y: toCssY(axesOrigin.y) },
+        bounds: { left: toCssX(minX), right: toCssX(maxX), top: toCssY(maxY), bottom: toCssY(minY) },
+        worldOrigin: axesOrigin
+      })
 
       const norm = (value: number) => normInRange(value, fieldRange)
 
@@ -509,7 +521,7 @@ export function SectionFieldChart({
         ctx.stroke()
       }
 
-      // --- Analysis overlays at the net-concrete centroid ---
+      // Resultant and neutral-axis overlays remain centroidal; the load axes are separate.
       const ox = fieldMap.origin.x
       const oy = fieldMap.origin.y
       const clipBounds = {
@@ -518,7 +530,7 @@ export function SectionFieldChart({
         minY: worldMinY,
         maxY: worldMaxY
       }
-      const minSpan = Math.min(spanX, spanY)
+      const minSpan = Math.min(maxX - minX, maxY - minY)
       const kappa = Math.hypot(state.kx, state.ky)
 
       const mMag = Math.hypot(Mx, My)
@@ -528,23 +540,8 @@ export function SectionFieldChart({
         const sectionX = My
         const sectionY = Mx
         const theta = Math.atan2(sectionY, sectionX)
-        // Shared scale so Mux, Muy, and the section resultant stay proportional.
+        // Display scale for the in-section resultant; the fixed sign loops belong to the axes.
         const mScale = (0.4 * minSpan) / Math.max(mMag, Math.abs(Mx), Math.abs(My), 1)
-
-        if (Math.abs(My) > 1e-9) {
-          drawArrow(ctx, toPixelX(ox), toPixelY(oy), toPixelX(ox + My * mScale), toPixelY(oy), dpr, '#7c3aed')
-          ctx.fillStyle = '#7c3aed'
-          ctx.font = `600 ${10 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
-          ctx.textAlign = 'left'
-          ctx.fillText('Muy', toPixelX(ox + My * mScale) + 5 * dpr, toPixelY(oy) + 4 * dpr)
-        }
-        if (Math.abs(Mx) > 1e-9) {
-          drawArrow(ctx, toPixelX(ox), toPixelY(oy), toPixelX(ox), toPixelY(oy + Mx * mScale), dpr, '#0d9488')
-          ctx.fillStyle = '#0d9488'
-          ctx.font = `600 ${10 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
-          ctx.textAlign = 'left'
-          ctx.fillText('Mux', toPixelX(ox) + 5 * dpr, toPixelY(oy + Mx * mScale) - 4 * dpr)
-        }
 
         drawArrow(
           ctx,
@@ -602,7 +599,7 @@ export function SectionFieldChart({
       if (showNeutralAxis && kappa >= 1e-16) {
         const xl = Math.abs(state.ky) >= Math.abs(state.kx) ? -state.e0 / state.ky : 0
         const yl = Math.abs(state.ky) >= Math.abs(state.kx) ? 0 : -state.e0 / state.kx
-        const naPoint = { x: ox + xl, y: oy + yl }
+        const naPoint = { x: fieldMap.origin.x + xl, y: fieldMap.origin.y + yl }
         const naSeg = clipLineToBounds(naPoint.x, naPoint.y, -state.kx, state.ky, clipBounds)
         if (naSeg) {
           ctx.beginPath()
@@ -638,12 +635,16 @@ export function SectionFieldChart({
 
       ctx.fillStyle = foregroundMuted
       ctx.font = `${11 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
+      if (axesOrigin.x !== fieldMap.origin.x || axesOrigin.y !== fieldMap.origin.y) {
+        ctx.textAlign = 'left'
+        ctx.fillText('C', toPixelX(fieldMap.origin.x) + 6 * dpr, toPixelY(fieldMap.origin.y) + 14 * dpr)
+      }
       ctx.textAlign = 'center'
-      ctx.fillText('x (mm)', padL + plotW / 2, height - 10 * dpr)
+      ctx.fillText(`x (${unit('length')})`, padL + plotW / 2, height - 10 * dpr)
       ctx.save()
       ctx.translate(14 * dpr, padT + plotH / 2)
       ctx.rotate(-Math.PI / 2)
-      ctx.fillText('y (mm)', 0, 0)
+      ctx.fillText(`y (${unit('length')})`, 0, 0)
       ctx.restore()
 
       const barX = width - 22 * dpr
@@ -662,12 +663,12 @@ export function SectionFieldChart({
       ctx.strokeRect(barX, barY, barW, barH)
       ctx.fillStyle = foregroundMuted
       ctx.font = `${10 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
-      const title = fieldMode === 'strain' ? 'ε' : 'σ (MPa)'
+      const title = fieldMode === 'strain' ? 'ε' : `σ (${unit('stress')})`
       ctx.textAlign = 'center'
       ctx.fillText(title, barX + barW / 2, barY - 4 * dpr)
       ctx.textAlign = 'right'
-      ctx.fillText(fmt(fieldRange.max, digits), barX - 4 * dpr, barY + 8 * dpr)
-      ctx.fillText(fmt(fieldRange.min, digits), barX - 4 * dpr, barY + barH)
+      ctx.fillText(fieldMode === 'strain' ? fmt(fieldRange.max, digits) : qfmt('stress', fieldRange.max, digits), barX - 4 * dpr, barY + 8 * dpr)
+      ctx.fillText(fieldMode === 'strain' ? fmt(fieldRange.min, digits) : qfmt('stress', fieldRange.min, digits), barX - 4 * dpr, barY + barH)
     }
 
     const schedule = () => {
@@ -688,7 +689,7 @@ export function SectionFieldChart({
       observer.disconnect()
       themeObserver.disconnect()
     }
-  }, [
+  }, [displayUnits,
     Mx,
     My,
     angleComparison,
@@ -696,6 +697,8 @@ export function SectionFieldChart({
     fieldMode,
     fieldRange,
     includeRebar,
+    loadReference,
+    axesReference,
     section.solids,
     showMoments,
     showNeutralAxis,
@@ -785,6 +788,7 @@ export function SectionFieldChart({
       onPointerLeave={() => setHover(null)}
     >
       <canvas ref={canvasRef} className="pm-section-field-canvas" />
+      {axesFrame && <SectionMomentAxes frame={axesFrame} />}
       {hover && (
         <div
           className="pm-section-field-tooltip"
@@ -797,25 +801,25 @@ export function SectionFieldChart({
             <>
               <strong>Rebar #{hover.rebar.id}</strong>
               <span>
-                Ø{fmt(hover.rebar.dia, 1)} mm · As {fmt(hover.rebar.area, 1)} mm²
+                Ø{qfmt('barDiameter', hover.rebar.dia, 1)} {unit('barDiameter')} · As {qfmt('area', hover.rebar.area, 1)} {unit('area')}
               </span>
               <span>
-                x {fmt(hover.rebar.x, 1)} · y {fmt(hover.rebar.y, 1)} mm
+                x {qfmt('length', hover.rebar.x, 1)} · y {qfmt('length', hover.rebar.y, 1)} {unit('length')}
               </span>
               <span>ε {fmt(hover.rebar.strain, 6)}</span>
-              <span>σ {fmt(hover.rebar.stress, 2)} MPa</span>
+              <span>σ {qfmt('stress', hover.rebar.stress, 2)} {unit('stress')}</span>
               <span className="pm-section-field-tooltip-secondary">
-                Fs {fmt(hover.rebar.force / 1000, 2)} kN
+                Fs {qfmt('force', hover.rebar.force, 2)} {unit('force')}
               </span>
             </>
           ) : (
             <>
               <strong>Concrete</strong>
               <span>
-                x {fmt(hover.worldX, 1)} mm · y {fmt(hover.worldY, 1)} mm
+                x {qfmt('length', hover.worldX, 1)} {unit('length')} · y {qfmt('length', hover.worldY, 1)} {unit('length')}
               </span>
               <span>ε {fmt(hover.strain, 6)}</span>
-              <span>σ {fmt(hover.stress, 2)} MPa</span>
+              <span>σ {qfmt('stress', hover.stress, 2)} {unit('stress')}</span>
             </>
           )}
         </div>

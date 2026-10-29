@@ -1,5 +1,7 @@
 'use client'
 
+import { QuantityValue, UnitLabel, useQuantityFormatters } from '../shared/DisplayUnits'
+
 import { TransferIcon } from '../shared/WorkspaceIcons'
 import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react'
 import type {
@@ -9,7 +11,7 @@ import type {
   Resultant
 } from '@pm/analysis'
 import type { DesignBasis } from '@pm/design'
-import type { LoadCombination } from '@pm/project'
+import { resultantAtLoadReference, type LoadCombination, type LoadReference } from '@pm/project'
 import { CalculationDialogFrame, Fact, Formula, FormulaPanel, Step } from './CalculationDialogFrame'
 import { TechnicalEquation } from './TechnicalEquation'
 
@@ -18,6 +20,7 @@ type Props = {
   sectionName: string
   loadcase: LoadCombination
   loadcases: readonly LoadCombination[]
+  loadReference?: LoadReference
   check: LoadcaseQuickCheckResult | null
   inverseResult: InversePreviewResult | null
   surface: PreviewSurface
@@ -34,18 +37,18 @@ const fmt = (value: number, digits = 3) => {
   const display = Math.abs(value) < 0.5 * 10 ** -digits ? 0 : value
   return display.toLocaleString('en-US', { maximumFractionDigits: digits })
 }
-const forceValue = (value: number) => fmt(value / 1_000, 2)
-const momentValue = (value: number) => fmt(value / 1_000_000, 2)
 const factorValue = (value: number | null) => value === null ? '—' : fmt(value, 3)
 const utilizationValue = (value: number | null) => value === null ? '—' : fmt(value, 2)
 const percentValue = (value: number | null) => value === null ? '—' : `${fmt(value * 100, 2)}%`
 const strain = (value: number) => Number.isFinite(value) ? value.toExponential(3) : '—'
 const degrees = (radians: number | null) => radians === null ? '—' : `${fmt(radians * 180 / Math.PI, 2)}°`
 
-const ResultantTable = ({ demand, capacity }: { demand: Resultant; capacity: Resultant | null }) => (
+const ResultantTable = ({ demand, capacity }: { demand: Resultant; capacity: Resultant | null }) => {
+  const { unit, forceValue, momentValue, force, moment } = useQuantityFormatters()
+  return (
   <div className="pm-calc-table-wrap">
     <table>
-      <thead><tr><th>Vector</th><th>P (kN)</th><th>Mx (kN·m)</th><th>My (kN·m)</th></tr></thead>
+      <thead><tr><th>Vector</th><th>P ({unit('force')})</th><th>Mx ({unit('moment')})</th><th>My ({unit('moment')})</th></tr></thead>
       <tbody>
         <tr><td>Checked demand D</td><td>{forceValue(demand.P)}</td><td>{momentValue(demand.Mx)}</td><td>{momentValue(demand.My)}</td></tr>
         {capacity ? <tr><td>Design capacity R(λcap)</td><td>{forceValue(capacity.P)}</td><td>{momentValue(capacity.Mx)}</td><td>{momentValue(capacity.My)}</td></tr> : null}
@@ -53,6 +56,7 @@ const ResultantTable = ({ demand, capacity }: { demand: Resultant; capacity: Res
     </table>
   </div>
 )
+}
 
 const responseStatus = (inverse: InversePreviewResult) => {
   if (!inverse.converged) return { label: 'Not converged', tone: 'is-error' }
@@ -76,6 +80,7 @@ export function LoadcaseCalculationDialog({
   sectionName,
   loadcase,
   loadcases,
+  loadReference,
   check,
   inverseResult,
   surface,
@@ -86,7 +91,10 @@ export function LoadcaseCalculationDialog({
   onExportExcel,
   onClose
 }: Props) {
+  const { qfmt, unit, forceValue, momentValue, force, moment } = useQuantityFormatters()
+
   const checkedDemand = check?.codeAdjustedDemand ?? loadcase
+  const entered = loadReference ? resultantAtLoadReference(loadcase, loadReference) : loadcase
   const verdictTone = check?.adequacy === 'inadequate'
     ? 'is-error'
     : check?.adequacy === 'indeterminate'
@@ -143,14 +151,15 @@ export function LoadcaseCalculationDialog({
 
       <Step index={2} title="Factored demand and code adjustment">
         <div className="pm-calc-table-wrap"><table>
-          <thead><tr><th>Demand</th><th>Pu (kN)</th><th>Mux (kN·m)</th><th>Muy (kN·m)</th></tr></thead>
+          <thead><tr><th>Demand</th><th>Pu ({unit('force')})</th><th>Mux ({unit('moment')})</th><th>Muy ({unit('moment')})</th></tr></thead>
           <tbody>
-            <tr><td>Entered factored ULS</td><td>{forceValue(loadcase.P)}</td><td>{momentValue(loadcase.Mx)}</td><td>{momentValue(loadcase.My)}</td></tr>
+            <tr><td>Entered factored ULS at O</td><td>{forceValue(entered.P)}</td><td>{momentValue(entered.Mx)}</td><td>{momentValue(entered.My)}</td></tr>
+            {loadReference && (loadReference.offsetX !== 0 || loadReference.offsetY !== 0) ? <tr><td>Converted to centroid C</td><td>{forceValue(loadcase.P)}</td><td>{momentValue(loadcase.Mx)}</td><td>{momentValue(loadcase.My)}</td></tr> : null}
             {check?.codeAdjustedDemand ? <tr><td>Checked after code adjustment</td><td>{forceValue(checkedDemand.P)}</td><td>{momentValue(checkedDemand.Mx)}</td><td>{momentValue(checkedDemand.My)}</td></tr> : null}
           </tbody>
         </table></div>
         <FormulaPanel>
-          {check?.codeAdjustedDemand && check.minimumEccentricityMm !== undefined ? <Formula><span className="pm-calc-math">emin = {fmt(check.minimumEccentricityMm, 2)} mm; the governing code-adjusted moment candidate is carried into both the Design-ray check and inverse diagnostic.</span></Formula> : <Formula><span className="pm-calc-math">Dcheck = Dentered; no code demand adjustment governs this combination.</span></Formula>}
+          {check?.codeAdjustedDemand && check.minimumEccentricityMm !== undefined ? <Formula><span className="pm-calc-math">emin = {qfmt('length', check.minimumEccentricityMm, 2)} {unit('length')}; the governing code-adjusted moment candidate is carried into both the Design-ray check and inverse diagnostic.</span></Formula> : <Formula><span className="pm-calc-math">Dcheck = Dentered; no code demand adjustment governs this combination.</span></Formula>}
           <Formula id="equation-demand-direction" numbered>
             {check?.demandMomentDirection !== null && check?.demandMomentDirection !== undefined ? <TechnicalEquation
               latex={String.raw`\theta_{\mathrm{load}}=\operatorname{atan2}(M_{uy},M_{ux})=${fmt(check.demandMomentDirection * 180 / Math.PI, 2)}^{\circ}`}
@@ -222,20 +231,20 @@ export function LoadcaseCalculationDialog({
           </div>
           <div className="pm-calc-facts">
             <Fact label="ε₀">{strain(inverseResult.state.e0)}</Fact>
-            <Fact label="κx / κy">{strain(inverseResult.state.kx)} / {strain(inverseResult.state.ky)} mm⁻¹</Fact>
+            <Fact label="κx / κy">{qfmt('curvature', inverseResult.state.kx, 8)} / {qfmt('curvature', inverseResult.state.ky, 8)} {unit('curvature')}</Fact>
             <Fact label="Iterations">{fmt(inverseResult.iterations, 0)}</Fact>
             <Fact label="Scaled residual norm">{inverseResult.residualNorm.toExponential(3)}</Fact>
             <Fact label="Concrete compression">{inverseResult.admissibility.evaluated ? `${strain(inverseResult.admissibility.maxConcreteCompression)} / ${strain(inverseResult.admissibility.concreteLimit)}` : 'Not evaluated on geometric cap face'}</Fact>
             <Fact label="Steel tension">{inverseResult.admissibility.evaluated ? `${strain(inverseResult.admissibility.maxSteelTension)} / ${inverseResult.admissibility.steelTensionLimit === null ? 'undeclared limit' : strain(inverseResult.admissibility.steelTensionLimit)}` : 'Not evaluated on geometric cap face'}</Fact>
           </div>
           {inverseResult.equivalentBlock ? <div className="pm-calc-facts">
-            <Fact label="Neutral-axis depth c">{fmt(inverseResult.equivalentBlock.neutralAxisDepth, 2)} mm</Fact>
-            <Fact label="Equivalent block depth a">{fmt(inverseResult.equivalentBlock.blockDepth, 2)} mm</Fact>
+            <Fact label="Neutral-axis depth c">{qfmt('length', inverseResult.equivalentBlock.neutralAxisDepth, 2)} {unit('length')}</Fact>
+            <Fact label="Equivalent block depth a">{qfmt('length', inverseResult.equivalentBlock.blockDepth, 2)} {unit('length')}</Fact>
             <Fact label="β1">{fmt(inverseResult.equivalentBlock.beta1, 3)}</Fact>
             <Fact label="Block normal">{degrees(inverseResult.equivalentBlock.neutralAxisAngle)}</Fact>
           </div> : null}
           <div className="pm-calc-table-wrap"><table>
-            <thead><tr><th>Equilibrium vector</th><th>P (kN)</th><th>Mx (kN·m)</th><th>My (kN·m)</th></tr></thead>
+            <thead><tr><th>Equilibrium vector</th><th>P ({unit('force')})</th><th>Mx ({unit('moment')})</th><th>My ({unit('moment')})</th></tr></thead>
             <tbody>
               <tr><td>Checked demand</td><td>{forceValue(checkedDemand.P)}</td><td>{momentValue(checkedDemand.Mx)}</td><td>{momentValue(checkedDemand.My)}</td></tr>
               <tr><td>Section response</td><td>{forceValue(inverseResult.response.P)}</td><td>{momentValue(inverseResult.response.Mx)}</td><td>{momentValue(inverseResult.response.My)}</td></tr>
@@ -257,13 +266,13 @@ export function LoadcaseCalculationDialog({
             />
           </Formula></FormulaPanel>
           <div className="pm-calc-facts">
-            <Fact label="Demand moment magnitude">{fmt(check.fixedPDemandMoment / 1_000_000, 2)} kN·m</Fact>
-            <Fact label="Fixed-P boundary Mb">{fmt(check.fixedPCapacityMoment / 1_000_000, 2)} kN·m</Fact>
+            <Fact label="Demand moment magnitude">{qfmt('moment', check.fixedPDemandMoment, 2)} {unit('moment')}</Fact>
+            <Fact label="Fixed-P boundary Mb">{qfmt('moment', check.fixedPCapacityMoment, 2)} {unit('moment')}</Fact>
             <Fact label="Fixed-P UR">{utilizationValue(check.fixedPUtilization)}</Fact>
             <Fact label="Status">Secondary diagnostic only</Fact>
           </div>
           {check.contourPoint ? <div className="pm-calc-table-wrap"><table>
-            <thead><tr><th>Fixed-P capacity point</th><th>P (kN)</th><th>Mx (kN·m)</th><th>My (kN·m)</th></tr></thead>
+            <thead><tr><th>Fixed-P capacity point</th><th>P ({unit('force')})</th><th>Mx ({unit('moment')})</th><th>My ({unit('moment')})</th></tr></thead>
             <tbody><tr><td>Moment-ray intersection</td><td>{forceValue(check.contourPoint.P)}</td><td>{momentValue(check.contourPoint.Mx)}</td><td>{momentValue(check.contourPoint.My)}</td></tr></tbody>
           </table></div> : null}
           <p className="pm-calc-caption">The complete Excel action above reuses the Demand Check workbook and works this loadcase through inverse, exact vertical-meridian, and fixed-P bracket/interpolation sheets.</p>

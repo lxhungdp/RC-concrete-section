@@ -1,7 +1,16 @@
+import { AnalysisInputError } from './analysis-error'
+export { AnalysisInputError, type AnalysisErrorCode } from './analysis-error'
+import { clipDesignSurfaceAtAxialCap } from './axial-cap'
+export { resolveLoadcaseField, type LoadcaseFieldResult } from './loadcase-field'
+export { axialCapExcludedPaths } from './axial-cap-display'
+import { solve3 } from './linear-solve'
+import { NEWTON_RESIDUAL_TOL, NEWTON_MAX_ITERATIONS } from './inverse-options'
 import {
   buildConcreteMesh,
   netConcreteCentroid,
   validatePolygonSection,
+  rebarArea,
+  rebarAreaSourceLabel,
   type ConcreteMesh,
   type ConcreteMeshOptions,
   type ConcreteMeshReport,
@@ -36,7 +45,6 @@ import {
   resolveTensionControlledStrainLimit,
   type MinimumEccentricityCandidate,
   type DesignBasis,
-  type GlobalStrengthReductionBasis,
   type ResistanceClassification
 } from '@pm/design'
 import {
@@ -55,35 +63,6 @@ import {
   type AdequacyStatus,
   type UtilizationInterval
 } from '@pm/results'
-
-/**
- * Typed fatal input errors (`docs/08` §5 fail-closed). The kernel must never substitute a plausible
- * value for a missing definition: a silent fallback produces a number that looks like a capacity but
- * is not one.
- */
-export type AnalysisErrorCode =
-  | 'MISSING_STEEL_MATERIAL'
-  | 'UNSUPPORTED_CONCRETE_MODEL'
-  | 'EMPTY_CONCRETE_SECTION'
-  | 'MESH_RESOURCE_LIMIT'
-  | 'INVALID_ANALYSIS_OPTIONS'
-  | 'MESH_NOT_VERIFIED'
-  | 'INVALID_GEOMETRY'
-  | 'INVALID_MATERIAL'
-  | 'INVALID_REBAR'
-  | 'AUDIT_RECONCILIATION_FAILED'
-
-export class AnalysisInputError extends Error {
-  readonly code: AnalysisErrorCode
-  readonly detail: Readonly<Record<string, unknown>>
-
-  constructor(code: AnalysisErrorCode, message: string, detail: Readonly<Record<string, unknown>> = {}) {
-    super(message)
-    this.name = 'AnalysisInputError'
-    this.code = code
-    this.detail = detail
-  }
-}
 
 export type Resultant = {
   P: number
@@ -184,6 +163,8 @@ export type CalculationAuditConcreteGroup = {
 export type CalculationAuditRebar = CalculationAuditTerm & {
   id: number
   diameter: number
+  areaSource?: string
+  storedArea?: boolean
   steelMaterialId: number
   steelStress: number
   displacedConcreteStress: number
@@ -558,6 +539,8 @@ export type ExactDirectionCurve = {
   designCurve?: PreviewSurfacePoint[]
   /** Active nominal/reference meridian; its independently adaptive schedule may differ. */
   nominalCurve?: PreviewSurfacePoint[]
+  /** Diagnostic Design meridian before the axial cap; never used by governing checks. */
+  beforeAxialCap?: PreviewSurfacePoint[]
   /** @deprecated Compatibility alias for `designCurve`. */
   designAdaptive: PreviewSurfacePoint[]
   /** @deprecated Compatibility alias for `designCurve`. */
@@ -590,6 +573,8 @@ export type PreviewSurface = {
   /** Fixed 27 × 36 visual/diagnostic grid; shared with the production Design surface. */
   /** Active Design dataset for the selected Fixed or Adaptive mode. */
   designSurface?: PreviewSurfaceDataset
+  /** Original reduced Design geometry/topology before Pmax; diagnostic only. */
+  beforeAxialCap?: PreviewSurfaceDataset
   /** Active Nominal/reference dataset; its adaptive topology may differ from Design. */
   nominalSurface?: PreviewSurfaceDataset
   /** @deprecated Compatibility alias for `designSurface`. */
@@ -674,6 +659,11 @@ export type DirectMeridianSection = {
   displayPaths: DirectMeridianSectionPoint[][]
   closed: boolean
 }
+
+/** Physical criteria and qualified geometric cap crossings, never a synthetic axis closure. */
+export const isMeridianAuditPoint = (point: DirectMeridianSectionPoint): boolean =>
+  point.sectionPointRole === 'surface-vertex' && (point.stationId !== null ||
+    point.surfaceRole === 'axial-cap' && point.axialCapTrace !== undefined)
 
 const wrapSectionAngle = (angle: number) => {
   const wrapped = angle % (2 * Math.PI)
@@ -837,6 +827,29 @@ export type StrainAdmissibility = {
   violations: AdmissibilityViolation[]
 }
 
+/** Physical capacity evidence is separate from full-demand inverse equilibrium and governing UR. */
+export type CapacityFieldResult =
+  | {
+      status: 'available'
+      boundary: { kind: 'design' } | { kind: 'before-axial-cap'; limit: number }
+      state: StrainState
+      response: Resultant
+      loadFactor: number
+      residual: Resultant
+      residualNorm: number
+      iterations: number
+      admissibility: StrainAdmissibility
+      resistance: DesignResistanceTrace | null
+      equivalentBlock?: EquivalentBlockStateTrace | null
+      message: string
+    }
+  | {
+      status: 'unavailable'
+      reason: 'zero-demand' | 'no-crossing' | 'axial-cap' | 'non-converged' | 'inadmissible' | 'invalid-input' | 'evaluation-error'
+      iterations: number
+      message: string
+    }
+
 export type InversePreviewResult = {
   /** Converged **and** admissible. Only this may be presented as an equilibrium state. */
   ok: boolean
@@ -871,6 +884,8 @@ export type InversePreviewResult = {
   equivalentBlock?: EquivalentBlockStateTrace | null
   contourPoint: PreviewContourPoint | null
   message: string
+  /** Lazily resolved physical boundary state for Field at capacity; never supplies governing UR. */
+  capacityField?: CapacityFieldResult
 }
 
 export type LoadcaseQuickCheckResult = {
@@ -953,8 +968,6 @@ export const surfaceInputKey = (
 ) => JSON.stringify([section, rebars, materialStore, meshOptions, analysisOptions])
 
 const PREVIEW_GEOMETRY_TOL = 1e-9
-const NEWTON_RESIDUAL_TOL = 1e-8
-const NEWTON_MAX_ITERATIONS = 30
 /**
  * Relative slack on strain limits. The capacity stations sit exactly on `epsCu`, so an exact
  * comparison would reject them on rounding alone.
@@ -1303,7 +1316,7 @@ const buildRebarFibers = (
     return {
       x: bar.x - origin.x,
       y: bar.y - origin.y,
-      area: (Math.PI * bar.dia * bar.dia) / 4,
+      area: rebarArea(bar),
       kind: 'rebar' as const,
       rebarId: bar.id,
       steel
@@ -1401,7 +1414,7 @@ export const prepareAnalysisFromMesh = (
     const materialId = bar.steelMaterialId ?? materialStore.defaults.steelMaterialId
     const steel = materialStore.steel.find((item) => item.id === materialId)
     const fyd = steel ? Math.abs(steel.fy / (steel.factors?.gammaS ?? 1)) : 0
-    return sum + fyd * (Math.PI * bar.dia * bar.dia) / 4
+    return sum + fyd * rebarArea(bar)
   }, 0)
 
   return {
@@ -3731,6 +3744,8 @@ export const buildStressStrainPointCalculationAudit = (
     return {
       id: source.id,
       diameter: source.dia,
+      areaSource: rebarAreaSourceLabel(source),
+      storedArea: source.area !== undefined,
       steelMaterialId: source.steelMaterialId ?? calculationMaterials.defaults.steelMaterialId,
       x: fiber.x,
       y: fiber.y,
@@ -3946,164 +3961,13 @@ const designPointFromState = (
 
 const lerpNumber = (a: number, b: number, t: number) => a + (b - a) * t
 const lerpResultantValue = (a: Resultant, b: Resultant, t: number): Resultant => ({
-  P: lerpNumber(a.P, b.P, t),
-  Mx: lerpNumber(a.Mx, b.Mx, t),
-  My: lerpNumber(a.My, b.My, t)
+  P: lerpNumber(a.P, b.P, t), Mx: lerpNumber(a.Mx, b.Mx, t), My: lerpNumber(a.My, b.My, t)
 })
 const lerpLedgerValue = (a: ResultantLedger, b: ResultantLedger, t: number): ResultantLedger => ({
-  concrete: lerpResultantValue(a.concrete, b.concrete, t),
-  steelGross: lerpResultantValue(a.steelGross, b.steelGross, t),
-  displacedConcrete: lerpResultantValue(a.displacedConcrete, b.displacedConcrete, t),
-  steel: lerpResultantValue(a.steel, b.steel, t),
-  total: lerpResultantValue(a.total, b.total, t)
+  concrete: lerpResultantValue(a.concrete,b.concrete,t), steelGross: lerpResultantValue(a.steelGross,b.steelGross,t),
+  displacedConcrete: lerpResultantValue(a.displacedConcrete,b.displacedConcrete,t),
+  steel: lerpResultantValue(a.steel,b.steel,t), total: lerpResultantValue(a.total,b.total,t)
 })
-const axialCapTracePoint = (point: PreviewSurfacePoint): AxialCapTracePoint => ({
-  pointId: point.id,
-  stationId: point.stationId,
-  P: point.P,
-  Mx: point.Mx,
-  My: point.My
-})
-const axialCapPreCapPoint = (point: PreviewSurfacePoint): PreviewSurfacePoint => ({
-  ...point,
-  state: { ...point.state },
-  ledger: {
-    concrete: { ...point.ledger.concrete },
-    steelGross: { ...point.ledger.steelGross },
-    displacedConcrete: { ...point.ledger.displacedConcrete },
-    steel: { ...point.ledger.steel },
-    total: { ...point.ledger.total }
-  },
-  resistance: point.resistance
-    ? { ...point.resistance, stages: [...point.resistance.stages] }
-    : undefined,
-  axialCapTrace: undefined
-})
-const projectLedgerToAxialCap = (ledger: ResultantLedger, radialRatio: number): ResultantLedger => {
-  const project = (value: Resultant): Resultant => ({
-    P: value.P,
-    Mx: value.Mx * radialRatio,
-    My: value.My * radialRatio
-  })
-  return {
-    concrete: project(ledger.concrete),
-    steelGross: project(ledger.steelGross),
-    displacedConcrete: project(ledger.displacedConcrete),
-    steel: project(ledger.steel),
-    total: project(ledger.total)
-  }
-}
-
-/**
- * Apply a maximum-compression plane without changing the structured beta/station topology.
- * Every point above the plane collapses onto the exact linearly-interpolated row crossing. This
- * preserves a closed cap face and prevents a nominal high-compression vertex leaking into checks.
- */
-const applyAxialCap = (
-  points: PreviewSurfacePoint[],
-  basis: GlobalStrengthReductionBasis
-): PreviewSurfacePoint[] => {
-  if (!basis.axialCapEnabled || points.length === 0) return points
-  const pole = mappedMaximum(points, (point) => point.P)
-  const ratio =
-    basis.transverseReinforcement === 'qualifying-spiral'
-      ? basis.factors.axialCapSpiral
-      : basis.factors.axialCapOther
-  const cap = pole * ratio
-  const rows = groupSurfaceRows(points)
-  const replacement = new Map<string, PreviewSurfacePoint>()
-
-  for (const row of rows) {
-    const curve = row.curve
-    let crossing: PreviewSurfacePoint | null = null
-    let crossingTrace: AxialCapProjectionTrace | null = null
-    let crossingStation = 0
-    for (let index = 1; index < curve.length; index++) {
-      const a = curve[index - 1]
-      const b = curve[index]
-      if (a.P < cap || b.P > cap || Math.abs(a.P - b.P) < 1e-12) continue
-      const t = (cap - a.P) / (b.P - a.P)
-      crossingStation = lerpNumber(a.station, b.station, t)
-      const ledger = lerpLedgerValue(a.ledger, b.ledger, t)
-      const crossingResultant = lerpResultantValue(a, b, t)
-      crossingTrace = {
-        maximumAxialResistance: pole,
-        capRatio: ratio,
-        cap,
-        source: {
-          kind: 'edge-interpolation',
-          compressionSide: axialCapTracePoint(a),
-          admissibleSide: axialCapTracePoint(b),
-          interpolationRatio: t,
-          crossing: crossingResultant
-        },
-        projection: { kind: 'identity', factor: 1 }
-      }
-      crossing = {
-        ...a,
-        P: cap,
-        Mx: crossingResultant.Mx,
-        My: crossingResultant.My,
-        state: {
-          e0: lerpNumber(a.state.e0, b.state.e0, t),
-          kx: lerpNumber(a.state.kx, b.state.kx, t),
-          ky: lerpNumber(a.state.ky, b.state.ky, t)
-        },
-        ledger,
-        resistance: a.resistance
-          ? {
-              ...a.resistance,
-              axialCapApplied: true,
-              stages: [...a.resistance.stages, 'maximum-axial-resistance-cap']
-            }
-          : undefined
-      }
-      break
-    }
-    if (!crossing || !crossingTrace) continue
-    for (const point of curve) {
-      if (point.P <= cap) continue
-      // Fill, rather than merely trace, the horizontal cap face. Station zero becomes the axial
-      // centre and the remaining clipped stations form radial rings ending at the exact crossing.
-      // This keeps the structured mesh closed so a pure-compression demand ray has a valid hit.
-      const radialRatio = crossingStation > 1e-12
-        ? Math.min(1, Math.max(0, point.station / crossingStation))
-        : 0
-      const ledger = projectLedgerToAxialCap(crossing.ledger, radialRatio)
-      const resistance = point.resistance ?? crossing.resistance
-      replacement.set(point.id, {
-        ...point,
-        surfaceRole: 'axial-cap',
-        onSampledDirection: true,
-        P: cap,
-        Mx: crossing.Mx * radialRatio,
-        My: crossing.My * radialRatio,
-        ledger,
-        axialCapTrace: {
-          ...crossingTrace,
-          preCapPoint: axialCapPreCapPoint(point),
-          projection: {
-            kind: 'radial',
-            factor: radialRatio,
-            sourceStationCoordinate: point.station,
-            crossingStationCoordinate: crossingStation
-          }
-        },
-        resistance: resistance
-          ? {
-              ...resistance,
-              axialCapApplied: true,
-              stages: resistance.stages.includes('maximum-axial-resistance-cap')
-                ? resistance.stages
-                : [...resistance.stages, 'maximum-axial-resistance-cap']
-            }
-          : undefined
-      })
-    }
-  }
-
-  return points.map((point) => replacement.get(point.id) ?? point)
-}
 
 /**
  * Complete ULS resistance pipeline. `statePrepared` is compiled from the profile-selected state
@@ -4221,10 +4085,28 @@ export const buildDesignPreviewSurfaceFromPrepared = (
   // dataset; they no longer trigger or retain a second fixed calculation beside an adaptive one.
   const nominalPoints = built.nominalPoints
   const uncappedDesign = base.points
-  const points =
-    designBasis.format === 'globalResultantFactor'
-      ? applyAxialCap(uncappedDesign, designBasis)
-      : uncappedDesign
+  const indexes = new Map(uncappedDesign.map((point, index) => [point, index]))
+  const sourceIndex = (point: PreviewSurfacePoint) => {
+    const index = indexes.get(point)
+    if (index === undefined) throw new AnalysisInputError('INVALID_RESISTANCE_SURFACE', 'Unknown surface vertex.')
+    return index
+  }
+  const originalDesign: PreviewSurfaceDataset = {
+    points: uncappedDesign,
+    triangles: base.triangles ?? previewSurfaceTriangles(uncappedDesign).map(({ vertices: [a,b,c] }) => ({
+      a: sourceIndex(a), b: sourceIndex(b), c: sourceIndex(c)
+    })),
+    directions: base.directions,
+    stations: base.stations
+  }
+  let designSurface = originalDesign
+  if (designBasis.format === 'globalResultantFactor' && designBasis.axialCapEnabled) {
+    const maximum = mappedMaximum(uncappedDesign, point => point.P)
+    const ratio = designBasis.transverseReinforcement === 'qualifying-spiral'
+      ? designBasis.factors.axialCapSpiral : designBasis.factors.axialCapOther
+    designSurface = clipDesignSurfaceAtAxialCap(originalDesign, maximum * ratio, maximum, ratio)
+  }
+  const points = designSurface.points
   const warnings = [...base.warnings]
   if (designBasis.verificationStatus !== 'verified') {
     warnings.push(`Design profile status is ${designBasis.verificationStatus}; results are for review, not release.`)
@@ -4238,12 +4120,6 @@ export const buildDesignPreviewSurfaceFromPrepared = (
     warnings.push('Maximum axial-compression limit is disabled by analysis option.')
   }
 
-  const designSurface: PreviewSurfaceDataset = {
-    points,
-    triangles: base.triangles,
-    directions: base.directions,
-    stations: base.stations
-  }
   const nominalSurface: PreviewSurfaceDataset = {
     points: nominalPoints,
     triangles: base.triangles,
@@ -4255,11 +4131,13 @@ export const buildDesignPreviewSurfaceFromPrepared = (
     ...base,
     points,
     nominalPoints,
+    triangles: designSurface.triangles,
     nominalTriangles: base.triangles,
     designSurface,
     nominalSurface,
     designFixed: designSurface,
     nominalFixed: nominalSurface,
+    ...(designSurface !== originalDesign ? { beforeAxialCap: originalDesign } : {}),
     bounds: surfaceBounds(points),
     warnings,
     designBasis: cloneDesignBasis(designBasis)
@@ -4317,6 +4195,7 @@ export const buildExactDirectionCurveFromPrepared = (
     beta: normalized,
     designCurve: designSurface.points,
     nominalCurve: nominalSurface.points,
+    ...(surface.beforeAxialCap ? { beforeAxialCap: surface.beforeAxialCap.points } : {}),
     designAdaptive: surface.points,
     designFixed: designSurface.points,
     nominalFixed: nominalSurface.points,
@@ -4496,6 +4375,10 @@ export const sliceMomentPlane = (
   // a nearly collapsed station next to a pole can make all three vertices of a small cap triangle
   // appear coplanar and create a false branch in the intersection graph.
   const planeTol = momentScale * 1e-12
+  const capPlanes = new Set<number>()
+  for (const point of points) if (point.surfaceRole === 'axial-cap' && point.axialCapTrace) {
+    capPlanes.add(point.axialCapTrace.cap)
+  }
   const vertexIndex = new WeakMap<PreviewSurfacePoint, number>()
   points.forEach((point, index) => vertexIndex.set(point, index))
 
@@ -4530,7 +4413,12 @@ export const sliceMomentPlane = (
         Math.abs(node.point.Mx - candidate.point.Mx) <= momentTol &&
         Math.abs(node.point.My - candidate.point.My) <= momentTol
       ) {
-        if (candidate.point.onSampledDirection) node.point.onSampledDirection = true
+        // Welding may encounter a nearby side-edge point first. Retain the actual geometric
+        // boundary coordinate when its exact cap-plane intersection is subsequently available.
+        if (capPlanes.has(candidate.point.P) && !capPlanes.has(node.point.P)) {
+          node.point = { ...candidate.point,
+            onSampledDirection: candidate.point.onSampledDirection || node.point.onSampledDirection }
+        } else if (candidate.point.onSampledDirection) node.point.onSampledDirection = true
         return { key, point: node.point }
       }
     }
@@ -4732,29 +4620,6 @@ export const intersectFixedPContourWithMomentRay = (
   return best
 }
 
-const solve3 = (matrix: number[][], rhs: number[]) => {
-  const a = matrix.map((row, index) => [...row, rhs[index]])
-  const matrixScale = Math.max(...matrix.flat().map(Math.abs))
-  if (!(matrixScale > 0) || !Number.isFinite(matrixScale) || rhs.some((value) => !Number.isFinite(value))) return null
-  const pivotTolerance = 1e-12 * matrixScale
-  for (let i = 0; i < 3; i++) {
-    let pivot = i
-    for (let r = i + 1; r < 3; r++) {
-      if (Math.abs(a[r][i]) > Math.abs(a[pivot][i])) pivot = r
-    }
-    if (Math.abs(a[pivot][i]) < pivotTolerance) return null
-    if (pivot !== i) [a[i], a[pivot]] = [a[pivot], a[i]]
-    const div = a[i][i]
-    for (let c = i; c < 4; c++) a[i][c] /= div
-    for (let r = 0; r < 3; r++) {
-      if (r === i) continue
-      const factor = a[r][i]
-      for (let c = i; c < 4; c++) a[r][c] -= factor * a[i][c]
-    }
-  }
-  return [a[0][3], a[1][3], a[2][3]] as const
-}
-
 const residualNorm = (residual: Resultant, forceScale: number, momentScale: number) =>
   Math.max(
     Math.abs(residual.P) / forceScale,
@@ -4790,6 +4655,7 @@ export type SurfaceRayIntersection = {
   point: Resultant
   state: StrainState
   resistance: DesignResistanceTrace | null
+  source: { vertices: readonly [PreviewSurfacePoint, PreviewSurfacePoint, PreviewSurfacePoint]; weights: readonly [number, number, number] } | null
 }
 
 /**
@@ -4806,7 +4672,8 @@ export const intersectSurfaceWithDemandRay = (
       lambda: Number.POSITIVE_INFINITY,
       point: { P: 0, Mx: 0, My: 0 },
       state: { e0: 0, kx: 0, ky: 0 },
-      resistance: null
+      resistance: null,
+      source: null
     }
   }
   const forceScale = Math.max(Math.abs(surface.bounds.P[0]), Math.abs(surface.bounds.P[1]), 1)
@@ -4842,7 +4709,8 @@ export const intersectSurfaceWithDemandRay = (
     const q = vecCross(s, edge1)
     const v = inverse * vecDot(direction, q)
     if (v < -1e-9 || u + v > 1 + 1e-9) continue
-    const lambda = inverse * vecDot(edge2, q)
+    const horizontal = pa.P === pb.P && pa.P === pc.P && demand.P !== 0
+    const lambda = horizontal ? pa.P / demand.P : inverse * vecDot(edge2, q)
     if (lambda <= 1e-10 || (best && lambda >= best.lambda)) continue
     const w = 1 - u - v
     const dominant =
@@ -4850,7 +4718,7 @@ export const intersectSurfaceWithDemandRay = (
     best = {
       lambda,
       point: {
-        P: lambda * demand.P,
+        P: horizontal ? pa.P : lambda * demand.P,
         Mx: lambda * demand.Mx,
         My: lambda * demand.My
       },
@@ -4859,7 +4727,8 @@ export const intersectSurfaceWithDemandRay = (
         kx: w * pa.state.kx + u * pb.state.kx + v * pc.state.kx,
         ky: w * pa.state.ky + u * pb.state.ky + v * pc.state.ky
       },
-      resistance: dominant.resistance ?? null
+      resistance: dominant.resistance ?? null,
+      source: { vertices: [pa, pb, pc], weights: [w, u, v] }
     }
   }
   return best
@@ -5017,6 +4886,36 @@ export const applyDesignCheckToInverse = (
   designCapacityPoint: check.capacityPoint,
   resistance: inverse.resistance ?? check.resistance
 })
+
+/** @internal Constitutive bridge for the lazy capacity-field resolver; no governing query changes. */
+export const createCapacityFieldEvaluator = (
+  prepared: PreparedAnalysis, sourceMaterials: MaterialStore, basis: DesignBasis, tensionPoleStrain: number
+) => {
+  const sets = buildResistanceMaterialSets(sourceMaterials, basis)
+  const prepareSet = (materials: MaterialStore) => JSON.stringify(materials) === JSON.stringify(prepared.materialStore)
+    ? prepared : prepareAnalysisFromMesh(prepared.section, prepared.rebars, materials, prepared.mesh, prepared.origin)
+  const referencePrepared = prepareSet(sets.referenceMaterials)
+  const designPrepared = prepareSet(sets.designMaterials)
+  const pureCompression = resolvePureCompressionStrain(prepared.materialStore, basis)
+  return (beta: number, definition: StationDefinition, coordinate: number) => {
+    const extents = projectedExtents(prepared.section, beta, prepared.origin, prepared.rebars)
+    const control = stationSteelControl(prepared.materials, prepared.materialStore, prepared.rebars,
+      prepared.materialStore.defaults.steelMaterialId, extents.controllingRebarIndex)
+    const state = previewStationStateFromExtents(beta, definition, prepared.materialStore.concrete.limits.epsCu,
+      pureCompression, control, basis, tensionPoleStrain, extents)
+    const ledger = evaluatePreparedState(prepared, state)
+    const raw: PreviewSurfacePoint = { id: 'capacity-field', beta, station: coordinate,
+      stationId: null,
+      surfaceRole: definition.kind === 'pure-compression' ? 'pure-compression'
+        : definition.kind === 'pure-tension' ? 'pure-tension' : 'physical-state',
+      state, ledger, ...ledger.total }
+    const point = designPointFromState(raw, prepared, referencePrepared, designPrepared, basis).design
+
+    return { point, projectedDepth: extents.max - extents.min,
+      admissibility: evaluateAdmissibility(prepared.fibers, prepared.concreteBoundary,
+      prepared.materialStore.concrete.limits.epsCu, state) }
+  }
+}
 
 const solveRawInversePreviewFromPrepared = (
   prepared: PreparedAnalysis,
@@ -5295,7 +5194,7 @@ export const buildSectionFieldMapFromPrepared = (
       )
     }
     const stress = steel.stress(strain)
-    const area = (Math.PI * bar.dia * bar.dia) / 4
+    const area = rebarArea(bar)
     return {
       id: bar.id,
       x: bar.x,

@@ -30,6 +30,14 @@ Factored ULS combinations and service actions shall not share an untyped table o
 The current schema-v1/UI implements only `factoredULS`; `service` is a future typed extension, not a
 currently selectable action basis.
 
+The v3 load-reference input is a project-wide parallel origin at centroid plus applied offsets.
+Only authored load values use it. Canonical combinations, code demand corrections, checks, fields,
+Direct/Fixed-P/demand-plane/3D charts and calculation ledgers remain centroidal. Their load markers
+use converted centroidal actions. A drawing-only draft load-axis preview cannot change that basis.
+Apply either reinterprets the existing input numbers at the new origin or, with Convert selected,
+retains the canonical vectors exactly. Reports identify the input origin separately from their
+centroidal calculations. See [the reference-origin packet](../development/16-load-reference-origin.md).
+
 ## 2. Loading validation
 
 Before analysis:
@@ -114,7 +122,11 @@ the displayed row ordinal. If a criterion does not survive geometric clipping in
 resistance stage, the inspector identifies it as unavailable until the user chooses another
 criterion; it must not silently open a different calculation.
 A Vertical physical-state row exposes its criterion, compatible state, contribution ledger,
-resistance stages, and final projected ordinate. A Vertical axial-cap row first exposes the retained
+resistance stages, and final projected ordinate. An actual Pmax edge crossing is included as a
+separate `Pmax intersection` row with geometric identity, not as a physical material station. The
+chart-audit workbook labels its interpolated ledger explicitly and leaves strain-plane and
+physical-criterion fields unavailable. Its solid and dotted curves share that exact source-edge
+intersection; original below-cap points are unchanged. A Vertical axial-cap row first exposes the retained
 physical calculation for its criterion, with the same compatible state and Concrete/Steel ledgers
 shown when the cap is disabled. It then compares that calculated axial resistance with the maximum
 permitted resistance and exposes the maximum-axial reference, cap ratio/limit, source edge,
@@ -203,6 +215,23 @@ Changing any analysis input makes the displayed result stale. Stale results may 
 comparison but cannot be released as the current report.
 
 ## 5. Result package
+
+The Demand Check section-field view uses **Field at demand** for non-NG cases with a qualified
+equilibrium at the checked entered demand, and **Field at capacity** only for cases classified
+`inadequate` by the governing check. The capacity state is separate from demand equilibrium and the
+triangulated governing crossing. A failed demand inverse does not change the classification or
+authorize a capacity-field substitution for a non-NG case. Equivalent-block capacity-ray output
+does not constitute demand equilibrium: that mechanics currently has no non-NG demand field.
+Indeterminate cases retain their classification; any available demand field is diagnostic only.
+Outside demands retain resistance plots, load paths and UR. Root document 05 sections 8–10 owns
+the geometric demand-plane versus Direct-beta views and field admissibility. An axial-cap face
+has no fabricated strain field: for a cap-governed NG case, the diagnostic field is independently
+resolved at the physical pre-cap Design boundary on the same checked proportional ray. Its
+before-Pmax label and visible note identify that this state exceeds permitted Design resistance;
+the capped governing point and UR remain authoritative. The clipped-away Design curves are
+shown dotted in their existing Design colour. An unresolved physical state remains unavailable.
+NG charts share a theme-aware failure
+background and an explicit field-basis label; colour never determines the engineering decision.
 
 Every successful engineering result includes:
 

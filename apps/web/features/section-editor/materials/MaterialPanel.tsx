@@ -1,5 +1,7 @@
 'use client'
 
+import { QuantityInput, QuantityValue, UnitLabel, useDisplayUnits } from '../shared/DisplayUnits'
+
 import { AddIcon } from '../shared/WorkspaceIcons'
 import { useMemo, useState } from 'react'
 import { X } from 'lucide-react'
@@ -220,13 +222,12 @@ function ConcreteMaterialFactorFields({
         ))}
         <label className="pm-inline-param">
           <span>{basis.factors.concrete.designSymbol}</span>
-          <input
+          <QuantityInput quantity="stress"
             type="number"
             readOnly
             value={Number(
               (resolveMaterialFactorExpression(basis.factors.concrete) * fck).toFixed(3)
-            )}
-          />
+            )} onValueChange={() => {}} />
         </label>
       </div>
       {designBasisRequiresOverrideReason(basis) && (
@@ -357,7 +358,7 @@ function UserCurveEditor({
           <tr>
             <th>#</th>
             <th>ε</th>
-            <th>σ</th>
+            <th>σ (<UnitLabel quantity="stress" />)</th>
             <th>
               <button type="button" className="ws-action ws-action--primary ws-action--compact ws-action--icon pm-table-add-icon-btn" onClick={addPoint} title="Add point">
                 <AddIcon />
@@ -378,11 +379,11 @@ function UserCurveEditor({
                 />
               </td>
               <td>
-                <input
+                <QuantityInput showUnit={false} quantity="stress"
                   type="number"
                   step="1"
                   value={point.stress}
-                  onChange={(event) => updatePoint(index, { stress: numberValue(event.target.value, point.stress) })}
+                  onValueChange={(canonical) => updatePoint(index, { stress: canonical })}
                 />
               </td>
               <td>
@@ -550,13 +551,13 @@ export function MaterialPanel({
             <div className="pm-material-row-2">
               <label className="pm-field">
                 <span>fc</span>
-                <input
+                <QuantityInput quantity="stress"
                   type="number"
                   min={1}
                   value={store.concrete.fck}
-                  onChange={(event) =>
+                  onValueChange={(canonical) =>
                     updateConcrete((material) => {
-                      const fck = numberValue(event.target.value, material.fck)
+                      const fck = canonical
                       const next = { ...material, fck, mc: material.mc ?? DEFAULT_CONCRETE_DENSITY }
                       if (next.standard === 'KDS') return applyKdsConcreteDerived(next)
                       if (next.standard === 'ACI318') return applyAci318ConcreteDerived(next)
@@ -574,14 +575,14 @@ export function MaterialPanel({
                 />
               </label>
               <label className="pm-field">
-                <span>mc (kg/m³)</span>
-                <input
+                <span>mc</span>
+                <QuantityInput quantity="density"
                   type="number"
                   min={1}
                   value={store.concrete.mc ?? DEFAULT_CONCRETE_DENSITY}
-                  onChange={(event) =>
+                  onValueChange={(canonical) =>
                     updateConcrete((material) => {
-                      const mc = numberValue(event.target.value, material.mc ?? DEFAULT_CONCRETE_DENSITY)
+                      const mc = canonical
                       const next = { ...material, mc }
                       return next.standard === 'KDS' ? applyKdsConcreteDerived(next) : next
                     })
@@ -593,22 +594,12 @@ export function MaterialPanel({
             <div className="pm-material-row-2">
               <label className="pm-field">
                 <span>Ec</span>
-                <input
+                <QuantityInput quantity="modulus"
                   type="number"
                   min={0}
                   step="1"
-                  value={
-                    store.concrete.elasticModulus === undefined
-                      ? ''
-                      : Number(store.concrete.elasticModulus.toFixed(1))
-                  }
-                  onChange={(event) =>
-                    updateConcrete((material) => ({
-                      ...material,
-                      elasticModulus:
-                        event.target.value === '' ? undefined : numberValue(event.target.value, 0)
-                    }))
-                  }
+                  value={store.concrete.elasticModulus}
+                  onValueChange={(canonical) => updateConcrete(material => ({ ...material, elasticModulus: canonical }))} onClear={() => updateConcrete(material => ({ ...material, elasticModulus: undefined }))}
                 />
               </label>
               <label className="pm-field">
@@ -716,8 +707,8 @@ export function MaterialPanel({
                     </div>
                     <div className="pm-material-row-2">
                       <label className="pm-field">
-                        <span>σblock (MPa)</span>
-                        <input readOnly value={Number(userBlockCompressionStress(store.concrete).toFixed(3))} />
+                        <span>σblock</span>
+                        <QuantityInput quantity="stress" readOnly value={Number(userBlockCompressionStress(store.concrete).toFixed(3))} onValueChange={() => {}} />
                       </label>
                     </div>
                     <p className="pm-field-note">
@@ -980,13 +971,13 @@ export function MaterialPanel({
               <div className="pm-material-row-3">
                 <label className="pm-field">
                   <span>fy</span>
-                  <input
+                  <QuantityInput quantity="stress"
                     type="number"
                     min={1}
                     value={activeSteel.fy}
-                    onChange={(event) =>
+                    onValueChange={(canonical) =>
                       updateSteel(activeSteel.id, (material) => {
-                        const fy = numberValue(event.target.value, material.fy)
+                        const fy = canonical
                         const next = { ...material, fy, limits: { ...material.limits, epsY: fy / material.elasticModulus } }
                         if (next.standard === 'EC2') return applyEn1992SteelDerived(next)
                         if (next.standard === 'AS3600') return applyAs3600SteelDerived(next)
@@ -997,13 +988,13 @@ export function MaterialPanel({
                 </label>
                 <label className="pm-field">
                   <span>Es</span>
-                  <input
+                  <QuantityInput quantity="modulus"
                     type="number"
                     min={1}
                     value={activeSteel.elasticModulus}
-                    onChange={(event) =>
+                    onValueChange={(canonical) =>
                       updateSteel(activeSteel.id, (material) => {
-                        const elasticModulus = numberValue(event.target.value, material.elasticModulus)
+                        const elasticModulus = canonical
                         const next = { ...material, elasticModulus, limits: { ...material.limits, epsY: material.fy / elasticModulus } }
                         if (next.standard === 'EC2') return applyEn1992SteelDerived(next)
                         if (next.standard === 'AS3600') return applyAs3600SteelDerived(next)
@@ -1097,13 +1088,12 @@ export function MaterialPanel({
                     ))}
                     <label className="pm-inline-param">
                       <span>{designBasis.factors.reinforcement.designSymbol}</span>
-                      <input
+                      <QuantityInput quantity="stress"
                         type="number"
                         readOnly
                         value={Number((
                           activeSteel.fy * resolveMaterialFactorExpression(designBasis.factors.reinforcement)
-                        ).toFixed(3))}
-                      />
+                        ).toFixed(3))} onValueChange={() => {}} />
                     </label>
                   </div>
                 )}

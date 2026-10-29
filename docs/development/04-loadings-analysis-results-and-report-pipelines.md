@@ -61,7 +61,7 @@ tests protect this boundary because symmetric sections would not expose a sign m
 
 ## 2. Analysis orchestration
 
-Current schema v1 resolves one of two independent mechanics before preparation:
+Current schema v3 (and the explicit centroidal v1/v2 readers) resolves one of two independent mechanics before preparation:
 
 ```text
 strain-domain-surface-v1
@@ -114,7 +114,7 @@ hash matches and the new demands use the same reference frame/action basis.
 ```text
 AnalysisOptions editor
   -> immutable canonical DTO in React state
-  -> project v1 JSON / worker message
+  -> canonical project JSON / worker message
   -> structural validation in @pm/project
   -> material- and geometry-aware resolution in @pm/analysis
   -> prepared mesh/material evaluators reused
@@ -128,7 +128,7 @@ Equivalent-block options use a separate path:
 
 ```text
 EquivalentBlockAnalysisOptions editor
-  -> project v1 JSON / worker message
+  -> canonical project JSON / worker message
   -> structural validation in @pm/project
   -> @pm/analysis-equivalent-block profile bridge
   -> @pm/equivalent-block + selected KDS/ACI adapter
@@ -292,7 +292,7 @@ does not yet persist immutable accepted/stale result history or enable released-
 | accepted/current | target only: tables, plots, evidence, and report action enabled |
 
 Analysis settings are edited in the separate top-level **Options** workspace, not in a
-Capacity dialog. Its three tabs are `Points`, `Mesh`/`Block`, and `Resistance`. Valid option changes
+Capacity dialog. Its engineering tabs are `Points`, `Mesh`/`Block`, and `Resistance`; `Units` is a separate presentation-only preference. Valid option changes
 update the canonical project state, invalidate the surface and derived inverse/field/quick-check
 data, then trigger worker recomputation. Resistance auto-publishes valid edits; code-factor changes
 that depart from defaults are withheld until an override reason makes the draft valid.
@@ -303,6 +303,47 @@ Results overview has exactly three charts: Vertical slice, 3D P-Mx-My, and Fixed
 detail has Section field, Fixed-P Mx-My, and Vertical slice. Each mode allows one large primary chart
 and two secondary charts; hidden charts can be restored, but there is no fourth Section-mesh chart
 inside Results.
+
+Demand Check uses the pure `@pm/analysis` `resolveLoadcaseField` query to select Field at demand
+from a qualified non-NG stress-strain inverse, and Field at capacity only for a governing
+`inadequate` check. Missing demand equilibrium never selects capacity as a hidden fallback.
+Equivalent-block inverse output is a capacity-ray state, so its non-NG demand field is explicitly
+unavailable; no block strain is scaled or replaced with a fibre response. An indeterminate check
+remains indeterminate even if its diagnostic demand field exists. Every NG chart uses the shared
+theme-aware semantic failure tint. Both field-basis labels are prominent semantic badges. Field
+basis, tint, NA angle and plots use one coherent displayed frame during selection changes.
+The capacity field uses typed `capacityField` evidence on the transient inverse DTO.
+The stress-strain worker and async fallback lazily load `@pm/analysis/capacity-field`;
+the block bridge retains its existing physical proportional-capacity state. Governing crossing,
+UR, interval and decision remain the existing Design-surface check. A complete visual frame can
+contain no field map, so zero demand and unresolved fields retain geometry, curves and
+check evidence. The legacy block inverse slots for zero demand are explicitly unevaluated; the
+geometric zero-demand check owns UR=0 and no block-capacity solve is attempted.
+Cap-governed fields instead query the retained physical Design boundary before Pmax on the same
+checked load ray, using each mechanics' existing physical refinement. Available field evidence
+discriminates the permitted Design boundary from a before-axial-cap boundary with its cap limit.
+The latter has an explicit label/note and a separate marker; it never changes the stored governing
+check. Original pre-cap Design geometry/topology is retained on transient surface/exact-curve DTOs
+for same-colour dotted overlays of only the excluded portions. See [development/14](14-before-axial-cap-fields.md).
+The corrected cap operation intersects the original domain with P <= Pmax, inserting actual
+source-edge crossings and retaining the original below-cap side geometry. The shared geometric
+intersection owner also supplies the dotted path endpoints. `Pmax intersection` rows expose the
+cut explicitly without a physical-station ID. Chart-audit exports identify geometric ledger anchors
+and leave their strain/curvature and physical-criterion values blank. See
+[development/15](15-exact-axial-cap-intersections.md) for the governing-result correction and oracles.
+Field-module loading or evaluation failures return typed unavailable-field evidence without
+discarding the already computed governing check. Explicit try/await/catch contains synchronous
+worker chunk-loader failures as well as rejected imports. Field-map and exact-curve requests
+settle independently, then commit one coherent visual frame.
+
+The vertical chart offers the geometric Demand-theta slice and a separately labelled Direct-beta
+inspection with standard joined controls. Theta uses the checked moment vector; beta uses the
+qualified selected demand/capacity state or an explicitly selected inspection angle. Zero moments identify the
+theta plane as inspection rather than a unique demand direction. The Capacity overview also draws
+the selected stored Design ray/crossing; zero demand has no boundary crossing marker. Presentation
+units change only copied ordinates. The task and evidence are recorded in
+[the NG chart repair packet](12-ng-demand-charts.md). Existing report inverse-diagnostic contracts
+are unchanged; the new on-screen capacity field is not silently substituted into report ledgers.
 
 | accepted/stale | view/compare allowed; report release disabled for current project |
 
@@ -441,7 +482,7 @@ change produces a different key and rebuilds it.
 ## 8. Pipeline tests
 
 This is the required release test set. Current `npm test` covers the numerical packages,
-schema-v1 round trip, UI helper logic, CAD, both mechanics' calculation workbooks, the demand-check
+canonical-v2 and legacy-v1 round trips, UI helper logic, CAD, both mechanics' calculation workbooks, the demand-check
 workbook, and deterministic preview-PDF rendering/content checks. It does not yet cover
 accepted-result hashing, renderer eligibility from accepted/stale brands, or true cooperative
 cancellation.
@@ -473,3 +514,54 @@ cancellation.
    immutable accepted DTO; enforce accepted/current eligibility; attach result identity, signature,
    approval, and rollback metadata; then qualify the existing Excel/PDF renderers for released
    reports without weakening their Preview path.
+
+### Display-unit boundary
+
+See [the unit decision and task packet](10-display-units.md). Native inputs and all calculation
+requests/results remain canonical. Only export request contracts carry optional `presentationUnits`.
+`ColumnReportModel` records that selection and uses neutral `p`, `mx`, `my`, `force` and `axialCap`
+view-field names for selected-unit action values. Drawing geometry and explicitly MPa-named stress
+fields remain canonical and are converted at their rendering boundary. This is a report API change,
+not an engineering result DTO or project JSON change. Excel audit ledgers retain all existing
+formula/unit contracts; a Display sheet copies explicit input/result values into selected units.
+
+
+### Applied load-input origin
+
+See [the load-reference packet](16-load-reference-origin.md). Canonical v3 persists a centroid-offset
+load-input reference while retaining centroidal combinations. @pm/project owns validation and pure
+translation. The Load reference form precedes Report; native numeric spinners and typed drafts
+preview only the section drawing's LOAD axes. Apply follows a borderless Convert checkbox and
+commits one immutable loading/reference transaction. Convert preserves the canonical array exactly;
+unchecked Apply reinterprets the old input values. New rows are authored at the applied origin.
+No per-row origin history is required. Import resets the editor; unit selection, draft changes and
+checkbox changes cannot mutate a calculation. Native fields enter their full-precision editing
+representation on focus; automated editing must wait for that representation before replacing it.
+
+Direct, Fixed-P, demand-plane and 3D views and their demand markers stay centroidal. Physical field,
+neutral-axis and resultant overlays retain their centroidal state; the separately labelled LOAD
+axes may preview an unapplied input origin. A no-loadcase view can show geometry and load axes
+without manufacturing a physical field. Neither offset nor Convert rebuilds the capacity surface.
+
+Project workbook v6 and standalone loadcase sheets declare their reference and convert authored
+values once at import/export. Existing centroidal workbook readers retain their explicit contracts.
+Calculation trace dialogs identify entered values at O and converted values at C. PDF identity and
+Excel Load reference evidence keep those inputs separate from unchanged centroidal ledgers/curves.
+Report results and adequacy rules are not redefined by this input-reference feature.
+
+
+### Stable demand-field presentation
+
+The completed demand frame is replaced atomically after its field map and direction curve settle.
+During a loadcase switch or a demand edit (including unchecked load-reference Apply), one outgoing
+frame may remain visible only on the same immutable resistance surface and while its row still
+exists. It is explicitly labelled as the previous completed result; strict current-demand guards
+continue to exclude its values from current row checks and calculation dialogs. Deleted rows,
+missing selections and changed surfaces withdraw that frame. This is transient Preview display
+history, not an accepted or current result.
+
+The section-field footer reserves its status area and all four metric cards across demand,
+capacity, before-Pmax and unavailable states. Missing physical fields display unavailable values.
+The drawing fit uses exact section bounds and the visible LOAD-axis origin, identically in field
+and outline views. Applying an already previewed origin therefore cannot change that fit.
+See [the presentation task packet](17-stable-demand-field-layout.md) for evidence and limits.

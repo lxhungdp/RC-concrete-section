@@ -3,15 +3,17 @@ import type { MaterialStore } from '@pm/materials'
 import type { DesignBasis } from '@pm/design'
 import type { CalculationAnalysisOptions } from './analysis-options'
 import type { CalculationProfileId } from './calculation-profiles'
+import type { LoadReference } from './load-reference'
 
 /** Schema id written into every project JSON file. */
 export const PM_PROJECT_SCHEMA = 'pm-column-project' as const
 
 /** Current document format version. */
-export const PM_PROJECT_VERSION = 1 as const
+export const PM_PROJECT_VERSION = 3 as const
 
 export type PmProjectSchema = typeof PM_PROJECT_SCHEMA
-export type PmProjectVersion = typeof PM_PROJECT_VERSION
+/** v1/v2 are explicit centroidal legacy contracts; new exports include a reference in v3. */
+export type PmProjectVersion = 1 | 2 | typeof PM_PROJECT_VERSION
 
 /**
  * Demand load combinations for capacity checks.
@@ -24,13 +26,15 @@ export type LoadCombination = {
   actionBasis: 'factoredULS'
   /** Axial load (compression positive), N */
   P: number
-  /** Moment about X, N·mm */
+  /** Moment about centroidal X, N·mm */
   Mx: number
-  /** Moment about Y, N·mm */
+  /** Moment about centroidal Y, N·mm */
   My: number
 }
 
 export type LoadingsInput = {
+  /** Explicit in canonical v3. Omitted only by centroidal v1/v2 inputs and programmatic seeds. */
+  reference?: LoadReference
   combinations: LoadCombination[]
 }
 

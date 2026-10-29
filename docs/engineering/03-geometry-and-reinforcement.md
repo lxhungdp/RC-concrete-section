@@ -16,7 +16,7 @@ The current project model calls the region collection `outers[]`. The target ana
 `concreteRegions[]`. This naming difference is resolved by an explicit adapter, not by duplicating
 the data in application state.
 
-Current schema-v1 reinforcement is one flat `geometry.rebars[]` array and does not persist a parent
+Current schema-v2 (and legacy v1) reinforcement is one flat `geometry.rebars[]` array and does not persist a parent
 outer/region ID; the UI-only `solidIndex` view currently defaults to zero. Therefore the accepted
 multi-region bar-assignment requirement below is not yet satisfied even though preview kernels can
 evaluate disconnected concrete solids. This is a geometry-contract gap, not permission to infer a
@@ -85,6 +85,31 @@ Exact polygon properties and numerical fiber sums are compared as sanity checks.
 not prove force/moment convergence.
 
 ## 4. Reinforcement rules
+
+### Stored reinforcement area
+
+`REBAR-AS-001`: newly authored bars store independent positive finite `dia` (mm) and `area`
+(mm²). Diameter defines the declared circular drawing/containment envelope. Every steel force,
+tangent, scale, reinforcement total and displaced-concrete contribution uses the stored area.
+The two values need not satisfy a circular-area equation.
+
+`REBAR-AS-002`: Equation and Catalog are explicit, one-time authoring actions. Equation fills
+`area = (Math.PI * dia * dia) / 4`; Catalog copies a declared diameter/area tuple and its source.
+Both inputs remain editable. Later diameter edits retain area, and later numeric edits clear the
+original source claim to Manual. Generate copies the current values; it never derives area again.
+
+`REBAR-AS-003`: source snapshots are provenance only, never an override of edited numbers.
+Display-unit changes retain the canonical values and source. Project JSON v2 and area-aware
+workbooks preserve both values. Diameter-only v1 documents and low-level reference fixtures retain
+their explicitly isolated legacy derivation until exported/authored as stored-area inputs.
+The existing stress-strain and block derivations have different binary64 operation orders;
+legacy regressions preserve those orders. New stored-area inputs have one value in both routes.
+
+`REBAR-AS-004`: reference catalogs identify the actual publisher/document/table and source-unit
+basis. They do not select material grades, resistance profiles or a newer standard edition.
+Unqualified edition/table branches remain unavailable rather than borrowing another table.
+See the implementation and verification packet in
+[`development/11`](../development/11-rebar-area-and-catalogs.md).
 
 Every bar has a stable ID, center coordinate, positive diameter, parent region, and valid steel
 material reference. Prior to analysis:

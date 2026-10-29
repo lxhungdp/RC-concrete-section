@@ -1,24 +1,32 @@
 'use client'
 
+import { toCanonical } from '@pm/units'
+import { QuantitySlider, QuantityValue, UnitLabel, useQuantityFormatters } from '../shared/DisplayUnits'
+
 import { startTransition, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { EyeOff, Loader2, Maximize2, RotateCw } from 'lucide-react'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
 import type { DesignBasis } from '@pm/design'
-import type { LoadCombination } from '@pm/project'
+import { CENTROID_LOAD_REFERENCE, type LoadCombination, type LoadReference } from '@pm/project'
 import {
   activeDesignDirectionPoints,
   activeDesignSurfaceDataset,
   activeNominalDirectionPoints,
   activeNominalSurfaceDataset,
+  axialCapExcludedPaths,
   contourStrainAngleSamples,
   intersectFixedPContourWithMomentRay,
+  resolveLoadcaseField,
   sliceFixedPContour,
+  sliceMomentPlane,
   strainGradientDirection,
   type ExactDirectionCurve,
   type InversePreviewResult,
+  type LoadcaseQuickCheckResult,
   type PreviewSurface,
   type PreviewSurfacePoint,
+  type Resultant,
   type SectionFieldMap
 } from '@pm/analysis'
 import {
@@ -42,6 +50,7 @@ import {
   type SurfaceResistanceMode
 } from './results-view'
 import { SectionFieldChart } from './SectionFieldChart'
+import { SectionOutlineChart } from './SectionOutlineChart'
 import {
   lineAngleDifferenceDeg,
   perpendicularBendingAxisAngleDeg,
@@ -64,6 +73,8 @@ type ResultsViewMode = 'overview' | 'loadcase'
 type ResultsTheme = 'light' | 'dark'
 
 const DeferredChart = ({ primary, children }: { primary: boolean; children: ReactNode }) => {
+
+
   const [ready, setReady] = useState(primary)
 
   useEffect(() => {
@@ -99,9 +110,12 @@ type Props = {
   materialStore: MaterialStore
   designBasis: DesignBasis
   loadcases: LoadCombination[]
+  loadReference?: LoadReference
+  axesReference?: LoadReference
   projectName: string
   selectedLoadcaseId: number | null
   inverseResult: InversePreviewResult | null
+  checksById: Readonly<Record<number, LoadcaseQuickCheckResult>>
   exactDirectionCurve: ExactDirectionCurve | null
   onExactDirectionCurveChange: (curve: ExactDirectionCurve | null) => void
   fixedP: number
@@ -150,7 +164,8 @@ const SyncedControl = ({
   onInputCommit?: () => void
   onInputBlur?: () => void
   onChange: (value: number) => void
-}) => (
+}) => {
+  return (
   <label className={`pm-synced-control${disabled ? ' is-locked' : ''}`} title={title ?? label}>
     <span className="pm-synced-control-label">{label}</span>
     <input
@@ -189,6 +204,7 @@ const SyncedControl = ({
     </span>
   </label>
 )
+}
 
 const ResistanceVisibilityControls = ({
   showDesign,
@@ -200,7 +216,9 @@ const ResistanceVisibilityControls = ({
   showNominal: boolean
   onShowDesign: (value: boolean) => void
   onShowNominal: (value: boolean) => void
-}) => (
+}) => {
+
+  return (
   <>
     <label className={`ws-check pm-field-check${showDesign ? ' is-on' : ''}`} title="Design resistance">
       <input
@@ -226,6 +244,7 @@ const ResistanceVisibilityControls = ({
     </label>
   </>
 )
+}
 
 const SurfaceResistanceControl = ({
   value,
@@ -233,7 +252,9 @@ const SurfaceResistanceControl = ({
 }: {
   value: SurfaceResistanceMode
   onChange: (value: SurfaceResistanceMode) => void
-}) => (
+}) => {
+
+  return (
   <fieldset className="pm-result-radio-group ws-joined-buttons" aria-label="3D resistance surface">
     <label className={value === 'design' ? 'is-active' : ''} title="Design resistance surface">
       <input
@@ -257,11 +278,10 @@ const SurfaceResistanceControl = ({
     </label>
   </fieldset>
 )
+}
 
 const fmt = (value: number, digits = 1) =>
   Math.abs(value) < 1e-9 ? '0' : value.toLocaleString('en-US', { maximumFractionDigits: digits })
-const kn = (value: number) => value / 1000
-const knm = (value: number) => value / 1_000_000
 const sci = (value: number, digits = 3) => {
   if (!Number.isFinite(value) || Math.abs(value) < 1e-16) return '0'
   return value.toExponential(digits)
@@ -332,6 +352,12 @@ const normalizeAngleDeg = (degrees: number) => {
  * domain is not an equilibrium state, and must not read the same as a valid solve.
  */
 const solverStatus = (result: InversePreviewResult) => {
+  if (!result.admissibility.evaluated && result.capacityField?.status === 'unavailable' && result.capacityField.reason === 'axial-cap') {
+    return { label: 'Cap face', tone: 'is-warn' }
+  }
+  if (!result.converged && result.capacityField?.status === 'unavailable' && result.capacityField.reason === 'zero-demand') {
+    return { label: 'Not applicable', tone: '' }
+  }
   if (!result.converged) return { label: 'Approx', tone: 'is-warn' }
   if (!result.admissibility.ok) return { label: 'Inadmissible', tone: 'is-bad' }
   return { label: 'Converged', tone: 'is-ok' }
@@ -339,6 +365,13 @@ const solverStatus = (result: InversePreviewResult) => {
 
 const loadcaseAngleDeg = (loadcase: LoadCombination) =>
   normalizeAngleDeg((Math.atan2(loadcase.My, loadcase.Mx) * 180) / Math.PI)
+
+const FieldMetricPlaceholder = ({ title }: { title: string }) => (
+  <article className="pm-field-metric-card">
+    <header>{title}</header>
+    <div className="pm-field-metric-rows"><div><span>Unavailable</span><strong>—</strong></div></div>
+  </article>
+)
 
 export function ResultsWorkspace({
   theme,
@@ -351,9 +384,12 @@ export function ResultsWorkspace({
   materialStore: requestedMaterialStore,
   designBasis: requestedDesignBasis,
   loadcases: requestedLoadcases,
+  loadReference = CENTROID_LOAD_REFERENCE,
+  axesReference,
   projectName,
   selectedLoadcaseId: requestedLoadcaseId,
   inverseResult: requestedInverseResult,
+  checksById,
   exactDirectionCurve,
   onExactDirectionCurveChange,
   fixedP,
@@ -365,8 +401,13 @@ export function ResultsWorkspace({
   onSelectLoadcase,
   onLoadcaseUpdatingChange
 }: Props) {
+  const { displayUnits, qfmt, unit, force, moment, displayForce, displayMoment } = useQuantityFormatters()
+  const previewReference = axesReference ?? loadReference
+  const isAxisPreview = previewReference.offsetX !== loadReference.offsetX || previewReference.offsetY !== loadReference.offsetY
+
   const [fieldSnapshot, setFieldSnapshot] = useState<{
-    map: SectionFieldMap
+    map: SectionFieldMap | null
+    fieldMessage: string
     result: InversePreviewResult
     selectedLoadcaseId: number
     surface: PreviewSurface
@@ -392,9 +433,15 @@ export function ResultsWorkspace({
   const loadcases = requestedLoadcases
   const selectedLoadcaseId = displayFieldSnapshot?.selectedLoadcaseId ?? requestedLoadcaseId
   const selectedLoadcase = displayFieldSnapshot?.result.demand ?? requestedSelectedLoadcase
-  const inverseResult = displayFieldSnapshot?.result ?? (currentInverseResult?.ok === false ? currentInverseResult : null)
+  const inverseResult = displayFieldSnapshot?.result ?? currentInverseResult
+  const checkedLoadcase = inverseResult?.codeAdjustedDemand ?? selectedLoadcase
   const fieldMap = displayFieldSnapshot?.map ?? null
   const surface = displayFieldSnapshot?.surface ?? requestedSurface
+  const fieldEvidence = useMemo(() => inverseResult && surface
+    ? resolveLoadcaseField(inverseResult, surface.analysisOptions.methodId) : null, [inverseResult, surface])
+  const sectionField = fieldEvidence?.status === 'available' ? fieldEvidence : null
+  const isNgCase = requestedIsLoadcaseMode && inverseResult?.designCheck.evaluated === true &&
+    inverseResult.designCheck.adequacy === 'inadequate'
   const section = displayFieldSnapshot?.section ?? requestedSection
   const rebars = displayFieldSnapshot?.rebars ?? requestedRebars
   const materialStore = displayFieldSnapshot?.materialStore ?? requestedMaterialStore
@@ -425,9 +472,9 @@ export function ResultsWorkspace({
 
   const isLoadcaseMode = requestedIsLoadcaseMode
   const loadcaseUpdating = requestedIsLoadcaseMode && (
-    !currentInverseResult || (currentInverseResult.ok && fieldFrameTransition.status !== 'current')
+    !currentInverseResult || fieldFrameTransition.status !== 'current'
   )
-  const demandWorking = requestedIsLoadcaseMode && (busy || loadcaseUpdating)
+  const demandWorking = requestedIsLoadcaseMode && (busy || loadcaseUpdating || fieldMapWorking)
 
   useEffect(() => {
     onLoadcaseUpdatingChange?.(demandWorking)
@@ -439,9 +486,9 @@ export function ResultsWorkspace({
   )
 
   const equilibriumBeta = useMemo(() => {
-    if (!isLoadcaseMode || !inverseResult?.ok || !inverseResult.admissibility.evaluated) return null
-    return strainGradientDirection(inverseResult.state)
-  }, [inverseResult, isLoadcaseMode])
+    if (!isLoadcaseMode || !sectionField) return null
+    return strainGradientDirection(sectionField.state)
+  }, [sectionField, isLoadcaseMode])
 
   useEffect(() => {
     if (!requestedIsLoadcaseMode || !requestedSurface) {
@@ -459,18 +506,12 @@ export function ResultsWorkspace({
       setFieldMapWorking(true)
       return
     }
-    if (!requestedInverseResult.ok) {
-      setFieldSnapshot(null)
-      setFieldMapWorking(false)
-      return
-    }
-
     const controller = new AbortController()
     setFieldMapWorking(true)
-    const exactBeta = requestedInverseResult.admissibility.evaluated
-      ? strainGradientDirection(requestedInverseResult.state)
-      : null
-    const fieldPromise = buildSectionFieldMapAsync(
+    const field = resolveLoadcaseField(requestedInverseResult, requestedSurface.analysisOptions.methodId)
+    const physical = field.status === 'available' ? field : null
+    const exactBeta = (physical ? strainGradientDirection(physical.state) : null) ?? demandView.directAngle * Math.PI / 180
+    const fieldPromise = physical ? buildSectionFieldMapAsync(
       {
         calculationProfileId: requestedSurface.calculationProfileId ?? 'kds-2024-stress-strain',
         section: requestedSection,
@@ -478,17 +519,15 @@ export function ResultsWorkspace({
         materialStore: requestedMaterialStore,
         designBasis: requestedDesignBasis,
         analysisOptions: requestedSurface.analysisOptions,
-        state: requestedInverseResult.state,
-        blockState: requestedInverseResult.equivalentBlock ? {
-          neutralAxisAngle: requestedInverseResult.equivalentBlock.neutralAxisAngle,
-          neutralAxisDepth: requestedInverseResult.equivalentBlock.neutralAxisDepth
+        state: physical.state,
+        blockState: physical.equivalentBlock ? {
+          neutralAxisAngle: physical.equivalentBlock.neutralAxisAngle,
+          neutralAxisDepth: physical.equivalentBlock.neutralAxisDepth
         } : undefined
       },
       controller.signal
-    )
-    const exactCurvePromise = exactBeta == null
-      ? Promise.resolve(null)
-      : buildExactDirectionCurveAsync({
+    ) : Promise.resolve(null)
+    const exactCurvePromise = buildExactDirectionCurveAsync({
           calculationProfileId: requestedSurface.calculationProfileId ?? 'kds-2024-stress-strain',
           section: requestedSection,
           rebars: requestedRebars,
@@ -498,13 +537,18 @@ export function ResultsWorkspace({
           beta: exactBeta
         }, controller.signal)
 
-    // Field, inverse result and exact meridian form one visual frame. Committing them together
+    // Field, diagnostic result and exact meridian form one visual frame. Committing them together
     // prevents a new beta from ever projecting the previous loadcase's exact curve.
-    Promise.all([fieldPromise, exactCurvePromise])
-      .then(([map, exactCurve]) => {
+    Promise.allSettled([fieldPromise, exactCurvePromise])
+      .then(([mapResult, curveResult]) => {
+        if (controller.signal.aborted) return
+        const map = mapResult.status === 'fulfilled' ? mapResult.value : null
+        const exactCurve = curveResult.status === 'fulfilled' ? curveResult.value : null
         startTransition(() => {
           setFieldSnapshot({
             map,
+            fieldMessage: map ? '' : field.status === 'unavailable' ? field.message
+              : 'Section field rendering is unavailable; geometric checks remain available.',
             result: requestedInverseResult,
             selectedLoadcaseId: requestedLoadcaseId,
             surface: requestedSurface,
@@ -533,7 +577,8 @@ export function ResultsWorkspace({
     requestedRebars,
     requestedSelectedLoadcase,
     requestedSection,
-    requestedSurface
+    requestedSurface,
+    demandView.directAngle
   ])
 
   useEffect(() => {
@@ -554,40 +599,53 @@ export function ResultsWorkspace({
     () => surface ? activeNominalSurfaceDataset(surface) : null,
     [surface]
   )
+  const beforeCapDataset = surface?.beforeAxialCap
+  const axialCapLimit = beforeCapDataset && surface ? surface.bounds.P[1] : null
+  const beforeCapField = sectionField?.basis === 'capacity' && sectionField.boundary.kind === 'before-axial-cap'
+    ? sectionField : null
 
-  const activeFixedP = isLoadcaseMode && selectedLoadcase ? selectedLoadcase.P : fixedP
-  const activeAngle = isLoadcaseMode && selectedLoadcase
-    ? equilibriumBeta == null ? loadcaseAngleDeg(selectedLoadcase) : equilibriumBeta * 180 / Math.PI
+  const demandPlaneMode = isLoadcaseMode && demandView.verticalMode === 'demand-plane'
+  const activeFixedP = isLoadcaseMode && checkedLoadcase ? checkedLoadcase.P : fixedP
+  const activeAngle = isLoadcaseMode && checkedLoadcase
+    ? demandPlaneMode ? loadcaseAngleDeg(checkedLoadcase)
+      : equilibriumBeta == null ? (demandExactCurve?.beta ?? demandView.directAngle * Math.PI / 180) * 180 / Math.PI
+        : equilibriumBeta * 180 / Math.PI
     : exactCurve ? exactCurve.beta * 180 / Math.PI : view.sliceAngle
   useEffect(() => {
     setExactAngleDraft(String(Number(activeAngle.toFixed(6))))
   }, [activeAngle])
   const demandProjection = useMemo(() => {
-    if (!isLoadcaseMode || !selectedLoadcase) return null
+    if (!isLoadcaseMode || !checkedLoadcase) return null
     const theta = (normalizeAngleDeg(activeAngle) * Math.PI) / 180
     return {
-      mx: knm(selectedLoadcase.Mx),
-      my: knm(selectedLoadcase.My),
-      p: kn(selectedLoadcase.P),
-      m: knm(selectedLoadcase.Mx * Math.cos(theta) + selectedLoadcase.My * Math.sin(theta)),
-      name: selectedLoadcase.name
+      mx: displayMoment(checkedLoadcase.Mx),
+      my: displayMoment(checkedLoadcase.My),
+      p: displayForce(checkedLoadcase.P),
+      m: displayMoment(checkedLoadcase.Mx * Math.cos(theta) + checkedLoadcase.My * Math.sin(theta)),
+      name: checkedLoadcase.name
     }
-  }, [activeAngle, isLoadcaseMode, selectedLoadcase])
+  }, [displayUnits, activeAngle, isLoadcaseMode, checkedLoadcase])
   const capacityProjection = useMemo(() => {
     const point = inverseResult?.designCapacityPoint
-    if (!isLoadcaseMode || !point) return null
+    if (!isLoadcaseMode || !point || inverseResult?.utilization === 0) return null
     const theta = normalizeAngleDeg(activeAngle) * Math.PI / 180
     return {
-      mx: knm(point.Mx),
-      my: knm(point.My),
-      p: kn(point.P),
-      m: knm(point.Mx * Math.cos(theta) + point.My * Math.sin(theta))
+      mx: displayMoment(point.Mx),
+      my: displayMoment(point.My),
+      p: displayForce(point.P),
+      m: displayMoment(point.Mx * Math.cos(theta) + point.My * Math.sin(theta))
     }
-  }, [activeAngle, inverseResult, isLoadcaseMode])
+  }, [displayUnits, activeAngle, inverseResult, isLoadcaseMode])
+  const fieldProjection = useMemo(() => {
+    if (!isLoadcaseMode || !beforeCapField) return null
+    const point = beforeCapField.response
+    const theta = normalizeAngleDeg(activeAngle) * Math.PI / 180
+    return { p: displayForce(point.P), m: displayMoment(point.Mx * Math.cos(theta) + point.My * Math.sin(theta)) }
+  }, [displayUnits, activeAngle, beforeCapField, isLoadcaseMode])
 
-  const activeFixedPKn = kn(activeFixedP)
-  const minPKn = surface ? kn(surface.bounds.P[0]) : 0
-  const maxPKn = surface ? kn(surface.bounds.P[1]) : 0
+  const activeDisplayP = displayForce(activeFixedP)
+  const minDisplayP = surface ? displayForce(surface.bounds.P[0]) : 0
+  const maxDisplayP = surface ? displayForce(surface.bounds.P[1]) : 0
   const surfaceDirectionAnglesDeg = useMemo(
     () => (surface
       ? uniqueSurfaceDirectionAnglesDeg(designDataset?.directions ?? surface.directions)
@@ -697,8 +755,11 @@ export function ResultsWorkspace({
   )
   const axialCapPKn = useMemo(() => {
     const capped = surface?.points.filter((point) => point.resistance?.axialCapApplied) ?? []
-    return capped.length > 0 ? kn(Math.max(...capped.map((point) => point.P))) : null
-  }, [surface])
+    return capped.length > 0 ? displayForce(Math.max(...capped.map((point) => point.P))) : null
+  }, [displayUnits, surface])
+  const beforeCapContour = useMemo(() => beforeCapDataset && axialCapLimit !== null && activeFixedP > axialCapLimit
+    ? sliceFixedPContour(beforeCapDataset.points, activeFixedP, beforeCapDataset.triangles) : [],
+  [activeFixedP, axialCapLimit, beforeCapDataset])
 
   // Fixed-P presentation cuts the active mode's authoritative Design/Nominal triangulations.
   const strainAngleSamples = useMemo(() => contourStrainAngleSamples(contour), [contour])
@@ -707,16 +768,16 @@ export function ResultsWorkspace({
     [nominalContour]
   )
   const fixedPCapacityProjection = useMemo(() => {
-    if (!isLoadcaseMode || !selectedLoadcase || strainAngleSamples.length < 2) return null
-    if (Math.hypot(selectedLoadcase.Mx, selectedLoadcase.My) < 1e-9) return null
+    if (!isLoadcaseMode || !checkedLoadcase || strainAngleSamples.length < 2) return null
+    if (Math.hypot(checkedLoadcase.Mx, checkedLoadcase.My) < 1e-9) return null
     const point = intersectFixedPContourWithMomentRay(
       strainAngleSamples,
-      Math.atan2(selectedLoadcase.My, selectedLoadcase.Mx)
+      Math.atan2(checkedLoadcase.My, checkedLoadcase.Mx)
     )
     return point
-      ? { mx: knm(point.Mx), my: knm(point.My), p: kn(point.P) }
+      ? { mx: displayMoment(point.Mx), my: displayMoment(point.My), p: displayForce(point.P) }
       : null
-  }, [isLoadcaseMode, selectedLoadcase, strainAngleSamples])
+  }, [displayUnits, isLoadcaseMode, checkedLoadcase, strainAngleSamples])
   const surfacePoints3d = useMemo(
     () =>
       surface
@@ -779,19 +840,19 @@ export function ResultsWorkspace({
 
   const surfaceData = useMemo(() => {
     if (!surface || surfacePoints3d.length === 0) return []
-    const x = surfaceGrid.map((row) => row.curve.map((point) => knm(point.Mx)))
-    const y = surfaceGrid.map((row) => row.curve.map((point) => knm(point.My)))
-    const z = surfaceGrid.map((row) => row.curve.map((point) => kn(point.P)))
+    const x = surfaceGrid.map((row) => row.curve.map((point) => displayMoment(point.Mx)))
+    const y = surfaceGrid.map((row) => row.curve.map((point) => displayMoment(point.My)))
+    const z = surfaceGrid.map((row) => row.curve.map((point) => displayForce(point.P)))
     const customdata = surfaceGrid.map((row) => row.curve.map((point) => point.id))
-    const pPlane = activeFixedPKn
+    const pPlane = activeDisplayP
 
     const ring = surfaceContour3d.length
       ? {
           type: 'scatter3d',
           name: 'Fixed-P ring',
           mode: 'lines',
-          x: [...surfaceContour3d.map((point) => knm(point.Mx)), knm(surfaceContour3d[0].Mx)],
-          y: [...surfaceContour3d.map((point) => knm(point.My)), knm(surfaceContour3d[0].My)],
+          x: [...surfaceContour3d.map((point) => displayMoment(point.Mx)), displayMoment(surfaceContour3d[0].Mx)],
+          y: [...surfaceContour3d.map((point) => displayMoment(point.My)), displayMoment(surfaceContour3d[0].My)],
           z: [...surfaceContour3d.map(() => pPlane), pPlane],
           line: { color: plotPalette.primary, width: 7 },
           hoverinfo: 'skip'
@@ -815,9 +876,9 @@ export function ResultsWorkspace({
             const left = surfacePoints3d[a]
             const right = surfacePoints3d[b]
             if (!left || !right) return
-            wireX.push(knm(left.Mx), knm(right.Mx), null)
-            wireY.push(knm(left.My), knm(right.My), null)
-            wireZ.push(kn(left.P), kn(right.P), null)
+            wireX.push(displayMoment(left.Mx), displayMoment(right.Mx), null)
+            wireY.push(displayMoment(left.My), displayMoment(right.My), null)
+            wireZ.push(displayForce(left.P), displayForce(right.P), null)
           }
           for (const triangle of activeTriangles) {
             appendEdge(triangle.a, triangle.b)
@@ -857,13 +918,40 @@ export function ResultsWorkspace({
         type: 'scatter3d',
         name: index === 0 ? 'Direct β meridian' : 'Opposite β meridian',
         mode: 'lines',
-        x: path.map((point) => knm(point.Mx)),
-        y: path.map((point) => knm(point.My)),
-        z: path.map((point) => kn(point.P)),
+        x: path.map((point) => displayMoment(point.Mx)),
+        y: path.map((point) => displayMoment(point.My)),
+        z: path.map((point) => displayForce(point.P)),
         line: { color: '#7c3aed', width: 7 },
         hoverinfo: 'skip'
       }
     })
+
+    const beforeCapTraces = view.surfaceResistanceMode === 'design' && beforeCapDataset && axialCapLimit !== null
+      ? (() => {
+          const points = beforeCapDataset.points
+          const triangles = beforeCapDataset.triangles ?? buildClosedSurfaceTriangles(points)
+          const edges: Resultant[][] = []
+          const seen = new Set<string>()
+          for (const triangle of triangles) for (const [a, b] of [[triangle.a, triangle.b], [triangle.b, triangle.c], [triangle.c, triangle.a]]) {
+            const key = a < b ? `${a}:${b}` : `${b}:${a}`
+            if (seen.has(key) || !isMeridianOrParallelEdge(points, a, b)) continue
+            seen.add(key); edges.push([points[a], points[b]])
+          }
+          const excluded = axialCapExcludedPaths(edges, axialCapLimit)
+          const direct = buildDirectMeridianSection(activeExactFor3d?.beforeAxialCap ?? points, activeAngle,
+            !activeExactFor3d && view.includeOppositeMoment)
+          const excludedDirect = axialCapExcludedPaths(direct.displayPaths, axialCapLimit)
+          const trace = (paths: Resultant[][], name: string, color: string, width: number) => ({
+            type: 'scatter3d', name, mode: 'lines',
+            x: paths.flatMap(path => [...path.map(point => displayMoment(point.Mx)), null]),
+            y: paths.flatMap(path => [...path.map(point => displayMoment(point.My)), null]),
+            z: paths.flatMap(path => [...path.map(point => displayForce(point.P)), null]),
+            line: { color, width, dash: 'dot' },
+            hovertemplate: `P=%{z:.1f} ${unit('force')}<extra>Before Pmax cap · excluded from Design checks</extra>`
+          })
+          return [trace(excluded, 'Design grid before Pmax cap', plotPalette.surfaceWireframe, 1.05),
+            trace(excludedDirect, 'Direct β before Pmax cap', '#7c3aed', 7)]
+        })() : []
 
     const fixedPTopology = triangulatePlanarPolygon(
       surfaceContour3d.map((point) => ({ u: point.Mx, v: point.My }))
@@ -872,8 +960,8 @@ export function ResultsWorkspace({
       ? {
           type: 'mesh3d',
           name: 'Fixed-P section fill',
-          x: surfaceContour3d.map((point) => knm(point.Mx)),
-          y: surfaceContour3d.map((point) => knm(point.My)),
+          x: surfaceContour3d.map((point) => displayMoment(point.Mx)),
+          y: surfaceContour3d.map((point) => displayMoment(point.My)),
           z: surfaceContour3d.map(() => pPlane),
           i: fixedPTopology.map((triangle) => triangle.a),
           j: fixedPTopology.map((triangle) => triangle.b),
@@ -889,24 +977,24 @@ export function ResultsWorkspace({
       ? {
         type: 'mesh3d',
         name: view.surfaceResistanceMode === 'design' ? 'Design surface' : 'Nominal surface',
-        x: surfacePoints3d.map((point) => knm(point.Mx)),
-        y: surfacePoints3d.map((point) => knm(point.My)),
-        z: surfacePoints3d.map((point) => kn(point.P)),
+        x: surfacePoints3d.map((point) => displayMoment(point.Mx)),
+        y: surfacePoints3d.map((point) => displayMoment(point.My)),
+        z: surfacePoints3d.map((point) => displayForce(point.P)),
         i: activeTriangles.map((triangle) => triangle.a),
         j: activeTriangles.map((triangle) => triangle.b),
         k: activeTriangles.map((triangle) => triangle.c),
-        intensity: surfacePoints3d.map((point) => kn(point.P)),
+        intensity: surfacePoints3d.map((point) => displayForce(point.P)),
         colorscale: fieldColorscale,
         opacity: 0.52,
         colorbar: {
-          title: 'P (kN)',
+          title: `P (${unit('force')})`,
           thickness: 15,
           len: 0.72,
           x: 1.02,
           xpad: 4,
           tickfont: { size: 10 }
         },
-        hovertemplate: `P=%{z:.1f} kN<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>${
+        hovertemplate: `P=%{z:.1f} ${unit('force')}<br>Mx=%{x:.1f} ${unit('moment')}<br>My=%{y:.1f} ${unit('moment')}<extra>${
           view.surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'
         } surface</extra>`
       }
@@ -919,47 +1007,78 @@ export function ResultsWorkspace({
         customdata,
         colorscale: fieldColorscale,
         opacity: 0.52,
-        colorbar: { title: 'P (kN)', thickness: 15, len: 0.72, x: 1.02, xpad: 4, tickfont: { size: 10 } },
-        hovertemplate: `P=%{z:.1f} kN<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>${view.surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'} surface</extra>`
+        colorbar: { title: `P (${unit('force')})`, thickness: 15, len: 0.72, x: 1.02, xpad: 4, tickfont: { size: 10 } },
+        hovertemplate: `P=%{z:.1f} ${unit('force')}<br>Mx=%{x:.1f} ${unit('moment')}<br>My=%{y:.1f} ${unit('moment')}<extra>${view.surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'} surface</extra>`
       }
 
+    const selectedCheck = currentLoadcaseEvidence(selectedLoadcase, selectedLoadcase ? checksById[selectedLoadcase.id] : null)
+    const rayDemand = selectedCheck?.codeAdjustedDemand ?? selectedCheck?.demand
+    const rayCapacity = selectedCheck?.capacityMultiplier != null ? selectedCheck.capacityPoint : null
+    const designRay = view.surfaceResistanceMode === 'design' && selectedCheck && rayDemand && rayCapacity ? [{
+      type: 'scatter3d', name: 'Proportional Design load path', mode: 'lines',
+      x: [0, displayMoment(rayCapacity.Mx), displayMoment(rayDemand.Mx)],
+      y: [0, displayMoment(rayCapacity.My), displayMoment(rayDemand.My)],
+      z: [0, displayForce(rayCapacity.P), displayForce(rayDemand.P)],
+      line: { color: '#ff1f3d', width: 5 }, hoverinfo: 'skip'
+    }, {
+      type: 'scatter3d', name: 'Design ray crossing', mode: 'markers',
+      x: [displayMoment(rayCapacity.Mx)], y: [displayMoment(rayCapacity.My)], z: [displayForce(rayCapacity.P)],
+      marker: { color: '#16a34a', size: 6, symbol: 'diamond' },
+      customdata: [[selectedCheck.utilization]],
+      hovertemplate: `UR=%{customdata[0]:.3f}<br>P=%{z:.1f} ${unit('force')}<extra>Design ray crossing</extra>`
+    }] : []
     return [
       capacityTrace,
+      ...designRay,
       ...(fixedPSectionFill ? [fixedPSectionFill] : []),
       ...(surfaceGridWireframe ? [surfaceGridWireframe] : []),
       ...sliceTraces,
+      ...beforeCapTraces,
+      ...(view.surfaceResistanceMode === 'design' && beforeCapField && inverseResult?.loadcaseId === selectedCheck?.loadcaseId ? [{
+        type: 'scatter3d', name: 'Field point before Pmax cap', mode: 'markers',
+        x: [displayMoment(beforeCapField.response.Mx)], y: [displayMoment(beforeCapField.response.My)],
+        z: [displayForce(beforeCapField.response.P)],
+        marker: { size: 7, color: plotPalette.primary, symbol: 'circle', line: { color: plotPalette.markerOutline, width: 1 } },
+        hovertemplate: `P=%{z:.1f} ${unit('force')}<extra>Field before Pmax cap · exceeds permitted Design resistance</extra>`
+      }] : []),
       ...(ring ? [ring] : []),
       {
         type: 'scatter3d',
         name: 'Loadcases',
         mode: 'markers',
-        x: loadcases.map((item) => knm(item.Mx)),
-        y: loadcases.map((item) => knm(item.My)),
-        z: loadcases.map((item) => kn(item.P)),
+        x: loadcases.map((item) => displayMoment(item.Mx)),
+        y: loadcases.map((item) => displayMoment(item.My)),
+        z: loadcases.map((item) => displayForce(item.P)),
         customdata: loadcases.map((item) => [item.id, item.name]),
         marker: {
           size: loadcases.map((item) => (item.id === selectedLoadcaseId ? 7 : 5)),
           color: loadcases.map((item) => (item.id === selectedLoadcaseId ? '#f97316' : '#dc2626')),
           line: { color: '#ffffff', width: 1 }
         },
-        hovertemplate: '%{customdata[1]}<br>P=%{z:.1f} kN<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>Demand</extra>'
+        hovertemplate: `%{customdata[1]}<br>P=%{z:.1f} ${unit('force')}<br>Mx=%{x:.1f} ${unit('moment')}<br>My=%{y:.1f} ${unit('moment')}<extra>Demand</extra>`
       }
     ]
-  }, [
+  }, [displayUnits,
     activeAngle,
-    activeFixedPKn,
+    activeDisplayP,
     demandExactCurve,
     exactCurve,
     isLoadcaseMode,
     view.includeOppositeMoment,
     loadcases,
     selectedLoadcaseId,
+    selectedLoadcase,
+    checksById,
     plotPalette,
     surface,
     surfaceContour3d,
     surfaceGrid,
     surfacePoints3d,
     surfaceTriangles3d,
+    axialCapLimit,
+    beforeCapDataset,
+    beforeCapField,
+    inverseResult,
     view.surfaceResistanceMode
   ])
 
@@ -992,33 +1111,33 @@ export function ResultsWorkspace({
       showlegend: false,
       scene: {
         bgcolor: 'rgba(0,0,0,0)',
-        xaxis: axis('Mx (kN.m)'),
-        yaxis: axis('My (kN.m)'),
-        zaxis: axis('P (kN)'),
+        xaxis: axis(`Mx (${unit('moment')})`),
+        yaxis: axis(`My (${unit('moment')})`),
+        zaxis: axis(`P (${unit('force')})`),
         aspectmode: 'cube',
         camera: { eye: { x: 1.45, y: 1.35, z: 0.9 } }
       },
       hovermode: 'closest',
       clickmode: 'event+select'
     }
-  }, [plotPalette, plotTheme, view.showSceneAxes])
+  }, [displayUnits, plotPalette, plotTheme, view.showSceneAxes])
 
   const contourData = useMemo(() => {
     const nominalOnly = view.showNominalReference && !view.showDesignResistance
     const activeSamples = nominalOnly ? nominalStrainAngleSamples : strainAngleSamples
-    const closedX = [...strainAngleSamples.map((point) => knm(point.Mx))]
-    const closedY = [...strainAngleSamples.map((point) => knm(point.My))]
+    const closedX = [...strainAngleSamples.map((point) => displayMoment(point.Mx))]
+    const closedY = [...strainAngleSamples.map((point) => displayMoment(point.My))]
     if (strainAngleSamples[0]) {
-      closedX.push(knm(strainAngleSamples[0].Mx))
-      closedY.push(knm(strainAngleSamples[0].My))
+      closedX.push(displayMoment(strainAngleSamples[0].Mx))
+      closedY.push(displayMoment(strainAngleSamples[0].My))
     }
-    const nominalClosedX = [...nominalStrainAngleSamples.map((point) => knm(point.Mx))]
-    const nominalClosedY = [...nominalStrainAngleSamples.map((point) => knm(point.My))]
+    const nominalClosedX = [...nominalStrainAngleSamples.map((point) => displayMoment(point.Mx))]
+    const nominalClosedY = [...nominalStrainAngleSamples.map((point) => displayMoment(point.My))]
     if (nominalStrainAngleSamples[0]) {
-      nominalClosedX.push(knm(nominalStrainAngleSamples[0].Mx))
-      nominalClosedY.push(knm(nominalStrainAngleSamples[0].My))
+      nominalClosedX.push(displayMoment(nominalStrainAngleSamples[0].Mx))
+      nominalClosedY.push(displayMoment(nominalStrainAngleSamples[0].My))
     }
-    const rayRadius = Math.max(...activeSamples.map((point) => knm(Math.hypot(point.Mx, point.My))), 1) * 1.18
+    const rayRadius = Math.max(...activeSamples.map((point) => displayMoment(Math.hypot(point.Mx, point.My))), 1) * 1.18
     const radialX = activeSamples.flatMap((point) => [0, rayRadius * Math.cos(point.beta), null])
     const radialY = activeSamples.flatMap((point) => [0, rayRadius * Math.sin(point.beta), null])
     const demandGuideX = demandProjection
@@ -1045,6 +1164,12 @@ export function ResultsWorkspace({
       ...(demandProjection
         ? [
             {
+              type: 'scatter', name: 'Fixed-P moment ray (secondary)', mode: 'lines',
+              x: [0, ...(fixedPCapacityProjection ? [fixedPCapacityProjection.mx] : []), demandProjection.mx],
+              y: [0, ...(fixedPCapacityProjection ? [fixedPCapacityProjection.my] : []), demandProjection.my],
+              line: { color: '#ff1f3d', width: 1.8 }, hoverinfo: 'skip'
+            },
+            {
               type: 'scatter',
               name: 'Demand guides',
               mode: 'lines',
@@ -1067,28 +1192,28 @@ export function ResultsWorkspace({
               : { color: plotPalette.guide, width: 1.8, dash: 'dash', shape: 'linear', simplify: false },
             connectgaps: false,
             hovertemplate:
-              'Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>Nominal reference</extra>'
+              `Mx=%{x:.1f} ${unit('moment')}<br>My=%{y:.1f} ${unit('moment')}<extra>Nominal reference</extra>`
           }]
         : []),
       ...(view.showDesignResistance
         ? [{
             type: 'scatter',
-            name: `Design · P = ${fmt(activeFixedPKn, 1)} kN`,
+            name: `Design · P = ${fmt(activeDisplayP, 1)} ${unit('force')}`,
             mode: 'lines',
             x: closedX,
             y: closedY,
             line: { color: plotPalette.primary, width: 2.6, shape: 'linear', simplify: false },
             connectgaps: false,
             hovertemplate:
-              'Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra>Design resistance</extra>'
+              `Mx=%{x:.1f} ${unit('moment')}<br>My=%{y:.1f} ${unit('moment')}<extra>Design resistance</extra>`
           }]
         : []),
       ...(view.showDesignResistance || view.showNominalReference ? [{
         type: 'scatter',
         name: 'Sampled meridian intersections',
         mode: 'markers+text',
-        x: activeSamples.map((point) => knm(point.Mx)),
-        y: activeSamples.map((point) => knm(point.My)),
+        x: activeSamples.map((point) => displayMoment(point.Mx)),
+        y: activeSamples.map((point) => displayMoment(point.My)),
         text: activeSamples.map((point) => `${fmt((point.beta * 180) / Math.PI, 3)}°`),
         textposition: 'top center',
         textfont: {
@@ -1130,7 +1255,14 @@ export function ResultsWorkspace({
           })()
         ]),
         hovertemplate:
-          'Strain direction β=%{customdata[0]}°<br>N.A. axis αNA=%{customdata[1]}°<br>⊥ resultant α⊥=%{customdata[2]}°<br>Difference Δα=%{customdata[3]}°<br>Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<extra></extra>'
+          `Strain direction β=%{customdata[0]}°<br>N.A. axis αNA=%{customdata[1]}°<br>⊥ resultant α⊥=%{customdata[2]}°<br>Difference Δα=%{customdata[3]}°<br>Mx=%{x:.1f} ${unit('moment')}<br>My=%{y:.1f} ${unit('moment')}<extra></extra>`
+      }] : []),
+      ...(view.showDesignResistance && beforeCapContour.length ? [{
+        type: 'scatter', name: 'Design before Pmax cap', mode: 'lines',
+        x: [...beforeCapContour.map(point => displayMoment(point.Mx)), displayMoment(beforeCapContour[0].Mx)],
+        y: [...beforeCapContour.map(point => displayMoment(point.My)), displayMoment(beforeCapContour[0].My)],
+        line: { color: plotPalette.primary, width: 2.6, dash: 'dot', shape: 'linear', simplify: false },
+        hovertemplate: `Mx=%{x:.1f} ${unit('moment')}<br>My=%{y:.1f} ${unit('moment')}<extra>Before Pmax cap · excluded from Design checks</extra>`
       }] : []),
       ...(demandProjection
         ? [
@@ -1148,7 +1280,7 @@ export function ResultsWorkspace({
               },
               customdata: [[demandProjection.name, demandProjection.p]],
               hovertemplate:
-                '%{customdata[0]}<br>Mux=%{x:.1f} kN.m<br>Muy=%{y:.1f} kN.m<br>Pu=%{customdata[1]:.1f} kN<extra>Demand</extra>'
+                `%{customdata[0]}<br>Mux=%{x:.1f} ${unit('moment')}<br>Muy=%{y:.1f} ${unit('moment')}<br>Pu=%{customdata[1]:.1f} ${unit('force')}<extra>Demand</extra>`
             }
           ]
         : []),
@@ -1167,15 +1299,16 @@ export function ResultsWorkspace({
             },
             customdata: [[fixedPCapacityProjection.p]],
             hovertemplate:
-              'Mx=%{x:.1f} kN.m<br>My=%{y:.1f} kN.m<br>P=%{customdata[0]:.1f} kN<extra>Fixed-P capacity</extra>'
+              `Mx=%{x:.1f} ${unit('moment')}<br>My=%{y:.1f} ${unit('moment')}<br>P=%{customdata[0]:.1f} ${unit('force')}<extra>Fixed-P capacity</extra>`
           }]
         : [])
     ]
-  }, [
-    activeFixedPKn,
+  }, [displayUnits,
+    activeDisplayP,
     demandProjection,
     fixedPCapacityProjection,
     nominalStrainAngleSamples,
+    beforeCapContour,
     plotPalette,
     view.showDesignResistance,
     view.showFixedPAngleRays,
@@ -1190,12 +1323,13 @@ export function ResultsWorkspace({
   const contourAxisRange = useMemo(() => {
     const points = [
       ...(view.showDesignResistance ? strainAngleSamples : []),
+      ...(view.showDesignResistance ? beforeCapContour : []),
       ...displayedStrainAngleSamples,
       ...(view.showNominalReference ? nominalStrainAngleSamples : [])
     ]
     if (points.length === 0 && !demandProjection) return null
-    const xs = points.map((point) => knm(point.Mx))
-    const ys = points.map((point) => knm(point.My))
+    const xs = points.map((point) => displayMoment(point.Mx))
+    const ys = points.map((point) => displayMoment(point.My))
     if (demandProjection) {
       xs.push(demandProjection.mx)
       ys.push(demandProjection.my)
@@ -1212,9 +1346,10 @@ export function ResultsWorkspace({
       x: [centerX - half, centerX + half] as [number, number],
       y: [centerY - half, centerY + half] as [number, number]
     }
-  }, [
+  }, [displayUnits,
     demandProjection,
     displayedStrainAngleSamples,
+    beforeCapContour,
     nominalStrainAngleSamples,
     strainAngleSamples,
     view.showDesignResistance,
@@ -1253,7 +1388,7 @@ export function ResultsWorkspace({
           x: 0.02,
           yref: 'paper',
           y: 0.98,
-          text: 'My (kN.m)',
+          text: `My (${unit('moment')})`,
           showarrow: false,
           xanchor: 'left',
           yanchor: 'top',
@@ -1264,7 +1399,7 @@ export function ResultsWorkspace({
           x: 0.96,
           yref: 'paper',
           y: 0.04,
-          text: 'Mx (kN.m)',
+          text: `Mx (${unit('moment')})`,
           showarrow: false,
           xanchor: 'right',
           yanchor: 'bottom',
@@ -1275,7 +1410,7 @@ export function ResultsWorkspace({
       clickmode: 'event+select',
       showlegend: false
     }),
-    [contourAxisRange, plotPalette, plotTheme]
+    [displayUnits, contourAxisRange, plotPalette, plotTheme]
   )
 
   const verticalSlice = useMemo(() => {
@@ -1289,11 +1424,16 @@ export function ResultsWorkspace({
       keys: [] as Array<{ m: number; p: number; station: number; label: string; side: 'primary' | 'opposite' }>
     }
     if (!surface) return empty
-    if (isLoadcaseMode && (equilibriumBeta == null || !demandExactCurve)) return empty
     const theta = normalizeAngleDeg(activeAngle) * Math.PI / 180
+    if (demandPlaneMode && designDataset) {
+      const paths = sliceMomentPlane(designDataset.points, theta, designDataset.triangles)
+        .map(path => path.points
+          .map(point => ({ m: displayMoment(point.M), p: displayForce(point.P), station: point.station })))
+      return { ...empty, displayPaths: paths }
+    }
     const project = (point: PreviewSurfacePoint) => ({
-      m: knm(point.Mx * Math.cos(theta) + point.My * Math.sin(theta)),
-      p: kn(point.P),
+      m: displayMoment(point.Mx * Math.cos(theta) + point.My * Math.sin(theta)),
+      p: displayForce(point.P),
       station: point.station
     })
     const activeExact = isLoadcaseMode ? demandExactCurve : exactCurve
@@ -1311,7 +1451,7 @@ export function ResultsWorkspace({
     const oppositePoints = direct.opposite
     const primaryPath = primaryPoints.map(project)
     const oppositePath = oppositePoints.map(project)
-    const markerPath = markerPoints.map(project)
+    const markerPath = markerPoints.filter(point => point.surfaceRole !== 'axial-cap').map(project)
     const displayPaths = direct.displayPaths.map((path) => path.map(project))
     const keyDescriptors = designDataset?.stations ?? surface.stations
     const pickKeys = (
@@ -1334,22 +1474,40 @@ export function ResultsWorkspace({
       closed: direct.closed,
       stations: [
         ...markerPath,
-        ...(oppositePath.length > 0 ? oppositePath.filter((point) => Math.abs(point.m) > 1e-6) : [])
+        ...oppositePoints.filter(point => point.surfaceRole !== 'axial-cap').map(project)
       ],
       keys: [
         ...pickKeys(markerPath, 'primary'),
         ...(oppositePath.length > 0 ? pickKeys(oppositePath, 'opposite') : [])
       ]
     }
-  }, [activeAngle, demandExactCurve, designDataset, equilibriumBeta, exactCurve, isLoadcaseMode, surface, view.includeOppositeMoment])
+  }, [displayUnits, activeAngle, demandExactCurve, demandPlaneMode, designDataset, exactCurve, isLoadcaseMode, surface, view.includeOppositeMoment])
+
+  const beforeCapVerticalPaths = useMemo(() => {
+    if (!beforeCapDataset || axialCapLimit === null) return []
+    const theta = normalizeAngleDeg(activeAngle) * Math.PI / 180
+    const activeExact = isLoadcaseMode ? demandExactCurve : exactCurve
+    const paths = demandPlaneMode
+      ? sliceMomentPlane(beforeCapDataset.points, theta, beforeCapDataset.triangles).map(path => path.points)
+      : buildDirectMeridianSection(activeExact?.beforeAxialCap ?? beforeCapDataset.points, activeAngle,
+          !activeExact && view.includeOppositeMoment).displayPaths
+    return axialCapExcludedPaths(paths, axialCapLimit).map(path => path.map(point => ({
+      m: displayMoment(point.Mx * Math.cos(theta) + point.My * Math.sin(theta)), p: displayForce(point.P)
+    })))
+  }, [displayUnits, activeAngle, axialCapLimit, beforeCapDataset, demandExactCurve, demandPlaneMode,
+    exactCurve, isLoadcaseMode, view.includeOppositeMoment])
 
   const nominalVerticalPaths = useMemo(() => {
     if (!surface) return [] as Array<Array<{ m: number; p: number; station: number }>>
-    if (isLoadcaseMode && (equilibriumBeta == null || !demandExactCurve)) return []
     const theta = normalizeAngleDeg(activeAngle) * Math.PI / 180
+    if (demandPlaneMode && nominalDataset) {
+      return sliceMomentPlane(nominalDataset.points, theta, nominalDataset.triangles)
+        .map(path => path.points
+          .map(point => ({ m: displayMoment(point.M), p: displayForce(point.P), station: point.station })))
+    }
     const project = (point: PreviewSurfacePoint) => ({
-      m: knm(point.Mx * Math.cos(theta) + point.My * Math.sin(theta)),
-      p: kn(point.P),
+      m: displayMoment(point.Mx * Math.cos(theta) + point.My * Math.sin(theta)),
+      p: displayForce(point.P),
       station: point.station
     })
     const activeExact = isLoadcaseMode ? demandExactCurve : exactCurve
@@ -1360,10 +1518,15 @@ export function ResultsWorkspace({
       !activeExact && view.includeOppositeMoment
     )
     return direct.displayPaths.map((path) => path.map(project))
-  }, [activeAngle, demandExactCurve, equilibriumBeta, exactCurve, isLoadcaseMode, nominalDataset, surface, view.includeOppositeMoment])
+  }, [displayUnits, activeAngle, demandExactCurve, demandPlaneMode, exactCurve, isLoadcaseMode, nominalDataset, surface, view.includeOppositeMoment])
+
+  const capCutMarkers = useMemo(() => axialCapLimit === null ? []
+    : beforeCapVerticalPaths.flat().filter(point => point.p === displayForce(axialCapLimit)),
+  [displayUnits, axialCapLimit, beforeCapVerticalPaths])
 
   const nominalVerticalAnnotations = useMemo(() => {
     const stations = nominalVerticalPaths.flat()
+    if (demandPlaneMode) return { stations: [], keys: [], intermediatePoints: [] }
     const descriptors = nominalDataset?.stations ?? surface?.stations ?? []
     const keys = descriptors.flatMap((descriptor, station) => {
       const definition = descriptor.definition
@@ -1371,7 +1534,7 @@ export function ResultsWorkspace({
         definition.kind !== 'bar-tension-yield-ratio' ||
         (Math.abs(definition.ratio) > 1e-12 && Math.abs(definition.ratio - 1) > 1e-12)
       ) return []
-      const point = stations.find((item) => Math.abs(item.station - station) <= 1e-9)
+      const point = stations.find((item) => item.station !== undefined && Math.abs(item.station - station) <= 1e-9)
       return point ? [{
         ...point,
         label: descriptor.label,
@@ -1379,7 +1542,7 @@ export function ResultsWorkspace({
       }] : []
     })
     return { stations, keys, intermediatePoints: [] }
-  }, [nominalDataset, nominalVerticalPaths, surface])
+  }, [demandPlaneMode, nominalDataset, nominalVerticalPaths, surface])
 
   const verticalData = useMemo(() => {
     const nominalOnly = view.showNominalReference && !view.showDesignResistance
@@ -1402,6 +1565,12 @@ export function ResultsWorkspace({
     }
 
     return [
+      ...(demandProjection ? [{
+        type: 'scatter', name: demandPlaneMode ? 'Proportional load path' : 'Projected proportional load path', mode: 'lines',
+        x: [0, ...(capacityProjection ? [capacityProjection.m] : []), demandProjection.m],
+        y: [0, ...(capacityProjection ? [capacityProjection.p] : []), demandProjection.p],
+        line: { color: '#ff1f3d', width: 1.8 }, hoverinfo: 'skip'
+      }] : []),
       {
         type: 'scatter',
         name: 'Key station rays',
@@ -1435,14 +1604,15 @@ export function ResultsWorkspace({
               ? primaryLine
               : { color: plotPalette.guide, width: 1.8, dash: 'dash', shape: 'linear', simplify: false },
             connectgaps: false,
-            hovertemplate: 'M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra>Nominal reference</extra>'
+            hovertemplate: `M=%{x:.1f} ${unit('moment')}<br>P=%{y:.1f} ${unit('force')}<extra>Nominal reference</extra>`
           }))
         : []),
       ...(view.showDesignResistance ? verticalSlice.displayPaths.map((path, index) => ({
         type: 'scatter',
         name:
-          index === 0
-            ? `Direct β = ${fmt(activeAngle, exactCurve || demandExactCurve ? 3 : 0)}°`
+          demandPlaneMode ? index === 0 ? `Design demand plane θ = ${fmt(activeAngle, 3)}°` : `Design demand-plane loop ${index + 1}`
+            : index === 0
+              ? `Direct β = ${fmt(activeAngle, exactCurve || demandExactCurve ? 3 : 0)}°`
             : `Direct β = ${fmt(normalizeAngleDeg(activeAngle + 180), 0)}°`,
         mode: 'lines',
         x: path.map((point) => point.m),
@@ -1450,11 +1620,24 @@ export function ResultsWorkspace({
         line: primaryLine,
         connectgaps: false,
         marker: { size: 0 },
-        hovertemplate: 'M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra>Design resistance</extra>'
+        hovertemplate: `M=%{x:.1f} ${unit('moment')}<br>P=%{y:.1f} ${unit('force')}<extra>Design resistance</extra>`
       })) : []),
+      ...(view.showDesignResistance ? beforeCapVerticalPaths.map(path => ({
+        type: 'scatter', name: 'Design before Pmax cap', mode: 'lines',
+        x: path.map(point => point.m), y: path.map(point => point.p),
+        line: { ...primaryLine, dash: 'dot' }, connectgaps: false,
+        hovertemplate: `M=%{x:.1f} ${unit('moment')}<br>P=%{y:.1f} ${unit('force')}<extra>Before Pmax cap · excluded from Design checks</extra>`
+      })) : []),
+      ...(view.showDesignResistance && capCutMarkers.length ? [{
+        type: 'scatter', name: 'Pmax edge intersections', mode: 'markers',
+        x: capCutMarkers.map(point => point.m), y: capCutMarkers.map(point => point.p),
+        marker: { size: 6, color: plotPalette.primary, symbol: 'circle',
+          line: { color: plotPalette.markerOutline, width: 0.8 } },
+        hovertemplate: `M=%{x:.1f} ${unit('moment')}<br>P=%{y:.1f} ${unit('force')}<extra>Exact Pmax edge intersection</extra>`
+      }] : []),
       ...(view.showDesignResistance || view.showNominalReference ? [{
         type: 'scatter',
-        name: 'Intermediate intersections',
+        name: demandPlaneMode ? 'Surface intersections' : 'Intermediate intersections',
         mode: 'markers',
         x: selectedIntermediatePoints.map((point) => point.m),
         y: selectedIntermediatePoints.map((point) => point.p),
@@ -1466,7 +1649,7 @@ export function ResultsWorkspace({
         },
         customdata: selectedIntermediatePoints.map((point) => point.station),
         hovertemplate:
-          'Intermediate station=%{customdata:.3f}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra></extra>'
+          `Intermediate station=%{customdata:.3f}<br>M=%{x:.1f} ${unit('moment')}<br>P=%{y:.1f} ${unit('force')}<extra></extra>`
       }] : []),
       ...(view.showDesignResistance || view.showNominalReference ? [{
         type: 'scatter',
@@ -1481,7 +1664,7 @@ export function ResultsWorkspace({
           line: { color: plotPalette.markerOutline, width: 0.8 }
         },
         customdata: selectedStations.map((point) => point.station),
-        hovertemplate: 'P%{customdata}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra>Station</extra>'
+        hovertemplate: `P%{customdata}<br>M=%{x:.1f} ${unit('moment')}<br>P=%{y:.1f} ${unit('force')}<extra>Station</extra>`
       }] : []),
       ...(view.showDesignResistance || view.showNominalReference ? [{
         type: 'scatter',
@@ -1502,7 +1685,7 @@ export function ResultsWorkspace({
           symbol: 'circle',
           line: { color: plotPalette.markerOutline, width: 1 }
         },
-        hovertemplate: '%{text}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra></extra>'
+        hovertemplate: `%{text}<br>M=%{x:.1f} ${unit('moment')}<br>P=%{y:.1f} ${unit('force')}<extra></extra>`
       }] : []),
       ...((view.showDesignResistance || view.showNominalReference) && oppositeKeys.length > 0
         ? [
@@ -1525,7 +1708,7 @@ export function ResultsWorkspace({
                 symbol: 'circle',
                 line: { color: plotPalette.markerOutline, width: 1 }
               },
-              hovertemplate: '%{text}<br>M=%{x:.1f} kN.m<br>P=%{y:.1f} kN<extra></extra>'
+              hovertemplate: `%{text}<br>M=%{x:.1f} ${unit('moment')}<br>P=%{y:.1f} ${unit('force')}<extra></extra>`
             }
           ]
         : []),
@@ -1545,14 +1728,14 @@ export function ResultsWorkspace({
               },
               customdata: [[demandProjection.name, demandProjection.mx, demandProjection.my]],
               hovertemplate:
-                '%{customdata[0]}<br>Mβ=%{x:.1f} kN.m<br>Pu=%{y:.1f} kN<br>Mux=%{customdata[1]:.1f} kN.m<br>Muy=%{customdata[2]:.1f} kN.m<extra>Demand</extra>'
+                `%{customdata[0]}<br>${demandPlaneMode ? 'Mθ' : 'Mβ'}=%{x:.1f} ${unit('moment')}<br>Pu=%{y:.1f} ${unit('force')}<br>Mux=%{customdata[1]:.1f} ${unit('moment')}<br>Muy=%{customdata[2]:.1f} ${unit('moment')}<extra>Demand</extra>`
             }
           ]
         : []),
       ...(capacityProjection
         ? [{
             type: 'scatter',
-            name: 'Capacity point',
+            name: 'Design ray crossing',
             mode: 'markers',
             x: [capacityProjection.m],
             y: [capacityProjection.p],
@@ -1564,16 +1747,26 @@ export function ResultsWorkspace({
             },
             customdata: [[capacityProjection.mx, capacityProjection.my]],
             hovertemplate:
-              'Mβ=%{x:.1f} kN.m<br>P=%{y:.1f} kN<br>Mx=%{customdata[0]:.1f} kN.m<br>My=%{customdata[1]:.1f} kN.m<extra>Capacity</extra>'
+              `${demandPlaneMode ? 'Mθ' : 'Mβ'}=%{x:.1f} ${unit('moment')}<br>P=%{y:.1f} ${unit('force')}<br>Mx=%{customdata[0]:.1f} ${unit('moment')}<br>My=%{customdata[1]:.1f} ${unit('moment')}<extra>Design ray crossing</extra>`
           }]
-        : [])
+        : []),
+      ...(fieldProjection ? [{
+        type: 'scatter', name: 'Field point before Pmax cap', mode: 'markers',
+        x: [fieldProjection.m], y: [fieldProjection.p],
+        marker: { size: 10, color: plotPalette.primary, symbol: 'circle', line: { color: plotPalette.markerOutline, width: 1 } },
+        hovertemplate: `M=%{x:.1f} ${unit('moment')}<br>P=%{y:.1f} ${unit('force')}<extra>Field before Pmax cap · exceeds permitted Design resistance</extra>`
+      }] : [])
     ]
-  }, [
+  }, [displayUnits,
     activeAngle,
+    beforeCapVerticalPaths,
+    capCutMarkers,
     capacityProjection,
     demandExactCurve,
+    demandPlaneMode,
     demandProjection,
     exactCurve,
+    fieldProjection,
     nominalVerticalAnnotations,
     nominalVerticalPaths,
     plotPalette,
@@ -1614,7 +1807,7 @@ export function ResultsWorkspace({
           x: 0,
           yref: 'paper',
           y: 1.02,
-          text: 'P (kN)',
+          text: `P (${unit('force')})`,
           showarrow: false,
           xanchor: 'left',
           yanchor: 'bottom',
@@ -1625,7 +1818,7 @@ export function ResultsWorkspace({
           x: 1.01,
           yref: 'paper',
           y: 0,
-          text: 'Mβ (kN.m)',
+          text: `${demandPlaneMode ? 'Mθ' : 'Mβ'} (${unit('moment')})`,
           showarrow: false,
           xanchor: 'left',
           yanchor: 'top',
@@ -1635,11 +1828,11 @@ export function ResultsWorkspace({
       hovermode: 'closest',
       showlegend: false
     }),
-    [plotPalette, plotTheme]
+    [displayUnits, demandPlaneMode, plotPalette, plotTheme]
   )
 
   const fieldExtremes = useMemo(() => {
-    if (!fieldMap || !inverseResult) return null
+    if (!fieldMap || !sectionField) return null
     let epsMin = Number.POSITIVE_INFINITY
     let epsMax = Number.NEGATIVE_INFINITY
     let sigMin = Number.POSITIVE_INFINITY
@@ -1652,9 +1845,9 @@ export function ResultsWorkspace({
     }
     if (fieldMap.equivalentBlock) {
       const strainAt = (x: number, y: number) =>
-        inverseResult.state.e0 +
-        inverseResult.state.kx * (y - fieldMap.origin.y) +
-        inverseResult.state.ky * (x - fieldMap.origin.x)
+        sectionField.state.e0 +
+        sectionField.state.kx * (y - fieldMap.origin.y) +
+        sectionField.state.ky * (x - fieldMap.origin.x)
       for (const solid of section.solids) {
         for (const ring of [solid.outer, ...solid.holes]) {
           for (const point of ring) push(strainAt(point.x, point.y), 0)
@@ -1672,18 +1865,18 @@ export function ResultsWorkspace({
     for (const bar of fieldMap.rebars) push(bar.strain, bar.stress)
     if (!Number.isFinite(epsMin)) return null
     return { epsMin, epsMax, sigMin, sigMax }
-  }, [fieldMap, inverseResult, section.solids])
+  }, [fieldMap, sectionField, section.solids])
 
   const fieldAngleComparison = useMemo(
     () =>
-      inverseResult
+      sectionField && checkedLoadcase
         ? sectionFieldAngleComparison(
-            inverseResult.state,
-            inverseResult.demand.Mx,
-            inverseResult.demand.My
+            sectionField.state,
+            checkedLoadcase.Mx,
+            checkedLoadcase.My
           )
         : null,
-    [inverseResult]
+    [sectionField, checkedLoadcase]
   )
 
   const handle3dClick = (event: PlotlyClickPayload) => {
@@ -1732,10 +1925,12 @@ export function ResultsWorkspace({
   }) => {
     if (!visible) return null
     return (
-      <article className={`pm-results-plot${primary ? ' is-primary' : ''}`} data-chart={id}>
+      <article className={`pm-results-plot${primary ? ' is-primary' : ''}${isNgCase ? ' is-ng' : ''}`} data-chart={id}>
         <div className="pm-results-plot-chrome ws-chart-controls">
           <div className="pm-results-plot-heading">
-            <span>{title}</span>
+            <span className={id === 'heatmap' ? 'pm-field-basis-label' : undefined}
+              title={id === 'heatmap' ? title : undefined}
+              data-basis={id === 'heatmap' ? fieldEvidence?.basis ?? 'pending' : undefined}>{title}</span>
             {meta ? <strong>{meta}</strong> : null}
           </div>
           <div className="pm-results-plot-tools" role="group" aria-label="Chart layout">
@@ -1756,8 +1951,15 @@ export function ResultsWorkspace({
         <div className="pm-results-plot-body">
           <div className="pm-results-plot-canvas">
             <DeferredChart primary={primary}>{children}</DeferredChart>
+            {id !== 'heatmap' && fieldFrameTransition.status === 'previous' &&
+              <span className="pm-results-frame-status" role="status">Updating — previous completed result</span>}
           </div>
           {footer}
+          {beforeCapDataset && (id === 'vertical' && view.showDesignResistance && beforeCapVerticalPaths.length > 0 ||
+            id === 'fixedP' && view.showDesignResistance && beforeCapContour.length > 0 ||
+            id === 'surface3d' && view.surfaceResistanceMode === 'design') ? (
+            <p className="pm-preview-hint" data-before-cap-legend>Dotted: Design resistance before Pmax cap; excluded from checks.</p>
+          ) : null}
         </div>
       </article>
     )
@@ -1768,6 +1970,20 @@ export function ResultsWorkspace({
    * to Section Results only.
    */
   if (viewMode === 'loadcase' && !selectedLoadcase) {
+    if (ready && section.solids.length > 0 && demandView.visibleCharts.heatmap) return (
+      <section className="pm-results-stage pm-results-stage--charts-only" aria-busy={false}>
+        <div className="pm-results-grid pm-results-grid--dynamic primary-heatmap count-1">
+          <article className="pm-results-plot is-primary" data-chart="heatmap">
+            <div className="pm-results-plot-chrome ws-chart-controls"><div className="pm-results-plot-heading">
+              <span>Load reference axes</span><strong>{isAxisPreview ? 'Axis preview — Apply to update the load reference.' : 'Centroid + applied load offsets'}</strong>
+            </div></div>
+            <div className="pm-results-plot-body"><div className="pm-results-plot-canvas">
+              <SectionOutlineChart section={section} rebars={rebars} loadReference={previewReference} />
+            </div><p className="pm-preview-hint">Select or add a load combination to view its calculation results.</p></div>
+          </article>
+        </div>
+      </section>
+    )
     return (
       <section className="pm-results-empty">
         <RotateCw size={28} />
@@ -1786,6 +2002,12 @@ export function ResultsWorkspace({
       <section
         className={`pm-results-stage pm-results-stage--charts-only${busy ? ' is-recalculating' : ''}`}
         aria-busy={demandWorking}
+        data-field-frame={fieldFrameTransition.status}
+        data-requested-loadcase={requestedLoadcaseId ?? undefined}
+        data-displayed-loadcase={displayFieldSnapshot?.selectedLoadcaseId}
+        data-field-basis={fieldEvidence?.basis ?? 'pending'}
+        data-field-boundary={sectionField?.basis === 'capacity' ? sectionField.boundary.kind : undefined}
+        data-demand-status={inverseResult?.designCheck.evaluated ? inverseResult.designCheck.adequacy : 'pending'}
       >
         <div
           className={`pm-results-grid pm-results-grid--dynamic primary-${demandView.primaryChart} count-${
@@ -1794,8 +2016,10 @@ export function ResultsWorkspace({
         >
           {renderChartShell({
             id: 'heatmap',
-            title: 'Section field',
-            meta: inverseResult ? solverStatus(inverseResult).label : undefined,
+            title: fieldEvidence?.basis === 'capacity' ? 'Field at capacity' : 'Field at demand',
+            meta: isNgCase
+              ? sectionField ? `NG · λfield = ${fmt(sectionField.loadFactor, 3)}` : 'NG · field unavailable'
+              : sectionField ? 'Checked entered demand' : 'Demand field unavailable',
             primary: demandView.primaryChart === 'heatmap',
             visible: demandView.visibleCharts.heatmap,
             onMakePrimary: () => onDemandViewChange({ primaryChart: 'heatmap' }),
@@ -1857,13 +2081,30 @@ export function ResultsWorkspace({
                 </label>
               </div>
             ),
-            footer: inverseResult ? (
-              <div className="pm-section-field-metrics">
+            footer: <div className="pm-section-field-footer" data-mechanics={surface?.analysisOptions.methodId}>
+              <div className="pm-section-field-status pm-preview-hint" role="status" aria-live="polite">
+                {demandWorking && <p>
+                  Updating {requestedSelectedLoadcase?.name}.
+                  {fieldFrameTransition.status === 'previous'
+                    ? ` Showing previous completed result (${selectedLoadcase.name}).` : ' Preparing result.'}
+                </p>}
+                {isAxisPreview && <p>Axis preview — Apply to update the load reference.</p>}
+                {beforeCapField && beforeCapField.boundary.kind === 'before-axial-cap' && <p data-before-cap-note>
+                  <strong>Pmax governs.</strong> Field before Pmax cap at the uncapped boundary:
+                  {' '}P = {qfmt('force', beforeCapField.response.P, 1)} {unit('force')}
+                  {' > '}Pmax = {qfmt('force', beforeCapField.boundary.limit, 1)} {unit('force')}.
+                  {' '}This field exceeds permitted Design resistance; UR uses the capped crossing.
+                </p>}
+                {!fieldMap && !fieldMapWorking && <p>
+                  {displayFieldSnapshot?.fieldMessage ?? 'Preparing section-field evidence.'}
+                </p>}
+              </div>
+              {inverseResult ? <div className="pm-section-field-metrics">
                 <article className="pm-field-metric-card">
-                  <header>Solver</header>
+                  <header>Design check / field</header>
                   <div className="pm-field-metric-rows">
                     <div>
-                      <span>Status</span>
+                      <span>Solver diagnostic</span>
                       <strong
                         className={solverStatus(inverseResult).tone}
                         title={inverseResult.message}
@@ -1872,10 +2113,8 @@ export function ResultsWorkspace({
                       </strong>
                     </div>
                     <div>
-                      <span>Iter / η</span>
+                      <span>UR</span>
                       <strong className="ws-num">
-                        {inverseResult.iterations}
-                        {' · '}
                         {inverseResult.utilization == null ? 'n/a' : fmt(inverseResult.utilization, 3)}
                       </strong>
                     </div>
@@ -1888,8 +2127,8 @@ export function ResultsWorkspace({
                       </strong>
                     </div>
                     <div>
-                      <span>Residual</span>
-                      <strong className="ws-num">{sci(inverseResult.residualNorm, 2)}</strong>
+                      <span>Field residual</span>
+                      <strong className="ws-num">{sectionField ? sci(sectionField.residualNorm, 2) : '—'}</strong>
                     </div>
                     <div title="Actual epsilon=0 neutral-axis line, measured CCW from section +x modulo 180 degrees.">
                       <span>N.A. axis αNA</span>
@@ -1902,51 +2141,51 @@ export function ResultsWorkspace({
                   </div>
                 </article>
 
-                <article className="pm-field-metric-card">
+                {sectionField && fieldMap ? <><article className="pm-field-metric-card">
                   <header>Strain</header>
                   <div className="pm-field-metric-rows">
-                    {inverseResult.equivalentBlock ? (
+                    {sectionField.equivalentBlock ? (
                       <>
                         <div title="Neutral-axis depth measured from the extreme compression edge along the block normal.">
                           <span>N.A. depth c</span>
-                          <strong className="ws-num">{fmt(inverseResult.equivalentBlock.neutralAxisDepth, 2)} mm</strong>
+                          <strong className="ws-num">{qfmt('length', sectionField.equivalentBlock.neutralAxisDepth, 2)} {unit('length')}</strong>
                         </div>
                         <div>
                           <span>Block factor β1</span>
-                          <strong className="ws-num">{fmt(inverseResult.equivalentBlock.beta1, 3)}</strong>
+                          <strong className="ws-num">{fmt(sectionField.equivalentBlock.beta1, 3)}</strong>
                         </div>
                         <div title="Equivalent rectangular compression-block depth.">
                           <span>a = β1·c</span>
-                          <strong className="ws-num">{fmt(inverseResult.equivalentBlock.blockDepth, 2)} mm</strong>
+                          <strong className="ws-num">{qfmt('length', sectionField.equivalentBlock.blockDepth, 2)} {unit('length')}</strong>
                         </div>
                         <div title="Full section depth projected onto the compression-block normal.">
                           <span>Depth Dθ</span>
-                          <strong className="ws-num">{fmt(inverseResult.equivalentBlock.projectedSectionDepth, 2)} mm</strong>
+                          <strong className="ws-num">{qfmt('length', sectionField.equivalentBlock.projectedSectionDepth, 2)} {unit('length')}</strong>
                         </div>
                         <div>
                           <span>εt / bar</span>
                           <strong className="ws-num">
-                            {inverseResult.equivalentBlock.controllingTensileStrain == null
+                            {sectionField.equivalentBlock.controllingTensileStrain == null
                               ? 'n/a'
-                              : fmt(inverseResult.equivalentBlock.controllingTensileStrain, 6)}
+                              : fmt(sectionField.equivalentBlock.controllingTensileStrain, 6)}
                             {' · '}
-                            {inverseResult.equivalentBlock.controllingBarId ?? 'n/a'}
+                            {sectionField.equivalentBlock.controllingBarId ?? 'n/a'}
                           </strong>
                         </div>
                       </>
                     ) : (
                       <>
                         <div>
-                          <span>ε₀</span>
-                          <strong className="ws-num">{fmt(inverseResult.state.e0, 6)}</strong>
+                          <span title="Strain at the centroidal calculation origin">εC</span>
+                          <strong className="ws-num">{fmt(sectionField.state.e0, 6)}</strong>
                         </div>
                         <div>
                           <span>kx</span>
-                          <strong className="ws-num">{sci(inverseResult.state.kx, 2)}</strong>
+                          <strong className="ws-num">{qfmt('curvature', sectionField.state.kx, 8)} {unit('curvature')}</strong>
                         </div>
                         <div>
                           <span>ky</span>
-                          <strong className="ws-num">{sci(inverseResult.state.ky, 2)}</strong>
+                          <strong className="ws-num">{qfmt('curvature', sectionField.state.ky, 8)} {unit('curvature')}</strong>
                         </div>
                       </>
                     )}
@@ -1968,68 +2207,69 @@ export function ResultsWorkspace({
                 <article className="pm-field-metric-card">
                   <header>Stress</header>
                   <div className="pm-field-metric-rows">
-                    {inverseResult.equivalentBlock ? (
+                    {sectionField.equivalentBlock ? (
                       <>
                         <div>
                           <span>Block stress</span>
-                          <strong className="ws-num">{fmt(inverseResult.equivalentBlock.compressionStress, 3)} MPa</strong>
+                          <strong className="ws-num">{qfmt('stress', sectionField.equivalentBlock.compressionStress, 3)} {unit('stress')}</strong>
                         </div>
                         <div>
                           <span>Block area Ac</span>
                           <strong className="ws-num">
-                            {inverseResult.equivalentBlock.concreteBlockArea == null
+                            {sectionField.equivalentBlock.concreteBlockArea == null
                               ? 'n/a'
-                              : `${fmt(inverseResult.equivalentBlock.concreteBlockArea, 1)} mm²`}
+                              : `${qfmt('area', sectionField.equivalentBlock.concreteBlockArea, 1)} ${unit('area')}`}
                           </strong>
                         </div>
                         <div>
                           <span>Cc</span>
                           <strong className="ws-num">
-                            {inverseResult.equivalentBlock.concreteForce == null
+                            {sectionField.equivalentBlock.concreteForce == null
                               ? 'n/a'
-                              : `${fmt(kn(inverseResult.equivalentBlock.concreteForce), 1)} kN`}
+                              : `${fmt(displayForce(sectionField.equivalentBlock.concreteForce), 1)} ${unit('force')}`}
                           </strong>
                         </div>
                       </>
                     ) : null}
                     <div>
                       <span>σ max</span>
-                      <strong className="ws-num">{fieldExtremes ? `${fmt(fieldExtremes.sigMax, 2)} MPa` : '—'}</strong>
+                      <strong className="ws-num">{fieldExtremes ? `${qfmt('stress', fieldExtremes.sigMax, 2)} ${unit('stress')}` : '—'}</strong>
                     </div>
                     <div>
                       <span>σ min</span>
-                      <strong className="ws-num">{fieldExtremes ? `${fmt(fieldExtremes.sigMin, 2)} MPa` : '—'}</strong>
+                      <strong className="ws-num">{fieldExtremes ? `${qfmt('stress', fieldExtremes.sigMin, 2)} ${unit('stress')}` : '—'}</strong>
                     </div>
                     <div>
                       <span>Δσ</span>
                       <strong className="ws-num">
                         {fieldExtremes
-                          ? `${fmt(fieldExtremes.sigMax - fieldExtremes.sigMin, 2)} MPa`
+                          ? `${qfmt('stress', fieldExtremes.sigMax - fieldExtremes.sigMin, 2)} ${unit('stress')}`
                           : '—'}
                       </strong>
                     </div>
                   </div>
                 </article>
 
+                </> : <><FieldMetricPlaceholder title="Strain" /><FieldMetricPlaceholder title="Stress" /></>}
                 <article className="pm-field-metric-card">
-                  <header>Demand</header>
+                  <header>Demand at centroid</header>
                   <div className="pm-field-metric-rows">
                     <div>
                       <span>Pu</span>
-                      <strong className="ws-num">{fmt(kn(inverseResult.demand.P), 1)} kN</strong>
+                      <strong className="ws-num">{inverseResult.demand.P > 0 ? '+' : ''}{fmt(displayForce(inverseResult.demand.P), 1)} {unit('force')}</strong>
                     </div>
                     <div>
                       <span>Mux</span>
-                      <strong className="ws-num">{fmt(knm(inverseResult.demand.Mx), 1)} kN·m</strong>
+                      <strong className="ws-num">{inverseResult.demand.Mx > 0 ? '+' : ''}{fmt(displayMoment(inverseResult.demand.Mx), 1)} {unit('moment')}</strong>
                     </div>
                     <div>
                       <span>Muy</span>
-                      <strong className="ws-num">{fmt(knm(inverseResult.demand.My), 1)} kN·m</strong>
+                      <strong className="ws-num">{inverseResult.demand.My > 0 ? '+' : ''}{fmt(displayMoment(inverseResult.demand.My), 1)} {unit('moment')}</strong>
                     </div>
                     <div>
                       <span>|M|</span>
                       <strong className="ws-num">
-                        {fmt(knm(Math.hypot(inverseResult.demand.Mx, inverseResult.demand.My)), 1)} kN·m
+                        {fmt(displayMoment(Math.hypot(inverseResult.demand.Mx, inverseResult.demand.My)), 1)} {unit('moment')}
                       </strong>
                     </div>
                     <div
@@ -2044,48 +2284,41 @@ export function ResultsWorkspace({
                     </div>
                   </div>
                 </article>
-              </div>
-            ) : null,
-            children: displayFieldSnapshot ? (
+              </div> : <div className="pm-section-field-metrics">
+                {['Design check / field', 'Strain', 'Stress', 'Demand at centroid'].map(title =>
+                  <FieldMetricPlaceholder key={title} title={title} />)}
+              </div>}
+            </div>,
+            children: displayFieldSnapshot?.map && sectionField ? (
               <SectionFieldChart
+                axesReference={previewReference}
+                loadReference={loadReference}
                 fieldMap={displayFieldSnapshot.map}
                 section={section}
                 fieldMode={demandView.fieldMode}
-                state={displayFieldSnapshot.result.state}
-                Mx={displayFieldSnapshot.result.demand.Mx}
-                My={displayFieldSnapshot.result.demand.My}
+                state={sectionField.state}
+                Mx={checkedLoadcase?.Mx ?? 0}
+                My={checkedLoadcase?.My ?? 0}
                 showNeutralAxis={demandView.showNeutralAxis}
                 showMoments={demandView.showMoments}
                 includeRebar={demandView.includeRebar}
               />
             ) : (
-              <div className="pm-results-plot-placeholder">
-                {fieldMapWorking ? null : 'Inverse solution is unavailable.'}
-              </div>
+              <SectionOutlineChart section={section} rebars={rebars} loadReference={previewReference} />
             )
           })}
 
           {renderChartShell({
             id: 'fixedP',
             title: 'Fixed-P Mx-My',
-            meta: `P = ${fmt(activeFixedPKn, 1)} kN`,
+            meta: `P = ${fmt(activeDisplayP, 1)} ${unit('force')}`,
             primary: demandView.primaryChart === 'fixedP',
             visible: demandView.visibleCharts.fixedP,
             onMakePrimary: () => onDemandViewChange({ primaryChart: 'fixedP' }),
             onToggleVisible: () => toggleDemandChart('fixedP'),
             controls: (
               <>
-                <SyncedControl
-                  label="P"
-                  title="Axial force"
-                  value={Number(activeFixedPKn.toFixed(1))}
-                  min={minPKn}
-                  max={maxPKn}
-                  step={Math.max(1, Math.round((maxPKn - minPKn) / 240))}
-                  unit="kN"
-                  disabled
-                  onChange={() => undefined}
-                />
+                <QuantitySlider quantity="force" label="P" value={activeFixedP} min={surface?.bounds.P[0] ?? 0} max={surface?.bounds.P[1] ?? 0} disabled onValueChange={onFixedPChange} />
                 <label
                   className={`ws-check pm-field-check${view.showFixedPAngleRays ? ' is-on' : ''}`}
                   title="Angle rays"
@@ -2105,43 +2338,44 @@ export function ResultsWorkspace({
                 />
               </>
             ),
+            footer: strainAngleSamples.length === 0
+              ? <p className="pm-preview-hint" role="status">No Design contour exists at this Pu. Governing 3D UR remains available.</p> : null,
             children: <PlotlyChart data={contourData} layout={contourLayout} config={plotConfig} />
           })}
 
           {renderChartShell({
             id: 'vertical',
-            title: 'Direct β meridian',
-            meta: equilibriumBeta == null
-              ? 'N.A. direction is not unique for this state'
-              : `βeq = ${fmt(equilibriumBeta * 180 / Math.PI, 3)}°`,
+            title: demandPlaneMode ? 'Demand-direction P–M' : 'Direct β meridian',
+            meta: `${demandPlaneMode ? checkedLoadcase && Math.hypot(checkedLoadcase.Mx, checkedLoadcase.My) > 0 ? 'θload' : 'θinspect' : equilibriumBeta == null ? 'βselected' : sectionField?.basis === 'capacity' ? 'βcapacity' : 'βdemand'} = ${fmt(activeAngle, 3)}° · UR = ${inverseResult?.utilization == null ? 'n/a' : fmt(inverseResult.utilization, 3)}`,
             primary: demandView.primaryChart === 'vertical',
             visible: demandView.visibleCharts.vertical,
             onMakePrimary: () => onDemandViewChange({ primaryChart: 'vertical' }),
             onToggleVisible: () => toggleDemandChart('vertical'),
             controls: (
               <>
+                <fieldset className="pm-result-radio-group ws-joined-buttons" aria-label="Demand vertical slice">
+                  <label className={demandPlaneMode ? 'is-active' : ''}>
+                    <input type="radio" name="demand-vertical-slice" checked={demandPlaneMode}
+                      onChange={() => onDemandViewChange({ verticalMode: 'demand-plane' })} />Demand θ
+                  </label>
+                  <label className={!demandPlaneMode ? 'is-active' : ''}>
+                    <input type="radio" name="demand-vertical-slice" checked={!demandPlaneMode}
+                      onChange={() => onDemandViewChange({ verticalMode: 'direct-beta' })} />Direct β
+                  </label>
+                </fieldset>
                 <SyncedControl
-                  label="βeq"
-                  title="Exact equilibrium strain-gradient direction"
+                  label={demandPlaneMode ? 'θload' : 'β'}
+                  title={demandPlaneMode ? 'Checked demand moment direction' : 'Section-field strain-gradient direction, or selected inspection angle'}
                   value={Number(activeAngle.toFixed(3))}
                   min={0}
                   max={360}
                   step={0.001}
                   unit="deg"
-                  disabled
-                  onChange={() => undefined}
+                  disabled={demandPlaneMode || equilibriumBeta != null}
+                  inputValue={!demandPlaneMode && equilibriumBeta == null ? String(demandView.directAngle) : undefined}
+                  inputWorking={!demandPlaneMode && fieldMapWorking}
+                  onChange={value => onDemandViewChange({ directAngle: normalizeAngleDeg(value) })}
                 />
-                <label
-                  className={`ws-check pm-field-check${view.includeOppositeMoment ? ' is-on' : ''}`}
-                  title="Opposite half"
-                >
-                  <input
-                    type="checkbox"
-                    checked={view.includeOppositeMoment}
-                    onChange={(event) => onViewChange({ includeOppositeMoment: event.target.checked })}
-                  />
-                  Opp
-                </label>
                 <ResistanceVisibilityControls
                   showDesign={view.showDesignResistance}
                   showNominal={view.showNominalReference}
@@ -2254,23 +2488,14 @@ export function ResultsWorkspace({
         {renderChartShell({
           id: 'fixedP',
           title: 'Fixed-P Mx-My',
-          meta: `P = ${fmt(kn(fixedP), 1)} kN`,
+          meta: `P = ${fmt(displayForce(fixedP), 1)} ${unit('force')}`,
           primary: view.primaryChart === 'fixedP',
           visible: view.visibleCharts.fixedP,
           onMakePrimary: () => onViewChange({ primaryChart: 'fixedP' }),
           onToggleVisible: () => toggleSectionChart('fixedP'),
           controls: (
             <>
-              <SyncedControl
-                label="P"
-                title="Axial force"
-                value={Number(kn(fixedP).toFixed(1))}
-                min={minPKn}
-                max={maxPKn}
-                step={Math.max(1, Math.round((maxPKn - minPKn) / 240))}
-                unit="kN"
-                onChange={(value) => onFixedPChange(value * 1000)}
-              />
+              <QuantitySlider quantity="force" label="P" value={fixedP} min={surface?.bounds.P[0] ?? 0} max={surface?.bounds.P[1] ?? 0} onValueChange={onFixedPChange} />
               <label
                 className={`ws-check pm-field-check${view.showFixedPAngleRays ? ' is-on' : ''}`}
                 title="Angle rays"

@@ -1,5 +1,7 @@
 'use client'
 
+import { QuantityValue, UnitLabel, useQuantityFormatters } from '../shared/DisplayUnits'
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Focus, ZoomIn, ZoomOut } from 'lucide-react'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
@@ -92,6 +94,8 @@ export function SectionMeshChart({
   showQuadraturePoints,
   showRebars
 }: Props) {
+  const { displayUnits, qfmt, unit } = useQuantityFormatters()
+
   const hostRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const statusRef = useRef<HTMLDivElement | null>(null)
@@ -406,7 +410,7 @@ export function SectionMeshChart({
       ctx.fillStyle = muted
       ctx.font = `${10 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
       ctx.textAlign = 'center'
-      ctx.fillText(`${fmt(scaleLength, scaleLength < 1 ? 3 : 0)} mm`, (scaleX1 + scaleX2) / 2, scaleY - 6 * dpr)
+      ctx.fillText(`${qfmt('length', scaleLength, scaleLength < 1 ? 3 : 0)} ${unit('length')}`, (scaleX1 + scaleX2) / 2, scaleY - 6 * dpr)
       ctx.textAlign = 'right'
       ctx.fillText('x →', width - 9 * dpr, height - 9 * dpr)
       ctx.save()
@@ -566,7 +570,7 @@ export function SectionMeshChart({
       canvas.removeEventListener('keydown', onKeyDown)
       host.classList.remove('is-panning')
     }
-  }, [bounds, mesh, rebars, section.solids, showQuadraturePoints, showRebars, theme])
+  }, [displayUnits, bounds, mesh, rebars, section.solids, showQuadraturePoints, showRebars, theme])
 
   return (
     <div ref={hostRef} className="pm-section-mesh-host">
@@ -604,9 +608,9 @@ export function SectionMeshChart({
             Triangle {hover.localTriangle + 1} · component {hover.component + 1}
           </span>
           <span>
-            x {fmt(hover.worldX, 3)} · y {fmt(hover.worldY, 3)} mm
+            x {qfmt('length', hover.worldX, 3)} · y {qfmt('length', hover.worldY, 3)} {unit('length')}
           </span>
-          <span>Area {fmt(hover.area, 4)} mm²</span>
+          <span>Area {qfmt('area', hover.area, 4)} {unit('area')}</span>
           <span>Subdivision depth {hover.depth}</span>
         </div>
       ) : null}

@@ -441,7 +441,7 @@ test('synthetic cap vertices are chart topology, not station-table rows', () => 
   assert.ok(table.every((row) => row.kind === 'vertical' && row.criterion !== '—'))
 })
 
-test('fixed-P table preserves every Pmax contour branch instead of overwriting equal-beta rows', () => {
+test('fixed-P table reflects the exact Pmax boundary without synthetic radial branches', () => {
   const parsed = parseProjectDocument(readFileSync(
     resolve(process.cwd(), 'docs/examples/realistic-sections/KDS-REAL-05-complex-stress-strain.pm-project.json'),
     'utf8'
@@ -476,14 +476,8 @@ test('fixed-P table preserves every Pmax contour branch instead of overwriting e
   const fixedRows = table.filter((row) => row.kind === 'fixedP')
   assert.equal(fixedRows.length, expected.length)
   assert.equal(new Set(fixedRows.map((row) => row.key)).size, expected.length)
-  const repeatedBeta = fixedRows.find((row, index) =>
-    fixedRows.some((candidate, candidateIndex) =>
-      candidateIndex !== index && Math.abs(candidate.angleDeg - row.angleDeg) < 1e-8
-    )
-  )
-  assert.ok(repeatedBeta)
-  const branchRows = fixedRows.filter((row) => Math.abs(row.angleDeg - repeatedBeta.angleDeg) < 1e-8)
-  assert.deepEqual(branchRows.map((row) => row.branch), branchRows.map((_, index) => index + 1))
+  assert.equal(new Set(fixedRows.map(row => row.angleDeg.toFixed(6))).size, fixedRows.length)
+  assert.ok(fixedRows.every(row => row.branch === 1))
   assert.deepEqual(
     fixedRows.map((row) => [row.angleDeg, row.design?.Mx, row.design?.My]),
     expected.map((sample) => [normalizeAngleDeg((sample.beta * 180) / Math.PI), sample.Mx, sample.My])

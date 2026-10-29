@@ -1,3 +1,5 @@
+import type { UnitSelection } from '@pm/units'
+import { appendPresentationSummary } from './presentation-summary'
 /**
  * Demand Check workbook: the whole check, one sheet group per selected loadcase.
  *
@@ -30,7 +32,7 @@ import {
 } from '@pm/analysis'
 import type { DesignBasis } from '@pm/design'
 import type { NominalBlockEvaluation } from '@pm/equivalent-block'
-import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
+import { rebarArea, type GeometryInputRebarView, type SectionGeometry } from '@pm/geometry'
 import {
   compileConcreteMaterial,
   compileSteelMaterial,
@@ -41,6 +43,7 @@ import {
   type CalculationAnalysisOptions,
   type CalculationProfileId,
   type LoadCombination,
+  type LoadReference,
   type ProjectInformation
 } from '@pm/project'
 import { solveLoadcases, type SolvedLoadcase } from '../model/loadcase-solutions'
@@ -67,6 +70,8 @@ import {
 import { createDefineName, createWorkbook, ExcelExportError } from './workbook-common'
 
 export type DemandCheckExcelInput = {
+  loadReference?: LoadReference
+  presentationUnits?: UnitSelection
   projectName: string
   projectInformation?: ProjectInformation
   sectionName: string
@@ -363,7 +368,7 @@ const writeInverseSheet = (
     const blockBar = blockBars.get(String(bar.id))
     const x = bar.x - origin.x
     const y = bar.y - origin.y
-    const area = (Math.PI * bar.dia ** 2) / 4
+    const area = rebarArea(bar, isBlock ? 'equivalent-block' : 'stress-strain')
     sheet.getCell(r, 1).value = bar.id
     setFormula(sheet.getCell(r, 2), `=${cells.x}`, x, '#,##0.00')
     setFormula(sheet.getCell(r, 3), `=${cells.y}`, y, '#,##0.00')
@@ -952,6 +957,7 @@ export const buildDemandCheckWorkbookParts = async (input: DemandCheckExcelInput
   })
 
   workbook.calcProperties.fullCalcOnLoad = true
+  appendPresentationSummary(workbook, input)
   return { workbook, charts }
 }
 

@@ -83,7 +83,7 @@ test('loadcase chart transitions retain one coherent previous frame until the ne
   )
 })
 
-test('loadcase chart transitions reject an edited outgoing demand or a different surface', () => {
+test('edited demands retain only a labelled outgoing frame, never current evidence', () => {
   const first = createLoadCombination({ id: 7, name: 'ULS-7', P: 1_200_000, Mx: 80_000_000, My: -35_000_000 })
   const second = createLoadCombination({ id: 8, name: 'ULS-8', P: 900_000, Mx: -20_000_000, My: 45_000_000 })
   const surface = { revision: 'surface-current' }
@@ -92,8 +92,18 @@ test('loadcase chart transitions reject an edited outgoing demand or a different
 
   assert.deepEqual(
     loadcaseFrameForTransition([{ ...first, Mx: first.Mx + 1 }, second], second, null, surface, frame),
-    { frame: null, status: 'pending' }
+    { frame, status: 'previous' }
   )
+  const edited = { ...first, Mx: first.Mx + 1 }
+  assert.equal(currentLoadcaseEvidence(edited, result), null)
+  assert.equal(currentLoadcaseFrame(edited, result, surface, frame), null)
+  assert.deepEqual(currentLoadcaseEvidenceMap([edited, second], { [first.id]: result }), {})
+  assert.deepEqual(loadcaseFrameForTransition([edited, second], edited, null, surface, frame),
+    { frame, status: 'previous' })
+  assert.deepEqual(loadcaseFrameForTransition([second], second, null, surface, frame),
+    { frame: null, status: 'pending' }, 'deleted outgoing row must withdraw its frame')
+  assert.deepEqual(loadcaseFrameForTransition([first, second], null, null, surface, frame),
+    { frame: null, status: 'pending' }, 'a missing selection has no transition')
   assert.deepEqual(
     loadcaseFrameForTransition([first, second], second, null, { revision: 'surface-new' }, frame),
     { frame: null, status: 'pending' }

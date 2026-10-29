@@ -1,5 +1,5 @@
 import { validateGeometryInput } from '@pm/geometry'
-import type { GeometryInput, GeometryInputOuter, GeometryInputRebar, Point2 } from '@pm/geometry'
+import { parseRebarAreaSource, rebarAreaSource, type GeometryInput, type GeometryInputOuter, type GeometryInputRebar, type Point2 } from '@pm/geometry'
 import { CONCRETE_MATERIAL_ID, DEFAULT_CONCRETE_DENSITY, assertValidMaterialStore } from '@pm/materials'
 import type { ConcreteMaterial, MaterialStore, SteelMaterial, StressStrainPoint } from '@pm/materials'
 import {
@@ -25,6 +25,7 @@ import {
   type MaterialFactorExpression
 } from '@pm/design'
 import { isValidEntityId } from './ids'
+import { parseLoadReference } from './load-reference'
 import {
   ANALYSIS_OPTIONS_VERSION,
   EQUIVALENT_BLOCK_SURFACE_METHOD,
@@ -128,6 +129,15 @@ const parseRebar = (value: unknown, path: string): GeometryInputRebar => {
     dia: value.dia,
     x: value.x,
     y: value.y
+  }
+  if (value.area !== undefined) {
+    assert(isFiniteNumber(value.area) && value.area > 0, `${path}.area must be finite and positive`)
+    rebar.area = value.area
+  }
+  if (value.areaSource !== undefined) {
+    assert(rebar.area !== undefined, `${path}.areaSource requires a stored area`)
+    rebar.areaSource = parseRebarAreaSource(value.areaSource)
+    rebar.areaSource = rebarAreaSource(rebar)
   }
   if (value.steelMaterialId !== undefined) {
     assertEntityId(value.steelMaterialId, `${path}.steelMaterialId`)
@@ -412,13 +422,16 @@ const parseLoadCombination = (value: unknown, path: string): LoadCombination => 
   }
 }
 
-const parseLoadings = (value: unknown | undefined): LoadingsInput => {
+const parseLoadings = (value: unknown | undefined, version: number): LoadingsInput => {
   if (value === undefined) {
+    assert(version !== 3, 'Project v3 requires loadings and an explicit load reference')
     return { combinations: [] }
   }
   assertRecord(value, 'inputs.loadings must be an object')
   assertArray(value.combinations, 'inputs.loadings.combinations must be an array')
+  assert(version === 3 || value.reference === undefined, 'Load reference requires project version 3')
   return {
+    ...(version === 3 ? { reference: parseLoadReference(value.reference) } : {}),
     combinations: value.combinations.map((item, index) =>
       parseLoadCombination(item, `inputs.loadings.combinations[${index}]`)
     )
@@ -1210,7 +1223,7 @@ export const collectProjectWarnings = (document: PmProjectDocument): string[] =>
 export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => {
   assertRecord(value, 'Project JSON must be an object')
   assert(value.schema === PM_PROJECT_SCHEMA, `schema must be "${PM_PROJECT_SCHEMA}"`)
-  assert(value.version === PM_PROJECT_VERSION, `Unsupported project version: ${String(value.version)}`)
+  assert(value.version === 1 || value.version === 2 || value.version === PM_PROJECT_VERSION, `Unsupported project version: ${String(value.version)}`)
   assertRecord(value.meta, 'meta must be an object')
   assertEntityId(value.meta.id, 'meta.id')
   assert(isString(value.meta.name), 'meta.name must be a string')
@@ -1266,9 +1279,14 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
       'a user-defined concrete model under a design Code requires an override reason'
     )
   }
+  const geometry = parseGeometry(value.inputs.geometry)
+  for (const bar of geometry.rebars) {
+    assert(value.version === 1 ? bar.area === undefined && bar.areaSource === undefined : bar.area !== undefined,
+      value.version === 1 ? 'Stored rebar area requires project version 2' : `Rebar ${bar.id}: project v2 requires a stored area`)
+  }
   return {
     schema: PM_PROJECT_SCHEMA,
-    version: PM_PROJECT_VERSION,
+    version: value.version,
     meta: {
       id: value.meta.id,
       name: value.meta.name,
@@ -1278,9 +1296,9 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
     },
     inputs: {
       calculationProfileId: value.inputs.calculationProfileId,
-      geometry: parseGeometry(value.inputs.geometry),
+      geometry,
       materials,
-      loadings: parseLoadings(value.inputs.loadings),
+      loadings: parseLoadings(value.inputs.loadings, value.version),
       analysis,
       design
     }

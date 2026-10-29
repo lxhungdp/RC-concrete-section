@@ -1,5 +1,6 @@
 import polygonClipping from 'polygon-clipping'
 import type { MultiPolygon, Pair, Polygon, Ring } from 'polygon-clipping'
+export { triangulateIndexedLoop, type PlanarLoopPoint, type PlanarLoopTriangle } from './triangulate-indexed-loop'
 import { allocateIds, isValidEntityId, nextAvailableId } from './ids'
 
 export type Point2 = {
@@ -726,6 +727,7 @@ export const summarizeSection = (geometry: SectionGeometry): GeometrySummary => 
 }
 
 export * from './rebar'
+export * from './rebar-area'
 export * from './section-input'
 export * from './mesh'
 export * from './containment'

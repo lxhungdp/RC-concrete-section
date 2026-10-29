@@ -43,6 +43,7 @@
       "@pm/code-as3600/*": ["./packages/pm-code-as3600/src/*"],
       "@pm/code-custom": ["./packages/pm-code-custom/src"],
       "@pm/code-custom/*": ["./packages/pm-code-custom/src/*"],
+      "@pm/units": ["./packages/pm-units/src"],
       "@pm/report": ["./packages/pm-report/src"],
       "@pm/report/*": ["./packages/pm-report/src/*"]
     },

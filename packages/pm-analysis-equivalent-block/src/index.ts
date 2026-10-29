@@ -8,6 +8,7 @@ import {
   sectionBoundaryPoints,
   stationDefinitionLabel,
   type AxialCapProjectionTrace,
+  type CapacityFieldResult,
   type DesignResistanceTrace,
   type CalculationAuditDepthProfile,
   type CalculationAuditRebar,
@@ -58,7 +59,7 @@ import {
   type NominalBlockEvaluation,
   type PreparedEquivalentBlockSection
 } from '@pm/equivalent-block'
-import { netConcreteCentroid, type GeometryInputRebarView, type SectionGeometry } from '@pm/geometry'
+import { netConcreteCentroid, rebarArea, rebarAreaSourceLabel, type GeometryInputRebarView, type SectionGeometry } from '@pm/geometry'
 import {
   assertValidMaterialStore,
   describeSteelMaterialLaw,
@@ -246,7 +247,8 @@ export const prepareBlockAnalysis = (
       id: String(bar.id),
       x: bar.x,
       y: bar.y,
-      area: Math.PI * bar.dia ** 2 / 4,
+      dia: bar.dia,
+      area: rebarArea(bar, 'equivalent-block'),
       steelLawId: String(bar.steelMaterialId ?? materialStore.defaults.steelMaterialId)
     })),
     referencePoint: origin,
@@ -768,6 +770,14 @@ export const buildEquivalentBlockPreviewSurfaceFromPrepared = (
     directions: nominal.directions.map((angle) => wrap(Math.PI / 2 - angle)).sort((a, b) => a - b),
     stations: nominalStationDescriptors
   }
+  const beforeCap = design.beforeAxialCap
+  const beforeAxialCap: PreviewSurfaceDataset | undefined = beforeCap ? {
+    points: convertSurfacePoints(beforeCap, prepared.section, prepared.designModel.blockLaw,
+      beta1, compressionStress, true, options.neutralAxisStations.values),
+    triangles: beforeCap.triangles,
+    directions: beforeCap.directions.map(angle => wrap(Math.PI / 2 - angle)).sort((a, b) => a - b),
+    stations: blockStations(beforeCap, options.neutralAxisStations.values)
+  } : undefined
   return {
     mechanics: 'equivalent-rectangular-block',
     points,
@@ -778,6 +788,7 @@ export const buildEquivalentBlockPreviewSurfaceFromPrepared = (
     nominalSurface,
     designFixed: designSurface,
     nominalFixed: nominalSurface,
+    ...(beforeAxialCap ? { beforeAxialCap } : {}),
     codeReferencePoints: [{
       id: 'nominal-p0',
       label: prepared.designBasis.format === 'designMaterialReevaluation'
@@ -902,6 +913,7 @@ export const buildEquivalentBlockExactDirectionCurveFromPrepared = (
     beta: normalizedBeta,
     designCurve: meridian(designSurface.points),
     nominalCurve: meridian(nominalSurface.points),
+    ...(surface.beforeAxialCap ? { beforeAxialCap: meridian(surface.beforeAxialCap.points) } : {}),
     designAdaptive: meridian(surface.points),
     designFixed: meridian(designSurface.points),
     nominalFixed: meridian(nominalSurface.points),
@@ -1111,6 +1123,8 @@ export const buildEquivalentBlockPointCalculationAudit = (
     return {
       id: source.id,
       diameter: source.dia,
+      areaSource: rebarAreaSourceLabel(source),
+      storedArea: source.area !== undefined,
       steelMaterialId: source.steelMaterialId ?? calculationMaterials.defaults.steelMaterialId,
       x: bar.x - prepared.section.referencePoint.x,
       y: bar.y - prepared.section.referencePoint.y,
@@ -1404,12 +1418,74 @@ const evaluateBlockAdmissibility = (
   }
 }
 
+/** Diagnostic physical boundary query; capped solver/check outputs are not replaced. */
+const equivalentBlockCapacityField = (
+  prepared: PreparedBlockAnalysis,
+  designSurface: EquivalentBlockDesignSurface,
+  demand: LoadCombination,
+  evaluator: CapacityEvaluator,
+  governingSolve: ReturnType<typeof solveProportionalRayCapacity>
+): CapacityFieldResult => {
+  const onCap = governingSolve.status === 'cap-face-governed'
+  if (onCap && !designSurface.beforeAxialCap) return {
+    status: 'unavailable', reason: 'axial-cap', iterations: 0,
+    message: 'The original Design boundary before the axial cap is unavailable.'
+  }
+  const solved = onCap && designSurface.beforeAxialCap
+    ? solveProportionalRayCapacity(designSurface.beforeAxialCap, demand, evaluator) : governingSolve
+  if (solved.status !== 'converged' || !solved.state || solved.loadFactor === undefined || solved.loadFactor <= 0) {
+    return { status: 'unavailable', reason: 'non-converged', iterations: solved.iterations,
+      message: 'Physical capacity refinement did not converge; geometric checks remain available.' }
+  }
+  const exact = evaluator(solved.state)
+  const nominal = nominalEvaluationFrom(exact)
+  const admissibility = evaluateBlockAdmissibility(prepared, solved.state, nominal, false)
+  if (!admissibility.evaluated || !admissibility.ok) return {
+    status: 'unavailable', reason: 'inadmissible', iterations: solved.iterations,
+    message: 'The refined capacity state leaves the material domain.'
+  }
+  const response = exact.resultants
+  const factor = typeof exact.metadata?.phi === 'number' ? exact.metadata.phi : null
+  const equivalentBlock = evaluationTrace(prepared, solved.state, exact)
+  const reference = prepared.referenceModel.bindNominalEvaluator(prepared.section)(solved.state).resultants
+  const resistance: DesignResistanceTrace = prepared.designBasis.format === 'designMaterialReevaluation'
+    ? { nominalReference: reference, format: 'designMaterialReevaluation', factor: null,
+        classification: 'design-material', controllingTensileStrain: equivalentBlock.controllingTensileStrain ?? null,
+        yieldStrain: null, axialCapApplied: false, stages: ['Reference equivalent block', 'Design-material reevaluation'] }
+    : { nominalReference: reference, format: 'globalResultantFactor', factor,
+        classification: (exact.metadata?.classification as DesignResistanceTrace['classification']) ?? 'compression-controlled',
+        controllingTensileStrain: equivalentBlock.controllingTensileStrain ?? null,
+        yieldStrain: null, axialCapApplied: false, stages: ['Nominal equivalent block', 'Code strength reduction'] }
+  const limit = designSurface.axialCap
+  const beforeCap = limit !== undefined && response.P > limit
+  return { status: 'available', boundary: beforeCap ? { kind: 'before-axial-cap', limit } : { kind: 'design' },
+    state: strainState(prepared.section, solved.state, prepared.model.blockLaw), response,
+    loadFactor: solved.loadFactor,
+    residual: { P: response.P - solved.loadFactor * demand.P, Mx: response.Mx - solved.loadFactor * demand.Mx,
+      My: response.My - solved.loadFactor * demand.My },
+    residualNorm: solved.residualNorm ?? 0, iterations: solved.iterations, admissibility, resistance, equivalentBlock,
+    message: beforeCap
+      ? 'Physical equivalent-block Design boundary before the axial cap on the same load ray; exceeds permitted Design resistance. Governing UR is unchanged.'
+      : 'Compatible physical equivalent-block capacity state.' }
+}
+
 const solveEquivalentBlockDemandRaw = (
   prepared: PreparedBlockAnalysis,
   options: EquivalentBlockAnalysisOptions,
   loadcase: LoadCombination,
   preparedDesignSurface?: EquivalentBlockDesignSurface
 ): InversePreviewResult => {
+  if (loadcase.P === 0 && loadcase.Mx === 0 && loadcase.My === 0) {
+    // The geometric check owns UR=0. A zero ray has no block capacity state; the legacy required
+    // state/response slots below are explicitly unevaluated and must never supply a field.
+    const zero = { P: 0, Mx: 0, My: 0 }
+    return { ok: false, converged: false, admissibility: evaluateBlockAdmissibility(prepared, undefined, undefined, false),
+      loadcaseId: loadcase.id, demand: loadcase, state: { e0: 0, kx: 0, ky: 0 }, response: zero,
+      residual: zero, residualNorm: 0, iterations: 0, utilization: null, contourPoint: null,
+      designCheck: { evaluated: false }, capacityField: { status: 'unavailable', reason: 'zero-demand',
+        iterations: 0, message: 'Zero demand has no unique capacity-field direction.' },
+      message: 'Zero demand has no capacity ray or unique block state; inverse evaluation is not applicable.' }
+  }
   const designSurface = preparedDesignSurface ?? buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
   const evaluator = (
     prepared.designBasis.format === 'designMaterialReevaluation'
@@ -1507,6 +1583,7 @@ const solveEquivalentBlockDemandRaw = (
     resistance,
     equivalentBlock,
     contourPoint: null,
+    capacityField: equivalentBlockCapacityField(prepared, designSurface, loadcase, evaluator, solved),
     message: solved.status === 'cap-face-governed'
       ? 'Factored ULS demand is governed by the code axial-cap face; no unique physical neutral-axis state exists on that face.'
       : solved.status === 'mesh-fallback'
@@ -1585,7 +1662,7 @@ export const buildEquivalentBlockFieldMapFromPrepared = (
     const barStrain = at(bar.x, bar.y)
     const steelLawId = String(bar.steelMaterialId ?? prepared.materialStore.defaults.steelMaterialId)
     const stress = prepared.model.steelLaws[steelLawId].stressAt(barStrain)
-    const area = Math.PI * bar.dia ** 2 / 4
+    const area = rebarArea(bar, 'equivalent-block')
     return { id: bar.id, x: bar.x, y: bar.y, dia: bar.dia, area, strain: barStrain, stress, force: stress * area }
   })
   return {

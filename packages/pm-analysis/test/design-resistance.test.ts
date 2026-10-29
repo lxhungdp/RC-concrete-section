@@ -169,9 +169,10 @@ test('design surface preserves IDs and pairs every uncapped design state with it
     compactOptions()
   )
 
-  assert.equal(surface.points.length, surface.nominalPoints.length)
+  assert.ok(surface.beforeAxialCap)
+  assert.equal(surface.beforeAxialCap.points.length, surface.nominalPoints.length)
   assert.deepEqual(
-    surface.points.map((point) => point.id),
+    surface.beforeAxialCap.points.map((point) => point.id),
     surface.nominalPoints.map((point) => point.id)
   )
   for (const point of surface.points.filter((item) => !item.resistance?.axialCapApplied)) {
@@ -191,16 +192,16 @@ test('design surface preserves IDs and pairs every uncapped design state with it
   const capped = surface.points.filter((point) => point.resistance?.axialCapApplied)
   assert.ok(capped.length > 0)
   assert.ok(capped.every((point) => point.surfaceRole === 'axial-cap'))
-  assert.ok(capped.every((point) => point.stationId !== null))
-  assert.ok(capped.every((point) => point.onSampledDirection === true))
-  assert.ok(capped.every((point) => point.axialCapTrace?.projection.kind === 'radial'))
+  assert.ok(capped.every((point) => point.stationId === null))
+  assert.ok(capped.some((point) => point.onSampledDirection === true))
+  assert.ok(capped.every((point) => point.axialCapTrace?.projection.kind === 'identity'))
   for (const point of capped) {
-    const nominalAtState = surface.nominalPoints.find((item) => item.id === point.id)
-    assert.deepEqual(point.state, nominalAtState?.state)
+    assert.equal(surface.nominalPoints.some(item => item.id === point.id), false,
+      'geometric cap intersections must not impersonate physical station IDs')
+    assert.deepEqual(point, { ...point, ...point.axialCapTrace?.source.crossing })
   }
-  const capCentres = surface.points.filter((point) => point.station === 0)
-  assert.ok(capCentres.every((point) => Math.abs(point.Mx) < 1e-8 && Math.abs(point.My) < 1e-8))
-  assert.ok(capCentres.every((point) => Math.abs(point.P - capCentres[0].P) < 1e-8))
+  const compression = checkLoadcaseUtilizationFromSurface(surface, createLoadCombination({ id:1, P:1e9, Mx:0, My:0 }))
+  assert.equal(compression.capacityPoint?.P, surface.bounds.P[1])
 })
 
 test('selected-point stress-strain audit reproduces every contribution and the stored Design point', () => {
@@ -297,7 +298,7 @@ test('bar-strain station audit derives steel strain and edge-to-bar depth before
   assert.equal(audit.concreteSummary.resultant.P, audit.mechanicalLedger.concrete.P)
 })
 
-test('selected-point audit derives a synthetic axial-cap point from its source crossing and radial projection', () => {
+test('selected-point audit derives a synthetic axial-cap point from its exact source-edge crossing', () => {
   const basis = createKdsBasicDesignBasis()
   const sets = buildResistanceMaterialSets(materials, basis)
   const prepared = prepareAnalysis(section, rebars, sets.stateMaterials)
@@ -316,8 +317,8 @@ test('selected-point audit derives a synthetic axial-cap point from its source c
   assert.equal(audit.preCap.comparison.maximumAxialResistance, audit.trace.cap)
   assert.equal(audit.preCap.comparison.selectedAxialResistance, audit.trace.cap)
   assert.equal(audit.trace.source.kind, 'edge-interpolation')
-  assert.equal(audit.trace.projection.kind, 'radial')
-  if (audit.trace.source.kind !== 'edge-interpolation' || audit.trace.projection.kind !== 'radial') return
+  assert.equal(audit.trace.projection.kind, 'identity')
+  if (audit.trace.source.kind !== 'edge-interpolation') return
   const source = audit.trace.source
   const t = (audit.trace.cap - source.compressionSide.P) /
     (source.admissibleSide.P - source.compressionSide.P)
@@ -326,11 +327,8 @@ test('selected-point audit derives a synthetic axial-cap point from its source c
   assert.ok(Math.abs(interpolate(source.compressionSide.P, source.admissibleSide.P) - source.crossing.P) <= 1e-8)
   assert.ok(Math.abs(interpolate(source.compressionSide.Mx, source.admissibleSide.Mx) - source.crossing.Mx) <= 1e-8)
   assert.ok(Math.abs(interpolate(source.compressionSide.My, source.admissibleSide.My) - source.crossing.My) <= 1e-8)
-  const q = audit.trace.projection.sourceStationCoordinate /
-    audit.trace.projection.crossingStationCoordinate
-  assert.ok(Math.abs(q - audit.trace.projection.factor) <= 1e-12)
-  assert.ok(Math.abs(source.crossing.Mx * q - point.Mx) <= Math.max(1, Math.abs(point.Mx)) * 1e-12)
-  assert.ok(Math.abs(source.crossing.My * q - point.My) <= Math.max(1, Math.abs(point.My)) * 1e-12)
+  assert.equal(source.crossing.Mx, point.Mx)
+  assert.equal(source.crossing.My, point.My)
   assert.equal(audit.reconciliation.ok, true)
 })
 
@@ -685,13 +683,11 @@ test('factored ULS utilization uses the 3D proportional demand ray', () => {
   assert.ok(result.capacityPoint)
   assert.ok(Math.abs(result.capacityPoint.P - result.capacityMultiplier * loadcase.P) < 1e-6)
 
-  const compressionPole = surface.points.find((point) => point.station === 0)
-  assert.ok(compressionPole)
   const compressionResult = checkLoadcaseUtilizationFromSurface(
     surface,
     createLoadCombination({
       name: 'Half capped compression resistance',
-      P: compressionPole.P / 2,
+      P: surface.bounds.P[1] / 2,
       Mx: 0,
       My: 0
     })

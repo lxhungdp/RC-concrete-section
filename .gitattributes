@@ -1,5 +1,8 @@
 * text=auto eol=lf
 
+# AdSec source hashes bind the original CRLF bytes; keep that transport on every checkout.
+docs/examples/reference-case/source/adsec/Adsec_*.md text eol=crlf
+
 *.png binary
 *.jpg binary
 *.jpeg binary

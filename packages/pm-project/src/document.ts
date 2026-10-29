@@ -1,4 +1,4 @@
-import { createEmptyGeometryInput, type GeometryInput } from '@pm/geometry'
+import { createEmptyGeometryInput, withStoredRebarArea, type GeometryInput, type LegacyRebarMechanics } from '@pm/geometry'
 import { createDefaultMaterialStore, type MaterialStore } from '@pm/materials'
 import { cloneDesignBasis } from '@pm/design'
 import { nextAvailableId } from './ids'
@@ -6,6 +6,7 @@ import { cloneLoadingsInput, createEmptyLoadingsInput } from './loadings'
 import { cloneCalculationAnalysisOptions } from './analysis-options'
 import {
   DEFAULT_CALCULATION_PROFILE_ID,
+  calculationProfile,
   createAnalysisOptionsForProfile,
   createDesignBasisForCalculationProfile
 } from './calculation-profiles'
@@ -30,7 +31,7 @@ export const makeProjectId = (used: Iterable<number> = []) => nextAvailableId(us
 
 const clonePoint = <T extends { id: number; x: number; y: number }>(point: T): T => ({ ...point })
 
-const cloneGeometryInput = (input: GeometryInput): GeometryInput => ({
+const cloneGeometryInput = (input: GeometryInput, mechanics: LegacyRebarMechanics): GeometryInput => ({
   id: input.id,
   name: input.name,
   outers: input.outers.map((outer) => ({
@@ -41,7 +42,7 @@ const cloneGeometryInput = (input: GeometryInput): GeometryInput => ({
       points: hole.points.map(clonePoint)
     }))
   })),
-  rebars: input.rebars.map((rebar) => ({ ...rebar }))
+  rebars: input.rebars.map(rebar => withStoredRebarArea(rebar, mechanics))
 })
 
 const cloneMaterialStore = (store: MaterialStore): MaterialStore =>
@@ -75,10 +76,11 @@ export const cloneProjectInformation = (information: ProjectInformation): Projec
  */
 export const createProjectDocument = (snapshot: ProjectInputSnapshot): PmProjectDocument => {
   const stamp = nowIso()
-  const geometry = cloneGeometryInput(snapshot.geometry)
+  const calculationProfileId = snapshot.calculationProfileId ?? DEFAULT_CALCULATION_PROFILE_ID
+  const geometry = cloneGeometryInput(snapshot.geometry,
+    calculationProfile(calculationProfileId).mechanics === 'equivalent-rectangular-block' ? 'equivalent-block' : 'stress-strain')
   const materials = cloneMaterialStore(snapshot.materials)
   const loadings = cloneLoadingsInput(snapshot.loadings ?? createEmptyLoadingsInput())
-  const calculationProfileId = snapshot.calculationProfileId ?? DEFAULT_CALCULATION_PROFILE_ID
   const analysis = cloneCalculationAnalysisOptions(
     snapshot.analysis ?? createAnalysisOptionsForProfile(calculationProfileId)
   )

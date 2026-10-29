@@ -1,3 +1,5 @@
+import { UNIT_PRESETS } from '@pm/units'
+import { writeWorkbookUnits } from '../../features/section-editor/shared/workbook-units'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createDefaultMaterialStore, createKdsRebarSteel } from '@pm/materials'
@@ -176,7 +178,9 @@ test('section workbook is data-only tables with no side metadata', async () => {
   const rebarSheet = workbook.getWorksheet('Rebars')!
   assert.equal(boundary.getCell('G1').value, null)
   assert.equal(boundary.getCell('H1').value, null)
-  assert.equal(rebarSheet.getCell('G1').value, null)
+  assert.equal(rebarSheet.getCell('F1').value, 'As')
+  assert.equal(rebarSheet.getCell('G1').value, 'As source')
+  assert.equal(rebarSheet.getColumn(7).hidden, true)
   assert.deepEqual(
     [1, 2, 3, 4, 5].map((column) => rebarSheet.getRow(1).getCell(column).value),
     ['id', 'Dia', 'Mat', 'X', 'Y']
@@ -258,9 +262,10 @@ test('rebar-only workbook keeps outside coordinates', async () => {
 test('unknown Mat name maps to default material with warning', async () => {
   const ExcelJS = await import('exceljs')
   const workbook = new (ExcelJS.default ?? ExcelJS).Workbook()
+  writeWorkbookUnits(workbook, UNIT_PRESETS.metric, 'pm-section-rebars-area-v2')
   const sheet = workbook.addWorksheet('Rebars')
-  sheet.addRow(['id', 'Dia', 'Mat', 'X', 'Y'])
-  sheet.addRow([1, 20, 'UnknownSteel', 10, 20])
+  sheet.addRow(['id', 'Dia', 'Mat', 'X', 'Y', 'As'])
+  sheet.addRow([1, 20, 'UnknownSteel', 10, 20, 300])
   const bytes = new Uint8Array(await workbook.xlsx.writeBuffer())
   const materials = createDefaultMaterialStore()
   const imported = await importRebarWorkbook(
@@ -277,10 +282,11 @@ test('unknown Mat name maps to default material with warning', async () => {
 test('duplicate rebar id is rejected', async () => {
   const ExcelJS = await import('exceljs')
   const workbook = new (ExcelJS.default ?? ExcelJS).Workbook()
+  writeWorkbookUnits(workbook, UNIT_PRESETS.metric, 'pm-section-rebars-area-v2')
   const sheet = workbook.addWorksheet('Rebars')
-  sheet.addRow(['id', 'Dia', 'Mat', 'X', 'Y'])
-  sheet.addRow([1, 20, '', 0, 0])
-  sheet.addRow([1, 25, '', 10, 10])
+  sheet.addRow(['id', 'Dia', 'Mat', 'X', 'Y', 'As'])
+  sheet.addRow([1, 20, '', 0, 0, 300])
+  sheet.addRow([1, 25, '', 10, 10, 490])
   const bytes = new Uint8Array(await workbook.xlsx.writeBuffer())
   const materials = createDefaultMaterialStore()
   await assert.rejects(

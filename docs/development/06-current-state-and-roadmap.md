@@ -9,7 +9,7 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 
 | Area | Implemented now | Remaining gate |
 |---|---|---|
-| Project | every persisted calculation contract is v1; canonical exports contain profile, geometry, materials, factored loadings, model-specific options, and DesignBasis; exact canonical round trip; documented parser-v1 defaults | accepted-result artifact and signed release metadata |
+| Project | canonical v2 exports with stored rebar area; explicit diameter-only v1 reader; profile, geometry, materials, factored loadings, model-specific options and DesignBasis; exact canonical round trip | accepted-result artifact and signed release metadata |
 | Profile selection | one Materials selection atomically binds KDS stress-strain, KDS block, ACI block, or either `Custom` mechanics and defaults; the profile table is the single owner of mechanics/material-standard/resistance-profile coherence | add only edition-scoped profiles with independent review evidence |
 | Geometry | multiple solids/holes, shared fail-closed topology and circular-bar disk/overlap gate, exact properties, clipping, triangle/quadrature mesh | persisted multi-region bar parent, code-specific cover/spacing, normalization and complete acceptance UX |
 | Materials | persisted concrete/steel definitions, shared physics validator, compiled stress/tangent laws, material support gates, and package-owned ordinate tests for every implemented law | finish authority-derived clause verification for every declared scope |
@@ -21,6 +21,8 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 | Resistance | Nominal/Design separation, global-factor and design-material formats, single ledger scaling, axial cap | accepted-result/profile certification workflow |
 | Demand | explicit `factoredULS`, governing 3D proportional ray, secondary fixed-P diagnostic, three-state UR screening | immutable accepted check artifact and batch governance |
 | Results | fixed-grid 3D/fixed-P, direct fixed/exact vertical meridians, model-specific fields/evidence | final accepted-result-only presentation rules |
+| Display units | Metric, US Customary and independent quantity groups for editors, charts and preview reports; fixed mm/N/MPa/N·mm calculation data; versioned unit-declared editable workbooks | released-report status remains subject to the engineering gates below |
+| Rebar area/catalog | editable independent As in generator/list; one-time equation or published catalog fills; stored As used by both mechanics and reports; explicit source/edition labels | published reference subsets are not qualified current normative design profiles; see [scope and evidence](11-rebar-area-and-catalogs.md) |
 | Report/export | stress-strain and equivalent-block formula-audited result workbooks; stress-strain mesh Excel/DXF; a format-neutral `ReportModel` and a deterministic, vector, watermarked preview PDF with per-combination detail selection | immutable accepted result, **released** PDF, and cryptographic result identity |
 | Performance | production-bundled worker, prepared-analysis/block surface caches, worker-owned surface handles for loadcase checks, mesh/sampling/pipeline benchmarks | compact plotting DTO, memory budgets, larger batches, cooperative cancellation checkpoints |
 
@@ -40,9 +42,9 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
   directions. Production surface construction performs no station/direction midpoint probes.
 - Automatic design-factor transition/event stations are disabled. Five fixed tensile-strain ratios
   increase resolution in the high-curvature yield range.
-- Project versioning is the single pre-release v1 family: document, DesignBasis, analysis options,
-  methods, and named schedules are all v1. No migration or backward-compatibility work is carried.
-  Omitted-field defaults are explicit parser-v1 behavior.
+- Project exports use v2; v1 remains an explicit diameter-only reader. DesignBasis v3, options v1,
+  method IDs and the shared `unified-27-v2` schedule retain their independent contracts. Legacy
+  area materialization is isolated and documented; no general migration framework is introduced.
 - Nominal resistance, Design resistance, and factored Demand are different DTO stages and UI terms.
 - KDS `P0` is now a code reference point; the high-strength flexural surface closes on its
   eta-reduced physical compression limit, eliminating an unsupported interpolation band.

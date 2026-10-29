@@ -1,5 +1,6 @@
 import { nextAvailableId } from './ids'
 import type { Point2, SectionGeometry, SectionSolid } from './index'
+import { rebarAreaSource, type RebarAreaSource } from './rebar-area'
 
 export type GeometryInputHole = {
   id: number
@@ -16,6 +17,9 @@ export type GeometryInputRebar = {
   id: number
   steelMaterialId?: number
   dia: number
+  /** Stored mm². Omission is restricted to the legacy diameter-only input contract. */
+  area?: number
+  areaSource?: RebarAreaSource
   x: number
   y: number
 }
@@ -55,7 +59,11 @@ export const createGeometryInputOuter = (
 type RebarWithOuterIndex = GeometryInputRebar & { solidIndex?: number }
 
 export const cloneRebars = (rebars: GeometryInputRebar[]): GeometryInputRebar[] =>
-  rebars.map(({ id, steelMaterialId, dia, x, y }) => ({ id, steelMaterialId, dia, x, y }))
+  rebars.map(({ id, steelMaterialId, dia, area, areaSource, x, y }) => ({
+    id, steelMaterialId, dia, x, y,
+    ...(area === undefined ? {} : { area }),
+    ...(areaSource === undefined ? {} : { areaSource: rebarAreaSource({ dia, area, areaSource }) })
+  }))
 
 export const geometryInputFromOuterRings = (
   id: number,

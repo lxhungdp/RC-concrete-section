@@ -1,20 +1,32 @@
 'use client'
 
+import { QuantityInput, UnitLabel } from '../shared/DisplayUnits'
+
 import { AddIcon, TransferIcon } from '../shared/WorkspaceIcons'
 import { useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { X } from 'lucide-react'
 import {
   generateRebarsForSection,
   makeRebarId,
   REBAR_PATTERN_OPTIONS,
+  equationRebarProperties,
+  rebarArea,
+  rebarAreaSource,
+  rebarAreaSourceLabel,
+  type RebarAreaSource,
   type GeometryInputRebarView,
   type RebarGenerateParams,
-  type RebarPatternKind,
   type SectionGeometry
 } from '@pm/geometry'
 import type { SteelMaterial } from '@pm/materials'
+import type { RebarGeneratorState } from './rebar-generator-state'
+
+const RebarCatalogDialog = dynamic(() => import('./RebarCatalogDialog').then(module => module.RebarCatalogDialog), { ssr: false })
 
 type Props = {
+  generator: RebarGeneratorState
+  onGeneratorChange: (state: RebarGeneratorState) => void
   hasAppliedSection: boolean
   appliedSection: SectionGeometry
   rebars: GeometryInputRebarView[]
@@ -27,15 +39,9 @@ type Props = {
   onExportExcel: () => Promise<void>
 }
 
-const DEFAULT_PARAMS: RebarGenerateParams = {
-  cover: 40,
-  dia: 20,
-  count: 4,
-  spacing: 100,
-  solidIndex: 'all'
-}
-
 export function RebarPanel({
+  generator,
+  onGeneratorChange,
   hasAppliedSection,
   appliedSection,
   rebars,
@@ -48,16 +54,26 @@ export function RebarPanel({
   onExportExcel
 }: Props) {
   const importInputRef = useRef<HTMLInputElement | null>(null)
-  const [pattern, setPattern] = useState<RebarPatternKind>('top-bottom')
-  const [params, setParams] = useState<RebarGenerateParams>(DEFAULT_PARAMS)
-  const [replaceExisting, setReplaceExisting] = useState(true)
+  const quickRef = useRef<HTMLDivElement | null>(null)
+  const [catalogOpen, setCatalogOpen] = useState(false)
+  const [fillRevision, setFillRevision] = useState(0)
+  const { pattern, params, replaceExisting } = generator
 
   const updateParam = <K extends keyof RebarGenerateParams>(key: K, value: RebarGenerateParams[K]) => {
-    setParams((current) => ({ ...current, [key]: value }))
+    onGeneratorChange({ ...generator, params: { ...params, [key]: value,
+      ...(key === 'dia' || key === 'area' ? { areaSource: { type: 'manual' as const } } : {}) } })
+  }
+
+  const fillProperties = (properties: { dia: number; area: number; areaSource: RebarAreaSource }) => {
+    onGeneratorChange({ ...generator, params: { ...params, ...properties } })
+    setFillRevision(revision => revision + 1)
+    setCatalogOpen(false)
   }
 
   const runGenerate = () => {
     if (!hasAppliedSection) return
+    const invalid = quickRef.current?.querySelector<HTMLInputElement>('input[aria-invalid="true"]')
+    if (invalid) { invalid.focus(); return }
     const generated = generateRebarsForSection(appliedSection, pattern, {
       ...params,
       usedIds: replaceExisting ? [] : rebars.map((bar) => bar.id),
@@ -70,11 +86,15 @@ export function RebarPanel({
   }
 
   const updateRebar = (id: number, patch: Partial<GeometryInputRebarView>) => {
-    onChangeRebars(rebars.map((bar) => (bar.id === id ? { ...bar, ...patch } : bar)))
+    onChangeRebars(rebars.map((bar) => (bar.id === id ? { ...bar,
+      ...(patch.dia !== undefined || patch.area !== undefined ? { area: rebarArea(bar), areaSource: { type: 'manual' as const } } : {}),
+      ...patch } : bar)))
   }
 
   const addManualRebar = () => {
     if (!hasAppliedSection) return
+    const invalid = quickRef.current?.querySelector<HTMLInputElement>('input[aria-invalid="true"]')
+    if (invalid) { invalid.focus(); return }
     const outer = appliedSection.solids[0]?.outer ?? []
     const xs = outer.map((p) => p.x)
     const ys = outer.map((p) => p.y)
@@ -84,6 +104,8 @@ export function RebarPanel({
       x: xs.length ? Math.round((Math.min(...xs) + Math.max(...xs)) / 2) : 0,
       y: ys.length ? Math.round((Math.min(...ys) + Math.max(...ys)) / 2) : 0,
       dia: params.dia || 20,
+      area: rebarArea(params),
+      areaSource: rebarAreaSource(params),
       steelMaterialId: defaultSteelMaterialId,
       solidIndex: targetSolidIndex
     }
@@ -105,12 +127,16 @@ export function RebarPanel({
 
   if (!hasAppliedSection) {
     return (
+      <>
       <section className="pm-panel-section">
         <div className="pm-section-title">
           <h2>Rebar</h2>
+          <button type="button" className="ws-action" onClick={() => setCatalogOpen(true)}>Rebar catalog</button>
         </div>
         <p className="pm-preview-hint">Apply a concrete section first, then generate reinforcement for that section.</p>
       </section>
+      {catalogOpen && <RebarCatalogDialog onClose={() => setCatalogOpen(false)} onUse={fillProperties} />}
+      </>
     )
   }
 
@@ -119,9 +145,10 @@ export function RebarPanel({
   return (
     <>
       <section className="pm-panel-section">
-        <div className="pm-rebar-quick">
+        <div className="pm-rebar-quick" ref={quickRef}>
           <div className="pm-section-title">
             <h2>Quick generate</h2>
+            <button type="button" className="ws-action" onClick={() => setCatalogOpen(true)}>Rebar catalog</button>
           </div>
           <div className="pm-rebar-patterns ws-joined-buttons" role="group" aria-label="Rebar patterns">
             {REBAR_PATTERN_OPTIONS.map((option) => (
@@ -131,7 +158,7 @@ export function RebarPanel({
                 className={"ws-action " + (pattern === option.kind ? 'is-active' : '')}
                 aria-pressed={pattern === option.kind}
                 title={option.description}
-                onClick={() => setPattern(option.kind)}
+                onClick={() => onGeneratorChange({ ...generator, pattern: option.kind })}
               >
                 {option.label}
               </button>
@@ -141,30 +168,21 @@ export function RebarPanel({
           <div className="pm-rebar-params">
             <label className="pm-field">
               <span>Cover</span>
-              <input
+              <QuantityInput quantity="length"
                 type="number"
                 min={0}
                 value={params.cover}
-                onChange={(event) => updateParam('cover', Number(event.target.value) || 0)}
-              />
-            </label>
-            <label className="pm-field">
-              <span>Dia</span>
-              <input
-                type="number"
-                min={1}
-                value={params.dia}
-                onChange={(event) => updateParam('dia', Number(event.target.value) || 1)}
+                onValueChange={(canonical) => updateParam('cover', canonical)}
               />
             </label>
             {showSpacing ? (
               <label className="pm-field">
                 <span>Spacing</span>
-                <input
+                <QuantityInput quantity="length"
                   type="number"
                   min={1}
                   value={params.spacing ?? 100}
-                  onChange={(event) => updateParam('spacing', Number(event.target.value) || 1)}
+                  onValueChange={(canonical) => updateParam('spacing', canonical)}
                 />
               </label>
             ) : (
@@ -198,12 +216,39 @@ export function RebarPanel({
             )}
           </div>
 
+          <div className="pm-rebar-area">
+            <label className="pm-field">
+              <span>Dia</span>
+              <QuantityInput quantity="barDiameter"
+                key={`diameter-${fillRevision}`}
+                data-rebar-diameter="true"
+                type="number"
+                min={1}
+                value={params.dia}
+                onValueChange={(canonical) => updateParam('dia', canonical)}
+              />
+            </label>
+            <label className="pm-field"><span>As</span>
+              <QuantityInput key={`area-${fillRevision}`} quantity="area" aria-label="Generator As" min={Number.MIN_VALUE}
+                value={rebarArea(params)} onValueChange={canonical => updateParam('area', canonical)} />
+            </label>
+            <div className="pm-rebar-area-actions">
+              <button type="button" className="ws-action" onClick={() => {
+                const invalidDiameter = quickRef.current?.querySelector<HTMLInputElement>('[data-rebar-diameter][aria-invalid="true"]')
+                if (invalidDiameter) { invalidDiameter.focus(); return }
+                fillProperties(equationRebarProperties(params.dia))
+              }}>Equation</button>
+              <button type="button" className="ws-action" onClick={() => setCatalogOpen(true)}>Catalog</button>
+            </div>
+          </div>
+          <p className="pm-preview-hint">{rebarAreaSourceLabel(params)}</p>
+
           <div className="pm-rebar-actions">
             <label className="pm-rebar-replace">
               <input
                 type="checkbox"
                 checked={replaceExisting}
-                onChange={(event) => setReplaceExisting(event.target.checked)}
+                onChange={(event) => onGeneratorChange({ ...generator, replaceExisting: event.target.checked })}
               />
               <span>Replace existing bars</span>
             </label>
@@ -258,13 +303,14 @@ export function RebarPanel({
           <table className="pm-point-table pm-rebar-table">
             {/*
               Root cause of earlier no-ops: browsers discard calc((100% - Npx) * k)
-              on <col>, so Dia/Mat/X/Y silently fell back to equal leftover shares.
+              on <col>, so the editable columns fell back to equal leftover shares.
               Use plain percentages only (no calc). id/action stay px-fixed (30 / 26).
-              Flex band: Dia 15% · Mat 35% · X 20% · Y 20%.
+              Flex band: Dia 14% · As 18% · Mat 24% · X 17% · Y 17%.
             */}
             <colgroup>
               <col className="pm-rebar-col pm-rebar-col--id" />
               <col className="pm-rebar-col pm-rebar-col--dia" />
+              <col className="pm-rebar-col pm-rebar-col--area" />
               <col className="pm-rebar-col pm-rebar-col--mat" />
               <col className="pm-rebar-col pm-rebar-col--x" />
               <col className="pm-rebar-col pm-rebar-col--y" />
@@ -273,17 +319,18 @@ export function RebarPanel({
             <thead>
               <tr>
                 <th>id</th>
-                <th>Dia</th>
+                <th>Dia (<UnitLabel quantity="barDiameter" />)</th>
+                <th>As (<UnitLabel quantity="area" />)</th>
                 <th>Mat</th>
-                <th>X</th>
-                <th>Y</th>
+                <th>X (<UnitLabel quantity="length" />)</th>
+                <th>Y (<UnitLabel quantity="length" />)</th>
                 <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
               {rebars.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="pm-rebar-empty">
+                  <td colSpan={7} className="pm-rebar-empty">
                     No bars yet. Use Add or Quick generate.
                   </td>
                 </tr>
@@ -296,14 +343,19 @@ export function RebarPanel({
                 >
                   <td className="pm-rebar-id">{bar.id}</td>
                   <td>
-                    <input
+                    <QuantityInput showUnit={false} quantity="barDiameter"
                       type="number"
                       min={1}
                       value={bar.dia}
                       aria-label={`Bar ${bar.id} diameter`}
                       onFocus={() => onSelectRebar(bar.id)}
-                      onChange={(event) => updateRebar(bar.id, { dia: Number(event.target.value) || 1 })}
+                      onValueChange={(canonical) => updateRebar(bar.id, { dia: canonical })}
                     />
+                  </td>
+                  <td>
+                    <QuantityInput showUnit={false} quantity="area" min={Number.MIN_VALUE} value={rebarArea(bar)}
+                      aria-label={`Bar ${bar.id} As`} title={rebarAreaSourceLabel(bar)}
+                      onFocus={() => onSelectRebar(bar.id)} onValueChange={canonical => updateRebar(bar.id, { area: canonical })} />
                   </td>
                   <td>
                     <select
@@ -320,21 +372,21 @@ export function RebarPanel({
                     </select>
                   </td>
                   <td>
-                    <input
+                    <QuantityInput showUnit={false} quantity="length"
                       type="number"
                       value={bar.x}
                       aria-label={`Bar ${bar.id} X`}
                       onFocus={() => onSelectRebar(bar.id)}
-                      onChange={(event) => updateRebar(bar.id, { x: Number(event.target.value) || 0 })}
+                      onValueChange={(canonical) => updateRebar(bar.id, { x: canonical })}
                     />
                   </td>
                   <td>
-                    <input
+                    <QuantityInput showUnit={false} quantity="length"
                       type="number"
                       value={bar.y}
                       aria-label={`Bar ${bar.id} Y`}
                       onFocus={() => onSelectRebar(bar.id)}
-                      onChange={(event) => updateRebar(bar.id, { y: Number(event.target.value) || 0 })}
+                      onValueChange={(canonical) => updateRebar(bar.id, { y: canonical })}
                     />
                   </td>
                   <td>
@@ -374,6 +426,7 @@ export function RebarPanel({
           </button>
         </div>
       </section>
+      {catalogOpen && <RebarCatalogDialog onClose={() => setCatalogOpen(false)} onUse={fillProperties} />}
     </>
   )
 }

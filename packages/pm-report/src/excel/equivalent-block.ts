@@ -1,3 +1,5 @@
+import type { UnitSelection } from '@pm/units'
+import { appendPresentationSummary } from './presentation-summary'
 /**
  * Excel export of the equivalent rectangular stress-block section calculation.
  *
@@ -26,7 +28,7 @@
  * (`docs/engineering/02`). The workbook publishes that convention on `Input` and keeps every
  * concrete and steel component formula consistent with it.
  */
-import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
+import { rebarArea, rebarAreaSourceLabel, type GeometryInputRebarView, type SectionGeometry } from '@pm/geometry'
 import type { MaterialStore, SteelMaterial } from '@pm/materials'
 import {
   designBasisRequiresOverrideReason,
@@ -73,6 +75,7 @@ import {
 } from './workbook-common'
 
 export type EquivalentBlockExcelInput = {
+  presentationUnits?: UnitSelection
   projectName: string
   sectionName: string
   calculationProfileId: EquivalentBlockProfileId
@@ -215,7 +218,9 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     y: bar.y - origin.y,
     absX: bar.x,
     absY: bar.y,
-    area: (Math.PI * bar.dia * bar.dia) / 4
+    area: rebarArea(bar, 'equivalent-block'),
+    storedArea: bar.area !== undefined,
+    areaSource: rebarAreaSourceLabel(bar)
   }))
 
   const demandP = input.loadcase ? input.loadcase.P : input.fixedP
@@ -629,7 +634,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
 
   const barHeaderRow = netRow + 3
   sectionHeading(geomSheet, barHeaderRow - 1, 'Reinforcement schedule', 8)
-  headerRow(geomSheet, barHeaderRow, ['#', 'id', 'Ø (mm)', 'X (mm)', 'Y (mm)', 'As (mm²)', 'n·(X,Y) (mm)'])
+  headerRow(geomSheet, barHeaderRow, ['#', 'id', 'Ø (mm)', 'X (mm)', 'Y (mm)', 'As (mm²)', 'n·(X,Y) (mm)', 'As source'])
   bars.forEach((bar, index) => {
     const r = barHeaderRow + 1 + index
     geomSheet.getCell(r, 2).value = bar.no
@@ -637,7 +642,8 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     geomSheet.getCell(r, 4).value = bar.dia
     geomSheet.getCell(r, 5).value = bar.x
     geomSheet.getCell(r, 6).value = bar.y
-    geomSheet.getCell(r, 7).value = { formula: `PI()*D${r}^2/4` }
+    geomSheet.getCell(r, 7).value = bar.storedArea ? bar.area : { formula: `PI()*D${r}^2/4` }
+    geomSheet.getCell(r, 9).value = bar.areaSource
     geomSheet.getCell(r, 8).value = { formula: `COS(RADIANS(theta))*(E${r}+xc)+SIN(RADIANS(theta))*(F${r}+yc)` }
     for (const c of [5, 6, 7, 8]) geomSheet.getCell(r, c).numFmt = '#,##0.000'
   })
@@ -1206,6 +1212,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     checkSheet.mergeCells(checkRow + 3, 2, checkRow + 3, 5)
   }
 
+  appendPresentationSummary(workbook, { ...input, surface })
   return workbook
 }
 

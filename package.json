@@ -32,7 +32,7 @@
     "check:security": "npm run check:runtime && npm audit --omit=dev --audit-level=high",
     "typecheck": "npm run check:runtime && tsc --noEmit",
     "test": "npm run check:runtime && npm run check:structure && npm run typecheck && npm run test:unit && npm run test:adsec && npm run test:cad && npm run test:roundtrip && npm run test:excel-export && npm run test:excel-block && npm run test:demand-check && npm run test:pdf-report",
-    "test:unit": "npm run check:runtime && node --import tsx --test tools/runtime/*.test.mjs packages/pm-results/test/*.test.ts packages/pm-equivalent-block/test/*.test.ts packages/pm-code-kds142020/test/*.test.ts packages/pm-code-aci318/test/*.test.ts packages/pm-code-en1992/test/*.test.ts packages/pm-code-as3600/test/*.test.ts packages/pm-code-custom/test/*.test.ts packages/pm-materials/test/*.test.ts packages/pm-design/test/*.test.ts packages/pm-geometry/test/*.test.ts packages/pm-stations/test/*.test.ts packages/pm-project/test/*.test.ts packages/pm-analysis-equivalent-block/test/*.test.ts packages/pm-analysis/test/*.test.ts packages/pm-report/test/*.test.ts apps/web/test/*.test.ts apps/web/test/analysis/*.test.ts apps/web/test/geometry/*.test.ts apps/web/test/results/*.test.ts",
+    "test:unit": "npm run check:runtime && node --import tsx --test tools/runtime/*.test.mjs packages/pm-units/test/*.test.ts packages/pm-results/test/*.test.ts packages/pm-equivalent-block/test/*.test.ts packages/pm-code-kds142020/test/*.test.ts packages/pm-code-aci318/test/*.test.ts packages/pm-code-en1992/test/*.test.ts packages/pm-code-as3600/test/*.test.ts packages/pm-code-custom/test/*.test.ts packages/pm-materials/test/*.test.ts packages/pm-design/test/*.test.ts packages/pm-geometry/test/*.test.ts packages/pm-stations/test/*.test.ts packages/pm-project/test/*.test.ts packages/pm-analysis-equivalent-block/test/*.test.ts packages/pm-analysis/test/*.test.ts packages/pm-report/test/*.test.ts apps/web/test/*.test.ts apps/web/test/analysis/*.test.ts apps/web/test/geometry/*.test.ts apps/web/test/results/*.test.ts",
     "test:adsec": "npm run check:runtime && node --import tsx --test tools/verification/adsec/*.test.ts",
     "test:cad": "npm run check:runtime && npm run test -w @structures/cad-drawing",
     "test:roundtrip": "npm run check:runtime && tsx packages/pm-project/test/integration/roundtrip.selftest.ts",
@@ -69,7 +69,7 @@
     "gl-vec3": "1.2.0",
     "jszip": "3.10.1",
     "lucide-react": "1.25.0",
-    "next": "16.3.8",
+    "next": "16.4.1",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },

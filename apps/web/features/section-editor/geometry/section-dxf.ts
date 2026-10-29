@@ -1,4 +1,4 @@
-import { validatePolygonSection, type GeometryInputRebarView, type Point2 } from '@pm/geometry'
+import { validatePolygonSection, circularRebarArea, type GeometryInputRebarView, type Point2 } from '@pm/geometry'
 
 /** Editable drawing contract: development/03, not the analysis-mesh audit format. */
 export const DRAWING_LAYER = 'pm'
@@ -9,7 +9,7 @@ export const DRAWING_LIMITS = {
 
 export type SectionDrawing = { outers: Point2[][][]; rebars: GeometryInputRebarView[] }
 export type DrawingIssueCode = 'FORMAT' | 'UNITS_REQUIRED' | 'UNSUPPORTED_UNITS' |
-  'UNSUPPORTED_ENTITY' | 'INVALID_GEOMETRY' | 'INVALID_MATERIALS' | 'RESOURCE_LIMIT'
+  'UNSUPPORTED_ENTITY' | 'INVALID_GEOMETRY' | 'INVALID_MATERIALS' | 'RESOURCE_LIMIT' | 'UNSUPPORTED_REBAR_AREA'
 export type DrawingResult<T> =
   | { ok: true; value: T; warnings: string[] }
   | { ok: false; issue: { code: DrawingIssueCode; message: string; line?: number } }
@@ -245,6 +245,9 @@ export const buildSectionDxf = (drawing: SectionDrawing): DrawingResult<string> 
   }
   const issues = validatePolygonSection({ solids: drawing.outers.map(rings => ({ outer: rings[0], holes: rings.slice(1) })), rebars: drawing.rebars })
   if (issues.length) fail('INVALID_GEOMETRY', issues.map(issue => `${issue.code}: ${issue.message}`).join('; '))
+  if (drawing.rebars.some(bar => bar.area !== undefined && bar.area !== circularRebarArea(bar.dia))) {
+    fail('UNSUPPORTED_REBAR_AREA', 'DXF circles cannot preserve independent rebar As. Export Excel or project JSON to retain the stored reinforcement areas.')
+  }
   const lines: string[] = []
   const pair = (code: number, value: string | number) => { lines.push(String(code), String(value)) }
   let nextHandle = 1

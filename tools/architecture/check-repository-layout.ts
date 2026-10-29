@@ -212,6 +212,10 @@ for (const codeRoot of codeRoots) {
     if (projectPath.startsWith('packages/') && /(?:from\s*|import\s*\()['"][^'"]*apps\//.test(text)) {
       issues.push(`${projectPath}: workspace packages may not import application code`)
     }
+    if (/^packages\/pm-(?:analysis|analysis-equivalent-block|equivalent-block|geometry|materials|design|code-[^/]+)\/src\//.test(projectPath) &&
+        /['"]@pm\/units(?:\/[^'"]*)?['"]/.test(text)) {
+      issues.push(`${projectPath}: canonical engineering kernels may not depend on presentation units`)
+    }
 
     if (
       projectPath.startsWith('apps/web/application/') &&

@@ -72,7 +72,7 @@ const run = () => {
 
   const raw = serializeProjectDocument(original)
   const json = JSON.parse(raw) as Record<string, unknown>
-  assert.equal(json.version, 1)
+  assert.equal(json.version, 3)
   assert.equal((json.inputs as { geometry: { unit?: unknown } }).geometry.unit, undefined)
   assert.equal((json.inputs as { materials: { unit?: unknown } }).materials.unit, undefined)
   assert.equal((json.inputs as { loadings: { forceUnit?: unknown } }).loadings.forceUnit, undefined)

@@ -2,10 +2,11 @@
 
 ## 1. Canonical units
 
-The current codebase uses only persisted calculation contract version 1: project version 1,
-design-basis version 3, analysis-options version 1, both `*-surface-v1` method IDs, and v1 station
-schedules. There is no migration or backward-compatibility layer. The parser's documented v1
-defaults do not change these units:
+Canonical project exports use version 3 with an explicit load reference and stored rebar area;
+the reader retains centroidal version 2 and diameter-only version 1 contracts.
+Design-basis version 3, analysis-options version 1, both
+`*-surface-v1` method IDs and the declared station schedules are unchanged. Version-specific
+parsing and legacy area materialization do not change these units:
 
 | Quantity | Canonical unit |
 |---|---|
@@ -17,12 +18,34 @@ defaults do not change these units:
 | strain | dimensionless |
 | angle | rad internally |
 
-These units are explicit through the schema contract even though schema v1 does not repeat unit fields in
+These units are explicit through the schema contract even though it does not repeat unit fields in
 every object. External import/UI adapters may accept other units only when the source unit is
 declared and converted once at the boundary. Values must never be interpreted by magnitude.
 
 Results and reports store the canonical units and may add presentation-unit metadata. Display-unit
 changes shall not rerun or alter resistance calculations.
+
+### Selectable presentation units
+
+`packages/pm-units` owns the P-M boundary adapter over the pinned shared jscad unit definitions.
+`UNITS-001`: canonical project, worker and mechanics values retain the units above.
+`UNITS-002`: presentation selection is immutable, versioned UI preference outside engineering input.
+Changing it retains canonical inputs, results, surface handles and analysis cache identities.
+`UNITS-003`: authored numeric text converts once using its captured quantity/unit context; an
+unchanged edit retains the original binary64 value exactly. Blank, unknown, incompatible,
+non-finite and unrepresentable input fails explicitly. Rounding is presentation only.
+Resting inputs may show compact rounded copies. Focus starts from the full-precision editing
+representation; an unchanged edit must never commit the rounded resting text.
+`UNITS-004`: every displayed quantity and interchange field declares its actual unit. Length
+powers and curvature use their dimensions; mass density is not unit weight.
+`UNITS-005`: JSON and drawing contracts retain canonical units; editable unit-aware workbooks
+declare their own versioned source units, independent of the active UI preference.
+`UNITS-006`: reports and plots convert presentation copies only. Audit ledgers retain explicitly
+declared calculation units, with selected-unit summary views. No conversion changes signs,
+code/profile selection, resistance stages or adequacy.
+
+The implementation decision and verification packet are in
+[`../development/10-display-units.md`](../development/10-display-units.md).
 
 ## 2. Coordinates, signs, and moments
 
@@ -56,6 +79,18 @@ with new coordinates
 `x' = x - Δx`, `y' = y - Δy`:
 
 `Mx' = Mx - P·Δy`, `My' = My - P·Δx`.
+
+The load-reference editor uses parallel axes at `O = C + (Δx, Δy)`, relative to the exact
+net-concrete centroid C. Project, worker, Direct/Fixed-P/3D chart and result combinations remain
+centroidal. Only load-input copies use the transformation above; an authored action at O converts once with the inverse transform.
+An explicit Apply commits the draft reference. Draft edits may preview the load axes on the
+section drawing; they do not move the centroid, neutral axis or action-space chart frame. With Convert existing loadcases selected, preserve
+the canonical actions exactly and re-express the inputs at O. Without Convert, preserve the old
+displayed numbers by adding `P·(Δy_new−Δy_old)` and `P·(Δx_new−Δx_old)` to the canonical moments.
+P is unchanged. The checkbox defaults off and is editing state, not an analysis option. One
+transaction changes the applied reference and existing combinations; no per-loadcase history is
+needed. Canonical v3 records the applied reference; v1/v2 readers declare zero offset. See
+[the implementation packet](../development/16-load-reference-origin.md).
 
 The section-coordinate direction associated with a resultant is `(My,Mx)` and its perpendicular
 reference line is `(-Mx,My)`. The section-angle UI implements this mapping for both mechanics.

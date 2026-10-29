@@ -23,10 +23,11 @@ filesystem/network APIs, project UI state, or report libraries.
 
 | Package | Current responsibility | Boundary to preserve/harden |
 |---|---|---|
+| `@pm/units` | immutable presentation selections, explicit canonical/display boundary conversion and editable formatting | no engineering equations, solver, React, storage or I/O; kernels cannot depend on it |
 | `@pm/ids` | positive integer allocation/gap fill | identity utilities only; no engineering meaning |
 | `@pm/geometry` | editor DTO, primitives/booleans, properties, rebar helpers | split public submodules for definitions, validation, normalization, exact properties, rebar validation, and analysis adapters |
 | `@pm/materials` | material DTOs, stores, model compilers, KDS helpers | definitions/validation/compilation only; no complete design-code claim in a material tag |
-| `@pm/project` | project-v1 DTO, JSON parse/serialize, warnings, round-trip | persistence envelope and profile/options registry; no numerical analysis or UI behavior; documented defaults are parser-v1 behavior, not migration/backward compatibility |
+| `@pm/project` | canonical project-v3 DTO and load-reference translation, explicit centroidal v1/v2 readers, JSON parse/serialize, warnings, round-trip | persistence envelope and profile/options registry; no numerical analysis or UI behavior; documented version-specific defaults and one-time legacy area materialization |
 | `@pm/design` | DesignBasis identity, resistance formats/factors, transition rules, and material-set preparation | generic resistance sequencing; no geometry solving or UI state |
 | `@pm/results` | mechanics-neutral adequacy status, utilization interval, and screening classification policy | no surface construction, material/resistance recomputation, React, or report formatting |
 | `@pm/analysis` | stress-strain preparation, forward/inverse mechanics, adaptive surface, slices, demand checks, and field maps | stress-strain route only; no equivalent-block emulation |
@@ -40,6 +41,11 @@ filesystem/network APIs, project UI state, or report libraries.
 | `@pm/web` | current integrated editor | application composition only; move reusable domain/use-case logic into packages |
 
 The current packages are the starting boundaries. Do not rewrite them into one application module.
+
+`@pm/report` declares `sideEffects: false`: its modules define data/functions and perform no
+registration or external work at import time. This allows consumers of filenames/error types to
+avoid loading workbook builders and their numerical dependencies in the initial browser bundle.
+Preserve that import-time purity; actual export work remains inside the explicitly called builders.
 
 ## 3. Possible future extractions — not current package names
 
@@ -146,6 +152,29 @@ requirements rather than implemented behavior.
 All loops must ultimately have resource/time limits, cooperative cancellation, progress stages, and deterministic merge order.
 Single-thread and parallel paths must be tolerance-equivalent. Performance work follows profiling
 and may not silently loosen engineering tolerances.
+
+### Optional workspace chunk preloads
+
+`SectionDrawingClient` preloads results and mesh/block views on menu hover/focus. These optional
+imports handle rejected promises locally, just like the existing Plotly preload. Actual navigation
+continues through `next/dynamic`: it can retry a failed preload, while a persistent mount failure
+remains visible through the application recovery boundary. No global rejection suppression,
+automatic document reload, alternate calculation route or input mutation is introduced.
+
+The 2026-10-27 transport fix is presentation-only and changes no numerical/schema/report contract.
+`tools/verification/module-loading/browser.mjs` blocks chunk requests in an isolated production
+browser. Before the fix, repeated hover/focus generated four unhandled results rejections and eight
+mesh/block rejections. Verification requires zero optional-preload rejections after the fix,
+successful view mounting once requests recover, and visible recovery for a permanently failed
+navigation. Both production and the running localhost:3001 Webpack dev server pass these preload
+and recovery checks after the fix; persistent-failure recovery is checked in production, including
+exactly one main-document request. Full `npm test`, production build and existing bundle budgets
+pass. Evidence is kept under ignored `outputs/module-loading/`.
+
+The original dev endpoint returned HTTP 200 during investigation. The initial transient network/
+chunk failure was not independently reproduced without fault injection; its network cause remains
+unconfirmed. The original stack and before/after browser checks identify the unhandled optional
+import rejections as the cause of the repeated application-error logs.
 
 ## 9. Dependency governance
 

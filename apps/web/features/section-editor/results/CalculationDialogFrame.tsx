@@ -8,6 +8,7 @@ import {
   type ReactNode
 } from 'react'
 import { BookOpenText, LayoutTemplate, Link2, Printer, X } from 'lucide-react'
+import { useQuantityFormatters } from '../shared/DisplayUnits'
 
 type CalculationDialogView = 'document' | 'classic'
 
@@ -128,6 +129,7 @@ export function CalculationDialogFrame({
   children,
   onClose
 }: CalculationDialogFrameProps) {
+  const { unit } = useQuantityFormatters()
   const titleId = useId()
   const dialogRef = useRef<HTMLElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -367,7 +369,7 @@ export function CalculationDialogFrame({
                 <dl className="pm-calculation-document__meta">
                   <div><dt>Status</dt><dd>PREVIEW</dd></div>
                   <div><dt>Scope</dt><dd>Section resistance</dd></div>
-                  <div><dt>Units</dt><dd>kN · kN·m · mm</dd></div>
+                  <div><dt>Units</dt><dd>{unit('force')} · {unit('moment')} · {unit('length')} · {unit('stress')}</dd></div>
                 </dl>
               </div>
             </aside>

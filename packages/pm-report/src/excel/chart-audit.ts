@@ -1,9 +1,12 @@
+import type { UnitSelection } from '@pm/units'
+import { appendPresentationSummary } from './presentation-summary'
 import {
   activeDesignDirectionPoints,
   activeDesignSurfaceDataset,
   activeNominalDirectionPoints,
   activeNominalSurfaceDataset,
   buildDirectMeridianSection,
+  isMeridianAuditPoint,
   evaluatePreparedState,
   prepareAnalysisFromMesh,
   stationDefinitionLabel,
@@ -21,6 +24,8 @@ import {
 import {
   buildConcreteMesh,
   netConcreteCentroid,
+  rebarArea,
+  rebarAreaSourceLabel,
   type GeometryInputRebarView,
   type SectionGeometry
 } from '@pm/geometry'
@@ -71,6 +76,7 @@ export type ChartAuditResistanceStage = 'design' | 'nominal'
  * these sheets instead of repeating them per loadcase.
  */
 export type AuditSharedInput = {
+  presentationUnits?: UnitSelection
   projectName: string
   projectInformation?: ProjectInformation
   sectionName: string
@@ -101,7 +107,7 @@ type SourcePoint = {
   myFactor: number
   usesLedgerAnchor: boolean
   calculationMode: string
-  criterion: ResolvedStrainCriterion
+  criterion: ResolvedStrainCriterion | null
   definition: StationDefinition | null
   row: number
 }
@@ -314,11 +320,11 @@ const sourceKey = (point: PreviewSurfacePoint) => `${point.id}|${point.beta}|${p
 const collectVerticalPoints = (selected: ReturnType<typeof selectedDirection>) => {
   const descriptors = new Map(selected.stations.map((station) => [station.id, station] as const))
   return buildDirectMeridianSection(selected.points, selected.betaDeg, false).primary
-    .filter((point) => point.sectionPointRole === 'surface-vertex' && point.stationId !== null)
+    .filter(isMeridianAuditPoint)
     .map((point) => {
-      const definition = descriptors.get(point.stationId!)?.definition ??
+      const definition = point.stationId === null ? null : descriptors.get(point.stationId)?.definition ??
         ({ kind: 'block-adaptive', label: 'Adaptive midpoint' } as const)
-      return { point, definition, criterion: stationDefinitionLabel(definition) }
+      return { point, definition, criterion: definition ? stationDefinitionLabel(definition) : 'Pmax intersection' }
     })
     .sort((left, right) => left.point.station - right.point.station)
 }
@@ -491,7 +497,7 @@ export const prepareAuditContext = (
   // -----------------------------------------------------------------------
   // Geometry
   // -----------------------------------------------------------------------
-  const GEOMETRY_SPAN = 9
+  const GEOMETRY_SPAN = 10
   reportTitle(geometry, 'PROJECT GEOMETRY AND LOAD INPUTS', GEOMETRY_SPAN)
   addLegend(geometry, 2, GEOMETRY_SPAN)
 
@@ -556,7 +562,7 @@ export const prepareAuditContext = (
 
   const rebarFirst = tableBlock(geometry, geometryRow + 1, 'Reinforcement', [
     'No.', 'Rebar ID', 'Diameter (mm)', 'X world (mm)', 'Y world (mm)',
-    'X local (mm)', 'Y local (mm)', 'Area (mm²)', 'Steel material ID'
+    'X local (mm)', 'Y local (mm)', 'Area (mm²)', 'Steel material ID', 'As source'
   ])
   const rebarRows: Array<{ bar: GeometryInputRebarView; row: number }> = []
   input.rebars.forEach((bar, index) => {
@@ -572,7 +578,9 @@ export const prepareAuditContext = (
     styleGenerated(geometry.getCell(row, 2))
     setFormula(geometry.getCell(row, 6), `=D${row}-Origin_X`, bar.x - origin.x)
     setFormula(geometry.getCell(row, 7), `=E${row}-Origin_Y`, bar.y - origin.y)
-    setFormula(geometry.getCell(row, 8), `=PI()*C${row}^2/4`, Math.PI * bar.dia ** 2 / 4)
+    if (bar.area === undefined) setFormula(geometry.getCell(row, 8), `=PI()*C${row}^2/4`, rebarArea(bar, 'equivalent-block'))
+    else { geometry.getCell(row, 8).value = rebarArea(bar); styleInput(geometry.getCell(row, 8)) }
+    geometry.getCell(row, 10).value = rebarAreaSourceLabel(bar)
     geometry.getCell(row, 9).value = bar.steelMaterialId ?? calculationMaterials.defaults.steelMaterialId
   })
 
@@ -591,7 +599,7 @@ export const prepareAuditContext = (
     geometry.getRow(loadRow).height = 28
     loadRow++
   }
-  geometry.columns = [26, 30, 15, 16, 16, 16, 16, 15, 18].map((width) => ({ width }))
+  geometry.columns = [26, 30, 15, 16, 16, 16, 16, 15, 18, 40].map((width) => ({ width }))
 
   // -----------------------------------------------------------------------
   // Materials
@@ -850,7 +858,7 @@ export const prepareAuditContext = (
     const strainBetaDeg = curvature > 1e-14
       ? normalizeAngleDeg(Math.atan2(point.state.ky, point.state.kx) * 180 / Math.PI)
       : normalizeAngleDeg(betaDeg)
-    const resolvedCriterion = resolvedStrainCriterion(
+    const resolvedCriterion = isAxialCap ? null : resolvedStrainCriterion(
       input.section,
       origin,
       input.rebars,
@@ -860,7 +868,7 @@ export const prepareAuditContext = (
       definition
     )
     const calculationMode = isAxialCap
-      ? 'axial-cap projected-ledger anchor (geometric Pmax face)'
+      ? 'axial-cap geometric-ledger anchor (Pmax face)'
       : !prepared
         ? 'equivalent-block total-ledger anchor (no integration mesh)'
         : usesLedgerAnchor
@@ -877,9 +885,7 @@ export const prepareAuditContext = (
       myFactor,
       usesLedgerAnchor,
       calculationMode,
-      criterion: isAxialCap
-        ? { ...resolvedCriterion, basisLabel: `retained ${resolvedCriterion.basisLabel} (not the cap rule)` }
-        : resolvedCriterion,
+      criterion: resolvedCriterion,
       definition,
       row: 0
     }
@@ -999,89 +1005,94 @@ export const prepareAuditContext = (
     const kyRef = ref(block.at('ky'))
 
     sheet.getCell(row, block.at('label')).value = label
-    if (block.hasBetaColumn) {
+    if (block.hasBetaColumn && source.criterion !== null) {
       sheet.getCell(row, block.at('beta')).value = source.betaDeg
       sheet.getCell(row, block.at('beta')).numFmt = '0.000'
       styleInput(sheet.getCell(row, block.at('beta')))
     }
-    sheet.getCell(row, block.at('criterionBasis')).value = source.criterion.basisLabel
-    sheet.getCell(row, block.at('criterionValue')).value = source.criterion.value
-    sheet.getCell(row, block.at('criterionValue')).numFmt = '0.000000'
-    setFormula(
-      sheet.getCell(row, block.at('compressionProjection')),
-      `=${scalarExtreme('MAX', exteriorGeometryRows, betaRef)}`,
-      source.criterion.compressionProjection
-    )
-    setFormula(
-      sheet.getCell(row, block.at('sectionDepth')),
-      `=${zcRef}-${scalarExtreme('MIN', exteriorGeometryRows, betaRef)}`,
-      source.criterion.sectionDepth
-    )
-    const rebarControlFormula = rebarGeometryRows.length > 0
-      ? scalarExtreme('MIN', rebarGeometryRows, betaRef)
-      : `${zcRef}-${depthRef}`
-    if (source.criterion.kind === 'c-over-d') {
+    if (source.criterion === null) {
+      // A geometric cap point has no unique strain plane. Audit its interpolated ledger only.
+      sheet.getCell(row, block.at('criterionBasis')).value = 'geometric Pmax intersection (no strain state)'
+    } else {
+      sheet.getCell(row, block.at('criterionBasis')).value = source.criterion.basisLabel
+      sheet.getCell(row, block.at('criterionValue')).value = source.criterion.value
+      sheet.getCell(row, block.at('criterionValue')).numFmt = '0.000000'
       setFormula(
-        sheet.getCell(row, block.at('controlProjection')),
-        `=${zcRef}-${ref(block.at('criterionValue'))}*${depthRef}`,
-        source.criterion.controlProjection
+        sheet.getCell(row, block.at('compressionProjection')),
+        `=${scalarExtreme('MAX', exteriorGeometryRows, betaRef)}`,
+        source.criterion.compressionProjection
       )
-    } else if (source.criterion.kind === 'uniform-strain') {
-      setFormula(sheet.getCell(row, block.at('controlProjection')), `=${zcRef}`, source.criterion.controlProjection)
-    } else {
-      setFormula(sheet.getCell(row, block.at('controlProjection')), `=${rebarControlFormula}`, source.criterion.controlProjection)
-    }
-
-    if (source.criterion.kind === 'uniform-strain') {
-      setFormula(sheet.getCell(row, block.at('compressionStrain')), `=${ref(block.at('criterionValue'))}`, source.criterion.compressionStrain, '0.000000')
-      setFormula(sheet.getCell(row, block.at('controlStrain')), `=${ref(block.at('criterionValue'))}`, source.criterion.controlStrain, '0.000000')
-      setFormula(sheet.getCell(row, block.at('curvature')), '=0', 0, '0.000000000')
-      setFormula(sheet.getCell(row, block.at('e0')), `=${ref(block.at('criterionValue'))}`, point.state.e0, '0.000000')
-    } else {
-      const ultimateTolerance = Math.max(1e-10, Math.abs(cParams.epsCu) * 1e-8)
-      if (Math.abs(source.criterion.compressionStrain - cParams.epsCu) <= ultimateTolerance) {
-        setFormula(sheet.getCell(row, block.at('compressionStrain')), '=C_ecu', source.criterion.compressionStrain, '0.000000')
-      } else {
-        sheet.getCell(row, block.at('compressionStrain')).value = source.criterion.compressionStrain
-        sheet.getCell(row, block.at('compressionStrain')).numFmt = '0.000000'
-        styleInput(sheet.getCell(row, block.at('compressionStrain')))
-      }
+      setFormula(
+        sheet.getCell(row, block.at('sectionDepth')),
+        `=${zcRef}-${scalarExtreme('MIN', exteriorGeometryRows, betaRef)}`,
+        source.criterion.sectionDepth
+      )
+      const rebarControlFormula = rebarGeometryRows.length > 0
+        ? scalarExtreme('MIN', rebarGeometryRows, betaRef)
+        : `${zcRef}-${depthRef}`
       if (source.criterion.kind === 'c-over-d') {
-        setFormula(sheet.getCell(row, block.at('controlStrain')), '=0', 0, '0.000000')
-      } else if (source.criterion.kind === 'steel-yield-ratio') {
-        const names = source.criterion.controllingSteelId === null
-          ? null
-          : steelNames.get(source.criterion.controllingSteelId)
-        const yieldStrain = names ? `${names.fy}/${names.Es}` : '0'
         setFormula(
-          sheet.getCell(row, block.at('controlStrain')),
-          `=-${ref(block.at('criterionValue'))}*${yieldStrain}`,
-          source.criterion.controlStrain,
-          '0.000000'
+          sheet.getCell(row, block.at('controlProjection')),
+          `=${zcRef}-${ref(block.at('criterionValue'))}*${depthRef}`,
+          source.criterion.controlProjection
         )
+      } else if (source.criterion.kind === 'uniform-strain') {
+        setFormula(sheet.getCell(row, block.at('controlProjection')), `=${zcRef}`, source.criterion.controlProjection)
       } else {
+        setFormula(sheet.getCell(row, block.at('controlProjection')), `=${rebarControlFormula}`, source.criterion.controlProjection)
+      }
+
+      if (source.criterion.kind === 'uniform-strain') {
+        setFormula(sheet.getCell(row, block.at('compressionStrain')), `=${ref(block.at('criterionValue'))}`, source.criterion.compressionStrain, '0.000000')
+        setFormula(sheet.getCell(row, block.at('controlStrain')), `=${ref(block.at('criterionValue'))}`, source.criterion.controlStrain, '0.000000')
+        setFormula(sheet.getCell(row, block.at('curvature')), '=0', 0, '0.000000000')
+        setFormula(sheet.getCell(row, block.at('e0')), `=${ref(block.at('criterionValue'))}`, point.state.e0, '0.000000')
+      } else {
+        const ultimateTolerance = Math.max(1e-10, Math.abs(cParams.epsCu) * 1e-8)
+        if (Math.abs(source.criterion.compressionStrain - cParams.epsCu) <= ultimateTolerance) {
+          setFormula(sheet.getCell(row, block.at('compressionStrain')), '=C_ecu', source.criterion.compressionStrain, '0.000000')
+        } else {
+          sheet.getCell(row, block.at('compressionStrain')).value = source.criterion.compressionStrain
+          sheet.getCell(row, block.at('compressionStrain')).numFmt = '0.000000'
+          styleInput(sheet.getCell(row, block.at('compressionStrain')))
+        }
+        if (source.criterion.kind === 'c-over-d') {
+          setFormula(sheet.getCell(row, block.at('controlStrain')), '=0', 0, '0.000000')
+        } else if (source.criterion.kind === 'steel-yield-ratio') {
+          const names = source.criterion.controllingSteelId === null
+            ? null
+            : steelNames.get(source.criterion.controllingSteelId)
+          const yieldStrain = names ? `${names.fy}/${names.Es}` : '0'
+          setFormula(
+            sheet.getCell(row, block.at('controlStrain')),
+            `=-${ref(block.at('criterionValue'))}*${yieldStrain}`,
+            source.criterion.controlStrain,
+            '0.000000'
+          )
+        } else {
+          setFormula(
+            sheet.getCell(row, block.at('controlStrain')),
+            `=${ref(block.at('criterionValue'))}`,
+            source.criterion.controlStrain,
+            '0.000000'
+          )
+        }
         setFormula(
-          sheet.getCell(row, block.at('controlStrain')),
-          `=${ref(block.at('criterionValue'))}`,
-          source.criterion.controlStrain,
+          sheet.getCell(row, block.at('curvature')),
+          `=IF(ABS(${zcRef}-${zControlRef})<0.000000000001,0,(${epsCRef}-${epsControlRef})/(${zcRef}-${zControlRef}))`,
+          Math.hypot(point.state.kx, point.state.ky),
+          '0.000000000'
+        )
+        setFormula(
+          sheet.getCell(row, block.at('e0')),
+          `=${epsCRef}-${curvatureRef}*${zcRef}`,
+          point.state.e0,
           '0.000000'
         )
       }
-      setFormula(
-        sheet.getCell(row, block.at('curvature')),
-        `=IF(ABS(${zcRef}-${zControlRef})<0.000000000001,0,(${epsCRef}-${epsControlRef})/(${zcRef}-${zControlRef}))`,
-        Math.hypot(point.state.kx, point.state.ky),
-        '0.000000000'
-      )
-      setFormula(
-        sheet.getCell(row, block.at('e0')),
-        `=${epsCRef}-${curvatureRef}*${zcRef}`,
-        point.state.e0,
-        '0.000000'
-      )
+      setFormula(sheet.getCell(row, block.at('kx')), `=${curvatureRef}*COS(RADIANS(${betaRef}))`, point.state.kx, '0.000000000')
+      setFormula(sheet.getCell(row, block.at('ky')), `=${curvatureRef}*SIN(RADIANS(${betaRef}))`, point.state.ky, '0.000000000')
     }
-    setFormula(sheet.getCell(row, block.at('kx')), `=${curvatureRef}*COS(RADIANS(${betaRef}))`, point.state.kx, '0.000000000')
-    setFormula(sheet.getCell(row, block.at('ky')), `=${curvatureRef}*SIN(RADIANS(${betaRef}))`, point.state.ky, '0.000000000')
     sheet.getCell(row, block.at('pFactor')).value = source.pFactor
     sheet.getCell(row, block.at('mxFactor')).value = source.mxFactor
     sheet.getCell(row, block.at('myFactor')).value = source.myFactor
@@ -1301,7 +1312,7 @@ export const writeVerticalAuditSheet = (context: AuditContext, options: Vertical
   collectVerticalPoints(selected).forEach(({ point, criterion, definition }, index) => {
     const source = sourceFor(point, criterion, selected.betaDeg, definition)
     const beta = selected.betaDeg * Math.PI / 180
-    const displayedCriterion = criterion.toLowerCase().includes('adaptive') && source.criterion.kind === 'c-over-d'
+    const displayedCriterion = criterion.toLowerCase().includes('adaptive') && source.criterion?.kind === 'c-over-d'
       ? `c/D = ${source.criterion.value.toFixed(6)} (adaptive)`
       : criterion
     mainRows.push({
@@ -1364,7 +1375,7 @@ export const writeVerticalAuditSheet = (context: AuditContext, options: Vertical
     2,
     sheetSpan,
     (context.mechanicsSupportsMeshFormula
-      ? 'Displayed values are formulas. Each physical station criterion determines ε₀, κx and κy; resistance is integrated from Materials and Mesh. Geometric axial-cap rows are explicitly anchored to their projected engine ledger.'
+      ? 'Displayed values are formulas. Each physical station criterion determines ε₀, κx and κy; resistance is integrated from Materials and Mesh. Geometric axial-cap rows are explicitly anchored to their geometric engine ledger; strain fields are unavailable.'
       : 'Equivalent-block resultants use the engine total-ledger anchor because this mechanics has no concrete integration mesh. Use the calculation-mode column to identify the provenance.') +
       ' Two angles are published above: the selected β the M column is projected on, and the strain direction the stations were solved in — the same for a requested meridian, and the nearest sampled direction when the surface has no meridian at the selected angle.'
   )
@@ -1667,11 +1678,11 @@ export const writeFixedPAuditSheets = (context: AuditContext, options: FixedPAud
     for (const column of [FIXED_P_COLUMNS.index, FIXED_P_COLUMNS.angle, FIXED_P_COLUMNS.branch]) {
       styleGenerated(result.getCell(excelRow, column))
     }
-    setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.lowerCriterion), sheetFormula(lowerName, block.at('criterionBasis'), excelRow), lower.criterion.basisLabel, '@')
-    setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.lowerValue), sheetFormula(lowerName, block.at('criterionValue'), excelRow), lower.criterion.value, '0.000000')
+    setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.lowerCriterion), sheetFormula(lowerName, block.at('criterionBasis'), excelRow), lower.criterion?.basisLabel ?? 'geometric Pmax intersection (no strain state)', '@')
+    if (lower.criterion !== null) setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.lowerValue), sheetFormula(lowerName, block.at('criterionValue'), excelRow), lower.criterion.value, '0.000000')
     setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.lowerP), sheetFormula(lowerName, block.at('fP'), excelRow), lowerP, '#,##0.0')
-    setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.upperCriterion), sheetFormula(upperName, block.at('criterionBasis'), excelRow), upper.criterion.basisLabel, '@')
-    setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.upperValue), sheetFormula(upperName, block.at('criterionValue'), excelRow), upper.criterion.value, '0.000000')
+    setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.upperCriterion), sheetFormula(upperName, block.at('criterionBasis'), excelRow), upper.criterion?.basisLabel ?? 'geometric Pmax intersection (no strain state)', '@')
+    if (upper.criterion !== null) setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.upperValue), sheetFormula(upperName, block.at('criterionValue'), excelRow), upper.criterion.value, '0.000000')
     setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.upperP), sheetFormula(upperName, block.at('fP'), excelRow), upperP, '#,##0.0')
     setFormula(result.getCell(excelRow, FIXED_P_COLUMNS.selectedP), `=${options.selectedPName}`, selectedP, '#,##0.0')
     setFormula(
@@ -1804,6 +1815,7 @@ export const buildChartAuditWorkbookParts = async (input: ChartAuditWorkbookInpu
   }
 
   workbook.calcProperties.fullCalcOnLoad = true
+  appendPresentationSummary(workbook, input)
   return { workbook, charts }
 }
 
