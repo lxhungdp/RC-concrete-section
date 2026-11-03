@@ -1,6 +1,6 @@
 import type { MaterialStandard, MaterialStore } from '@pm/materials'
 import { AS_3600_2018_PROVENANCE } from '@pm/code-as3600'
-import { EN1992_2004_PROVENANCE } from '@pm/code-en1992'
+import { EN1992_2004_PROVENANCE, EN1992_RECOMMENDED_ULTIMATE_STRAIN_FACTOR } from '@pm/code-en1992'
 
 export const DESIGN_BASIS_VERSION = 3 as const
 
@@ -90,6 +90,8 @@ type DesignBasisCommon = {
   modified: boolean
   /** True when a user-selected material model replaces the profile's code-default model. */
   materialModelModified?: boolean
+  /** Project-selected steel law, tracked independently of the concrete model. */
+  steelModelModified?: boolean
   overrideReason: string
 }
 
@@ -393,8 +395,10 @@ export const createDefaultDesignBasisForStandard = (standard: MaterialStandard):
   return createKdsBasicDesignBasis()
 }
 
-export const createDefaultDesignBasis = (materials?: MaterialStore): DesignBasis =>
-  createDefaultDesignBasisForStandard(materials?.concrete.standard ?? 'KDS')
+export const createDefaultDesignBasis = (materials?: MaterialStore): DesignBasis => {
+  const basis = createDefaultDesignBasisForStandard(materials?.concrete.standard ?? 'KDS')
+  return materials ? withSteelModelModification(basis, materials) : basis
+}
 
 export const cloneDesignBasis = <T extends DesignBasis>(basis: T): T =>
   JSON.parse(JSON.stringify(basis)) as T
@@ -598,7 +602,7 @@ export const evaluateGlobalStrengthReduction = (
     }
   }
 
-  const span = Math.max(1e-12, tensionLimit - yieldStrain)
+  const span = globalStrengthReductionTransitionSpan(tensionLimit, yieldStrain)
   const ratio = (controllingTensileStrain - yieldStrain) / span
   return {
     phi: compressionPhi + ratio * (basis.factors.phiTension - compressionPhi),
@@ -608,6 +612,11 @@ export const evaluateGlobalStrengthReduction = (
     tensionControlledLimit: tensionLimit
   }
 }
+
+/** The evaluator's guarded transition denominator, also retained by lazy calculation audits. */
+export const GLOBAL_STRENGTH_REDUCTION_MINIMUM_SPAN = 1e-12
+export const globalStrengthReductionTransitionSpan = (tensionLimit: number, yieldStrain: number) =>
+  Math.max(GLOBAL_STRENGTH_REDUCTION_MINIMUM_SPAN, tensionLimit - yieldStrain)
 
 export const resolveTensionControlledStrainLimit = (
   basis: GlobalStrengthReductionBasis,
@@ -638,7 +647,7 @@ export const designBasisRequiresOverrideReason = (basis: DesignBasis): boolean =
   if (!basis.modified) return false
   /** A user-defined profile has no code default to deviate from; every value is already the user's. */
   if (basis.profileId === 'custom-user-defined') return false
-  if (basis.materialModelModified) return true
+  if (basis.materialModelModified || basis.steelModelModified) return true
   const defaults =
     basis.profileId === 'aci-318-19-22'
       ? createAci318DesignBasis()
@@ -741,6 +750,29 @@ export type DesignMaterialApplicabilityIssue = {
   path: string
   message: string
   reference: string
+}
+
+/** The material choice is authoritative; the audit flag cannot change its numerical meaning. */
+export const withSteelModelModification = (basis: DesignBasis, materials: MaterialStore): DesignBasis => {
+  const customized = materials.steel.some((steel) => {
+    if (basis.profileId.startsWith('kds-')) return steel.stressStrain.type !== 'elastic-perfectly-plastic'
+    if (basis.profileId === 'en-1992-1-1-2004-default' && steel.stressStrain.type === 'linear-hardening') {
+      return steel.stressStrain.strainLimit.type !== 'factor' || steel.stressStrain.strainLimit.value !== EN1992_RECOMMENDED_ULTIMATE_STRAIN_FACTOR
+    }
+    return false
+  })
+  if (!customized && !basis.steelModelModified) return basis
+  const next = cloneDesignBasis(basis)
+  next.steelModelModified = customized || undefined
+  if (customized) {
+    next.modified = true
+    next.verificationStatus = 'draft'
+    if (next.overrideReason.trim().length === 0) next.overrideReason = 'Project-selected post-yield steel law.'
+  } else {
+    next.modified = designBasisRequiresOverrideReason(next)
+    if (!next.modified && next.overrideReason === 'Project-selected post-yield steel law.') next.overrideReason = ''
+  }
+  return next
 }
 
 /**

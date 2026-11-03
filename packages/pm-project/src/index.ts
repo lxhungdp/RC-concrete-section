@@ -1,6 +1,7 @@
 export * from './types'
 export * from './analysis-options'
 export * from './calculation-profiles'
+export * from './steel-hardening'
 export * from './ids'
 export * from './loadings'
 export * from './load-reference'

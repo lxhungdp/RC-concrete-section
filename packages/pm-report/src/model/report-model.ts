@@ -45,6 +45,7 @@ import {
 } from '@pm/equivalent-block'
 import {
   buildResistanceMaterialSets,
+  withSteelModelModification,
   designBasisRequiresOverrideReason,
   resolveTensionControlledStrainLimit,
   type DesignBasis
@@ -60,6 +61,7 @@ import {
 import {
   compileConcreteMaterial,
   compileSteelMaterial,
+  resolveLinearHardeningSteel,
   userBlockCompressionStress,
   type MaterialStore
 } from '@pm/materials'
@@ -854,7 +856,7 @@ const basicsFor = (
 
 const build = (input: ReportInput): ColumnReportModel => {
   const profile = calculationProfile(input.calculationProfileId)
-  const basis = input.designBasis
+  const basis = withSteelModelModification(input.designBasis, input.materialStore)
   const { section, rebars, materialStore } = input
   if (rebars.length === 0) throw new ExcelExportError('The section has no reinforcement to report.')
   const origin = netConcreteCentroid(section)
@@ -996,6 +998,7 @@ const build = (input: ReportInput): ColumnReportModel => {
       ['Profile edition', basis.identity.edition],
       ['Verification status', basis.verificationStatus],
       ['Concrete model basis', basis.materialModelModified ? 'User-defined / modified' : 'Code-default'],
+      ['Steel model basis', basis.steelModelModified ? 'Project-modified' : 'Profile-supported'],
       ['Method id', basis.identity.methodId],
       ['Units', `Calculation: mm · N · MPa · N·mm. Display: length ${unit('length')}; bar diameter ${unit('barDiameter')}; force ${unit('force')}; moment ${unit('moment')}; stress ${unit('stress')}; modulus ${unit('modulus')}; mass density ${unit('density')}.`],
       ['Sign convention', 'Compression positive; Mx = ΣF·(y−yc); My = ΣF·(x−xc)'],
@@ -1010,7 +1013,9 @@ const build = (input: ReportInput): ColumnReportModel => {
           : 'Concrete compression is the code-equivalent rectangular block over a = β1·c, obtained by exact polygon clipping. There is no concrete integration mesh, and the stress between a and c is zero.'
         : 'Concrete compression is integrated from the material stress-strain law over a verified triangle/quadrature mesh of the section.',
       ...(profile.code === 'EN'
-        ? ['EN 1992 preview uses recommended material factors without a National Annex. The tension-controlled surface boundary is not yet a complete EC2 strain-domain implementation.']
+        ? [input.surface.strainDomain === 'steel-limited-ultimate'
+          ? 'EN 1992 preview uses recommended material factors without a National Annex. Finite steel design limits govern the compatible tensile boundary.'
+          : 'EN 1992 preview uses recommended material factors without a National Annex. The legacy tension-controlled surface boundary is not a complete EC2 strain-domain implementation.']
         : []),
       ...(profile.code === 'AS'
         ? [
@@ -1024,7 +1029,7 @@ const build = (input: ReportInput): ColumnReportModel => {
         ? [`Modified resistance profile. Stated basis: ${basis.overrideReason}`]
         : []),
       input.surface.analysisOptions.samplingMode === 'fixed'
-        ? 'Overview interaction diagrams cut the active fixed 27-station, 10° direction surface. An arbitrary exact direction is calculated only when it is requested.'
+        ? `Overview interaction diagrams cut the active fixed surface (${input.surface.stations.length} stations, ${input.surface.directions.length} directions). An arbitrary exact direction is calculated only when it is requested.`
         : 'Overview interaction diagrams cut the active independently adaptive surface and its explicit triangle topology. An arbitrary exact direction is calculated only when it is requested.'
     ],
     warnings: input.surface.warnings ?? [],
@@ -1071,7 +1076,28 @@ const build = (input: ReportInput): ColumnReportModel => {
       ['Model', steel.stressStrain.type],
       ['εy', fmt(epsY, 6)],
       ['εu', steel.limits?.epsU === undefined ? 'not declared' : fmt(steel.limits.epsU, 5)],
-      ['Grades used', String(new Set(rebars.map((bar) => bar.steelMaterialId ?? materialStore.defaults.steelMaterialId)).size)]
+      ['Grades used', String(new Set(rebars.map((bar) => bar.steelMaterialId ?? materialStore.defaults.steelMaterialId)).size)],
+      ...materialStore.steel.flatMap((item): LabelledValue[] => {
+        if (item.stressStrain.type !== 'linear-hardening') return []
+        const sets = buildResistanceMaterialSets(materialStore, basis)
+        const stages = basis.format === 'designMaterialReevaluation'
+          ? [{ label: 'Reference', store: sets.referenceMaterials }, { label: 'Design', store: sets.designMaterials }]
+          : [{ label: 'Reference', store: sets.referenceMaterials }]
+        return [
+          [`Steel ${item.id} post-yield`, 'Immediate linear hardening'],
+          ...stages.flatMap(({ label, store }): LabelledValue[] => {
+            const definition = store.steel.find((candidate) => candidate.id === item.id)
+            if (!definition) throw new ExcelExportError(`Steel material ${item.id} is missing.`)
+            const p = resolveLinearHardeningSteel(definition)
+            return [
+              [`Steel ${item.id} ${label} fu`, `${qfmt('stress', p.ultimateStress, 3)} ${unit('stress')}`],
+              [`Steel ${item.id} ${label} εuk`, fmt(p.epsUk, 6)],
+              [`Steel ${item.id} ${label} εlimit`, fmt(p.epsUd, 6)],
+              [`Steel ${item.id} ${label} Eh`, `${qfmt('modulus', p.hardeningModulus, 3)} ${unit('modulus')}`]
+            ]
+          })
+        ]
+      })
     ],
     resistanceBasis:
       basis.format === 'globalResultantFactor'
@@ -1415,7 +1441,11 @@ const fibreDetail = (
       ['Max concrete compression', fmt(result.admissibility.maxConcreteCompression, 6)],
       ['Concrete limit', fmt(result.admissibility.concreteLimit, 6)],
       ['Max steel tension', fmt(result.admissibility.maxSteelTension, 6)],
-      ['Steel limit', result.admissibility.steelTensionLimit === null ? 'not declared' : fmt(result.admissibility.steelTensionLimit, 6)],
+      ['Smallest tensile limit', result.admissibility.steelTensionLimit === null ? 'not declared' : fmt(result.admissibility.steelTensionLimit, 6)],
+      ...(result.admissibility.governingSteelLimit ? [
+        ['Governing steel limit', `${result.admissibility.governingSteelLimit.side}: ${fmt(Math.abs(result.admissibility.governingSteelLimit.strain), 6)} / ${fmt(result.admissibility.governingSteelLimit.limit, 6)}`],
+        ['Governing bar / steel', `${result.admissibility.governingSteelLimit.rebarId} / ${result.admissibility.governingSteelLimit.steelMaterialId}`]
+      ] as LabelledValue[] : []),
       ['Strain admissibility', result.admissibility.ok ? 'admissible' : 'INADMISSIBLE'],
       ['Governing utilization', row.utilization === null ? '—' : fmt(row.utilization, 4)]
     ]

@@ -61,7 +61,7 @@ try {
       const row = page.getByRole('table', { name: 'Loadcase demand table' }).locator('tr')
         .filter({ has: page.getByLabel(`Loadcase ${demand.id} name`, { exact: true }) })
       await page.evaluate(() => { window.__momentAudit.map = null })
-      await row.locator('td').nth(5).click()
+      await row.locator('td.pm-col-ur').click()
       await page.waitForFunction(id => window.__momentAudit.checks[id] && window.__momentAudit.map &&
         document.querySelector('.pm-results-stage')?.getAttribute('aria-busy') === 'false', demand.id)
       const { check, map } = await page.evaluate(id => ({ check: window.__momentAudit.checks[id], map: window.__momentAudit.map }), demand.id)

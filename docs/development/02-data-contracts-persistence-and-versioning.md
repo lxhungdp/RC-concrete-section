@@ -2,6 +2,30 @@
 
 ## 1. Current persisted contracts
 
+Immediate steel hardening uses a new `linear-hardening` material discriminant. Project JSON remains
+v3 with its explicit v1/v2 readers. Older readers reject the unfamiliar law instead of evaluating a
+plateau. Raw hardening strength, construction strain and the discriminated cutoff rule are stored
+once. Compiled tangents and effective design strengths are derived runtime data. A separate optional
+`steelModelModified` flag records KDS steel customization independently of concrete customization.
+The editable workbook revision for these fields is v7, with bounded v5/v6 readers retaining their
+existing load-reference semantics.
+
+The compact hardening form exposes construction strain, radio-selected ratio/stress peak strength,
+and linked editable percentage/direct tensile cutoffs without a mode selector. Editing a cutoff
+field selects its stored discriminant; simply viewing both fields does not rewrite it. Percentages are presentation values:
+90% stores the existing factor 0.9. New curves select ratio strength input; KDS/Custom persist an
+explicit endpoint identity cutoff and EN its named recommended preview rule. Switching strength
+radio converts the current value without resetting it. Editing either strain field updates its
+companion and selects the factor or absolute basis. Only the selected representations are stored;
+physical bounds remain canonical inputs and stay visible if present, with explicit clearing rather
+than silent removal when Advanced is removed. No schema/workbook revision or legacy-input
+rewrite accompanies this authoring change.
+
+Off -> On creates a valid, editable starter through the project-owned authoring helper, using
+the current material and DesignBasis. Its explicit endpoint values are stored and exported just
+like user-entered values. This is an authoring action, not an import/parser default; no existing
+definition is repaired or replaced. The template and its source are defined in engineering/04 §5.
+
 The project is pre-release. New exports use outer schema v3; explicit centroidal v1/v2 read contracts
 remain available. Nested contracts carry their own versions:
 

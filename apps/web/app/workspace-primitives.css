@@ -158,6 +158,7 @@ fieldset.ws-joined-buttons > label > input[type='radio'] {
 .pm-shell .ws-field-group:hover:not(:has(input:disabled)):not(:focus-within) { border-color: var(--foreground-muted); }
 .pm-shell .ws-field-group:focus-within { border-color: var(--accent); }
 .pm-shell .ws-field-group:has(input:disabled) { background: var(--background-muted); }
+.pm-shell .ws-field-group > input[readonly] { color: var(--foreground-muted); }
 
 .pm-shell table :where(input, select, textarea, [contenteditable='true']) {
   --ws-field-h: var(--table-field-h);

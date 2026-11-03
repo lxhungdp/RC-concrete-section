@@ -3,7 +3,7 @@
 import { QuantityValue, UnitLabel, useQuantityFormatters } from '../shared/DisplayUnits'
 
 import { TransferIcon } from '../shared/WorkspaceIcons'
-import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import type {
@@ -25,12 +25,14 @@ import {
 } from './results-view'
 import {
   buildChartTableRows,
+  chartValueLabel,
   downloadCalculationTraceAuditExcel,
   downloadChartAuditExcel,
   downloadConcretePointAuditExcel,
   formatChartTableForce,
   formatChartTableMoment,
   resolveChartTableRowSelection,
+  type ChartValueComponent,
   type ChartTableMoments,
   type ChartTableRow,
   type ChartTableResistanceStage,
@@ -92,43 +94,37 @@ const fmt = (value: number, digits = 2) =>
   Number.isFinite(value) ? value.toLocaleString('en-US', { maximumFractionDigits: digits }) : '—'
 
 
-const SumCells = ({ stage }: { stage: ChartTableStageForces | null }) => {
+const ValueCell = ({ value, component, row, onTrace }: {
+  value: number | null
+  component: ChartValueComponent
+  row: ChartTableRow
+  onTrace: (row: ChartTableRow, component: ChartValueComponent) => void
+}) => {
   const { fmtForce, fmtMoment } = useQuantityFormatters()
-
-  if (!stage) {
-    return (
-      <>
-        <td className="ws-num">—</td>
-        <td className="ws-num">—</td>
-      </>
-    )
-  }
-  return (
-    <>
-      <td className="ws-num">{fmtForce(stage.total.P)}</td>
-      <td className="ws-num">{fmtMoment(stage.total.M)}</td>
-    </>
-  )
+  const label = chartValueLabel(component, row.evidence.stage)
+  return <td className="ws-num">{value === null ? '—' : <button
+    type="button"
+    className="ws-action ws-action--quiet ws-action--compact pm-chart-value-action"
+    aria-label={`Trace ${label} for row ${row.index}`}
+    onClick={() => onTrace(row, component)}
+  ><span className="ws-num">{component === 'P' ? fmtForce(value) : fmtMoment(value)}</span></button>}</td>
 }
 
-const MomentCells = ({ stage }: { stage: ChartTableMoments | null }) => {
-  const { fmtMoment } = useQuantityFormatters()
+const SumCells = ({ stage, row, onTrace }: {
+  stage: ChartTableStageForces | null; row: ChartTableRow
+  onTrace: (row: ChartTableRow, component: ChartValueComponent) => void
+}) => <>
+  <ValueCell value={stage?.total.P ?? null} component="P" row={row} onTrace={onTrace} />
+  <ValueCell value={stage?.total.M ?? null} component="M" row={row} onTrace={onTrace} />
+</>
 
-  if (!stage) {
-    return (
-      <>
-        <td className="ws-num">—</td>
-        <td className="ws-num">—</td>
-      </>
-    )
-  }
-  return (
-    <>
-      <td className="ws-num">{fmtMoment(stage.Mx)}</td>
-      <td className="ws-num">{fmtMoment(stage.My)}</td>
-    </>
-  )
-}
+const MomentCells = ({ stage, row, onTrace }: {
+  stage: ChartTableMoments | null; row: ChartTableRow
+  onTrace: (row: ChartTableRow, component: ChartValueComponent) => void
+}) => <>
+  <ValueCell value={stage?.Mx ?? null} component="Mx" row={row} onTrace={onTrace} />
+  <ValueCell value={stage?.My ?? null} component="My" row={row} onTrace={onTrace} />
+</>
 
 export function SectionResultsPanel({
   summary,
@@ -158,6 +154,7 @@ export function SectionResultsPanel({
   const [selectedRow, setSelectedRow] = useState<ChartTableRow | null>(null)
   const [calculationSelectionAnchor, setCalculationSelectionAnchor] = useState<ChartTableRow | null>(null)
   const [calculationDialogOpen, setCalculationDialogOpen] = useState(false)
+  const [valueComponent, setValueComponent] = useState<ChartValueComponent | null>(null)
   const [calculationExportError, setCalculationExportError] = useState<string | null>(null)
 
   const rows = useMemo(
@@ -387,18 +384,14 @@ export function SectionResultsPanel({
     }
   }
 
-  const openCalculationTrace = (row: ChartTableRow) => {
+  const openCalculationTrace = (row: ChartTableRow, component: ChartValueComponent | null = null) => {
+    setValueComponent(component)
     setSelectedRow(row)
     setCalculationSelectionAnchor(row)
     setCalculationExportError(null)
     setCalculationDialogOpen(true)
   }
 
-  const rowKeyDown = (event: KeyboardEvent<HTMLTableRowElement>, row: ChartTableRow) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    openCalculationTrace(row)
-  }
 
   return (
     <>
@@ -479,16 +472,27 @@ export function SectionResultsPanel({
               {` · ${rows.length} row${rows.length === 1 ? '' : 's'}`}
             </span>
           </div>
-          <button
-            type="button"
-            className="ws-action pm-file-btn"
-            disabled={rows.length === 0 || exporting}
-            onClick={() => void exportExcel()}
-            title="Export a formula-driven project audit workbook"
-          >
-            {exporting ? <Loader2 size={13} className="pm-spin" /> : <TransferIcon direction="export" />}
-            Excel
-          </button>
+          <div className="pm-chart-data-actions">
+            <button
+              type="button"
+              className="ws-action"
+              disabled={rows.length === 0}
+              onClick={() => {
+                const row = resolveChartTableRowSelection(rows, calculationSelectionAnchor ?? selectedRow) ?? rows[0]
+                if (row) openCalculationTrace(row)
+              }}
+            >Detail</button>
+            <button
+              type="button"
+              className="ws-action pm-file-btn"
+              disabled={rows.length === 0 || exporting}
+              onClick={() => void exportExcel()}
+              title="Export a formula-driven project audit workbook"
+            >
+              {exporting ? <Loader2 size={13} className="pm-spin" /> : <TransferIcon direction="export" />}
+              Excel
+            </button>
+          </div>
         </div>
 
         <div className="pm-chart-data-controls">
@@ -534,7 +538,7 @@ export function SectionResultsPanel({
           </fieldset>
         </div>
 
-        {rows.length > 0 ? <p className="pm-chart-data-inspect-hint">Select a row to inspect its formulas, inputs and stored calculation evidence.</p> : null}
+        {rows.length > 0 ? <p className="pm-chart-data-inspect-hint">Use Detail for complete calculation information, or select a result value for its calculation trace.</p> : null}
 
         <div className="pm-chart-data-table-wrap">
           {!surface ? (
@@ -550,8 +554,8 @@ export function SectionResultsPanel({
                   <th title="Sampled strain-plane direction β">β</th>
                   {includeDesign ? (
                     <>
-                      <th title="Design Mx">Mx <span className="pm-table-unit">({unit('moment')})</span></th>
-                      <th title="Design My">My <span className="pm-table-unit">({unit('moment')})</span></th>
+                      <th title="Design resistance about X">Mrx <span className="pm-table-unit">({unit('moment')})</span></th>
+                      <th title="Design resistance about Y">Mry <span className="pm-table-unit">({unit('moment')})</span></th>
                     </>
                   ) : null}
                   {includeNominal ? (
@@ -567,21 +571,14 @@ export function SectionResultsPanel({
                   row.kind === 'fixedP' ? (
                     <tr
                       key={row.key}
-                      tabIndex={0}
-                      aria-label={`Open calculation details for row ${row.index}, beta ${fmt(row.angleDeg, 3)} degrees`}
                       aria-selected={selectedRow?.key === row.key}
                       className={selectedRow?.key === row.key ? 'is-selected' : undefined}
-                      onClick={(event) => {
-                        event.currentTarget.focus()
-                        openCalculationTrace(row)
-                      }}
-                      onKeyDown={(event) => rowKeyDown(event, row)}
                     >
                       <td className="ws-num">{row.index}</td>
                       <td className="ws-num">{row.branch}</td>
                       <td className="ws-num">{fmt(row.angleDeg, 3)}°</td>
-                      {includeDesign ? <MomentCells stage={row.design} /> : null}
-                      {includeNominal ? <MomentCells stage={row.nominal} /> : null}
+                      {includeDesign ? <MomentCells stage={row.design} row={row} onTrace={openCalculationTrace} /> : null}
+                      {includeNominal ? <MomentCells stage={row.nominal} row={row} onTrace={openCalculationTrace} /> : null}
                     </tr>
                   ) : null
                 )}
@@ -612,20 +609,13 @@ export function SectionResultsPanel({
                   row.kind === 'vertical' ? (
                     <tr
                       key={row.key}
-                      tabIndex={0}
-                      aria-label={`Open calculation details for row ${row.index}, ${row.criterion}`}
                       aria-selected={selectedRow?.key === row.key}
                       className={selectedRow?.key === row.key ? 'is-selected' : undefined}
-                      onClick={(event) => {
-                        event.currentTarget.focus()
-                        openCalculationTrace(row)
-                      }}
-                      onKeyDown={(event) => rowKeyDown(event, row)}
                     >
                       <td className="ws-num">{row.index}</td>
                       <td title={row.criterion}>{row.criterion}</td>
-                      {includeDesign ? <SumCells stage={row.design} /> : null}
-                      {includeNominal ? <SumCells stage={row.nominal} /> : null}
+                      {includeDesign ? <SumCells stage={row.design} row={row} onTrace={openCalculationTrace} /> : null}
+                      {includeNominal ? <SumCells stage={row.nominal} row={row} onTrace={openCalculationTrace} /> : null}
                     </tr>
                   ) : null
                 )}
@@ -638,6 +628,7 @@ export function SectionResultsPanel({
       {calculationDialogOpen && surface ? (
         <ChartCalculationDialog
           row={selectedRow}
+          valueComponent={valueComponent}
           rows={rows}
           source={source}
           resistanceStage={resistanceStage}
@@ -658,6 +649,7 @@ export function SectionResultsPanel({
           onRowChange={selectDialogRow}
           onClose={() => {
             setCalculationDialogOpen(false)
+            setValueComponent(null)
             setSelectedRow(null)
             setCalculationSelectionAnchor(null)
             setCalculationExportError(null)

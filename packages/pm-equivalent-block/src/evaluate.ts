@@ -223,6 +223,7 @@ export const evaluateEquivalentBlock = (
       tensileStrain: Math.max(0, -strain),
       yieldStrain: steelLaw.yieldStrain,
       ultimateStrain: steelLaw.ultimateStrain,
+      compressionUltimateStrain: steelLaw.strainLimits ? steelLaw.strainLimits.compression : steelLaw.ultimateStrain,
       steelStress,
       displacedConcreteStress,
       netStress,

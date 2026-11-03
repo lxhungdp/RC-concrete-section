@@ -39,6 +39,13 @@ as of August 2026 and is not used or described as the governing edition.
 
 ## 3. Concrete-model customization
 
+Steel editing exposes a plateau and immediate post-yield hardening under the same KDS or EN Code.
+KDS stores the inclined law as a project material modification through `steelModelModified`,
+independently of `materialModelModified` for concrete. Valid steel selections survive same-profile
+application and concrete-only edits. The new discriminant supplies explicit construction strength,
+construction strain and a cutoff rule to both numerical routes. ACI/AS retain their current steel
+capabilities. Source clauses and the selected resistance basis remain recorded in reports.
+
 A Code profile exposes only models in its `concreteModels` capability list. KDS stress-strain
 currently permits its code-default parabolic law and a user-defined stress-strain curve. Selecting
 the latter:

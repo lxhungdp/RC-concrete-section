@@ -176,7 +176,7 @@ button svg { color: currentColor; }
   letter-spacing: 0;
   text-transform: none;
 }
-.pm-side-panel :is(.pm-field > span, .pm-design-field > span:first-child, .pm-boundary-rotation > span:first-child, .pm-rebar-replace, .pm-field-check, .pm-design-checkbox),
+.pm-side-panel :is(.pm-field > span, .pm-material-param > span:first-child, .pm-design-field > span:first-child, .pm-boundary-rotation > span:first-child, .pm-rebar-replace, .pm-field-check, .pm-design-checkbox),
 .pm-project-dialog__field > span { color: var(--foreground-secondary); font-size: var(--fs-md); font-weight: var(--weight-normal); letter-spacing: 0; text-transform: none; }
 .pm-side-panel :is(.pm-field-note, .pm-design-help, .pm-section-title p, .pm-boundary-empty, .pm-rebar-empty, .pm-material-blocked, .pm-preview-hint) { font-size: var(--fs-sm); font-weight: var(--weight-normal); line-height: var(--lh-body); }
 .pm-side-panel .pm-panel-section + .pm-panel-section { border-color: var(--group-separator); }
@@ -221,6 +221,8 @@ button svg { color: currentColor; }
 .pm-side-panel :is(.pm-point-table-wrap, .pm-loadcase-table-wrap, .pm-table-wrap, .pm-chart-data-table-wrap, .pm-user-curve-editor) { border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--entity-surface); box-shadow: none; }
 .pm-side-panel :is(.pm-point-table, .pm-loadcase-table, .pm-chart-data-table, .pm-user-curve-table) th { border-bottom: 1px solid var(--border); background: var(--background-muted); font-size: var(--fs-xs); font-weight: var(--weight-strong); letter-spacing: 0; text-transform: none; }
 .pm-side-panel :is(.pm-point-table, .pm-loadcase-table, .pm-chart-data-table, .pm-user-curve-table) td { border: 0; border-bottom: 1px solid var(--group-separator); background: transparent; font-size: var(--fs-sm); }
+/* A calculated value keeps table-data type inside its compact trace action. */
+.pm-side-panel .pm-chart-data-table .pm-chart-value-action > .ws-num { font-size: var(--fs-sm); }
 .pm-side-panel :is(.pm-point-table, .pm-loadcase-table, .pm-chart-data-table, .pm-user-curve-table) tr:last-child td { border-bottom: 0; }
 .pm-side-panel :is(.pm-point-table, .pm-loadcase-table, .pm-chart-data-table, .pm-user-curve-table) tbody tr:hover td { background: var(--card-hover); }
 .pm-side-panel :is(.pm-point-table, .pm-loadcase-table, .pm-chart-data-table) tbody tr.is-selected td { background: var(--accent-muted); box-shadow: none; }

@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { createAdaptiveEquivalentBlockAnalysisOptions, parseProjectDocument, serializeProjectDocument } from '@pm/project'
 import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
-import { checkLoadcaseUtilizationFromSurface, strainGradientDirection } from '@pm/analysis'
+import { activeDesignSurfaceDataset, activeNominalSurfaceDataset, checkLoadcaseUtilizationFromSurface, strainGradientDirection } from '@pm/analysis'
 import { fromCanonical, UNIT_PRESETS } from '@pm/units'
 
 const require = createRequire(import.meta.url)
@@ -51,6 +51,7 @@ try {
         constructor(...args) {
           super(...args)
           this.addEventListener('message', ({ data }) => {
+            if (data.type === 'success' && data.requestType === 'buildSurface') window.__demandAudit.surface = data.result.surface
             if (data.type === 'error') window.__demandAudit.failures.push(data)
             if (data.type === 'success' && data.requestType === 'checkLoadcase') {
               window.__demandAudit.results[data.result.loadcaseId] = data.result
@@ -78,7 +79,7 @@ try {
       console.log(`${mechanics}: ${demand.name}`)
       const row = page.getByRole('table', { name: 'Loadcase demand table' }).locator('tr')
         .filter({ has: page.getByLabel(`Loadcase ${demand.id} name`, { exact: true }) })
-      await row.locator('td').nth(5).click()
+      await row.locator('td.pm-col-ur').click()
       await page.waitForFunction(id => window.__demandAudit.results[id], demand.id, { timeout: 60000 })
       await page.waitForFunction(() => document.querySelector('.pm-results-stage')?.getAttribute('aria-busy') === 'false')
       const result = await page.evaluate(id => window.__demandAudit.results[id], demand.id)
@@ -188,7 +189,7 @@ try {
     // A selection round trip cannot leave a previous case's field or failed-case placeholder behind.
     const ngRow = page.getByRole('table', { name: 'Loadcase demand table' }).locator('tr')
       .filter({ has: page.getByLabel('Loadcase 2 name', { exact: true }) })
-    await ngRow.locator('td').nth(5).click()
+    await ngRow.locator('td.pm-col-ur').click()
     await page.waitForFunction(() => document.querySelector('.pm-results-stage')?.getAttribute('aria-busy') === 'false')
     const beforeUnits = await page.evaluate(() => structuredClone(window.__demandAudit))
     await page.getByRole('button', { name: 'Options', exact: true }).click()
@@ -201,13 +202,54 @@ try {
       beforeUnits.jobs.filter(job => job === 'buildSurface').length)
     await page.getByRole('button', { name: 'Capacity', exact: true }).click()
     await page.waitForFunction(() => [...(document.querySelector('[data-chart="surface3d"] .js-plotly-plot')?.data ?? [])]
-      .some(trace => trace.name === 'Proportional Design load path'))
+      .some(trace => trace.name === 'Design surface' && trace.x.length > 3))
     const surfaceTraces = await traceData('surface3d')
-    const surfaceCrossing = surfaceTraces.find(trace => trace.name === 'Design ray crossing' && trace.x.length === 1)
-    assert.ok(surfaceCrossing)
-    assert.equal(surfaceCrossing.x[0], fromCanonical('moment', beforeUnits.results[2].designCapacityPoint.Mx, UNIT_PRESETS.us))
-    await page.screenshot({ path: `${out}/${mechanics}-ng-3d.png` })
+    const forbidden = ['Loadcases', 'Demand point', 'Proportional Design load path', 'Design ray crossing', 'Field point before Pmax cap']
+    assert.ok(surfaceTraces.every(trace => !forbidden.includes(trace.name)), 'Capacity contains resistance geometry only')
+    const mesh = surfaceTraces.find(trace => trace.name === 'Design surface')
+    const displayedSurface = await page.evaluate(() => window.__demandAudit.surface)
+    const designSurface = activeDesignSurfaceDataset(displayedSurface)
+    assert.deepEqual(mesh.x, designSurface.points.map(point => fromCanonical('moment', point.Mx, UNIT_PRESETS.us)))
+    assert.deepEqual(mesh.y, designSurface.points.map(point => fromCanonical('moment', point.My, UNIT_PRESETS.us)))
+    assert.deepEqual(mesh.z, designSurface.points.map(point => fromCanonical('force', point.P, UNIT_PRESETS.us)))
+    assert.ok(surfaceTraces.some(trace => trace.name === 'Direct β meridian'))
+    assert.ok(surfaceTraces.some(trace => trace.name === 'Meridian and parallel grid'))
+    const topology = await page.locator('[data-chart="surface3d"] .js-plotly-plot').evaluate(el => {
+      const mesh = el.data.find(trace => trace.name === 'Design surface')
+      return { i: Array.from(mesh.i), j: Array.from(mesh.j), k: Array.from(mesh.k) }
+    })
+    assert.deepEqual(topology.i, designSurface.triangles.map(triangle => triangle.a))
+    assert.deepEqual(topology.j, designSurface.triangles.map(triangle => triangle.b))
+    assert.deepEqual(topology.k, designSurface.triangles.map(triangle => triangle.c))
+    await page.screenshot({ path: `${out}/${mechanics}-capacity-design-light.png` })
+    const surfaceMode = page.getByRole('group', { name: '3D resistance surface', exact: true })
+    await surfaceMode.getByText('Mn', { exact: true }).click()
+    await page.waitForFunction(() => document.querySelector('[data-chart="surface3d"] .js-plotly-plot')?.data?.some(trace => trace.name === 'Nominal surface'))
+    const nominalTraces = await traceData('surface3d')
+    assert.ok(nominalTraces.every(trace => !forbidden.includes(trace.name)))
+    const nominalMesh = nominalTraces.find(trace => trace.name === 'Nominal surface')
+    const nominalSurface = activeNominalSurfaceDataset(displayedSurface)
+    assert.deepEqual(nominalMesh.x, nominalSurface.points.map(point => fromCanonical('moment', point.Mx, UNIT_PRESETS.us)))
+    assert.deepEqual(nominalMesh.y, nominalSurface.points.map(point => fromCanonical('moment', point.My, UNIT_PRESETS.us)))
+    assert.deepEqual(nominalMesh.z, nominalSurface.points.map(point => fromCanonical('force', point.P, UNIT_PRESETS.us)))
+    await page.screenshot({ path: `${out}/${mechanics}-capacity-nominal-light.png` })
+    await page.getByRole('button', { name: 'Theme', exact: true }).click()
+    await page.screenshot({ path: `${out}/${mechanics}-capacity-nominal-dark.png` })
+    await surfaceMode.getByText('Mr', { exact: true }).click()
+    await page.waitForFunction(() => document.querySelector('[data-chart="surface3d"] .js-plotly-plot')?.data?.some(trace => trace.name === 'Design surface'))
+    await page.screenshot({ path: `${out}/${mechanics}-capacity-design-dark.png` })
+    await page.getByRole('button', { name: 'Theme', exact: true }).click()
+    // A different selected combination cannot add overlays or change the resistance geometry.
     await page.getByRole('button', { name: 'Demand Check', exact: true }).click()
+    await page.getByRole('table', { name: 'Loadcase demand table' }).locator('tr')
+      .filter({ has: page.getByLabel('Loadcase 5 name', { exact: true }) }).locator('td.pm-col-ur').click()
+    await page.waitForFunction(() => document.querySelector('.pm-results-stage')?.getAttribute('aria-busy') === 'false')
+    await page.getByRole('button', { name: 'Capacity', exact: true }).click()
+    await page.waitForFunction(() => document.querySelector('[data-chart="surface3d"] .js-plotly-plot')?.data?.some(trace => trace.name === 'Design surface'))
+    assert.deepEqual(await traceData('surface3d'), surfaceTraces, 'Capacity is independent of loadcase selection')
+    await page.getByRole('button', { name: 'Demand Check', exact: true }).click()
+    await ngRow.locator('td.pm-col-ur').click()
+    await page.waitForFunction(() => document.querySelector('.pm-results-stage')?.getAttribute('aria-busy') === 'false')
     await page.setViewportSize({ width: 900, height: 900 })
     await page.screenshot({ path: `${out}/${mechanics}-ng-narrow.png` })
     await page.setViewportSize({ width: 360, height: 900 })
@@ -227,7 +269,7 @@ try {
     }
     assert.deepEqual(errors, [])
     assert.deepEqual(await page.evaluate(() => window.__demandAudit.failures), [])
-    evidence.push({ mechanics, cases, storedURUnchanged: true, unitChangePreservesResults: true, selected3DRay: true, errors })
+    evidence.push({ mechanics, cases, storedURUnchanged: true, unitChangePreservesResults: true, capacityResistanceOnly: true, errors })
     await page.close()
   }
   await writeFile(`${out}/browser-evidence.json`, JSON.stringify(evidence, null, 2))
@@ -269,7 +311,7 @@ try {
   await (await chooser).setFiles(`${out}/stress-strain.pm-project.json`)
   await page.getByRole('button', { name: 'Demand Check', exact: true }).click()
   await page.getByRole('table', { name: 'Loadcase demand table' }).locator('tr')
-    .filter({ has: page.getByLabel('Loadcase 2 name', { exact: true }) }).locator('td').nth(5).click()
+    .filter({ has: page.getByLabel('Loadcase 2 name', { exact: true }) }).locator('td.pm-col-ur').click()
   await page.waitForFunction(() => window.__faultEvidence?.loadcaseId === 2, null, { timeout: 60000 })
   await page.waitForFunction(() => document.querySelector('.pm-results-stage')?.getAttribute('aria-busy') === 'false')
   const fault = await page.evaluate(() => window.__faultEvidence)

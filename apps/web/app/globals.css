@@ -2381,7 +2381,7 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent);
 }
 
-.pm-loadcase-header-actions {
+.pm-loadcase-file-actions {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
@@ -2422,10 +2422,6 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
   width: 11%;
 }
 
-.pm-loadcase-table col.pm-col-detail {
-  width: 6.5%;
-}
-
 .pm-loadcase-table col.pm-col-action {
   width: 6.75%;
 }
@@ -2451,15 +2447,13 @@ body[data-jscad-theme="dark"] .pm-cad-surface {
 
 .pm-loadcase-table th.pm-col-ur,
 .pm-loadcase-table td.pm-col-ur,
-.pm-loadcase-table th.pm-col-detail,
-.pm-loadcase-table td.pm-col-detail,
 .pm-loadcase-table th.pm-col-action,
 .pm-loadcase-table td.pm-col-action {
   padding: var(--sp-0) 0;
   text-align: center;
 }
 
-.pm-loadcase-table th:nth-child(n + 3):nth-child(-n + 5) {
+.pm-loadcase-table th:nth-child(n + 2):nth-child(-n + 4) {
   padding-right: var(--sp-2);
   text-align: right;
 }
@@ -3758,6 +3752,20 @@ body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {
   border: 1px solid color-mix(in srgb, #3aa675 42%, var(--border));
   border-radius: var(--r-sm);
   background: color-mix(in srgb, #3aa675 8%, var(--card));
+}
+
+.pm-calc-final[data-result-component] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.pm-calc-final[data-result-component] > .pm-calc-fact {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+
+.pm-calc-final[data-result-component] > .pm-calc-fact > strong {
+  white-space: nowrap;
 }
 
 .pm-calc-endpoints {
@@ -5343,6 +5351,12 @@ body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {
   background: var(--card);
 }
 
+.pm-calculation-dialog.is-value-trace {
+  width: min(760px, calc(100vw - 32px));
+  height: auto;
+  max-height: calc(100vh - 32px);
+}
+
 .pm-calculation-dialog.is-document .pm-calculation-dialog__header {
   padding: var(--sp-5) 19px var(--sp-5);
   border-bottom-color: var(--border);
@@ -5978,6 +5992,10 @@ body[data-jscad-theme="dark"] .pm-design-basis-identity strong.is-draft {
   font-size: var(--fs-xs);
   font-weight: var(--weight-normal);
   letter-spacing: 0;
+}
+
+.pm-calculation-dialog.is-document .pm-calc-details > summary[data-detail-label]::after {
+  content: attr(data-detail-label);
 }
 
 .pm-calculation-dialog.is-document .pm-calc-details[open] > summary {

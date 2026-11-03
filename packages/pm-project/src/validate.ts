@@ -19,6 +19,7 @@ import {
   createDefaultDesignBasis,
   createEn1992DesignBasis,
   createKdsAppendixDesignBasis,
+  withSteelModelModification,
   type DesignBasis,
   type DesignProfileId,
   type GlobalStrengthReductionFactors,
@@ -339,6 +340,22 @@ const parseSteel = (value: unknown, path: string): SteelMaterial => {
   } else if (modelType === 'bilinear') {
     assert(isFiniteNumber(value.stressStrain.hardeningRatio), `${path}.stressStrain.hardeningRatio must be a finite number`)
     stressStrain = { type: 'bilinear', hardeningRatio: value.stressStrain.hardeningRatio }
+  } else if (modelType === 'linear-hardening') {
+    const model = value.stressStrain
+    assertRecord(model.ultimateStrength, `${path}.stressStrain.ultimateStrength must be an object`)
+    assert(model.ultimateStrength.type === 'ratio' || model.ultimateStrength.type === 'stress', `${path}.stressStrain.ultimateStrength.type is invalid`)
+    const strength = model.ultimateStrength.type === 'ratio' ? model.ultimateStrength.ratio : model.ultimateStrength.stress
+    assert(isFiniteNumber(strength), `${path}.stressStrain.ultimateStrength requires a finite ratio or stress`)
+    assert(isFiniteNumber(model.epsUk), `${path}.stressStrain.epsUk must be finite`)
+    assertRecord(model.strainLimit, `${path}.stressStrain.strainLimit must be an object`)
+    assert(model.strainLimit.type === 'factor' || model.strainLimit.type === 'absolute', `${path}.stressStrain.strainLimit.type is invalid`)
+    assert(isFiniteNumber(model.strainLimit.value), `${path}.stressStrain.strainLimit.value must be finite`)
+    stressStrain = {
+      type: 'linear-hardening',
+      ultimateStrength: model.ultimateStrength.type === 'ratio' ? { type: 'ratio', ratio: strength } : { type: 'stress', stress: strength },
+      epsUk: model.epsUk,
+      strainLimit: { type: model.strainLimit.type, value: model.strainLimit.value }
+    }
   } else if (modelType === 'user-curve') {
     assert(
       value.stressStrain.interpolation === undefined || value.stressStrain.interpolation === 'linear',
@@ -365,6 +382,17 @@ const parseSteel = (value: unknown, path: string): SteelMaterial => {
     fy: value.fy,
     elasticModulus: value.elasticModulus,
     stressStrain
+  }
+
+  if (modelType === 'linear-hardening') {
+    for (const [key, fields] of [['limits', ['epsY', 'epsU']], ['factors', ['gammaS', 'resistanceScale']]] as const) {
+      const record = value[key]
+      if (record === undefined) continue
+      assertRecord(record, `${path}.${key} must be an object`)
+      for (const field of fields) if (record[field] !== undefined) {
+        assert(isFiniteNumber(record[field]), `${path}.${key}.${field} must be finite when provided`)
+      }
+    }
   }
 
   if (isRecord(value.limits)) {
@@ -1066,6 +1094,7 @@ const parseDesignBasis = (value: unknown | undefined, materials: MaterialStore):
     verificationStatus: value.verificationStatus as DesignBasis['verificationStatus'],
     modified: value.modified,
     ...(value.materialModelModified === true ? { materialModelModified: true } : {}),
+    ...(value.steelModelModified === true ? { steelModelModified: true } : {}),
     overrideReason: value.overrideReason
   }
 
@@ -1236,7 +1265,7 @@ export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => 
   const materials = parseMaterials(value.inputs.materials)
   const analysis = parseAnalysis(value.inputs.analysis)
   const profile = calculationProfile(value.inputs.calculationProfileId)
-  const design = parseDesignBasis(value.inputs.design, materials)
+  const design = withSteelModelModification(parseDesignBasis(value.inputs.design, materials), materials)
   assertDesignMaterialApplicability(materials, design)
   assert(
     (profile.mechanics === 'equivalent-rectangular-block') ===

@@ -23,7 +23,6 @@ import {
   strainGradientDirection,
   type ExactDirectionCurve,
   type InversePreviewResult,
-  type LoadcaseQuickCheckResult,
   type PreviewSurface,
   type PreviewSurfacePoint,
   type Resultant,
@@ -34,7 +33,7 @@ import {
   buildExactDirectionCurveAsync,
   isAnalysisAbort
 } from '../../../application/analysis/client'
-import { PlotlyChart, type PlotlyClickPayload } from './PlotlyChart'
+import { PlotlyChart } from './PlotlyChart'
 import {
   DEMAND_CHART_IDS,
   SECTION_CHART_IDS,
@@ -115,7 +114,6 @@ type Props = {
   projectName: string
   selectedLoadcaseId: number | null
   inverseResult: InversePreviewResult | null
-  checksById: Readonly<Record<number, LoadcaseQuickCheckResult>>
   exactDirectionCurve: ExactDirectionCurve | null
   onExactDirectionCurveChange: (curve: ExactDirectionCurve | null) => void
   fixedP: number
@@ -124,7 +122,6 @@ type Props = {
   demandView: DemandCheckView
   onViewChange: (patch: Partial<SectionResultsView>) => void
   onDemandViewChange: (patch: Partial<DemandCheckView>) => void
-  onSelectLoadcase: (id: number) => void
   onLoadcaseUpdatingChange?: (updating: boolean) => void
 }
 
@@ -389,7 +386,6 @@ export function ResultsWorkspace({
   projectName,
   selectedLoadcaseId: requestedLoadcaseId,
   inverseResult: requestedInverseResult,
-  checksById,
   exactDirectionCurve,
   onExactDirectionCurveChange,
   fixedP,
@@ -398,7 +394,6 @@ export function ResultsWorkspace({
   demandView,
   onViewChange,
   onDemandViewChange,
-  onSelectLoadcase,
   onLoadcaseUpdatingChange
 }: Props) {
   const { displayUnits, qfmt, unit, force, moment, displayForce, displayMoment } = useQuantityFormatters()
@@ -431,7 +426,6 @@ export function ResultsWorkspace({
     : { frame: null, status: 'pending' as const }
   const displayFieldSnapshot = fieldFrameTransition.frame
   const loadcases = requestedLoadcases
-  const selectedLoadcaseId = displayFieldSnapshot?.selectedLoadcaseId ?? requestedLoadcaseId
   const selectedLoadcase = displayFieldSnapshot?.result.demand ?? requestedSelectedLoadcase
   const inverseResult = displayFieldSnapshot?.result ?? currentInverseResult
   const checkedLoadcase = inverseResult?.codeAdjustedDemand ?? selectedLoadcase
@@ -1011,52 +1005,13 @@ export function ResultsWorkspace({
         hovertemplate: `P=%{z:.1f} ${unit('force')}<br>Mx=%{x:.1f} ${unit('moment')}<br>My=%{y:.1f} ${unit('moment')}<extra>${view.surfaceResistanceMode === 'design' ? 'Design' : 'Nominal'} surface</extra>`
       }
 
-    const selectedCheck = currentLoadcaseEvidence(selectedLoadcase, selectedLoadcase ? checksById[selectedLoadcase.id] : null)
-    const rayDemand = selectedCheck?.codeAdjustedDemand ?? selectedCheck?.demand
-    const rayCapacity = selectedCheck?.capacityMultiplier != null ? selectedCheck.capacityPoint : null
-    const designRay = view.surfaceResistanceMode === 'design' && selectedCheck && rayDemand && rayCapacity ? [{
-      type: 'scatter3d', name: 'Proportional Design load path', mode: 'lines',
-      x: [0, displayMoment(rayCapacity.Mx), displayMoment(rayDemand.Mx)],
-      y: [0, displayMoment(rayCapacity.My), displayMoment(rayDemand.My)],
-      z: [0, displayForce(rayCapacity.P), displayForce(rayDemand.P)],
-      line: { color: '#ff1f3d', width: 5 }, hoverinfo: 'skip'
-    }, {
-      type: 'scatter3d', name: 'Design ray crossing', mode: 'markers',
-      x: [displayMoment(rayCapacity.Mx)], y: [displayMoment(rayCapacity.My)], z: [displayForce(rayCapacity.P)],
-      marker: { color: '#16a34a', size: 6, symbol: 'diamond' },
-      customdata: [[selectedCheck.utilization]],
-      hovertemplate: `UR=%{customdata[0]:.3f}<br>P=%{z:.1f} ${unit('force')}<extra>Design ray crossing</extra>`
-    }] : []
     return [
       capacityTrace,
-      ...designRay,
       ...(fixedPSectionFill ? [fixedPSectionFill] : []),
       ...(surfaceGridWireframe ? [surfaceGridWireframe] : []),
       ...sliceTraces,
       ...beforeCapTraces,
-      ...(view.surfaceResistanceMode === 'design' && beforeCapField && inverseResult?.loadcaseId === selectedCheck?.loadcaseId ? [{
-        type: 'scatter3d', name: 'Field point before Pmax cap', mode: 'markers',
-        x: [displayMoment(beforeCapField.response.Mx)], y: [displayMoment(beforeCapField.response.My)],
-        z: [displayForce(beforeCapField.response.P)],
-        marker: { size: 7, color: plotPalette.primary, symbol: 'circle', line: { color: plotPalette.markerOutline, width: 1 } },
-        hovertemplate: `P=%{z:.1f} ${unit('force')}<extra>Field before Pmax cap · exceeds permitted Design resistance</extra>`
-      }] : []),
-      ...(ring ? [ring] : []),
-      {
-        type: 'scatter3d',
-        name: 'Loadcases',
-        mode: 'markers',
-        x: loadcases.map((item) => displayMoment(item.Mx)),
-        y: loadcases.map((item) => displayMoment(item.My)),
-        z: loadcases.map((item) => displayForce(item.P)),
-        customdata: loadcases.map((item) => [item.id, item.name]),
-        marker: {
-          size: loadcases.map((item) => (item.id === selectedLoadcaseId ? 7 : 5)),
-          color: loadcases.map((item) => (item.id === selectedLoadcaseId ? '#f97316' : '#dc2626')),
-          line: { color: '#ffffff', width: 1 }
-        },
-        hovertemplate: `%{customdata[1]}<br>P=%{z:.1f} ${unit('force')}<br>Mx=%{x:.1f} ${unit('moment')}<br>My=%{y:.1f} ${unit('moment')}<extra>Demand</extra>`
-      }
+      ...(ring ? [ring] : [])
     ]
   }, [displayUnits,
     activeAngle,
@@ -1065,10 +1020,6 @@ export function ResultsWorkspace({
     exactCurve,
     isLoadcaseMode,
     view.includeOppositeMoment,
-    loadcases,
-    selectedLoadcaseId,
-    selectedLoadcase,
-    checksById,
     plotPalette,
     surface,
     surfaceContour3d,
@@ -1077,8 +1028,6 @@ export function ResultsWorkspace({
     surfaceTriangles3d,
     axialCapLimit,
     beforeCapDataset,
-    beforeCapField,
-    inverseResult,
     view.surfaceResistanceMode
   ])
 
@@ -1879,14 +1828,6 @@ export function ResultsWorkspace({
     [sectionField, checkedLoadcase]
   )
 
-  const handle3dClick = (event: PlotlyClickPayload) => {
-    if (isLoadcaseMode) return
-    const point = event.points?.[0]
-    const data = point?.customdata
-    const id = Array.isArray(data) ? data[0] : data
-    if (typeof id === 'number') onSelectLoadcase(id)
-  }
-
   if (!ready) {
     return (
       <section className="pm-results-empty">
@@ -1979,7 +1920,7 @@ export function ResultsWorkspace({
             </div></div>
             <div className="pm-results-plot-body"><div className="pm-results-plot-canvas">
               <SectionOutlineChart section={section} rebars={rebars} loadReference={previewReference} />
-            </div><p className="pm-preview-hint">Select or add a load combination to view its calculation results.</p></div>
+            </div><p className="pm-preview-hint">Select or add a load combination in Demand Check to view its calculation results.</p></div>
           </article>
         </div>
       </section>
@@ -1990,8 +1931,8 @@ export function ResultsWorkspace({
         <h2>Select a load combination</h2>
         <p>
           {loadcases.length === 0
-            ? 'Add a factored ULS combination in the sidebar to check it against the design surface.'
-            : 'Pick a combination from the list in the sidebar to solve and inspect its governing check.'}
+            ? 'Add a factored ULS combination in Demand Check to check it against the design surface.'
+            : 'Select a combination in Demand Check to inspect its governing check.'}
         </p>
       </section>
     )
@@ -2482,7 +2423,7 @@ export function ResultsWorkspace({
               </label>
             </>
           ),
-          children: <PlotlyChart data={surfaceData} layout={surfaceLayout} config={plotConfig} onClick={handle3dClick} />
+          children: <PlotlyChart data={surfaceData} layout={surfaceLayout} config={plotConfig} />
         })}
 
         {renderChartShell({

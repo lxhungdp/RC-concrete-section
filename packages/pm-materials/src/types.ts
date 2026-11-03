@@ -116,6 +116,14 @@ export type SteelStressStrainModel =
       hardeningRatio: number
     }
   | {
+      type: 'linear-hardening'
+      /** Peak/construction strength on the same input basis as fy. */
+      ultimateStrength: { type: 'ratio'; ratio: number } | { type: 'stress'; stress: number }
+      /** Strain at the construction point, independent of the design cutoff. */
+      epsUk: number
+      strainLimit: { type: 'factor' | 'absolute'; value: number }
+    }
+  | {
       type: 'user-curve'
       points: StressStrainPoint[]
       interpolation: 'linear'

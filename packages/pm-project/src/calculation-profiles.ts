@@ -383,6 +383,7 @@ export const CONCRETE_MODELS_FOR_MECHANICS: Record<
 
 export const CUSTOM_STEEL_MODELS: ReadonlyArray<SteelMaterial['stressStrain']['type']> = [
   'elastic-perfectly-plastic',
+  'linear-hardening',
   'bilinear',
   'user-curve'
 ]
@@ -494,7 +495,7 @@ export const applyCalculationProfileToMaterials = (
       store.steel = store.steel.map((steel) => applyEn1992SteelDerived({
         ...steel,
         standard: 'EC2',
-        stressStrain: { type: 'elastic-perfectly-plastic' },
+        stressStrain: steel.stressStrain.type === 'linear-hardening' ? steel.stressStrain : { type: 'elastic-perfectly-plastic' },
         factors: { ...steel.factors, gammaS: undefined, resistanceScale: undefined }
       }))
       return store
@@ -520,7 +521,7 @@ export const applyCalculationProfileToMaterials = (
       store.steel = store.steel.map((steel) => ({
         ...steel,
         standard: 'KDS',
-        stressStrain: { type: 'elastic-perfectly-plastic' },
+        stressStrain: steel.stressStrain.type === 'linear-hardening' ? steel.stressStrain : { type: 'elastic-perfectly-plastic' },
         limits: { ...steel.limits, epsY: steel.fy / steel.elasticModulus }
       }))
       return store

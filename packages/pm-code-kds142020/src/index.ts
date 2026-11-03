@@ -15,7 +15,8 @@ import {
   type EquivalentBlockLaw,
   type NominalBlockEvaluation,
   type PreparedEquivalentBlockSection,
-  type SteelLawRegistry
+  type SteelLawRegistry,
+  type SteelLaw
 } from '@pm/equivalent-block'
 
 export const KDS_142020_PROVENANCE = {
@@ -32,6 +33,8 @@ export type KdsSteelDefinition = {
   elasticModulus: number
   yieldStress: number
   ultimateStrain?: number
+  /** Explicit project material law, compiled for this resistance stage. */
+  compileLaw?: (strengthMultiplier: number) => SteelLaw
 }
 
 export type KdsBlockParameters = {
@@ -271,7 +274,7 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
   const parameters = resolveKds142020BlockParameters(input.concreteStrength, input.blockParameterOverride)
   const steelLaws: SteelLawRegistry = Object.fromEntries(Object.entries(input.steel).map(([id, definition]) => [
     id,
-    createElasticPerfectlyPlasticSteelLaw(
+    definition.compileLaw?.(materialStrengthMultipliers.reinforcement) ?? createElasticPerfectlyPlasticSteelLaw(
       definition.elasticModulus,
       definition.yieldStress * materialStrengthMultipliers.reinforcement,
       definition.ultimateStrain
@@ -342,6 +345,8 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
   }
   const bindDesignEvaluator = (section: PreparedEquivalentBlockSection) =>
     bindDesignEvaluatorFor(section, true)
+  const hasProjectSteel = (section: PreparedEquivalentBlockSection) =>
+    section.rebars.some((bar) => input.steel[bar.steelLawId]?.compileLaw !== undefined)
   const nominalEndpoints = (section: PreparedEquivalentBlockSection) => {
     const endpointStrain = uniformSteelEndpointStrain(section, steelLaws)
     const compressionStrain = input.compressionEndpoint === 'peak-stress-strain'
@@ -352,7 +357,13 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
       steelStrain: -endpointStrain,
       subtractDisplacedConcrete: false
     })
-    const compression = evaluateUniformSectionState(section, steelLaws, {
+    // Main-body P0 is defined with fy, independently of a project hardening law.
+    const poleLaws = input.compressionEndpoint === 'peak-stress-strain' ? steelLaws : Object.fromEntries(
+      Object.entries(input.steel).map(([id, steel]) => [id, createElasticPerfectlyPlasticSteelLaw(
+        steel.elasticModulus, steel.yieldStress * materialStrengthMultipliers.reinforcement
+      )])
+    )
+    const compression = evaluateUniformSectionState(section, poleLaws, {
       concreteStress: 0.85 * input.concreteStrength * materialStrengthMultipliers.concrete,
       steelStrain: compressionStrain,
       subtractDisplacedConcrete: true
@@ -363,10 +374,14 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
         resultants: compression.resultants,
         metadata: {
           state: input.compressionEndpoint === 'peak-stress-strain'
-            ? 'appendix-design-axial-strength-Pdo'
+            ? hasProjectSteel(section)
+              ? 'project-material-compression-reference'
+              : 'appendix-design-axial-strength-Pdo'
             : 'pure-compression-P0',
           standard: KDS_142020_PROVENANCE.methodId,
-          clauseRef: input.compressionEndpoint === 'peak-stress-strain'
+          clauseRef: input.compressionEndpoint === 'peak-stress-strain' && hasProjectSteel(section)
+            ? 'Project-modified steel response at the Appendix compression strain; not an unmodified Pdo formula.'
+            : input.compressionEndpoint === 'peak-stress-strain'
             ? 'KDS 14 20 20:2022 Appendix, 3.2(1), equations (3-2) and (3-3)'
             : 'KDS 14 20 20:2022, 4.1.2(7)'
         }
@@ -377,7 +392,9 @@ export const createKds142020Model = (input: CreateKds142020ModelInput) => {
     const endpointStrain = uniformSteelEndpointStrain(section, steelLaws)
     const compressionStrain = input.compressionEndpoint === 'peak-stress-strain'
       ? parameters.peakCompressionStrain
-      : endpointStrain
+      : hasProjectSteel(section)
+        ? parameters.extremeCompressionStrain
+        : endpointStrain
     const compression = evaluateUniformSectionState(section, steelLaws, {
       concreteStress: blockLaw.compressionStress,
       steelStrain: compressionStrain,

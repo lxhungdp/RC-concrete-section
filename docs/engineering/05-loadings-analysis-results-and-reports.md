@@ -86,9 +86,10 @@ Classification uses a numerical uncertainty interval and approved margin:
 
 The current `Capacity` workspace implements preview resistance plots and model-specific
 field views. The separate `Demand Check` workspace implements load-combination editing, governing
-checks, and check exports. Quick checks expose an uncertainty interval and three-state
-classification. Neither workspace yet satisfies the immutable accepted-result identity, result
-history, or release gates required by this section.
+checks, and single-combination calculation traces. The `Report` workspace exports the preview
+PDF and demand-check workbook. Quick checks expose an uncertainty interval and three-state
+classification. Immutable accepted-result identity, result history, and release gates remain
+requirements for accepted output.
 
 For stress-strain Fixed 27 x 36 mode, the interval uses a 2% regression screening margin derived
 from that mechanics' current dense-grid comparison matrix. It is not a formal error bound: any
@@ -113,9 +114,12 @@ capacity. It provides:
 - convergence/error evidence and resolution history;
 - diagnostics for invalid, cancelled, non-converged, or preview runs.
 
-The Capacity envelope table is also an on-screen audit entry point. Selecting a row opens a
-stage- and source-specific calculation inspector built from the same stored point/query evidence as
-that row. Compact selectors in the inspector header expose the same complete Vertical/Fixed-P,
+The Capacity envelope table is also an on-screen audit entry point. Its shared toolbar Detail action opens
+a complete stage- and source-specific calculation inspector built from the same stored point/query
+evidence as that row. Selecting an individual result value opens only the calculation chain for that
+component, with the same stored evidence, resistance stage and interpolation/cap qualification.
+The value trace has no selection controls; it is fixed to the clicked component and row.
+Row identification cells do not open either inspector. Compact selectors in the complete inspector header expose the same complete Vertical/Fixed-P,
 Design/Nominal, and criterion choices as the envelope table without requiring the inspector to be
 closed. Selection identity is the physical Vertical criterion or Fixed-P direction/branch, never
 the displayed row ordinal. If a criterion does not survive geometric clipping into the other
@@ -192,8 +196,8 @@ explicitly identified as geometric and audited through their retained pre-cap ph
 available, stored source crossing, and cap operation. The physical source state is evidence for the
 calculation before the cap; it is never assigned to the final face as a unique material state.
 
-The Demand Check load-combination table is a second on-screen audit entry point. A dedicated
-calculation-trace action in each row opens the concise trace for that stable loadcase ID and allows
+The Demand Check load-combination table is a second on-screen audit entry point. Selecting a row
+and pressing `Detail calculation` opens the concise trace for that stable loadcase ID and allows
 another loadcase to be selected without closing the dialog. Editable cells remain dedicated to
 spreadsheet-style input and never double as an implicit modal trigger. The trace first identifies
 the raw factored ULS demand and any
@@ -248,10 +252,10 @@ Diagnostic partial data is a separate preview type. It cannot satisfy this contr
 
 ## 6. Target report capability
 
-There is no current top-level Report menu. Each mechanics now has its own calculation-result
-workbook, the mesh audit exports remain the stress-strain Excel/DXF files under Options,
-and `Demand Check` exports a preview PDF design report and a demand-check calculation workbook. A
-**released** report — one generated from an accepted result — remains unimplemented.
+Each mechanics has its own calculation-result workbook. Options provides the stress-strain mesh
+Excel/DXF audit exports. `Report` exports a preview PDF design report and a demand-check
+calculation workbook. A **released** report — one generated from an accepted result — remains
+unimplemented.
 
 The implemented PDF follows the section order below: input (section drawing beside the section,
 material and resistance data), section capacity (Nominal and Design interaction diagrams per

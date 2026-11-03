@@ -113,6 +113,9 @@ const defaultResistanceFactors: As3600ResistanceFactors = {
   phiTension: 0.85
 }
 
+/** Table 2.2.2 expression operands shared with the lazy factor explanation. */
+export const AS3600_BENDING_FACTOR_EXPRESSION = Object.freeze({ intercept: 1.24, numerator: 13, denominator: 12 })
+
 export const as3600BendingPhi = (
   neutralAxisRatio: number,
   factors: Pick<As3600ResistanceFactors, 'phiBendingMinimum' | 'phiBendingMaximum'> = defaultResistanceFactors
@@ -121,7 +124,7 @@ export const as3600BendingPhi = (
     throw new EquivalentBlockInputError('INVALID_STATE', 'AS 3600 k_uo must be finite and nonnegative.')
   }
   return clamp(
-    1.24 - 13 * neutralAxisRatio / 12,
+    AS3600_BENDING_FACTOR_EXPRESSION.intercept - AS3600_BENDING_FACTOR_EXPRESSION.numerator * neutralAxisRatio / AS3600_BENDING_FACTOR_EXPRESSION.denominator,
     factors.phiBendingMinimum,
     factors.phiBendingMaximum
   )

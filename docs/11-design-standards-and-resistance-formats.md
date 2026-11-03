@@ -225,6 +225,13 @@ band between them.
 This method follows the literal nominal-then-global-factor pipeline. It does **not** apply `0.90`
 to reinforcement and `0.65` to concrete.
 
+The KDS material editor also permits an immediate inclined post-yield steel branch as an explicit
+project material modification. This does not adopt a KDS bridge resistance profile. The single KDS
+Code and its selected resistance method remain active. `steelModelModified` records the departure
+separately from a concrete change, and all such calculations remain `draft`. Reference and Design
+use the same declared construction/cutoff data with their own resolved strength ordinates. A
+hardening branch does not replace `fy` by `fu` in the separate Main-body `P0`/axial-cap formula.
+
 ### 6.2 KDS 14 20 20:2022 Appendix material-factor method
 
 Profile key:
@@ -445,9 +452,13 @@ The repository implements two independent mechanics and the common resistance fo
   mechanics. It solves characteristic and reduced-material surfaces independently, uses
   `0.65fck`, `0.90fyk`, the Appendix 3.1 compression-domain limits, and the minimum-
   eccentricity demand rule without an additional global `phi` or axial cap;
-- a selectable `designMaterialReevaluation` preview profile exists for EN 1992-1-1:2004; it has no
-  National Annex and retains an explicit warning that the tension-controlled boundary still uses
-  the concrete-pivot domain rather than a complete EC2 strain domain;
+- a selectable `designMaterialReevaluation` preview profile exists for EN 1992-1-1:2004 without a
+  National Annex. The endpoint-hardening definition supplies the finite tensile limit for the
+  compatible steel-controlled boundary, including uniform tension and a change of governing grade.
+  The legacy steel definitions retain the warning about their incomplete tension-controlled domain.
+  The recommended `epsUd = 0.9 epsUk` is a named no-National-Annex preview parameter, not a universal
+  national choice. Fixed sampling of the new finite-steel domain has no qualified uncertainty bound;
+  it yields an indeterminate adequacy classification. Adaptive uses its measured convergence estimate;
 - AS 3600:2018 Amendments 1 and 2 has an executable equivalent-block preview using `alpha2`, `gamma`,
   `epsCu = 0.003` and action/state-dependent capacity factors. It is not verified or releasable; the
   general-prismatic shape assumption and omitted member-level checks are disclosed in UI/reports/docs.

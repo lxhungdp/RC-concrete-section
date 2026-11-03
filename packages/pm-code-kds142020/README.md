@@ -17,3 +17,12 @@ For `fck <= 40 MPa`, the first Table 4.1-2 row is used. Between tabulated streng
 The adapter remains independent of the fiber solver. Project schema v1 selects it through
 `kds-142020-equivalent-block`; `@pm/analysis-equivalent-block` maps the profile-owned materials and
 DesignBasis into this adapter and normalizes its output to the common result DTO.
+
+The bridge can also supply an explicit project steel-law compiler for immediate hardening. The
+compiler receives the selected stage's reinforcement strength multiplier once, with `Es` unchanged.
+The project retains KDS identity but is marked as a steel-model modification and `draft`. This
+does not qualify a KDS bridge design method. The Main-body `P0` and its axial cap still use `fy`;
+the physical compression endpoint and every bar ledger use the actual project law. Finite tensile
+bounds clamp sampled neutral-axis depths and are checked separately from physical compression
+bounds. Sampling non-convergence remains fail-closed, including a tension-pole interval that the
+block's fixed extreme-compression-strain mechanics cannot resolve within its resource limit.

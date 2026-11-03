@@ -7,6 +7,7 @@ import type {
 } from './types'
 import { EquivalentBlockInputError } from './types'
 import { projectedOuterExtents } from './geometry'
+import { prepareSteelDepthSupports } from './steel-support'
 import { UNIFIED_DEPTH_RATIOS, UNIFIED_STEEL_STRAIN_YIELD_RATIOS } from '@pm/stations'
 
 export type CapacityEvaluation<TSource = unknown> = {
@@ -157,11 +158,13 @@ export const capacityStationDepth = (
   station: CapacityStation,
   projectedDepth: number,
   extremeCompressionStrain: number,
-  barDepths?: Array<{ depth: number; yieldStrain?: number; ultimateStrain?: number }>
+  barDepths?: Array<{ depth: number; order?: number; yieldStrain?: number; ultimateStrain?: number }>
 ): number => {
-  if (station.type === 'depth-ratio') return projectedDepth * station.ratio
+  const ruptureDepth = (barDepths ?? []).reduce((minimum, bar) => bar.ultimateStrain === undefined
+    ? minimum : Math.max(minimum, bar.depth / (1 + bar.ultimateStrain / extremeCompressionStrain)), 0)
+  if (station.type === 'depth-ratio') return Math.max(ruptureDepth, projectedDepth * station.ratio)
   const controllingBar = barDepths?.reduce<(typeof barDepths)[number] | undefined>(
-    (current, bar) => !current || bar.depth > current.depth ? bar : current,
+    (current, bar) => !current || bar.depth > current.depth || (bar.depth === current.depth && (bar.order ?? 0) < (current.order ?? 0)) ? bar : current,
     undefined
   )
   if (station.type === 'cover-gap-ratio') {
@@ -169,12 +172,12 @@ export const capacityStationDepth = (
     return projectedDepth + station.ratio * (barDepth - projectedDepth)
   }
   if (station.type === 'tension-depth-ratio') {
-    return capacityStationDepth(
+    return Math.max(ruptureDepth, capacityStationDepth(
       station.from,
       projectedDepth,
       extremeCompressionStrain,
       barDepths
-    ) * station.ratio
+    ) * station.ratio)
   }
   if (station.type === 'adaptive-depth-interpolation') {
     const left = capacityStationDepth(station.left, projectedDepth, extremeCompressionStrain, barDepths)
@@ -190,9 +193,6 @@ export const capacityStationDepth = (
         ? station.ratio * (controllingBar?.yieldStrain ?? 0.002)
         : station.strain
       const requestedDepth = controllingBarDepth / (1 + strain / extremeCompressionStrain)
-      const ruptureDepth = (barDepths ?? []).reduce((minimum, bar) => bar.ultimateStrain === undefined
-        ? minimum
-        : Math.max(minimum, bar.depth / (1 + bar.ultimateStrain / extremeCompressionStrain)), 0)
       return Math.max(requestedDepth, ruptureDepth)
     })()
 }
@@ -424,6 +424,7 @@ const buildCapacitySurfaceLegacy = <TSource>(
   const cache = new Map<string, CapacityEvaluation<TSource>[]>()
   const eventCache = new Map<string, CapacityEvaluation<TSource>[]>()
   const useBarBasedStrainStations = options.steelLaws !== undefined
+  const steelDepths = prepareSteelDepthSupports(section, options.steelLaws)
   const directionGeometryCache = new Map<string, {
     projectedDepth: number
     barDepths?: Array<{ depth: number; yieldStrain?: number; ultimateStrain?: number }>
@@ -438,17 +439,7 @@ const buildCapacitySurfaceLegacy = <TSource>(
     const edge = extents.maximum
     const geometry = {
       projectedDepth: extents.depth,
-      barDepths: useBarBasedStrainStations ? section.rebars.map((bar) => {
-        const steelLaw = options.steelLaws![bar.steelLawId]
-        if (!steelLaw) {
-          throw new EquivalentBlockInputError('MISSING_STEEL_LAW', `Steel law ${bar.steelLawId} is not registered.`)
-        }
-        return {
-          depth: edge - (normalX * bar.x + normalY * bar.y),
-          yieldStrain: steelLaw.yieldStrain,
-          ultimateStrain: steelLaw.ultimateStrain
-        }
-      }) : undefined
+      barDepths: useBarBasedStrainStations ? steelDepths(normalX, normalY, edge) : undefined
     }
     directionGeometryCache.set(key, geometry)
     return geometry
@@ -917,6 +908,7 @@ const buildIndependentCapacitySurface = <TSource>(
     projectedDepth: number
     barDepths?: Array<{ depth: number; yieldStrain?: number; ultimateStrain?: number }>
   }>()
+  const steelDepths = prepareSteelDepthSupports(section, options.steelLaws)
   const directionGeometry = (angleInput: number) => {
     const angle = wrapAngle(angleInput)
     const key = angle.toPrecision(15)
@@ -928,15 +920,7 @@ const buildIndependentCapacitySurface = <TSource>(
     const edge = extents.maximum
     const geometry = {
       projectedDepth: extents.depth,
-      barDepths: options.steelLaws ? section.rebars.map((bar) => {
-        const law = options.steelLaws![bar.steelLawId]
-        if (!law) throw new EquivalentBlockInputError('MISSING_STEEL_LAW', `Steel law ${bar.steelLawId} is not registered.`)
-        return {
-          depth: edge - (normalX * bar.x + normalY * bar.y),
-          yieldStrain: law.yieldStrain,
-          ultimateStrain: law.ultimateStrain
-        }
-      }) : undefined
+      barDepths: steelDepths(normalX, normalY, edge)
     }
     geometryCache.set(key, geometry)
     return geometry

@@ -235,7 +235,11 @@ export function LoadcaseCalculationDialog({
             <Fact label="Iterations">{fmt(inverseResult.iterations, 0)}</Fact>
             <Fact label="Scaled residual norm">{inverseResult.residualNorm.toExponential(3)}</Fact>
             <Fact label="Concrete compression">{inverseResult.admissibility.evaluated ? `${strain(inverseResult.admissibility.maxConcreteCompression)} / ${strain(inverseResult.admissibility.concreteLimit)}` : 'Not evaluated on geometric cap face'}</Fact>
-            <Fact label="Steel tension">{inverseResult.admissibility.evaluated ? `${strain(inverseResult.admissibility.maxSteelTension)} / ${inverseResult.admissibility.steelTensionLimit === null ? 'undeclared limit' : strain(inverseResult.admissibility.steelTensionLimit)}` : 'Not evaluated on geometric cap face'}</Fact>
+            <Fact label="Max steel tension">{inverseResult.admissibility.evaluated ? strain(inverseResult.admissibility.maxSteelTension) : 'Not evaluated on geometric cap face'}</Fact>
+            {inverseResult.admissibility.governingSteelLimit && <>
+              <Fact label="Governing steel limit">{strain(Math.abs(inverseResult.admissibility.governingSteelLimit.strain))} / {strain(inverseResult.admissibility.governingSteelLimit.limit)} ({inverseResult.admissibility.governingSteelLimit.side})</Fact>
+              <Fact label="Governing bar / steel">{inverseResult.admissibility.governingSteelLimit.rebarId} / {inverseResult.admissibility.governingSteelLimit.steelMaterialId}</Fact>
+            </>}
           </div>
           {inverseResult.equivalentBlock ? <div className="pm-calc-facts">
             <Fact label="Neutral-axis depth c">{qfmt('length', inverseResult.equivalentBlock.neutralAxisDepth, 2)} {unit('length')}</Fact>

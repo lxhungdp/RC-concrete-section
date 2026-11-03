@@ -14,6 +14,7 @@ import {
   type SurfaceRayIntersection
 } from './surface'
 import { projectedOuterExtents } from './geometry'
+import { prepareSteelDepthSupports } from './steel-support'
 
 const TAU = Math.PI * 2
 
@@ -165,6 +166,7 @@ export const solveFixedAxialCapacity = (
   }
   const axialScale = Math.max(1, Math.abs(targetAxial), Math.abs(options.axialCap ?? 0))
   let totalInnerIterations = 0
+  const steelDepths = prepareSteelDepthSupports(section, options.steelLaws)
 
   const rootsAt = (sourceAngle: number): AxialRoot[] => {
     const angle = wrapAngle(sourceAngle)
@@ -173,17 +175,7 @@ export const solveFixedAxialCapacity = (
     const extents = projectedOuterExtents(section, normalX, normalY)
     const depth = extents.depth
     const ratios = logSpace(minDepthRatio, maxDepthRatio, depthSamples)
-    const barDepths = options.steelLaws ? section.rebars.map((bar) => {
-      const steelLaw = options.steelLaws![bar.steelLawId]
-      if (!steelLaw) {
-        throw new EquivalentBlockInputError('MISSING_STEEL_LAW', `Steel law ${bar.steelLawId} is not registered.`)
-      }
-      return {
-        depth: extents.maximum - (normalX * bar.x + normalY * bar.y),
-        yieldStrain: steelLaw.yieldStrain,
-        ultimateStrain: steelLaw.ultimateStrain
-      }
-    }) : []
+    const barDepths = steelDepths(normalX, normalY, extents.maximum) ?? []
     const eventDepths = (options.eventStations ?? []).map((station) =>
       capacityStationDepth(station, depth, extremeCompressionStrain, barDepths)
     )

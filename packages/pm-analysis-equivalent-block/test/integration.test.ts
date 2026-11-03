@@ -810,6 +810,7 @@ test('KDS Appendix block route reevaluates materials, uses eps_c0, omits phi/cap
   assert.equal(materialFactorAudit.kind, 'equivalent-block')
   if (materialFactorAudit.kind === 'equivalent-block') {
     assert.equal(materialFactorAudit.nominalReferenceReconciliation.ok, true)
+    assert.equal(materialFactorAudit.resistanceFactorCalculation, null)
     assert.notEqual(materialFactorAudit.nominalReferenceLedger.total.P, materialFactorAudit.mechanicalLedger.total.P)
   }
 
@@ -964,4 +965,67 @@ test('canonical My migration preserves the physical ray load factor and utilizat
     legacy.capacity,
     'only the coordinate representation of My may change'
   )
+})
+
+
+test('block factor audits explain the active KDS/ACI/custom branches and preserve stored results', () => {
+  for (const profile of ['kds-142020-equivalent-block', 'aci-318-19-22-equivalent-block', 'custom-equivalent-block'] as const) {
+    const { prepared, options } = build(profile)
+    const basis = prepared.designBasis
+    assert.equal(basis.format, 'globalResultantFactor')
+    if (basis.format !== 'globalResultantFactor') continue
+    const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+    const original = JSON.stringify(surface)
+    for (const branch of ['compression-controlled', 'transition', 'tension-controlled'] as const) {
+      const point = surface.points.find(point => point.surfaceRole === 'physical-state' && point.equivalentBlock && String(point.resistance?.classification) === branch)
+      assert.ok(point, `${profile}: ${branch}`)
+      const audit = buildEquivalentBlockPointCalculationAudit(prepared, 'design', point)
+      assert.ok(audit.kind === 'equivalent-block')
+      if (audit.kind !== 'equivalent-block') continue
+      const factor = audit.resistanceFactorCalculation
+      assert.ok(factor && factor.kind === 'strain-controlled')
+      if (factor.kind !== 'strain-controlled') continue
+      assert.equal(factor.factor, audit.resistanceFactor)
+      assert.equal(factor.classification, branch)
+      assert.ok(audit.rebars.some(bar => bar.id === factor.controllingRebarId && bar.steelMaterialId === factor.steelMaterialId))
+      const limit: number = basis.transition.type === 'yield-plus-strain' ? factor.yieldStrain + basis.transition.extraStrain
+        : factor.yieldStress <= basis.transition.yieldStressThreshold ? basis.transition.fixedStrainLimit
+          : basis.transition.highStrengthYieldMultiple * factor.yieldStrain
+      assert.equal(factor.tensionLimit, limit)
+      if (factor.interpolation) {
+        const hand = factor.compressionFactor + (factor.tensionFactor - factor.compressionFactor)
+          * (factor.tensileStrain - factor.yieldStrain) / (limit - factor.yieldStrain)
+        assert.ok(Math.abs(factor.factor - hand) < 1e-14)
+      }
+      const nominal = surface.nominalPoints.find(item => item.id === point.id)
+      assert.ok(nominal)
+      const nominalAudit = buildEquivalentBlockPointCalculationAudit(prepared, 'nominal', nominal)
+      assert.ok(nominalAudit.kind === 'equivalent-block' && nominalAudit.resistanceFactorCalculation === null)
+    }
+    assert.equal(JSON.stringify(surface), original)
+  }
+})
+
+test('AS block factor audit retains its own bending bounds and axial interaction operands', () => {
+  const { prepared, options } = build('as-3600-2018-amd2-equivalent-block')
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+  const original = JSON.stringify(surface)
+  for (const branch of ['axial-compression-controlled', 'combined-compression', 'combined-tension'] as const) {
+    const point = surface.points.find(point => point.surfaceRole === 'physical-state' && point.equivalentBlock && String(point.resistance?.classification) === branch)
+    assert.ok(point, branch)
+    const audit = buildEquivalentBlockPointCalculationAudit(prepared, 'design', point)
+    assert.ok(audit.kind === 'equivalent-block')
+    if (audit.kind !== 'equivalent-block') continue
+    const factor = audit.resistanceFactorCalculation
+    assert.ok(factor && factor.kind === 'axial-bending')
+    if (factor.kind !== 'axial-bending') continue
+    const bending = Math.min(0.85, Math.max(0.65, 1.24 - 13 * factor.neutralAxisRatio / 12))
+    assert.equal(factor.bending.factor, bending)
+    const hand = branch === 'axial-compression-controlled' ? 0.6
+      : branch === 'combined-compression' ? 0.6 + (bending - 0.6) * (1 - factor.nominalAxial / factor.balancedAxial)
+        : bending + (0.85 - bending) * Math.max(0, Math.min(1, factor.nominalAxial / factor.pureTensionAxial))
+    assert.ok(Math.abs(factor.factor - hand) < 1e-14)
+    assert.equal(factor.factor, audit.resistanceFactor)
+  }
+  assert.equal(JSON.stringify(surface), original)
 })

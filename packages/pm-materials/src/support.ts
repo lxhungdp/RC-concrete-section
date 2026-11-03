@@ -54,18 +54,19 @@ export const concreteModelSupportIssue = (material: ConcreteMaterial): ModelSupp
 /**
  * Which ultimate strain domain the engine builds its capacity states on.
  *
- * Only one is implemented. Naming it matters because the material law and the strain domain are
+ * Naming matters because the material law and the strain domain are
  * separate choices that a user cannot see: selecting an EC2 stress-strain relation does not select
  * an EC2 strain domain, and silently pairing the two is how a result ends up looking like a code
  * check that it is not.
  */
-export type StrainDomainId = 'concrete-pivot-ultimate'
+export type StrainDomainId = 'concrete-pivot-ultimate' | 'steel-limited-ultimate'
 
 export const IMPLEMENTED_STRAIN_DOMAIN: StrainDomainId = 'concrete-pivot-ultimate'
 
 export const STRAIN_DOMAIN_DESCRIPTION: Record<StrainDomainId, string> = {
   'concrete-pivot-ultimate':
-    'Every capacity state pins the extreme compression fibre at εcu and rotates the plane about it (the ACI/KDS convention).'
+    'Every capacity state pins the extreme compression fibre at εcu and rotates the plane about it (the ACI/KDS convention).',
+  'steel-limited-ultimate': 'Compatible concrete and per-material steel strain bounds, including the steel-controlled boundary to uniform tension.'
 }
 
 export type StrainDomainMismatch = {
@@ -79,14 +80,17 @@ export type StrainDomainMismatch = {
  * EN 1992-1-1 builds its ULS states from several pivots. Domains 3 and 4 reach `εcu2` at the
  * extreme compression fibre, and domain 5 rotates about the concrete point-C pivot at `εc2`;
  * both compression regions are implemented by the design basis. Domains 1 and 2 — low axial load
- * and high tension — instead pivot on the reinforcement strain limit `εud`, which is not yet a
- * complete input to this preview surface.
+ * and high tension — pivot on the reinforcement strain limit `εud`. The endpoint-hardening
+ * definition supplies that limit to the compatible steel boundary. Legacy definitions retain
+ * the explicit incomplete-domain warning below.
  *
  * That is a warning, not a block — unlike the Whitney block, nothing here is evaluated with a law it
  * was not written for.
  */
-export const strainDomainMismatch = (material: ConcreteMaterial): StrainDomainMismatch | null => {
+export const strainDomainMismatch = (material: ConcreteMaterial, steel?: readonly import('./types').SteelMaterial[]): StrainDomainMismatch | null => {
   if (material.standard !== 'EC2') return null
+  if (steel?.some((item) => item.stressStrain.type === 'linear-hardening') &&
+    steel.every((item) => item.stressStrain.type === 'linear-hardening' || item.stressStrain.type === 'elastic-perfectly-plastic')) return null
   return {
     domain: IMPLEMENTED_STRAIN_DOMAIN,
     standard: 'EC2',

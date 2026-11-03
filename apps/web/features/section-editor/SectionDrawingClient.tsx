@@ -55,6 +55,7 @@ import {
 import { createDefaultMaterialStore, type MaterialStore } from '@pm/materials'
 import {
   createDefaultDesignBasis,
+  withSteelModelModification,
   type DesignBasis
 } from '@pm/design'
 import {
@@ -175,6 +176,7 @@ const RebarPanel = dynamic(() => import('./geometry/RebarPanel').then(module => 
 import { boundarySelectionStatus, shouldHandleBoundaryDelete } from './geometry/boundary-selection'
 import { prepareBoundaryDraftForApply } from './geometry/boundary-draft'
 import { DemandCheckPanel } from './results/DemandCheckPanel'
+import { ReportPanel } from './results/ReportPanel'
 import { preloadPlotly } from './results/PlotlyChart'
 import { WorkspaceLoading } from './shared/WorkspaceLoading'
 import { ProjectInformationDialog } from './project/ProjectInformationDialog'
@@ -262,10 +264,11 @@ const THEME_STORAGE_KEY = 'pm-column-designer:theme:v1'
  * need different sidebars: one owns the capacity surface and its presentation, the other owns the
  * load combinations checked against it.
  */
-type WorkspaceModule = 'geometry' | 'materials' | 'analysis' | 'section' | 'demand'
+type WorkspaceModule = 'geometry' | 'materials' | 'analysis' | 'section' | 'demand' | 'report'
 
-/** Both result menus render the same stage component in different modes. */
-const isResultsModule = (module: WorkspaceModule) => module === 'section' || module === 'demand'
+/** The Report sidebar keeps the current demand charts in view while selecting export details. */
+const showsDemandCharts = (module: WorkspaceModule) => module === 'demand' || module === 'report'
+const isResultsModule = (module: WorkspaceModule) => module === 'section' || showsDemandCharts(module)
 const APP_VERSION = webPackage.version
 type GeometrySubTab = 'concrete' | 'rebar'
 type AnalysisSubTab = 'points' | 'mesh' | 'resistance' | 'units'
@@ -629,6 +632,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
   const [recentStorageReady, setRecentStorageReady] = useState(false)
   const [tool, setTool] = useState<Tool>('select')
   const [activeModule, setActiveModule] = useState<WorkspaceModule>('geometry')
+  const demandChartsVisible = showsDemandCharts(activeModule)
   const [moduleSwitching, startModuleTransition] = useTransition()
   const [geometrySubTab, setGeometrySubTab] = useState<GeometrySubTab>('concrete')
   const [selectedRebarId, setSelectedRebarId] = useState<number | null>(null)
@@ -850,11 +854,12 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
     setCalculationProfileId(profileId)
     setMaterialStore((current) => applyCalculationProfileToMaterials(current, profileId))
     setAnalysisOptions(createAnalysisOptionsForProfile(profileId))
-    setDesignBasis((current) =>
+    setDesignBasis((current) => withSteelModelModification(
       calculationProfileAcceptsDesignBasis(profileId, current)
         ? current
-        : createDesignBasisForCalculationProfile(profileId)
-    )
+        : createDesignBasisForCalculationProfile(profileId),
+      applyCalculationProfileToMaterials(materialStore, profileId)
+    ))
     setAnalysisSubTab('points')
   }
 
@@ -1378,10 +1383,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
     }
   }
 
-  /**
-   * Selecting a combination is a demand-check action wherever it comes from — including a click on
-   * a demand marker in the Capacity 3D plot — so it also moves the user to that menu.
-   */
+  /** Selecting a combination opens its detail in the Demand Check workspace. */
   const runInverseForLoadcase = (id: number) => {
     setActiveModule('demand')
     const loadcase = loadingsInput.combinations.find((item) => item.id === id)
@@ -1396,10 +1398,10 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
   // The latter matters when a new row is created: selection can be emitted before React has committed
   // the new loadcase to parent state, so the first direct lookup legitimately finds no row yet.
   useEffect(() => {
-    if (!resultSurface || activeModule !== 'demand' || selectedLoadcaseId == null) return
+    if (!resultSurface || !demandChartsVisible || selectedLoadcaseId == null) return
     const loadcase = loadingsInput.combinations.find((item) => item.id === selectedLoadcaseId)
     if (loadcase) calculateInverseForLoadcase(loadcase, true)
-  }, [activeModule, loadcaseDemandRevision, resultSurface, selectedLoadcaseId])
+  }, [demandChartsVisible, loadcaseDemandRevision, resultSurface, selectedLoadcaseId])
 
   const draftRing = useMemo(() => {
     if (!drawingDraft) return []
@@ -2533,6 +2535,17 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
             <span>Demand Check</span>
           </button>
           <button
+            className={activeModule === 'report' ? 'is-active' : ''}
+            aria-label="Report"
+            aria-pressed={activeModule === 'report'}
+            onMouseEnter={() => preloadModule('report')}
+            onFocus={() => preloadModule('report')}
+            onClick={() => switchModule('report')}
+          >
+            <File size={16} />
+            <span>Report</span>
+          </button>
+          <button
             className={activeModule === 'analysis' ? 'is-active' : ''}
             aria-label="Options"
             aria-pressed={activeModule === 'analysis'}
@@ -2712,7 +2725,8 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
       <WorkspaceComboboxes />
       <WorkspaceFrame>
       <aside className="pm-side-panel" id="pm-workspace-sidebar" aria-label={`${activeModule === 'geometry' ? 'Section' : activeModule === 'materials' ? 'Materials'
-        : activeModule === 'section' ? 'Capacity' : activeModule === 'demand' ? 'Demand Check' : 'Options'} workspace editor`}>
+        : activeModule === 'section' ? 'Capacity' : activeModule === 'demand' ? 'Demand Check'
+        : activeModule === 'report' ? 'Report' : 'Options'} workspace editor`}>
         <div className="pm-side-panel-body">
         {activeModule === 'geometry' && (
           <>
@@ -3396,17 +3410,6 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
               onReferencePreviewChange={setLoadReferencePreview}
               view={demandCheckView}
               onViewChange={updateDemandCheckView}
-              surfaceReady={Boolean(resultSurface)}
-              loadcases={loadingsInput.combinations}
-              reportDetailIds={reportDetailIds}
-              onReportDetailIdsChange={setReportDetailIds}
-              onExportReport={exportPdfReport}
-              reportState={reportState}
-              reportMessage={reportMessage}
-              onExportExcel={() => void exportExcelReport()}
-              excelReady={Boolean(resultSurface)}
-              excelState={excelState}
-              excelMessage={excelMessage}
             />
             <LoadingsPanel
               input={loadingsInput}
@@ -3423,7 +3426,9 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
                 }
                 runInverseForLoadcase(id)
               }}
-              onActivateLoadcase={openLoadcaseCalculation}
+              onOpenDetail={selectedLoadcase && hasAppliedSection && resultSurface && surfaceStatus === 'idle'
+                ? () => openLoadcaseCalculation(selectedLoadcase)
+                : undefined}
               onDemandChanged={(loadcase) => {
                 setInverseResults((current) => {
                   if (!(loadcase.id in current)) return current
@@ -3436,6 +3441,20 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
             />
           </>
         )}
+        {activeModule === 'report' && (
+          <ReportPanel
+            surfaceReady={Boolean(resultSurface)}
+            loadcases={loadingsInput.combinations}
+            reportDetailIds={reportDetailIds}
+            onReportDetailIdsChange={setReportDetailIds}
+            onExportReport={exportPdfReport}
+            reportState={reportState}
+            reportMessage={reportMessage}
+            onExportExcel={exportExcelReport}
+            excelState={excelState}
+            excelMessage={excelMessage}
+          />
+        )}
         </div>
 
       </aside>
@@ -3445,7 +3464,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
         aria-label={
           activeModule === 'section'
             ? 'Section capacity results'
-            : activeModule === 'demand'
+            : demandChartsVisible
               ? 'Demand check results'
             : activeModule === 'analysis'
               ? analysisOptions.methodId === 'equivalent-block-surface-v1'
@@ -3466,19 +3485,18 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
             busy={surfaceStatus === 'working' || moduleSwitching}
             theme={theme}
             ready={hasAppliedSection}
-            viewMode={activeModule === 'demand' ? 'loadcase' : 'overview'}
-            surface={activeModule === 'demand' ? chartSnapshot?.surface ?? resultSurface : resultSurface}
+            viewMode={demandChartsVisible ? 'loadcase' : 'overview'}
+            surface={demandChartsVisible ? chartSnapshot?.surface ?? resultSurface : resultSurface}
             exactDirectionCurve={exactDirectionCurve}
             onExactDirectionCurveChange={setExactDirectionCurve}
-            section={activeModule === 'demand' ? chartSnapshot?.section ?? finalSection : finalSection}
-            rebars={activeModule === 'demand' ? chartSnapshot?.rebars ?? rebars : rebars}
-            materialStore={activeModule === 'demand' ? chartSnapshot?.materialStore ?? materialStore : materialStore}
-            designBasis={activeModule === 'demand' ? chartSnapshot?.designBasis ?? designBasis : designBasis}
+            section={demandChartsVisible ? chartSnapshot?.section ?? finalSection : finalSection}
+            rebars={demandChartsVisible ? chartSnapshot?.rebars ?? rebars : rebars}
+            materialStore={demandChartsVisible ? chartSnapshot?.materialStore ?? materialStore : materialStore}
+            designBasis={demandChartsVisible ? chartSnapshot?.designBasis ?? designBasis : designBasis}
             loadcases={loadingsInput.combinations}
             projectName={projectMeta.name || appliedGeometryInput.name || 'Column project'}
-            checksById={quickCheckSurfaceRef.current === resultSurface ? currentQuickChecksById : {}}
-            selectedLoadcaseId={activeModule === 'demand' ? chartLoadcaseId : selectedLoadcaseId}
-            inverseResult={activeModule === 'demand'
+            selectedLoadcaseId={demandChartsVisible ? chartLoadcaseId : selectedLoadcaseId}
+            inverseResult={demandChartsVisible
               ? chartSnapshot?.result ?? null
               : chartLoadcaseId == null ? null : inverseResults[chartLoadcaseId] ?? null}
             fixedP={fixedResultP}
@@ -3487,7 +3505,6 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
             demandView={demandCheckView}
             onViewChange={updateSectionResultsView}
             onDemandViewChange={updateDemandCheckView}
-            onSelectLoadcase={runInverseForLoadcase}
             onLoadcaseUpdatingChange={setLoadcaseUpdating}
           />
         ) : activeModule === 'analysis' ? (

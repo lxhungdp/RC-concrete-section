@@ -737,3 +737,80 @@ test('factored ULS utilization uses the 3D proportional demand ray', () => {
   assert.equal(zeroResult.fixedPDemandMoment, 0)
   assert.equal(zeroResult.fixedPCapacityMoment, null)
 })
+
+
+test('lazy KDS factor evidence retains every strain branch and leaves the surface and UR unchanged', () => {
+  for (const spiral of [false, true]) {
+    const basis = createKdsBasicDesignBasis()
+    basis.transverseReinforcement = spiral ? 'qualifying-spiral' : 'other'
+    const sets = buildResistanceMaterialSets(materials, basis)
+    const prepared = prepareAnalysis(section, rebars, sets.stateMaterials)
+    const surface = buildDesignPreviewSurfaceFromPrepared(prepared, materials, basis, compactOptions())
+    const original = JSON.stringify(surface)
+    const load = createLoadCombination({ id: 1, P: 2e6, Mx: 300e6, My: 150e6 })
+    const check = checkLoadcaseUtilizationFromSurface(surface, load)
+    for (const branch of ['compression-controlled', 'transition', 'tension-controlled'] as const) {
+      const point = surface.points.find(point => point.surfaceRole === 'physical-state' && point.resistance?.classification === branch)
+      assert.ok(point, branch)
+      const audit = buildStressStrainPointCalculationAudit(prepared, materials, basis, 'design', point)
+      assert.equal(audit.kind, 'stress-strain')
+      if (audit.kind !== 'stress-strain') continue
+      const factor = audit.resistanceFactorCalculation
+      assert.ok(factor && factor.kind === 'strain-controlled')
+      if (factor.kind !== 'strain-controlled') continue
+      assert.equal(factor.classification, branch)
+      assert.equal(factor.factor, point.resistance?.factor)
+      assert.equal(factor.compressionFactor, spiral ? 0.70 : 0.65)
+      assert.equal(factor.tensionFactor, 0.85)
+      const limit = factor.yieldStress <= 400 ? 0.005 : 2.5 * factor.yieldStrain
+      assert.equal(factor.tensionLimit, limit)
+      const hand = branch === 'compression-controlled' ? factor.compressionFactor
+        : branch === 'tension-controlled' ? 0.85
+          : factor.compressionFactor + (0.85 - factor.compressionFactor) * (factor.tensileStrain - factor.yieldStrain) / (limit - factor.yieldStrain)
+      assert.ok(Math.abs(factor.factor - hand) < 1e-14)
+      assert.equal(factor.interpolation !== null, branch === 'transition')
+    }
+    const nominal = surface.nominalPoints.find(point => point.surfaceRole === 'physical-state')
+    assert.ok(nominal)
+    const audit = buildStressStrainPointCalculationAudit(prepared, materials, basis, 'nominal', nominal)
+    assert.ok(audit.kind === 'stress-strain' && audit.resistanceFactorCalculation === null)
+    assert.equal(JSON.stringify(surface), original)
+    assert.deepEqual(checkLoadcaseUtilizationFromSurface(surface, load), check)
+  }
+})
+
+
+test('factor audit uses high-strength KDS limits and authored coefficient overrides', () => {
+  const highMaterials = structuredClone(materials)
+  for (const steel of highMaterials.steel) {
+    steel.fy = 600
+    steel.limits = { ...steel.limits, epsY: steel.fy / steel.elasticModulus }
+  }
+  const basis = createKdsBasicDesignBasis()
+  basis.factors.phiCompressionOther = 0.61
+  basis.factors.phiTension = 0.82
+  basis.modified = true
+  basis.overrideReason = 'Authored-factor audit fixture'
+  const sets = buildResistanceMaterialSets(highMaterials, basis)
+  const prepared = prepareAnalysis(section, rebars, sets.stateMaterials)
+  const surface = buildDesignPreviewSurfaceFromPrepared(prepared, highMaterials, basis, compactOptions())
+  const point = surface.points.find(point => point.surfaceRole === 'physical-state' && point.resistance?.classification === 'transition')
+  assert.ok(point)
+  const audit = buildStressStrainPointCalculationAudit(prepared, highMaterials, basis, 'design', point)
+  assert.ok(audit.kind === 'stress-strain')
+  if (audit.kind !== 'stress-strain') return
+  const factor = audit.resistanceFactorCalculation
+  assert.ok(factor && factor.kind === 'strain-controlled')
+  if (factor.kind !== 'strain-controlled') return
+  assert.equal(factor.yieldStress, 600)
+  assert.equal(factor.tensionLimit, 2.5 * factor.yieldStrain)
+  assert.equal(factor.compressionFactor, 0.61)
+  assert.equal(factor.tensionFactor, 0.82)
+  const hand = 0.61 + (0.82 - 0.61) * (factor.tensileStrain - factor.yieldStrain) / (2.5 * factor.yieldStrain - factor.yieldStrain)
+  assert.ok(Math.abs(factor.factor - hand) < 1e-14)
+  const storedResistance = point.resistance
+  assert.ok(storedResistance)
+  assert.throws(() => buildStressStrainPointCalculationAudit(prepared, highMaterials, basis, 'design', {
+    ...point, resistance: { ...storedResistance, factor: 0.5 }
+  }), error => error instanceof AnalysisInputError && error.code === 'AUDIT_RECONCILIATION_FAILED')
+})

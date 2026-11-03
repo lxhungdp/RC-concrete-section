@@ -170,8 +170,7 @@
 .pm-side-panel .pm-section-title--with-action,
 .pm-side-panel .pm-section-title:has(> button),
 .pm-side-panel .pm-section-title:has(> select),
-.pm-side-panel .pm-section-title:has(> .pm-boundary-list-actions),
-.pm-side-panel .pm-section-title:has(> .pm-loadcase-header-actions) {
+.pm-side-panel .pm-section-title:has(> .pm-boundary-list-actions) {
   justify-content: space-between;
 }
 
@@ -523,7 +522,6 @@
 
 .pm-side-panel .pm-inline-actions,
 .pm-side-panel .pm-boundary-list-actions,
-.pm-side-panel .pm-loadcase-header-actions,
 .pm-side-panel .pm-boundary-create-actions,
 .pm-side-panel .pm-panel-actions,
 .pm-side-panel .pm-chip-list {
@@ -825,6 +823,12 @@
 .pm-side-panel .pm-loadcase-table tr:last-child td,
 .pm-side-panel .pm-chart-data-table tr:last-child td {
   border-bottom: 0;
+}
+
+.pm-side-panel .pm-chart-data-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-shrink: 0;
 }
 
 .pm-side-panel .pm-point-table tbody tr:hover td,
@@ -1589,6 +1593,92 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   min-width: 0;
 }
 
+.pm-side-panel .pm-material-fields {
+  container-type: inline-size;
+  --pm-material-label-space: 24px;
+  --pm-material-value-width: calc((100cqi - var(--sp-3)) / 2 - var(--pm-material-label-space));
+}
+
+.pm-side-panel .pm-material-parameters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.pm-side-panel .pm-material-param {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--pm-material-value-width);
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin: 0;
+}
+
+.pm-side-panel .pm-material-parameters > .pm-material-param:only-child {
+  grid-column: 1 / -1;
+}
+
+.pm-side-panel .pm-material-param > span:first-child {
+  white-space: nowrap;
+}
+
+.pm-side-panel .pm-material-param > :is(input, .ws-field-group) {
+  width: 100%;
+  min-width: 0;
+}
+
+.pm-side-panel .pm-material-stress-head > .pm-material-param {
+  grid-template-columns: max-content var(--pm-material-value-width);
+  flex: 0 0 auto;
+}
+
+.pm-side-panel .pm-material-hardening-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: var(--sp-2);
+  white-space: nowrap;
+}
+
+.pm-side-panel .pm-material-hardening-header {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.pm-side-panel .pm-material-hardening-header > :is(.pm-material-hardening-toggle, .pm-hardening-strength-options) {
+  flex-wrap: nowrap;
+}
+
+.pm-side-panel .pm-material-hardening-header > .pm-hardening-strength-options {
+  grid-column: 2;
+  margin-inline-start: var(--pm-material-label-space);
+}
+
+.pm-side-panel .pm-material-name {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+}
+
+.pm-side-panel .pm-material-strength-input {
+  position: relative;
+  overflow: hidden;
+}
+
+.pm-side-panel .pm-material-strength-input::after {
+  content: '';
+  position: absolute;
+  inset-block: var(--sp-1);
+  inset-inline-start: 50%;
+  border-inline-start: 1px solid var(--group-separator);
+  pointer-events: none;
+}
+
 /* Quiet inline check on the Stress-Strain caption row — right-aligned. */
 .pm-side-panel .pm-material-stress-head .pm-material-toggle {
   display: inline-flex;
@@ -1765,6 +1855,21 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   border-radius: var(--sp-r-3);
   background: var(--sp-surface-sunken);
   color: var(--sp-text-2);
+}
+
+/* Layout only: native radio choices share the heading row above the peak-strength value. */
+.pm-hardening-strength-options,
+.pm-hardening-strength-options > label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.pm-hardening-strength-options { flex-wrap: wrap; }
+.pm-hardening-strength-options > label { white-space: nowrap; }
+.pm-hardening-strength-options > label + label {
+  border-inline-start: 1px solid var(--group-separator);
+  padding-inline-start: var(--sp-2);
 }
 
 .pm-side-panel .pm-material-curve svg text,
@@ -2230,13 +2335,13 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   width: 36px;
 }
 
-.pm-side-panel .pm-loadcase-table col.pm-col-detail,
 .pm-side-panel .pm-loadcase-table col.pm-col-action {
   width: 22px;
 }
 
 /* Keep the narrow Check panel useful: spend width on data, not nested cell gutters. */
-.pm-side-panel .pm-loadcase-heading {
+.pm-side-panel .pm-loadcase-heading,
+.pm-side-panel .pm-loadcase-footer {
   flex-wrap: wrap;
 }
 
@@ -2244,10 +2349,6 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   flex-direction: row;
   align-items: center;
   gap: var(--sp-2);
-}
-
-.pm-side-panel .pm-loadcase-header-actions {
-  flex-wrap: nowrap;
 }
 
 .pm-side-panel .pm-loadcase-units {
@@ -2283,8 +2384,6 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 
 .pm-side-panel .pm-loadcase-table th.pm-col-ur,
 .pm-side-panel .pm-loadcase-table td.pm-col-ur,
-.pm-side-panel .pm-loadcase-table th.pm-col-detail,
-.pm-side-panel .pm-loadcase-table td.pm-col-detail,
 .pm-side-panel .pm-loadcase-table th.pm-col-action,
 .pm-side-panel .pm-loadcase-table td.pm-col-action {
   text-align: center;

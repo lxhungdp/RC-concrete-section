@@ -74,6 +74,79 @@ material stress-strain curve or extended through the full neutral-axis depth `c`
 
 ## 5. Steel and transition rules
 
+### Immediate post-yield hardening
+
+The KDS and EN material editors offer a plateau or a straight inclined branch immediately after
+yield. The `linear-hardening` definition stores a characteristic/input peak-strength ratio or peak
+strength, the construction strain `epsUk`, and either an explicit strain cutoff or its fraction of
+`epsUk`. The endpoint strength has the same declared input basis as `fy`. EN uses the characteristic
+ratio `k = (ft/fy)k`; an entered peak strength must declare an equivalent project basis.
+
+The unified KDS/EN hardening editor uses a checkbox. Its first input row pairs construction strain
+`epsUk` with peak strength, selected by native k/fuk radio buttons above their shared value field.
+Its second row exposes linked `epsUd` and `alphaEpsilon = epsUd/epsUk` inputs without a mode menu.
+Changing either cutoff field selects its canonical basis and updates the companion; opening,
+focusing or leaving a numeric value unchanged does not change its basis or full precision. The
+strain coefficient is displayed as a percentage,
+with 90% stored as 0.9; it is never called k. The shared UI symbols `epsUk`, `fuk` and `epsUd`
+describe project curve inputs under KDS and do not establish a characteristic-grade qualification.
+Yield strain and the second-segment tangent are derived. There is no Advanced disclosure or new
+physical-bound input in this hardening form. Existing physical bounds remain active and visible,
+with an explicit clear action; removing controls never silently removes a stored constraint.
+Existing inputs are preserved on open and during strength-basis changes. The chart labels epsUd
+and epsUk on the strain axis, with dashed vertical projections from their curve points. A shared
+point gets one combined label/guide; nearby distinct labels are staggered without merging values.
+
+Only the selected strength/cutoff representation is stored. Changing representation converts the
+current value without resetting the curve or cutoff. In ratio mode, editing fy updates fuk;
+absolute fuk remains fixed in stress mode. In percentage mode, editing epsUk updates epsUd;
+absolute epsUd remains fixed in direct mode. Changing epsUd alone cuts the same inclined branch
+earlier or later and never reconstructs its tangent through the cutoff. Validate finite positive
+data, fuk > fy and epsYield,eff < epsUd <= epsUk in each applicable resistance stage.
+
+For a newly authored project-defined KDS/Custom inclined branch, the entered endpoint is the end
+of the declared curve: persist `strainLimit = { type: 'factor', value: 1 }`. This identity is a
+project endpoint declaration, not a KDS code coefficient or a bridge rule. EN keeps its named
+recommended-value preview cutoff of `0.9 epsUk`. Users can explicitly override either cutoff in
+the linked cutoff row. Both use the same compact form and initially select ratio strength
+entry. The 100% KDS/Custom setting is a project declaration, not a KDS strain rule. A ratio `fu/fy`
+alone cannot locate the endpoint strain or determine the inclined tangent.
+
+Turning hardening on initializes editable, finite endpoint values immediately. The starting
+curve uses the reference pair `fu/fy = 1.08`, `epsUk = 0.05`, documented in the JRC presentation of
+EN 1992-1-1:2004 Annex C, Class B (page 23). These are a curve template, not a declaration that
+the selected product/grade satisfies Class B, nor KDS hardening coefficients. KDS/Custom retain
+their explicit project-curve status and endpoint cutoff; EN retains its separate recommended
+preview cutoff. Existing definitions and independent physical bounds are never overwritten.
+
+The authoring helper derives fu from the current input fy. If an unusually large current yield
+strain reaches the reference cutoff, it extends the construction strain by the yield/cutoff-factor
+offset, retaining the reference post-yield strain span. This is an explicit starter construction,
+not a normative material law. It considers the current Reference/source/Design strength stages
+with unchanged Es and validates the resulting definition. Invalid existing material data remain
+errors. The chart frame and axes remain visible during an invalid edit; no invented/stale stress
+curve is shown in place of invalid current input.
+
+For each resistance stage, resolve `fy,eff` and `fu,eff` with the same strength multiplier, keep
+`Es` unchanged, and derive `epsY = fy,eff/Es`. The post-yield tangent is
+`(fu,eff - fy,eff)/(epsUk - epsY)`. Stress is continuous at yield and is evaluated symmetrically
+for ordinary tension/compression. `epsUd` limits tensile design evaluation. An independently
+declared physical `limits.epsU` can restrict tension and compression further. A construction point
+does not define physical rupture. Newton may evaluate a trial outside the domain, but a result is
+publishable only after the signed strain bounds pass.
+
+KDS hardening is a user-selected project material modification under the existing KDS identity.
+Both KDS mechanics consume its resolved law. Existing code strength factors and axial-cap formulas
+retain their stated meanings, including the use of `fy` in a code axial cap. No bridge factor or
+EN strain coefficient is inferred for KDS. EN's recommended `epsUd = 0.9 epsUk` is explicitly
+identified as the no-National-Annex preview choice from EN 1992-1-1:2004 §3.2.7(2).
+
+All bars contribute their own stress, area and lever arm. For admissibility and boundary generation,
+equal-material bars share their extreme tensile/compressive support points in each actual strain
+gradient direction. Each material's own signed bounds are compared. A tensile extreme from one
+material cannot stand in for another material's ductility. Pure axial strain is uniform per group.
+The exact concrete boundary remains the owner of concrete extreme strain.
+
 Steel behavior defines elastic response, yield/plateau or hardening, and ultimate strain when known.
 The DesignBasis separately owns the strain at which the tension-controlled resistance factor is
 reached:

@@ -222,7 +222,27 @@ At minimum:
 - default steel ID used by new bars.
 
 Concrete definitions support KDS parabolic, ACI Whitney block, EC2 parabolic-rectangular, and user
-curve discriminants. Steel supports elastic-perfectly-plastic, bilinear, and user curves.
+curve discriminants. Steel supports elastic-perfectly-plastic, endpoint-defined immediate linear
+hardening, legacy bilinear slope, and user curves. The new hardening law resolves its stage-specific
+yield, tangent and tensile cutoff in the material package. KDS and EN expose one hardening switch
+per grade. Both KDS mechanics consume that law. The project records steel modification independently
+of concrete customization.
+
+Ordinary hardening authoring uses a checkbox and two shared KDS/EN rows: epsUk beside radio-selected
+k/fuk, then linked direct epsUd and alphaEpsilon (%) fields. The last edited cutoff field selects
+its persisted basis without a mode selector. The project-owned `steel-hardening.ts` policy and conversion helpers own current
+value conversion, derived companions and the new-curve defaults. Ratio input follows fy; absolute
+stress does not. Factor input follows epsUk; absolute cutoff does not. Strength and cutoff modes
+remain persisted discriminants, with no duplicated companion inputs. An independent physical bound
+remains visible if already present and can be explicitly cleared; there is no Advanced disclosure
+or physical-bound creation field in this hardening form. Opening or editing an endpoint does not
+reset it. The UI derives yield
+and tangent through the existing compiler and displays the effective tensile bound when physical
+limits govern. Switching Off -> On prefills all parameters from the engineering/04 §5 template,
+checked against current material and resistance stages. The chart projects epsUd/epsUk onto its
+strain axis with dashed vertical guides, shared when coincident and label-staggered when close. It
+uses that stored definition immediately. Both On and Off retain the SVG chart; an incomplete edit
+keeps the axes and a diagnostic while suppressing the invalid curve.
 
 The Materials editor exposes hierarchical Code, calculation-method, and concrete-model selectors.
 They are not independent free-form selectors: every lower choice comes from the selected profile's

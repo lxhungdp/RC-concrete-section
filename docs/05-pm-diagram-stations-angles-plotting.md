@@ -14,7 +14,8 @@ A P-M-M surface is built from two independent coordinates:
 
 Both coordinates are persisted inputs. A calculation selects exactly one independent mode:
 
-- **Fixed** builds the editable 27-by-36 grid and performs no adaptive probes;
+- **Fixed** builds the editable base grid, with the declared finite-steel transition layers when
+  applicable, and performs no adaptive probes;
 - **Adaptive** starts from its declared fixed criteria/directions, refines each meridian's station
   schedule independently, and refines directions from the common angular seeds.
 
@@ -58,6 +59,28 @@ the selected code adapter's `a = beta1 c`, block stress, and compression-strain 
 numerically collapses onto a pole is retained in the public 27-station metadata but omitted from the
 triangulation to prevent degenerate triangles. No code transition, rupture-event, or adaptive
 station is inserted automatically.
+
+### 2.3 Finite endpoint-hardening boundary
+
+The base schedule remains `unified-27-v2`. When an active grade uses endpoint-defined immediate
+hardening, the fibre route supplements the selected schedule with seven explicit transition ratios
+`0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875` before uniform tension. The analysis owner resolves
+them from the compatible concrete and per-material steel inequalities. They are material-domain
+layers, not resistance-factor events or new ductility defaults. A default fixed hardening surface
+therefore reports 34 station descriptors. Unused grade definitions do not activate the extension.
+
+Each grade contributes its own tensile support and, when physically bounded, its compression
+support. The boundary reaches the joint concrete/steel limit, follows the active steel envelope,
+and may change controlling grade before uniform tension. Adaptive refines these physically defined
+transition intervals through the same boundary, including the final interval to the pole. The
+legacy unbounded pole edge retains its existing treatment. Point coordinates, traces and declared
+counts come from the resolved result, never a consumer's assumption of 27 rows.
+
+The block route retains its independent fixed-extreme-compression-strain mechanics, clamps depths
+to every active tensile bound, and checks signed material admissibility. A project physical steel
+compression limit below that block's extreme strain is a typed unsupported material combination;
+the fibre route can construct that compression boundary. Unresolved block tension-pole intervals
+cannot be labelled converged by increasing display density.
 
 ## 3. Direction semantics and defaults
 
@@ -105,12 +128,16 @@ strain, and adapter provenance.
 
 ## 5. Independent Fixed and Adaptive modes
 
+The finite endpoint-hardening domain has no qualified Fixed uncertainty bound. Its Fixed check
+reports the computed utilization with an indeterminate verdict. Adaptive must converge its
+direction and station estimates; those estimates are not a universal certified capacity error.
+
 Fixed mode does not evaluate hidden midpoint probes. It calculates only the 27 × 36 requested
 states, so changing to Capacity does not pay for a second error-measurement grid.
 These counts describe physical states before geometric clipping. Applying Pmax retains the
 original permitted points and introduces exact geometric edge intersections, so the clipped
 Design vertex count and per-meridian point count need not equal the physical station count.
-Fixed-mode stress-strain demand checks use that mechanics' 2% regression screening margin owned by
+Legacy fixed-mode stress-strain demand checks use that mechanics' 2% regression screening margin owned by
 `@pm/results`; cases whose resulting UR interval crosses 1.0 are visibly `indeterminate`, not
 silently passed or failed. Fixed equivalent-block checks currently have no validated screening
 bound and are therefore `indeterminate`. A consumer must not borrow the stress-strain margin or

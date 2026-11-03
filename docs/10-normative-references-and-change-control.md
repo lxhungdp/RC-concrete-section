@@ -50,6 +50,27 @@ different edition, so "latest" is never selected implicitly.
 An EN 1992 profile must lock the exact part/edition and National Annex. Partial material factors
 must not be replaced by KDS/ACI values or by a universal final resultant factor.
 
+Immediate post-yield steel review, accessed **2026-11-03**: EN 1992-1-1:2004 §3.2.7(2), Fig. 3.8
+distinguishes the horizontal option from an inclined branch with a design tensile strain limit.
+The JRC [material diagram, page 24](https://eurocodes.jrc.ec.europa.eu/sites/default/files/2022-06/EN1992_1_Walraven.pdf#page=24)
+and [bridge worked example, Fig. 5.7 and following interpolation](https://eurocodes.jrc.ec.europa.eu/sites/default/files/2022-06/Bridge_Design-Eurocodes-Worked_examples.pdf)
+support the documented preview construction through `(fyd/Es, fyd)` and `(epsUk, k fyd)`.
+`@pm/code-en1992` names the recommended `0.9` strain coefficient. No country or National Annex is
+selected by this preview. An alternative factor or explicit cutoff is project-modified evidence.
+The characteristic ratio and construction strain require project material evidence. The editable
+startup curve uses the Class B lower-bound reference pair from Annex C Table C.1, presented in the
+same JRC document on [page 23](https://eurocodes.jrc.ec.europa.eu/sites/default/files/2022-06/EN1992_1_Walraven.pdf#page=23):
+`k = 1.08`, `epsUk = 0.05`. This is a project authoring template, not certification of the selected
+grade or a KDS hardening coefficient. The project interpretation and unusual-yield construction are
+owned by [engineering/04 §5](engineering/04-materials-and-design-standards.md#5-steel-and-transition-rules).
+Stress and modulus are MPa; strain is dimensionless.
+
+The KDS 14 20 20:2022 main-text §4.1.1(4) plateau remains the KDS default. Selecting the same
+inclined curve family under KDS records a project steel modification, with an explicit project
+cutoff and no inferred bridge or EN coefficient. The [implementation packet](task-packets/2026-11-03-reinforcing-steel-post-yield-plan.md)
+records the official KDS bridge source as curve-family research only; it does not qualify a bridge
+resistance method. No restricted standard text is reproduced here.
+
 ### Australia
 
 - The NCC 2022 amendment register identifies AS 3600:2018 with Amendments 1 and 2 as the referenced

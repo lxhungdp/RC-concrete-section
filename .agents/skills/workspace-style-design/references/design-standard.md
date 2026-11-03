@@ -291,8 +291,8 @@ above. Feature CSS owns placement only.
 
 Table headings keep their unit note beside the title on the same row rather
 than spending a separate line on units. Keep that title/unit group together;
-file-action groups may wrap as a whole on narrow sidebars. Loadcase Import and
-Export use visible Excel labels and their existing accessible command names.
+file-action groups may wrap as a whole on narrow sidebars. The two Loadcase Excel actions use
+text-only `Import XLSX` and `Export XLSX` buttons so both the command and file format are visible.
 
 Exclusive choice switches use `ws-joined-buttons`: the same 26px height,
 13px/400 type, 10px horizontal padding and 6px icon gap as standard actions.
@@ -402,7 +402,7 @@ introduce a second scrollbar; short-screen reachability belongs to the sidebar.
 A sidebar option/selection list uses `ws-scroll-list` so its content cannot
 consume the whole sidebar ahead of a terminal table. It fits short lists and
 scrolls internally at `--ws-list-max-height` (148px), retaining the existing
-bounded-list scale. Demand Check's Report loadcase picker uses this role; its
+bounded-list scale. The Report loadcase picker uses this role; its
 checkboxes, All/None actions and selected state retain their existing semantics.
 Feature layout still owns wrapping and placement; list scrolling adds no
 control density, surface palette or selection behaviour.

@@ -4,6 +4,7 @@ import { compileEc2ParabolicRectangularConcrete } from './concrete/ec2-parabolic
 import { compileKdsParabolicConcrete } from './concrete/kds-parabolic'
 import { compileUserBlockConcrete } from './concrete/user-block'
 import { compileBilinearSteel } from './steel/bilinear'
+import { compileLinearHardeningSteel } from './steel/linear-hardening'
 import { compileElasticPerfectlyPlasticSteel } from './steel/elastic-perfectly-plastic'
 import { compileConcreteUserCurve, compileSteelUserCurve } from './user-curve'
 import type { CompiledMaterial, ConcreteMaterial, MaterialDefinition, MaterialStore, SteelMaterial } from './types'
@@ -35,6 +36,8 @@ export const compileConcreteMaterial = (material: ConcreteMaterial): CompiledMat
 
 export const compileSteelMaterial = (material: SteelMaterial): CompiledMaterial => {
   switch (material.stressStrain.type) {
+    case 'linear-hardening':
+      return compileLinearHardeningSteel(material)
     case 'bilinear':
       return compileBilinearSteel(material)
     case 'user-curve':

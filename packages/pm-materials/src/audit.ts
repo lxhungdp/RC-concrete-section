@@ -1,6 +1,7 @@
 import { resolveEc2ParabolicRectangularParams } from './concrete/ec2-parabolic-rectangular'
 import { resolveKdsParabolicParams } from './concrete/kds-parabolic'
 import type { ConcreteMaterial, MaterialStandard, SteelMaterial } from './types'
+import { resolveLinearHardeningSteel } from './steel/linear-hardening'
 
 export type MaterialLawAuditParameter = {
   symbol: string
@@ -153,6 +154,27 @@ export const effectiveSteelYieldStress = (material: SteelMaterial) =>
 export const describeSteelMaterialLaw = (material: SteelMaterial): MaterialLawAudit => {
   const fy = effectiveSteelYieldStress(material)
   const model = material.stressStrain
+  if (model.type === 'linear-hardening') {
+    const p = resolveLinearHardeningSteel(material)
+    return {
+      model: model.type,
+      equations: [
+        '|ε| ≤ εy: σs = Es·ε',
+        '|ε| > εy: σs = sign(ε)·[fy,eff + Eh·(|ε| − εy)]',
+        'Eh = (fu,eff − fy,eff)/(εuk − εy); tensile design strain ≤ εlimit'
+      ],
+      parameters: [
+        { symbol: 'Es', label: 'Steel elastic modulus', value: material.elasticModulus, unit: 'MPa' },
+        { symbol: 'fy,eff', label: 'Stage yield strength', value: p.yieldStress, unit: 'MPa' },
+        { symbol: 'fu,eff', label: 'Stage construction strength', value: p.ultimateStress, unit: 'MPa' },
+        { symbol: 'εy', label: 'Stage yield strain', value: p.epsYield, unit: '–', derivation: 'fy,eff/Es' },
+        { symbol: 'εuk', label: 'Construction strain', value: p.epsUk, unit: '–' },
+        { symbol: 'εlimit', label: 'Tensile design strain limit', value: p.epsUd, unit: '–', derivation: model.strainLimit.type === 'factor' ? `${model.strainLimit.value}·εuk` : 'Project-declared strain' },
+        { symbol: 'Eh', label: 'Stage post-yield tangent', value: p.hardeningModulus, unit: 'MPa' }
+      ],
+      provenance: materialProvenance(material.standard, 'steel', material.standard !== 'EC2')
+    }
+  }
   const stressFactors: MaterialLawAuditParameter[] = [
     { symbol: 'Es', label: 'Steel elastic modulus', value: material.elasticModulus, unit: 'MPa' },
     { symbol: 'fy', label: 'Input yield strength', value: material.fy, unit: 'MPa' },

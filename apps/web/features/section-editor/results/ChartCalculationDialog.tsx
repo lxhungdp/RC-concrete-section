@@ -8,8 +8,8 @@ import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react'
 import {
   stationDefinitionLabel,
   type AxialCapPointCalculationAudit,
-  type CalculationAuditOriginStrainTrace,
   type CalculationAuditRebar,
+  type CalculationAuditResistanceFactor,
   type PointCalculationAudit,
   type PreviewSurface,
   type PreviewSurfacePoint,
@@ -21,12 +21,17 @@ import type { DesignBasis } from '@pm/design'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialLawAudit, MaterialStore } from '@pm/materials'
 import { buildPointAuditsAsync, isAnalysisAbort } from '../../../application/analysis/client'
-import type {
-  ChartTableFixedPRow,
-  ChartTableResistanceStage,
-  ChartTableRow,
-  ChartTableSource,
-  ChartTableVerticalRow
+import {
+  chartResultantValue,
+  chartTableValue,
+  chartValueLabel,
+  isReconciledPointAudit,
+  type ChartValueComponent,
+  type ChartTableFixedPRow,
+  type ChartTableResistanceStage,
+  type ChartTableRow,
+  type ChartTableSource,
+  type ChartTableVerticalRow
 } from './chart-data-table'
 import { CalculationDialogFrame, Fact, Formula, FormulaPanel, Step } from './CalculationDialogFrame'
 import { TechnicalEquation } from './TechnicalEquation'
@@ -39,6 +44,7 @@ type PhysicalPointCalculationAudit = Exclude<
 type Summary = { concreteArea: number; steelArea: number; rebarCount: number }
 type Props = {
   row: ChartTableRow | null
+  valueComponent: ChartValueComponent | null
   rows: readonly ChartTableRow[]
   source: ChartTableSource
   resistanceStage: ChartTableResistanceStage
@@ -72,6 +78,20 @@ const fmt = (value: number, digits = 2) => {
 }
 const strain = (value: number) => Number.isFinite(value) ? value.toExponential(4) : '—'
 
+// These helpers format authored notation only; they do not evaluate an engineering expression.
+const texNumber = (value: string) => value.replace(/,/g, '{,}').replace(/e([+-]?\d+)/, (_, exponent: string) => String.raw`\times 10^{${Number(exponent)}}`)
+const texStrain = (value: number) => texNumber(strain(value))
+const texUnit = (value: string) => String.raw`\mathrm{${value.replace('·', String.raw`\,`).replace('⁻¹', '^{-1}').replace('²', '^2').replace('³', '^3')}}`
+const scalarSymbol = (component: ChartValueComponent, part: string) => component === 'P'
+  ? String.raw`P_{${part}}`
+  : String.raw`M_{${component === 'M' ? '\\beta' : component === 'Mx' ? 'x' : 'y'},${part}}`
+const stageSymbol = (component: ChartValueComponent, stage: ChartTableResistanceStage) => component === 'P'
+  ? stage === 'design' ? 'P' : 'P_n'
+  : component === 'M' ? stage === 'design' ? String.raw`M_{\beta}` : String.raw`M_{n,\beta}`
+    : String.raw`M_{${stage === 'design' ? 'r' : 'n'}${component === 'Mx' ? 'x' : 'y'}}`
+const componentWeight = (component: ChartValueComponent) => component === 'P' ? ''
+  : component === 'Mx' ? 'y' : component === 'My' ? 'x' : String.raw`(y\cos\beta+x\sin\beta)`
+
 const ResultantComparisonTable = ({ nominal, factored }: {
   nominal: ResultantLedger
   factored: ResultantLedger | null
@@ -101,11 +121,41 @@ const ResultantComparisonTable = ({ nominal, factored }: {
   )
 }
 
-const ConcreteSummary = ({ audit }: {
+const ConcreteSummary = ({ audit, component, angleDeg = 0 }: {
   audit: PhysicalPointCalculationAudit
+  component?: ChartValueComponent
+  angleDeg?: number
 }) => {
   const { qfmt, unit, forceValue, momentValue, force, moment } = useQuantityFormatters()
 
+  if (component) {
+    const value = (part: Resultant) => component === 'P'
+      ? force(chartResultantValue(part, component, angleDeg))
+      : moment(chartResultantValue(part, component, angleDeg))
+    const weight = componentWeight(component)
+    return <>
+      {audit.kind === 'stress-strain' ? <>
+        <FormulaPanel>
+          <Formula><TechnicalEquation latex={String.raw`${scalarSymbol(component, 'c')}=\sum_i\sigma_{c,i}A_i\,${weight}=\text{${value(audit.mechanicalLedger.concrete)}}`}
+            ariaLabel="Selected concrete component from its integration terms" /></Formula>
+        </FormulaPanel>
+        <div className="pm-calc-table-wrap"><table><thead><tr><th>Concrete law branch</th><th>Terms</th><th>Area ({unit('area')})</th><th>{component}c</th></tr></thead>
+          <tbody>{audit.concreteGroups.map(group => <tr key={group.id}><td>{group.label}</td><td>{group.count}</td><td>{qfmt('area', group.area)}</td><td>{value(group.resultant)}</td></tr>)}</tbody>
+          <tfoot><tr><td>Total concrete</td><td>{audit.concreteSummary.pointCount}</td><td>{qfmt('area', audit.concreteSummary.area)}</td><td>{value(audit.mechanicalLedger.concrete)}</td></tr></tfoot>
+        </table></div>
+        <p className="pm-calc-caption">Each integration term uses its compatible strain and active concrete law. Coordinates x/y are relative to the analysis origin.</p>
+      </> : <>
+        <FormulaPanel><Formula><TechnicalEquation latex={String.raw`P_c=\sigma_b A_c,\quad \sigma_b=${texNumber(qfmt('stress', audit.block.compressionStress))}\,${texUnit(unit('stress'))},\quad A_c=${texNumber(qfmt('area', audit.block.area))}\,${texUnit(unit('area'))}`}
+          ariaLabel="Concrete force from the exact clipped block area and block stress" /></Formula>
+          <Formula><TechnicalEquation latex={String.raw`${scalarSymbol(component, 'c')}=${component === 'P' ? '\\sigma_b A_c' : `P_c ${component === 'Mx' ? '(y_b-y_0)' : component === 'My' ? '(x_b-x_0)' : '[(y_b-y_0)\\cos\\beta+(x_b-x_0)\\sin\\beta]'}`}=\text{${value(audit.mechanicalLedger.concrete)}}`}
+            ariaLabel="Selected exact block concrete component" /></Formula>
+          {component !== 'P' && <Formula><TechnicalEquation latex={String.raw`(x_b,y_b)=(${texNumber(qfmt('length', audit.block.centroidX))},${texNumber(qfmt('length', audit.block.centroidY))})\,${texUnit(unit('length'))},\quad (x_0,y_0)=(${texNumber(qfmt('length', audit.origin.x))},${texNumber(qfmt('length', audit.origin.y))})\,${texUnit(unit('length'))}`}
+            ariaLabel="Block centroid and analysis origin for the selected moment arm" /></Formula>}
+        </FormulaPanel>
+      </>}
+      <p className="pm-calc-caption">These are mechanics-stage contributions; any global resistance factor is applied once in the resistance step.</p>
+    </>
+  }
   const resultant = audit.displayedLedger.concrete
   const isStressStrain = audit.kind === 'stress-strain'
   return (
@@ -274,66 +324,85 @@ const MaterialLaw = ({ title, law }: { title: string; law: MaterialLawAudit }) =
   )
 }
 
-const OriginStrainTrace = ({ trace }: { trace: CalculationAuditOriginStrainTrace }) => {
+const OriginStrainTrace = ({ audit }: { audit: PhysicalPointCalculationAudit }) => {
   const { qfmt, unit } = useQuantityFormatters()
-
-  if (trace.kind === 'uniform-strain') return (
-    <div className="pm-calc-derivation">
-      <h4>Compatible strain derivation</h4>
-      <FormulaPanel><Formula><span className="pm-calc-math">κ = 0; c = ∞; ε₀ = εc = {strain(trace.calculatedE0)}</span></Formula></FormulaPanel>
-    </div>
-  )
-
-  if (trace.kind === 'controlling-bar-strain') return (
-    <div className="pm-calc-derivation">
-      <h4>Criterion → steel strain → neutral-axis depth</h4>
-      <FormulaPanel>
-        <Formula><span className="pm-calc-math">
-          {trace.yieldStrainBasis === 'effective-yield-stress-over-elastic-modulus'
-            ? <>εy = fy,eff / Es = {qfmt('stress', trace.effectiveYieldStress)} {unit('stress')} / {qfmt('modulus', trace.elasticModulus, 0)} {unit('modulus')} = {strain(trace.yieldStrain)}</>
-            : <>εy = {strain(trace.yieldStrain)} (declared material yield-strain limit)</>}
-          {'; '}εs,req = −({fmt(trace.strainRatio, 4)})εy = {strain(trace.requestedSteelStrain)}
-          {trace.strainLimitApplied
-            ? <>; εs = {strain(trace.controllingSteelStrain)} after the material strain limit</>
-            : <>; εs = εs,req</>}
-        </span></Formula>
-        <Formula><span className="pm-calc-math">
-          d = uc − us = {qfmt('length', trace.compressionEdgeProjection)} − ({qfmt('length', trace.controllingBarProjection)}) = {qfmt('length', trace.compressionEdgeToBarDepth)} {unit('length')}
-        </span></Formula>
-        <Formula><span className="pm-calc-math">
-          κ = (εc − εs) / d = {qfmt('curvature', trace.curvatureFromCompatibility, 8)} {unit('curvature')}; c = εc / κ = {qfmt('length', trace.neutralAxisDepth)} {unit('length')}
-        </span></Formula>
-        <Formula><span className="pm-calc-math">
-          ε₀ = εc − κuc = {strain(trace.calculatedE0)}
-        </span></Formula>
-      </FormulaPanel>
-      <p>Criterion {trace.criterionLabel}; controlling bar #{trace.controllingRebarId}, steel material {trace.steelMaterialId}. Tension strain is negative under the compression-positive convention.</p>
-      {trace.strainLimitApplied ? <p className="is-warning">The requested εs = {strain(trace.requestedSteelStrain)} was limited by the bar material domain; the equations above use the applied strain.</p> : null}
-    </div>
-  )
-
-  const criterion = trace.derivation === 'declared-depth-ratio'
-    ? `${trace.criterionLabel ?? `c/D = ${fmt(trace.neutralAxisDepthRatio, 4)}`}; c = (${fmt(trace.neutralAxisDepthRatio, 4)})D = ${qfmt('length', trace.neutralAxisDepth)} ${unit('length')}`
-    : `Resolved compatible state; c = uc − uNA = ${qfmt('length', trace.neutralAxisDepth)} ${unit('length')}`
-  return (
-    <div className="pm-calc-derivation">
-      <h4>{trace.derivation === 'declared-depth-ratio' ? 'Depth criterion → neutral-axis depth' : 'Resolved compatible strain state'}</h4>
-      <FormulaPanel>
-        <Formula><span className="pm-calc-math">D = {qfmt('length', trace.projectedSectionDepth)} {unit('length')}; {criterion}</span></Formula>
-        <Formula><span className="pm-calc-math">κ = εc / c = {qfmt('curvature', trace.curvatureFromDepth, 8)} {unit('curvature')}; ε₀ = εc − κuc = {strain(trace.calculatedE0)}</span></Formula>
-      </FormulaPanel>
-    </div>
-  )
+  const trace = audit.depthProfile.originStrainTrace
+  const length = (value: number) => String.raw`${texNumber(qfmt('length', value))}\,${texUnit(unit('length'))}`
+  const curvature = (value: number) => String.raw`${texNumber(qfmt('curvature', value, 8))}\,${texUnit(unit('curvature'))}`
+  const magnitude = trace.kind === 'uniform-strain' ? 0
+    : trace.kind === 'controlling-bar-strain' ? trace.curvatureFromCompatibility : trace.curvatureFromDepth
+  return <div className="pm-calc-derivation" data-strain-derivation={trace.kind}>
+    <h4>{trace.kind === 'controlling-bar-strain' ? 'Criterion → steel strain → compatible state'
+      : trace.kind === 'uniform-strain' ? 'Uniform-strain criterion → compatible state'
+        : trace.derivation === 'declared-depth-ratio' ? 'Depth criterion → compatible state' : 'Resolved compatible strain state'}</h4>
+    <FormulaPanel>
+      {trace.kind === 'uniform-strain' ? <Formula><TechnicalEquation
+        latex={String.raw`\kappa_x=\kappa_y=0,\qquad c=\infty,\qquad \varepsilon_0=\varepsilon_c=${texStrain(trace.compressionEdgeStrain)}`}
+        ariaLabel="Uniform strain criterion determines origin strain and zero curvature" /></Formula>
+        : <>
+          <Formula><TechnicalEquation latex={String.raw`\varepsilon_c=${texStrain(trace.compressionEdgeStrain)},\qquad u_c=${length(trace.compressionEdgeProjection)}`}
+            ariaLabel="Compression edge strain and projection used by this criterion" /></Formula>
+          {trace.kind === 'controlling-bar-strain' ? <>
+            <Formula><TechnicalEquation latex={trace.yieldStrainBasis === 'effective-yield-stress-over-elastic-modulus'
+              ? String.raw`\varepsilon_y=\frac{f_{y,\mathrm{eff}}}{E_s}=\frac{${texNumber(qfmt('stress', trace.effectiveYieldStress))}\,${texUnit(unit('stress'))}}{${texNumber(qfmt('modulus', trace.elasticModulus, 0))}\,${texUnit(unit('modulus'))}}=${texStrain(trace.yieldStrain)}`
+              : String.raw`\varepsilon_y=${texStrain(trace.yieldStrain)}\quad\text{(declared material limit)}`}
+              ariaLabel="Yield strain basis for the selected controlling bar" /></Formula>
+            <Formula><TechnicalEquation latex={String.raw`\varepsilon_{s,\mathrm{req}}=-(${texNumber(fmt(trace.strainRatio, 4))})\varepsilon_y=${texStrain(trace.requestedSteelStrain)},\qquad \varepsilon_s=${texStrain(trace.controllingSteelStrain)}`}
+              ariaLabel="Criterion ratio determines the requested and applied controlling bar strain" /></Formula>
+            <Formula><TechnicalEquation latex={String.raw`d=u_c-u_s=${length(trace.compressionEdgeProjection)}-(${length(trace.controllingBarProjection)})=${length(trace.compressionEdgeToBarDepth)}`}
+              ariaLabel="Distance from the compression edge to the controlling bar" /></Formula>
+            <Formula><TechnicalEquation latex={String.raw`\kappa=\frac{\varepsilon_c-\varepsilon_s}{d}=\frac{${texStrain(trace.compressionEdgeStrain)}-(${texStrain(trace.controllingSteelStrain)})}{${length(trace.compressionEdgeToBarDepth)}}=${curvature(trace.curvatureFromCompatibility)}`}
+              ariaLabel="Curvature derived from the controlling bar strain compatibility" /></Formula>
+            <Formula><TechnicalEquation latex={String.raw`c=\frac{\varepsilon_c}{\kappa}=${length(trace.neutralAxisDepth)}`}
+              ariaLabel="Neutral axis depth derived from curvature" /></Formula>
+          </> : <>
+            <Formula><TechnicalEquation latex={trace.derivation === 'declared-depth-ratio'
+              ? String.raw`D=${length(trace.projectedSectionDepth)},\qquad c=\left(\frac{c}{D}\right)D=(${texNumber(fmt(trace.neutralAxisDepthRatio, 4))})(${length(trace.projectedSectionDepth)})=${length(trace.neutralAxisDepth)}`
+              : String.raw`c=u_c-u_{\mathrm{NA}}=${length(trace.compressionEdgeProjection)}-(${length(audit.depthProfile.neutralAxisProjection!)})=${length(trace.neutralAxisDepth)}`}
+              ariaLabel={trace.derivation === 'declared-depth-ratio' ? 'Neutral axis depth derived from the declared depth ratio' : 'Neutral axis depth of the resolved compatible state'} /></Formula>
+            <Formula><TechnicalEquation latex={String.raw`\kappa=\frac{\varepsilon_c}{c}=\frac{${texStrain(trace.compressionEdgeStrain)}}{${length(trace.neutralAxisDepth)}}=${curvature(trace.curvatureFromDepth)}`}
+              ariaLabel="Curvature derived from compression edge strain and neutral axis depth" /></Formula>
+          </>}
+          <Formula><TechnicalEquation latex={String.raw`\varepsilon_0=\varepsilon_c-\kappa u_c=${texStrain(trace.compressionEdgeStrain)}-(${curvature(magnitude)})(${length(trace.compressionEdgeProjection)})=${texStrain(trace.calculatedE0)}`}
+            ariaLabel="Origin strain derived from the selected criterion" /></Formula>
+          <Formula><TechnicalEquation latex={String.raw`u=n_x x+n_y y,\qquad n_x=${texNumber(fmt(audit.depthProfile.normalX, 8))},\quad n_y=${texNumber(fmt(audit.depthProfile.normalY, 8))}`}
+            ariaLabel="Stored strain gradient normal in centroid relative coordinates" /></Formula>
+          <Formula><TechnicalEquation latex={String.raw`\begin{aligned}\kappa_x&=\kappa n_y=(${curvature(magnitude)})(${texNumber(fmt(audit.depthProfile.normalY, 8))})=${curvature(audit.state.kx)}\\\kappa_y&=\kappa n_x=(${curvature(magnitude)})(${texNumber(fmt(audit.depthProfile.normalX, 8))})=${curvature(audit.state.ky)}\end{aligned}`}
+            ariaLabel="X and Y curvature components derived from the stored strain gradient normal" /></Formula>
+        </>}
+    </FormulaPanel>
+    {trace.kind === 'controlling-bar-strain' && <p>Criterion {trace.criterionLabel}; controlling bar #{trace.controllingRebarId}, steel material {trace.steelMaterialId}. Tension strain is negative.</p>}
+    {trace.kind === 'controlling-bar-strain' && trace.strainLimitApplied && <p className="is-warning">The requested steel strain is limited by the material domain; the derivation uses the applied strain.</p>}
+    {trace.kind === 'neutral-axis-depth' && trace.derivation === 'resolved-compatible-state' && <p>This is a resolved compatible state, not an independently declared depth-ratio criterion.</p>}
+  </div>
 }
 
-const RebarLedger = ({ bars, total }: { bars: CalculationAuditRebar[]; total: Resultant }) => {
+const RebarLedger = ({ bars, total, component, angleDeg = 0 }: { bars: CalculationAuditRebar[]; total: Resultant; component?: ChartValueComponent; angleDeg?: number }) => {
   const { qfmt, unit, forceValue, momentValue, force, moment } = useQuantityFormatters()
+  if (component) {
+    const result = (value: Resultant) => component === 'P' ? force(chartResultantValue(value, component, angleDeg)) : moment(chartResultantValue(value, component, angleDeg))
+    const weight = componentWeight(component)
+    return <>
+      <FormulaPanel>
+        <Formula><TechnicalEquation latex={String.raw`\varepsilon_{s,i}=\varepsilon_0+\kappa_x y_i+\kappa_y x_i,\qquad F_{i,\mathrm{net}}=[\sigma_s(\varepsilon_{s,i})-\sigma_{c,\mathrm{disp}}(\varepsilon_{s,i})]A_{s,i}`}
+          ariaLabel="Bar strain and net bar force from steel minus displaced concrete stress" /></Formula>
+        <Formula><TechnicalEquation latex={String.raw`${scalarSymbol(component, 's')}=\sum_i F_{i,\mathrm{net}}\,${weight}`}
+          ariaLabel="Selected reinforcement component from net bar forces" /></Formula>
+      </FormulaPanel>
+      <div className="pm-calc-table-wrap"><table>
+        <thead><tr><th>Bar</th><th>x ({unit('length')})</th><th>y ({unit('length')})</th><th>As ({unit('area')})</th><th>εs</th><th>σs ({unit('stress')})</th><th>σc,disp ({unit('stress')})</th>{component !== 'P' && <th>Fnet ({unit('force')})</th>}<th>{component}s</th></tr></thead>
+        <tbody>{bars.map(bar => <tr key={bar.id}><td>#{bar.id}</td><td>{qfmt('length', bar.x)}</td><td>{qfmt('length', bar.y)}</td><td>{qfmt('area', bar.area)}</td><td>{strain(bar.strain)}</td><td>{qfmt('stress', bar.steelStress)}</td><td>{qfmt('stress', bar.displacedConcreteStress)}</td>{component !== 'P' && <td>{forceValue(bar.net.P)}</td>}<td>{result(bar.net)}</td></tr>)}</tbody>
+        <tfoot><tr><td colSpan={component === 'P' ? 7 : 8}>Net reinforcement total</td><td>{result(total)}</td></tr></tfoot>
+      </table></div>
+      <p className="pm-calc-caption">As is the stored or explicitly resolved bar area carried by the analysis audit. No area is recomputed from diameter here. Coordinates are relative to the analysis origin.</p>
+    </>
+  }
   return (
   <>
     <FormulaPanel>
       <Formula numbered>
         <TechnicalEquation
-          latex={String.raw`A_s=\frac{\pi d^2}{4},\quad \varepsilon_s=\varepsilon_0+\kappa_x y+\kappa_y x,\quad F_{s,\mathrm{net}}=[\sigma_s(\varepsilon_s)-\sigma_{c,\mathrm{disp}}(\varepsilon_s)]A_s`}
+          latex={String.raw`\varepsilon_s=\varepsilon_0+\kappa_x y+\kappa_y x,\quad F_{s,\mathrm{net}}=[\sigma_s(\varepsilon_s)-\sigma_{c,\mathrm{disp}}(\varepsilon_s)]A_s`}
           ariaLabel="Net reinforcement force from steel stress minus displaced concrete stress"
         />
       </Formula>
@@ -357,43 +426,142 @@ const RebarLedger = ({ bars, total }: { bars: CalculationAuditRebar[]; total: Re
 )
 }
 
-const ResistanceTrace = ({ audit, point, designBasis }: {
+const ResistanceFactorCalculation = ({ calculation, designBasis }: {
+  calculation: CalculationAuditResistanceFactor
+  designBasis: DesignBasis
+}) => {
+  const { qfmt, unit, force } = useQuantityFormatters()
+  const n = (value: number) => texNumber(fmt(value, 8))
+  return <div className="pm-calc-derivation" data-factor-calculation={calculation.kind} data-factor={calculation.factor}>
+    <h4>Resistance factor φ</h4>
+    {calculation.kind === 'strain-controlled' ? <>
+      <p className="pm-calc-caption">Controlling bar {calculation.controllingRebarId === null ? 'unavailable' : `#${calculation.controllingRebarId}`} · steel material {calculation.steelMaterialId} · {calculation.transverseReinforcement === 'qualifying-spiral' ? 'Qualifying spiral' : 'Other transverse reinforcement'} · {calculation.classification}.</p>
+      <FormulaPanel>
+        <Formula><TechnicalEquation latex={String.raw`\varepsilon_t=\max_i(0,-\varepsilon_{s,i})=${texStrain(calculation.tensileStrain)}`}
+          ariaLabel="Factor controlling tensile strain from the nominal compatible state" /></Formula>
+        <Formula><TechnicalEquation latex={String.raw`\varepsilon_y=\frac{f_y}{E_s}=\frac{${texNumber(qfmt('stress', calculation.yieldStress))}\,${texUnit(unit('stress'))}}{${texNumber(qfmt('modulus', calculation.elasticModulus, 0))}\,${texUnit(unit('modulus'))}}=${texStrain(calculation.yieldStrain)}`}
+          ariaLabel="Yield strain used for resistance factor classification" /></Formula>
+        <Formula><TechnicalEquation latex={String.raw`\phi_c=${n(calculation.compressionFactor)},\qquad \phi_t=${n(calculation.tensionFactor)}`}
+          ariaLabel="Active compression and tension resistance factors" /></Formula>
+        <Formula><TechnicalEquation latex={calculation.limitRule.type === 'yield-plus-strain'
+          ? String.raw`\varepsilon_T=\varepsilon_y+${texStrain(calculation.limitRule.extraStrain)}=${texStrain(calculation.yieldStrain)}+${texStrain(calculation.limitRule.extraStrain)}=${texStrain(calculation.tensionLimit)}`
+          : String.raw`\varepsilon_T=\begin{cases}${texStrain(calculation.limitRule.fixedStrainLimit)} & f_y\le ${texNumber(qfmt('stress', calculation.limitRule.yieldStressThreshold))}\,${texUnit(unit('stress'))}\\${n(calculation.limitRule.highStrengthYieldMultiple)}\,\varepsilon_y & f_y>${texNumber(qfmt('stress', calculation.limitRule.yieldStressThreshold))}\,${texUnit(unit('stress'))}\end{cases}=${texStrain(calculation.tensionLimit)}`}
+          ariaLabel="Tension controlled strain limit from the active resistance profile" /></Formula>
+        {calculation.classificationTolerance > 0 && <Formula><TechnicalEquation latex={String.raw`\delta_\varepsilon=${texStrain(calculation.classificationTolerance)}`}
+          ariaLabel="Boundary tolerance used by the factor evaluator" /></Formula>}
+        {calculation.classification === 'compression-controlled' ? <Formula><TechnicalEquation
+          latex={String.raw`\varepsilon_t\le\varepsilon_y${calculation.classificationTolerance > 0 ? '+\\delta_\\varepsilon' : ''},\qquad\phi=\phi_c=${n(calculation.factor)}`}
+          ariaLabel="Compression controlled resistance factor selection" /></Formula>
+          : calculation.classification === 'tension-controlled' ? <Formula><TechnicalEquation
+            latex={String.raw`\varepsilon_t\ge\varepsilon_T${calculation.classificationTolerance > 0 ? '-\\delta_\\varepsilon' : ''},\qquad\phi=\phi_t=${n(calculation.factor)}`}
+            ariaLabel="Tension controlled resistance factor selection" /></Formula>
+            : calculation.interpolation && <>
+              <Formula><TechnicalEquation latex={String.raw`\varepsilon_y${calculation.classificationTolerance > 0 ? '+\\delta_\\varepsilon' : ''}<\varepsilon_t<\varepsilon_T${calculation.classificationTolerance > 0 ? '-\\delta_\\varepsilon' : ''}`}
+                ariaLabel="Transition resistance factor branch selected by the evaluator" /></Formula>
+              <Formula><TechnicalEquation latex={String.raw`\Delta\varepsilon=${calculation.minimumTransitionSpan === null ? '\\varepsilon_T-\\varepsilon_y' : `\\max(${texStrain(calculation.minimumTransitionSpan)},\\varepsilon_T-\\varepsilon_y)`}=${texStrain(calculation.interpolation.denominator)}`}
+                ariaLabel="Transition denominator used by the resistance factor evaluator" /></Formula>
+              <Formula><TechnicalEquation latex={String.raw`r=\frac{\varepsilon_t-\varepsilon_y}{\Delta\varepsilon}=\frac{${texStrain(calculation.tensileStrain)}-(${texStrain(calculation.yieldStrain)})}{${texStrain(calculation.interpolation.denominator)}}=${n(calculation.interpolation.ratio)}`}
+                ariaLabel="Resistance factor transition interpolation ratio" /></Formula>
+              <Formula><TechnicalEquation latex={String.raw`\phi=\phi_c+(\phi_t-\phi_c)r=${n(calculation.compressionFactor)}+(${n(calculation.tensionFactor)}-${n(calculation.compressionFactor)})(${n(calculation.interpolation.ratio)})=${n(calculation.factor)}`}
+                ariaLabel="Transition resistance factor with values substituted" /></Formula>
+            </>}
+      </FormulaPanel>
+    </> : <>
+      <p className="pm-calc-caption">AS axial/bending capacity factor · {calculation.compressionClass} · {calculation.classification}.</p>
+      <FormulaPanel>
+        <Formula><TechnicalEquation latex={String.raw`k_{uo}=${n(calculation.neutralAxisRatio)},\qquad\phi_c=${n(calculation.compressionFactor)},\qquad\phi_t=${n(calculation.tensionFactor)}`}
+          ariaLabel="AS capacity factor inputs from the exact block evaluator" /></Formula>
+        <Formula><TechnicalEquation latex={String.raw`\phi_b=\min\left(${n(calculation.bending.maximum)},\max\left(${n(calculation.bending.minimum)},${n(calculation.bending.intercept)}-\frac{${n(calculation.bending.numerator)}k_{uo}}{${n(calculation.bending.denominator)}}\right)\right)=${n(calculation.bending.factor)}`}
+          ariaLabel="AS bending factor expression and bounds" /></Formula>
+        <Formula><TechnicalEquation latex={String.raw`N_n=\text{${force(calculation.nominalAxial)}},\quad N_b=\text{${force(calculation.balancedAxial)}},\quad N_{ut}=\text{${force(calculation.pureTensionAxial)}}`}
+          ariaLabel="Nominal balanced and pure tension axial forces used by the AS factor" /></Formula>
+        {calculation.classification === 'axial-compression-controlled' ? <Formula><TechnicalEquation
+          latex={String.raw`N_n\ge N_b,\qquad\phi=\phi_c=${n(calculation.factor)}`}
+          ariaLabel="AS compression controlled factor selection" /></Formula>
+          : calculation.classification === 'bending' ? <Formula><TechnicalEquation
+            latex={String.raw`N_n=0,\qquad\phi=\phi_b=${n(calculation.factor)}`}
+            ariaLabel="AS pure bending factor selection" /></Formula>
+            : calculation.axialRatio !== null && <>
+              <Formula><TechnicalEquation latex={calculation.classification === 'combined-compression'
+                ? String.raw`r_N=\frac{N_n}{N_b}=\frac{\text{${force(calculation.nominalAxial)}}}{\text{${force(calculation.balancedAxial)}}}=${n(calculation.axialRatio)}`
+                : String.raw`r_N=\min\left(1,\max\left(0,\frac{N_n}{N_{ut}}\right)\right)=${n(calculation.axialRatio)}`}
+                ariaLabel="AS axial interpolation ratio" /></Formula>
+              <Formula><TechnicalEquation latex={calculation.classification === 'combined-compression'
+                ? String.raw`\phi=\phi_c+(\phi_b-\phi_c)(1-r_N)=${n(calculation.compressionFactor)}+(${n(calculation.bending.factor)}-${n(calculation.compressionFactor)})(1-${n(calculation.axialRatio)})=${n(calculation.factor)}`
+                : String.raw`\phi=\phi_b+(\phi_t-\phi_b)r_N=${n(calculation.bending.factor)}+(${n(calculation.tensionFactor)}-${n(calculation.bending.factor)})(${n(calculation.axialRatio)})=${n(calculation.factor)}`}
+                ariaLabel="AS combined action resistance factor with values substituted" /></Formula>
+            </>}
+      </FormulaPanel>
+    </>}
+    <p className="pm-calc-source">{designBasis.identity.document} · {designBasis.identity.edition}{designBasis.modified ? ` · Modified profile: ${designBasis.overrideReason || 'declared project options'}` : ''}.</p>
+  </div>
+}
+
+const ResistanceTrace = ({ audit, point, designBasis, component, angleDeg = 0 }: {
   audit: PhysicalPointCalculationAudit
   point: PreviewSurfacePoint
   designBasis: DesignBasis
+  component?: ChartValueComponent
+  angleDeg?: number
 }) => {
-
-
+  const { force, moment } = useQuantityFormatters()
+  const value = (part: Resultant) => component === 'P' ? force(chartResultantValue(part, 'P', angleDeg)) : moment(chartResultantValue(part, component ?? 'M', angleDeg))
   const trace = point.resistance
   const materialReevaluation = audit.stage === 'design' && designBasis.format === 'designMaterialReevaluation'
   const factored = audit.stage === 'design' ? audit.displayedLedger : null
   return (
     <>
-      <ResultantComparisonTable nominal={audit.nominalReferenceLedger} factored={factored} />
-      {materialReevaluation ? (
+      {audit.stage === 'design' && audit.resistanceFactorCalculation && <ResistanceFactorCalculation calculation={audit.resistanceFactorCalculation} designBasis={designBasis} />}
+      {audit.stage === 'design' && designBasis.format === 'designMaterialReevaluation' && <div className="pm-calc-derivation" data-material-factor-calculation="true">
+        <h4>Design material factors</h4>
+        <FormulaPanel>{([designBasis.factors.concrete, designBasis.factors.reinforcement]).map(expression => {
+          const symbol = { alphaCc: String.raw`\alpha_{cc}`, gammaC: String.raw`\gamma_c`, gammaS: String.raw`\gamma_s`, phiC: String.raw`\phi_c`, phiS: String.raw`\phi_s` }
+          const reference = expression.characteristicSymbol === 'fck' ? 'f_{ck}' : 'f_{yk}'
+          const design = expression.designSymbol === 'fcd' ? 'f_{cd}' : 'f_{yd}'
+          return <Formula key={expression.designSymbol}><TechnicalEquation
+            latex={String.raw`${design}=${reference}${expression.components.map(factor => `${factor.operation === 'multiply' ? '\\cdot' : '/'}${symbol[factor.id]}`).join('')}=${reference}${expression.components.map(factor => `${factor.operation === 'multiply' ? '\\cdot' : '/'}(${texNumber(fmt(factor.value, 6))})`).join('')}`}
+            ariaLabel={`Declared ${expression.designSymbol} material factor expression`} /></Formula>
+        })}</FormulaPanel>
+        <p className="pm-calc-caption">These factors modify the material strengths. Design resultants are reevaluated at the same compatible state; there is no additional global φ multiplier.</p>
+      </div>}
+
+      {component ? <div className="pm-calc-table-wrap"><table>
+        <thead><tr><th>Contribution</th><th>{chartValueLabel(component, 'nominal')}</th>{factored && <th>{chartValueLabel(component, 'design')}</th>}</tr></thead>
+        <tbody>{(['concrete', 'steel'] as const).map(part => <tr key={part}><td>{part === 'concrete' ? 'Concrete' : 'Net reinforcement'}</td><td>{value(audit.nominalReferenceLedger[part])}</td>{factored && <td>{value(factored[part])}</td>}</tr>)}</tbody>
+        <tfoot><tr><td>Total resistance</td><td>{value(audit.nominalReferenceLedger.total)}</td>{factored && <td>{value(factored.total)}</td>}</tr></tfoot>
+      </table></div> : <ResultantComparisonTable nominal={audit.nominalReferenceLedger} factored={factored} />}
+      {component ? <FormulaPanel><Formula><TechnicalEquation
+        latex={audit.stage === 'nominal'
+          ? String.raw`${stageSymbol(component, 'nominal')}=${scalarSymbol(component, 'c')}+${scalarSymbol(component, 's')}=\text{${value(audit.displayedLedger.total)}}`
+          : !materialReevaluation && audit.resistanceFactor !== null
+            ? String.raw`${stageSymbol(component, 'design')}=\phi ${stageSymbol(component, 'nominal')}=${texNumber(fmt(audit.resistanceFactor, 8))}\,(\text{${value(audit.nominalReferenceLedger.total)}})=\text{${value(audit.displayedLedger.total)}}`
+            : String.raw`${stageSymbol(component, 'design')}=${scalarSymbol(component, 'c')}+${scalarSymbol(component, 's')}=\text{${value(audit.displayedLedger.total)}}`}
+        ariaLabel="Selected resistance component assembled with its declared resistance route" /></Formula>
+        {audit.stage === 'design' && (materialReevaluation || audit.resistanceFactor === null) && <p className="pm-calc-caption">Contributions use the selected Design material laws; no global φ is applied.</p>}
+      </FormulaPanel> : materialReevaluation ? (
         <FormulaPanel><Formula><span className="pm-calc-math">RDesign = ΣR evaluated at the same compatible state with the declared Design material laws</span></Formula></FormulaPanel>
       ) : audit.resistanceFactor === null ? (
         <FormulaPanel><Formula><span className="pm-calc-math">Rshown = Rintegration (the active material laws already represent the selected {audit.stage} stage; no global φ is applied)</span></Formula></FormulaPanel>
       ) : (
         <FormulaPanel><Formula numbered>
           <TechnicalEquation
-            latex={String.raw`\mathbf{R}_{\mathrm{design}}=\phi\mathbf{R}_{\mathrm{nominal}}=${fmt(audit.resistanceFactor, 4)}\,\mathbf{R}_{\mathrm{nominal}}`}
-            ariaLabel={`Design resistance equals ${fmt(audit.resistanceFactor, 4)} times nominal resistance`}
+            latex={String.raw`\mathbf{R}_{\mathrm{design}}=\phi\mathbf{R}_{\mathrm{nominal}}=${fmt(audit.resistanceFactor, 8)}\,\mathbf{R}_{\mathrm{nominal}}`}
+            ariaLabel={`Design resistance equals ${fmt(audit.resistanceFactor, 8)} times nominal resistance`}
           />
         </Formula></FormulaPanel>
       )}
-      {audit.stage === 'nominal' ? <p className="pm-calc-caption">Factored / Design columns are intentionally unavailable while the table is in Nominal mode.</p> : null}
-      {trace ? <div className="pm-calc-facts">
-        <Fact label="Classification">{trace.classification}</Fact><Fact label="Stored factor φ">{trace.factor === null ? 'material reevaluation' : fmt(trace.factor, 4)}</Fact>
+      {!component && audit.stage === 'nominal' ? <p className="pm-calc-caption">Factored / Design columns are intentionally unavailable while the table is in Nominal mode.</p> : null}
+      {!component && trace ? <div className="pm-calc-facts">
+        <Fact label="Classification">{trace.classification}</Fact><Fact label="Stored factor φ">{trace.factor === null ? 'material reevaluation' : fmt(trace.factor, 8)}</Fact>
         {trace.controllingTensileStrain === null ? null : <Fact label="Controlling tensile strain">{strain(trace.controllingTensileStrain)}</Fact>}
         {trace.yieldStrain === null ? null : <Fact label="Yield strain">{strain(trace.yieldStrain)}</Fact>}
       </div> : null}
-      {designBasis.format === 'designMaterialReevaluation' ? <div className="pm-calc-factor-list">
+      {!component && designBasis.format === 'designMaterialReevaluation' ? <div className="pm-calc-factor-list">
         {[...designBasis.factors.concrete.components, ...designBasis.factors.reinforcement.components].map((factor) => (
           <span key={factor.id}><b>{factor.symbol}</b> = {fmt(factor.value, 4)} · {factor.clauseRef}</span>
         ))}
       </div> : null}
-      <p className="pm-calc-source"><b>Resistance basis:</b> {designBasis.identity.document} · {designBasis.identity.edition} · method {designBasis.identity.methodId}.</p>
+      {!component && <><p className="pm-calc-source"><b>Resistance basis:</b> {designBasis.identity.document} · {designBasis.identity.edition} · method {designBasis.identity.methodId}.</p>
       {audit.stage === 'design' ? <div className={`pm-calc-note${audit.nominalReferenceReconciliation.ok ? '' : ' is-error'}`}>
         {audit.nominalReferenceReconciliation.ok ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
         <p><b>Nominal/reference reconciliation:</b> max normalized Δ = {audit.nominalReferenceReconciliation.relativeMaximum.toExponential(3)}. This verifies the retained pre-Design value at the same compatible state.</p>
@@ -401,7 +569,7 @@ const ResistanceTrace = ({ audit, point, designBasis }: {
       <div className={`pm-calc-note${audit.reconciliation.ok ? '' : ' is-error'}`}>
         {audit.reconciliation.ok ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
         <p><b>Stored-result reconciliation:</b> max normalized Δ = {audit.reconciliation.relativeMaximum.toExponential(3)} (limit {audit.reconciliation.tolerance.toExponential(1)}). The detailed sum {audit.reconciliation.ok ? 'reproduces' : 'does not reproduce'} the point used by the table.</p>
-      </div>
+      </div></>}
     </>
   )
 }
@@ -410,12 +578,16 @@ const AxialCapAudit = ({
   audit,
   stationDefinition,
   title,
-  startIndex
+  startIndex,
+  component,
+  angleDeg = 0
 }: {
   audit: AxialCapPointCalculationAudit
   stationDefinition: StationDefinition | null
   title: string
   startIndex: number
+  component?: ChartValueComponent
+  angleDeg?: number
 }) => {
   const { unit, forceValue, momentValue, force, moment } = useQuantityFormatters()
 
@@ -430,6 +602,32 @@ const AxialCapAudit = ({
         ['Compression-side endpoint', source.compressionSide] as const,
         ['Admissible-side endpoint', source.admissibleSide] as const
       ]
+  if (component) {
+    const value = (point: Resultant) => component === 'P' ? force(point.P) : moment(chartResultantValue(point, component, angleDeg))
+    return <Step index={startIndex} title={`${title}: ${chartValueLabel(component, audit.stage)} at the axial cap`}>
+      <FormulaPanel>
+        <Formula><TechnicalEquation latex={String.raw`P_{\max}=${trace.capRatio === null ? '' : `${texNumber(capRatio)}\\,(\\text{${force(trace.maximumAxialResistance)}})=`}\text{${force(trace.cap)}}`}
+          ariaLabel="Maximum axial resistance from the stored axial cap" /></Formula>
+        {comparison && component === 'P' && <Formula><TechnicalEquation latex={String.raw`P_{\mathrm{selected}}=\min(P_{\mathrm{calculated}},P_{\max})=\min(\text{${force(comparison.calculatedAxialResistance)}},\text{${force(comparison.maximumAxialResistance)}})=\text{${force(comparison.selectedAxialResistance)}}`}
+          ariaLabel="Selected axial resistance after the maximum axial limit" /></Formula>}
+        {source.kind === 'edge-interpolation' && <>
+          <Formula><TechnicalEquation latex={String.raw`t=\frac{P_{\max}-P_{\mathrm{compression}}}{P_{\mathrm{admissible}}-P_{\mathrm{compression}}}=\frac{\text{${force(trace.cap)}}-(\text{${force(source.compressionSide.P)}})}{\text{${force(source.admissibleSide.P)}}-(\text{${force(source.compressionSide.P)}})}=${texNumber(fmt(source.interpolationRatio, 8))}`}
+            ariaLabel="Stored axial cap edge interpolation ratio" /></Formula>
+          <Formula><TechnicalEquation latex={String.raw`${scalarSymbol(component, '\\mathrm{cross}')}=${scalarSymbol(component, '\\mathrm{compression}')}+t(${scalarSymbol(component, '\\mathrm{admissible}')}-${scalarSymbol(component, '\\mathrm{compression}')})=\text{${value(crossing)}}`}
+            ariaLabel="Selected component at the axial cap edge crossing" /></Formula>
+        </>}
+        {source.kind === 'source-vertex' && <Formula><TechnicalEquation latex={String.raw`${scalarSymbol(component, '\\mathrm{cross}')}=${scalarSymbol(component, '\\mathrm{source}')}=\text{${value(crossing)}}`}
+          ariaLabel="Selected cap component from an exact source vertex" /></Formula>}
+        <Formula><TechnicalEquation latex={String.raw`${scalarSymbol(component, '\\mathrm{cap}')}=${component !== 'P' && trace.projection.kind === 'radial' ? `${texNumber(fmt(trace.projection.factor, 8))}\\,(\\text{${value(crossing)}})=` : ''}\text{${value(audit.displayedLedger.total)}}`}
+          ariaLabel="Selected final axial cap component" /></Formula>
+      </FormulaPanel>
+      <div className="pm-calc-table-wrap"><table><thead><tr><th>Stored cap source</th><th>P</th>{component !== 'P' && <th>{component}</th>}</tr></thead>
+        <tbody>{sourceRows.map(([label, point]) => <tr key={label}><td>{label}</td><td>{force(point.P)}</td>{component !== 'P' && <td>{value(point)}</td>}</tr>)}</tbody>
+      </table></div>
+      <p className="pm-calc-caption">This is the stored geometric cap construction. The cap point has no independently assigned physical strain plane.</p>
+      {!audit.reconciliation.ok && <p className="is-error">Cap-result reconciliation failed; this trace cannot reproduce the selected result.</p>}
+    </Step>
+  }
   return (
     <Step index={startIndex} title={`${title}: maximum axial-force check`}>
       <div className="pm-calc-facts">
@@ -479,7 +677,7 @@ const AxialCapAudit = ({
   )
 }
 
-const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, section, rebars, designBasis, patternId, exportingConcreteKey, onExportConcreteExcel, startIndex = 3 }: {
+const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, section, rebars, designBasis, patternId, exportingConcreteKey, onExportConcreteExcel, component, angleDeg = 0, startIndex = 3 }: {
   audit: PointCalculationAudit
   point: PreviewSurfacePoint
   stationDefinition: StationDefinition | null
@@ -492,8 +690,10 @@ const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, sect
   exportingConcreteKey: string | null
   onExportConcreteExcel: Props['onExportConcreteExcel']
   startIndex?: number
+  component?: ChartValueComponent
+  angleDeg?: number
 }) => {
-  const { qfmt, unit } = useQuantityFormatters()
+  const { qfmt, unit, force, moment } = useQuantityFormatters()
 
   if (audit.kind === 'unavailable') return (
     <Step index={startIndex} title={`${title}: physical calculation evidence`}>
@@ -503,6 +703,8 @@ const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, sect
   if (audit.kind === 'axial-cap') return (
     <>
       {audit.preCap ? <PhysicalAudit
+        component={component}
+        angleDeg={angleDeg}
         audit={audit.preCap.audit}
         point={audit.preCap.point}
         stationDefinition={stationDefinition}
@@ -518,12 +720,32 @@ const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, sect
       /> : null}
       <AxialCapAudit
         audit={audit}
+        component={component}
+        angleDeg={angleDeg}
         stationDefinition={stationDefinition}
         title={title}
-        startIndex={startIndex + (audit.preCap ? 4 : 0)}
+        startIndex={startIndex + (audit.preCap ? calculationAuditStepCount(audit.preCap.audit, Boolean(component)) : 0)}
       />
     </>
   )
+  if (component) {
+    const selected = (value: Resultant) => component === 'P'
+      ? force(chartResultantValue(value, component, angleDeg))
+      : moment(chartResultantValue(value, component, angleDeg))
+    const weight = componentWeight(component)
+    return <Step index={startIndex} title={title}>
+      <OriginStrainTrace audit={audit} />
+      <FormulaPanel><Formula><TechnicalEquation latex={String.raw`\varepsilon(x,y)=\varepsilon_0+\kappa_x y+\kappa_y x`}
+        ariaLabel="Compatible strain plane in centroid relative coordinates" /></Formula></FormulaPanel>
+      <ConcreteSummary audit={audit} component={component} angleDeg={angleDeg} />
+      <FormulaPanel><Formula><TechnicalEquation latex={String.raw`F_{i,\mathrm{net}}=(\sigma_{s,i}-\sigma_{c,\mathrm{disp},i})A_{s,i}`}
+        ariaLabel="Net reinforcement force uses stored bar area" /></Formula>
+        <Formula><TechnicalEquation latex={String.raw`${scalarSymbol(component, 's')}=\sum_i F_{i,\mathrm{net}}\,${weight}=\text{${selected(audit.mechanicalLedger.steel)}}`}
+          ariaLabel="Selected reinforcement contribution" /></Formula></FormulaPanel>
+      <details className="pm-calc-details"><summary data-detail-label="Calculation terms">Reinforcement terms ({audit.rebars.length} bars)</summary><RebarLedger bars={audit.rebars} total={audit.mechanicalLedger.steel} component={component} angleDeg={angleDeg} /></details>
+      <ResistanceTrace audit={audit} point={point} designBasis={designBasis} component={component} angleDeg={angleDeg} />
+    </Step>
+  }
   return (
     <>
       <Step index={startIndex} title={`${title}: compatible strain and stress state`}>
@@ -533,20 +755,20 @@ const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, sect
           <Fact label="Projected depth D">{qfmt('length', audit.depthProfile.projectedSectionDepth)} {unit('length')}</Fact>
           <Fact label="Neutral-axis depth c">{audit.depthProfile.neutralAxisDepth === null ? '∞ (uniform strain)' : `${qfmt('length', audit.depthProfile.neutralAxisDepth)} ${unit('length')}${audit.depthProfile.neutralAxisInsideSection ? '' : ' · outside section'}`}</Fact>
         </div>
-        <OriginStrainTrace trace={audit.depthProfile.originStrainTrace} />
+        <OriginStrainTrace audit={audit} />
         <FormulaPanel><Formula numbered>
           <TechnicalEquation
             latex={String.raw`\varepsilon(x,y)=\varepsilon_0+\kappa_x(y-y_0)+\kappa_y(x-x_0)`}
             ariaLabel="Compatible strain plane equation"
           />
         </Formula></FormulaPanel>
-        <CalculationDiagram section={section} rebars={rebars} audit={audit} patternId={patternId} />
+        {!component && <CalculationDiagram section={section} rebars={rebars} audit={audit} patternId={patternId} />}
       </Step>
 
       <Step
         index={startIndex + 1}
         title={`${title}: concrete detail`}
-        action={<button
+        action={component ? undefined : <button
           type="button"
           className="ws-action pm-calc-excel-button"
           disabled={exportingConcreteKey !== null}
@@ -566,17 +788,17 @@ const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, sect
             : <TransferIcon direction="export" />}
         </button>}
       >
-        <ConcreteSummary audit={audit} />
+        <ConcreteSummary audit={audit} component={component} angleDeg={angleDeg} />
       </Step>
 
       <Step index={startIndex + 2} title={`${title}: reinforcement and displaced concrete`}>
-        <RebarLedger bars={audit.rebars} total={audit.mechanicalLedger.steel} />
-        <p className="pm-calc-caption">These bar rows are the mechanics-stage net reinforcement ledger. The final comparison table is authoritative for the Nominal/reference and displayed Design resultants and applies any global resultant factor exactly once.</p>
+        <RebarLedger bars={audit.rebars} total={audit.mechanicalLedger.steel} component={component} angleDeg={angleDeg} />
+        {!component && <p className="pm-calc-caption">These bar rows are the mechanics-stage net reinforcement ledger. The final comparison table is authoritative for the Nominal/reference and displayed Design resultants and applies any global resultant factor exactly once.</p>}
         {audit.steelLaws.map((entry) => <details className="pm-calc-details" key={entry.materialId}><summary>Steel material {entry.materialId}: {entry.name}</summary><MaterialLaw title="Steel law and active coefficients" law={entry.law} /></details>)}
       </Step>
 
       <Step index={startIndex + 3} title={`${title}: resultant assembly and resistance stage`}>
-        <ResistanceTrace audit={audit} point={point} designBasis={designBasis} />
+        <ResistanceTrace audit={audit} point={point} designBasis={designBasis} component={component} angleDeg={angleDeg} />
       </Step>
     </>
   )
@@ -619,17 +841,31 @@ const FixedPSchematic = ({ row }: { row: ChartTableFixedPRow }) => {
   )
 }
 
-const calculationAuditStepCount = (audit: PointCalculationAudit | undefined) => {
+const calculationAuditStepCount = (audit: PointCalculationAudit | undefined, compact = false): number => {
   if (!audit || audit.kind === 'unavailable') return 1
-  if (audit.kind === 'axial-cap') return audit.preCap ? 5 : 1
-  return 4
+  if (audit.kind === 'axial-cap') return 1 + (audit.preCap ? calculationAuditStepCount(audit.preCap.audit, compact) : 0)
+  return compact ? 1 : 4
 }
 
-const VerticalResult = ({ row, index }: { row: ChartTableVerticalRow; index: number }) => {
+const VerticalResult = ({ row, index, component }: { row: ChartTableVerticalRow; index: number; component?: ChartValueComponent }) => {
   const { force, moment } = useQuantityFormatters()
 
   const selected = row.evidence.stage === 'design' ? row.design : row.nominal
   if (!selected) return null
+  if (component) {
+    const value = chartTableValue(row, component)
+    if (value === null) return null
+    const label = chartValueLabel(component, row.evidence.stage)
+    return <Step index={index} title={`Value shown in the table: ${label}`}>
+      {component === 'M' && <FormulaPanel>
+        <Formula><TechnicalEquation latex={String.raw`M_{\beta}=M_x\cos\beta+M_y\sin\beta,\qquad \beta=${texNumber(fmt(row.evidence.angleDeg))}^{\circ}`}
+          ariaLabel="Selected moment projection onto the direct meridian" /></Formula>
+        <Formula><TechnicalEquation latex={String.raw`M_{\beta}=(\text{${moment(row.evidence.point.Mx)}})\cos(${texNumber(fmt(row.evidence.angleDeg))}^{\circ})+(\text{${moment(row.evidence.point.My)}})\sin(${texNumber(fmt(row.evidence.angleDeg))}^{\circ})=\text{${moment(value)}}`}
+          ariaLabel="Projected moment with the stored component values substituted" /></Formula>
+      </FormulaPanel>}
+      <div className="pm-calc-final" data-result-component={component} data-canonical-value={value} data-stage={row.evidence.stage}><Fact label={label}>{component === 'P' ? force(value) : moment(value)}</Fact></div>
+    </Step>
+  }
   return <Step index={index} title="Value shown in the Vertical table">
     <FormulaPanel><Formula id="equation-projected-moment" numbered>
       <TechnicalEquation
@@ -641,11 +877,33 @@ const VerticalResult = ({ row, index }: { row: ChartTableVerticalRow; index: num
   </Step>
 }
 
-const FixedPResult = ({ row, index }: { row: ChartTableFixedPRow; index: number }) => {
+const FixedPResult = ({ row, index, component }: { row: ChartTableFixedPRow; index: number; component?: ChartValueComponent }) => {
   const { unit, momentValue, force, moment } = useQuantityFormatters()
 
   const { bracket, fixedP, sample, stage } = row.evidence
   const selected = stage === 'design' ? row.design : row.nominal
+  if (component) {
+    const value = chartTableValue(row, component)
+    if (value === null) return null
+    const label = chartValueLabel(component, stage)
+    return <Step index={index} title={`Fixed-P interpolation to ${label}`}>
+      {!bracket ? <p className="is-error">The stored interpolation bracket is unavailable.</p> : <>
+        <FormulaPanel>
+          {bracket.exact ? <Formula><TechnicalEquation latex={String.raw`P_{\mathrm{selected}}=P_{\mathrm{station}}=\text{${force(fixedP)}},\qquad ${stageSymbol(component, stage)}=\text{${moment(value)}}`}
+            ariaLabel="Exact stored Fixed P station component" /></Formula> : <>
+            <Formula><TechnicalEquation latex={String.raw`t=\frac{P_{\mathrm{selected}}-P_{\mathrm{below}}}{P_{\mathrm{above}}-P_{\mathrm{below}}}=\frac{\text{${force(fixedP)}}-(\text{${force(bracket.below.P)}})}{\text{${force(bracket.above.P)}}-(\text{${force(bracket.below.P)}})}=${texNumber(fmt(bracket.ratio, 8))}`}
+              ariaLabel="Fixed P interpolation ratio with stored axial forces" /></Formula>
+            <Formula><TechnicalEquation latex={String.raw`${stageSymbol(component, stage)}=${scalarSymbol(component, '\\mathrm{below}')}+t(${scalarSymbol(component, '\\mathrm{above}')}-${scalarSymbol(component, '\\mathrm{below}')})`}
+              ariaLabel="Interpolation of only the selected moment component" /></Formula>
+            <Formula><TechnicalEquation latex={String.raw`${stageSymbol(component, stage)}=(\text{${moment(chartResultantValue(bracket.below, component, row.angleDeg))}})+${texNumber(fmt(bracket.ratio, 8))}\,[(\text{${moment(chartResultantValue(bracket.above, component, row.angleDeg))}})-(\text{${moment(chartResultantValue(bracket.below, component, row.angleDeg))}})]=\text{${moment(value)}}`}
+              ariaLabel="Selected Fixed P moment with stored interpolation values substituted" /></Formula>
+          </>}
+        </FormulaPanel>
+        <div className="pm-calc-final" data-result-component={component} data-canonical-value={value} data-stage={stage}><Fact label={label}>{moment(value)}</Fact></div>
+      </>}
+      <p className="pm-calc-caption">The selected component uses only the stored endpoints and interpolation ratio. No strain plane is assigned to the interpolated point.</p>
+    </Step>
+  }
   return <Step index={index} title="Fixed-P interpolation and value shown in the table">
     {!bracket ? <div className="pm-calc-note is-error"><AlertTriangle size={16} /><p>No same-meridian bracket is attached to this row; interpolation evidence is unavailable.</p></div> : bracket.exact ? (
       <FormulaPanel><Formula><span className="pm-calc-math">Pselected = Pstation; Mx = {moment(sample.Mx)}; My = {moment(sample.My)}</span></Formula></FormulaPanel>
@@ -676,14 +934,16 @@ const FixedPResult = ({ row, index }: { row: ChartTableFixedPRow; index: number 
   </Step>
 }
 
-export function ChartCalculationDialog({ row, rows, source, resistanceStage, summary, surface, projectName, section, rebars, materialStore, designBasis, exportingConcreteKey, exportingCalculationTrace, exportError, onExportConcreteExcel, onExportCalculationTraceExcel, onSourceChange, onResistanceStageChange, onRowChange, onClose }: Props) {
+export function ChartCalculationDialog({ row, rows, source, resistanceStage, valueComponent, summary, surface, projectName, section, rebars, materialStore, designBasis, exportingConcreteKey, exportingCalculationTrace, exportError, onExportConcreteExcel, onExportCalculationTraceExcel, onSourceChange, onResistanceStageChange, onRowChange, onClose }: Props) {
   const { qfmt, unit, force } = useQuantityFormatters()
 
   const patternId = useId().replace(/:/g, '')
   const stage = row?.evidence.stage ?? resistanceStage
-  const [audits, setAudits] = useState<Map<string, PointCalculationAudit>>(new Map())
-  const [auditError, setAuditError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [auditState, setAuditState] = useState<
+    | { request: object; status: 'ready'; items: Map<string, PointCalculationAudit> }
+    | { request: object; status: 'failed'; message: string }
+    | null
+  >(null)
   const requestedPoints = useMemo(() => {
     if (!row) return []
     if (row.kind === 'vertical') return [{ key: 'selected', point: row.evidence.point, stationDefinition: row.evidence.station?.definition ?? null }]
@@ -697,57 +957,58 @@ export function ChartCalculationDialog({ row, rows, source, resistanceStage, sum
         ]
   }, [row])
 
+  const auditRequest = useMemo(() => ({
+    calculationProfileId: surface.calculationProfileId,
+    section, rebars, materialStore, analysisOptions: surface.analysisOptions, designBasis, stage,
+    points: requestedPoints
+  }), [designBasis, materialStore, rebars, requestedPoints, section, stage, surface.analysisOptions, surface.calculationProfileId])
+  const currentAudit = auditState?.request === auditRequest ? auditState : null
+  const audits = currentAudit?.status === 'ready' ? currentAudit.items : new Map<string, PointCalculationAudit>()
+  const auditError = !surface.calculationProfileId
+    ? 'The surface has no calculation-profile identity, so a mechanics-specific audit cannot be selected safely.'
+    : currentAudit?.status === 'failed' ? currentAudit.message : null
+  const loading = Boolean(surface.calculationProfileId && requestedPoints.length > 0 && !currentAudit)
+
   useEffect(() => {
     const controller = new AbortController()
-    setAudits(new Map())
-    setAuditError(null)
-    if (!surface.calculationProfileId) {
-      setAuditError('The surface has no calculation-profile identity, so a mechanics-specific audit cannot be selected safely.')
-      setLoading(false)
-      return () => controller.abort()
-    }
-    if (requestedPoints.length === 0) {
-      setLoading(false)
-      return () => controller.abort()
-    }
-    setLoading(true)
-    void buildPointAuditsAsync({
-      calculationProfileId: surface.calculationProfileId,
-      section,
-      rebars,
-      materialStore,
-      analysisOptions: surface.analysisOptions,
-      designBasis,
-      stage,
-      points: requestedPoints
-    }, controller.signal).then((items) => {
-      setAudits(new Map(items.map((item) => [item.key, item.audit])))
-      setLoading(false)
-    }).catch((error: unknown) => {
-      if (isAnalysisAbort(error)) return
-      setAuditError(error instanceof Error ? error.message : String(error))
-      setLoading(false)
-    })
+    if (!auditRequest.calculationProfileId || auditRequest.points.length === 0) return () => controller.abort()
+    void buildPointAuditsAsync({ ...auditRequest, calculationProfileId: auditRequest.calculationProfileId }, controller.signal)
+      .then((items) => {
+        if (controller.signal.aborted) return
+        const matches = items.length === auditRequest.points.length && auditRequest.points.every(point => {
+          const audit = items.find(item => item.key === point.key)?.audit
+          return audit?.pointId === point.point.id && audit.stage === auditRequest.stage
+        })
+        setAuditState(matches
+          ? { request: auditRequest, status: 'ready', items: new Map(items.map(item => [item.key, item.audit])) }
+          : { request: auditRequest, status: 'failed', message: 'The returned audit does not match the selected point and resistance stage.' })
+      }).catch((error: unknown) => {
+        if (controller.signal.aborted || isAnalysisAbort(error)) return
+        setAuditState({ request: auditRequest, status: 'failed', message: error instanceof Error ? error.message : String(error) })
+      })
     return () => controller.abort()
-  }, [designBasis, materialStore, rebars, requestedPoints, section, stage, surface.analysisOptions, surface.calculationProfileId])
+  }, [auditRequest])
 
   const basicConcrete = materialStore.concrete
+  const valueReady = requestedPoints.length > 0 && requestedPoints.every(point => isReconciledPointAudit(audits.get(point.key)))
   const selectedAudit = audits.get('selected')
   const belowAudit = audits.get('below')
   const aboveAudit = audits.get('above')
-  const belowStartIndex = 4
-  const aboveStartIndex = belowStartIndex + calculationAuditStepCount(belowAudit)
+  const belowStartIndex = valueComponent ? 2 : 4
+  const aboveStartIndex = belowStartIndex + calculationAuditStepCount(belowAudit, Boolean(valueComponent))
   const fixedPResultIndex = aboveStartIndex + (row?.kind === 'fixedP' && !row.evidence.bracket?.exact
-    ? calculationAuditStepCount(aboveAudit)
+    ? calculationAuditStepCount(aboveAudit, Boolean(valueComponent))
     : 0)
   return (
     <CalculationDialogFrame
-      title="CALCULATION TRACE"
+      title={valueComponent ? `CALCULATION TRACE · ${chartValueLabel(valueComponent, stage)}` : 'CALCULATION TRACE'}
       closeLabel="Close calculation details"
-      bodyKey={`${stage}-${row?.key ?? 'empty'}`}
+      bodyKey={`${stage}-${row?.key ?? 'empty'}-${valueComponent ?? 'detail'}`}
       defaultView="document"
+      compact={Boolean(valueComponent)}
+      description={valueComponent && row ? `${stage === 'design' ? 'Design' : 'Nominal'} · ${row.kind === 'vertical' ? 'Vertical' : 'Fixed-P'} · Row ${row.index} · ${row.kind === 'vertical' ? row.criterion : `β ${fmt(row.angleDeg, 3)}° · branch ${row.branch}`}` : undefined}
       onClose={onClose}
-      headerAction={<button
+      headerAction={valueComponent ? undefined : <button
         type="button"
         className="ws-action pm-calc-excel-button pm-calc-excel-button--report"
         disabled={exportingCalculationTrace || requestedPoints.length === 0 || !surface.calculationProfileId}
@@ -757,12 +1018,13 @@ export function ChartCalculationDialog({ row, rows, source, resistanceStage, sum
         <span>Excel</span>
         {exportingCalculationTrace ? <Loader2 size={15} className="pm-spin" /> : <TransferIcon direction="export" />}
       </button>}
-      controls={<div className="pm-calculation-dialog__selectors" aria-label="Calculation trace selection">
+      controls={valueComponent ? null : <div className="pm-calculation-dialog__selectors" aria-label="Calculation trace selection">
             <label className="pm-calculation-dialog__selector">
               <span>View</span>
               <select
                 aria-label="Calculation trace view"
                 value={source}
+                disabled={valueComponent !== null}
                 onChange={(event) => onSourceChange(event.target.value as ChartTableSource)}
               >
                 <option value="vertical">Vertical</option>
@@ -807,7 +1069,7 @@ export function ChartCalculationDialog({ row, rows, source, resistanceStage, sum
               ? 'No calculation criteria are available for the selected View and Stage. The dialog remains open so another selection can be made.'
               : 'The selected criterion is not present in this resistance stage after geometric surface processing. Choose another criterion or switch back to restore the previous selection; no different calculation has been substituted.'}</p></div>
           ) : <>
-          <Step index={1} title="Basic inputs">
+          {!valueComponent && <><Step index={1} title="Basic inputs">
             <div className="pm-calc-facts">
               <Fact label="Project / section">{projectName || 'Untitled project'} · {section.name}</Fact>
               <Fact label="Section">Ac = {qfmt('area', summary.concreteArea)} {unit('area')} · {summary.rebarCount} bars · As = {qfmt('area', summary.steelArea)} {unit('area')}</Fact>
@@ -821,25 +1083,26 @@ export function ChartCalculationDialog({ row, rows, source, resistanceStage, sum
             </div>
           </Step>
 
-          <IntegrationModel surface={surface} geometricCap={requestedPoints.some((item) => item.point.surfaceRole === 'axial-cap')} />
+          <IntegrationModel surface={surface} geometricCap={requestedPoints.some((item) => item.point.surfaceRole === 'axial-cap')} /></>}
 
           {loading ? <div className="pm-calc-loading"><Loader2 size={17} className="pm-spin" /><span>Re-evaluating the selected stored state in the analysis worker and reconciling every contribution…</span></div> : null}
           {auditError ? <div className="pm-calc-note is-error"><AlertTriangle size={16} /><p><b>Blocking audit failure:</b> {auditError}</p></div> : null}
+          {valueComponent && !loading && !auditError && !valueReady && <div className="pm-calc-note is-error" role="alert"><AlertTriangle size={16} /><p>The selected value has unavailable or unreconciled source evidence. A completed derivation cannot be published.</p></div>}
 
           {!loading && !auditError && row.kind === 'vertical' && selectedAudit ? <>
-            <PhysicalAudit audit={selectedAudit} point={row.evidence.point} stationDefinition={row.evidence.station?.definition ?? null} exportKey="selected" title="Selected Vertical station" section={section} rebars={rebars} designBasis={designBasis} patternId={`${patternId}-vertical`} exportingConcreteKey={exportingConcreteKey} onExportConcreteExcel={onExportConcreteExcel} />
-            <VerticalResult row={row} index={3 + calculationAuditStepCount(selectedAudit)} />
+            <PhysicalAudit startIndex={valueComponent ? 1 : 3} component={valueComponent ?? undefined} angleDeg={row.evidence.angleDeg} audit={selectedAudit} point={row.evidence.point} stationDefinition={row.evidence.station?.definition ?? null} exportKey="selected" title="Selected Vertical station" section={section} rebars={rebars} designBasis={designBasis} patternId={`${patternId}-vertical`} exportingConcreteKey={exportingConcreteKey} onExportConcreteExcel={onExportConcreteExcel} />
+            {(!valueComponent || valueReady) && <VerticalResult component={valueComponent ?? undefined} row={row} index={(valueComponent ? 1 : 3) + calculationAuditStepCount(selectedAudit, Boolean(valueComponent))} />}
           </> : null}
 
           {!loading && !auditError && row.kind === 'fixedP' ? <>
-            <Step index={3} title="Fixed-P row definition and source brackets">
+            <Step index={valueComponent ? 1 : 3} title="Fixed-P row definition and source brackets">
               <div className="pm-calc-facts"><Fact label="Selected axial force">{force(row.evidence.fixedP)}</Fact><Fact label="Meridian β / branch">{fmt(row.angleDeg)}° / {row.branch}</Fact></div>
-              <FixedPSchematic row={row} />
+              {!valueComponent && <FixedPSchematic row={row} />}
               <p className="pm-calc-caption">Fixed-P is a surface-edge intersection. Its endpoint traces remain separate; physical endpoints show their compatible state, while cap-face endpoints show the exact geometric cap operation.</p>
             </Step>
-            {row.evidence.bracket && belowAudit ? <PhysicalAudit audit={belowAudit} point={row.evidence.bracket.below} stationDefinition={row.evidence.belowStation?.definition ?? null} exportKey="below" title={`Lower endpoint · ${row.evidence.belowStation ? stationDefinitionLabel(row.evidence.belowStation.definition) : row.evidence.bracket.below.stationId ?? 'physical state'}`} section={section} rebars={rebars} designBasis={designBasis} patternId={`${patternId}-below`} exportingConcreteKey={exportingConcreteKey} onExportConcreteExcel={onExportConcreteExcel} startIndex={belowStartIndex} /> : null}
-            {row.evidence.bracket && !row.evidence.bracket.exact && aboveAudit ? <PhysicalAudit audit={aboveAudit} point={row.evidence.bracket.above} stationDefinition={row.evidence.aboveStation?.definition ?? null} exportKey="above" title={`Upper endpoint · ${row.evidence.aboveStation ? stationDefinitionLabel(row.evidence.aboveStation.definition) : row.evidence.bracket.above.stationId ?? 'physical state'}`} section={section} rebars={rebars} designBasis={designBasis} patternId={`${patternId}-above`} exportingConcreteKey={exportingConcreteKey} onExportConcreteExcel={onExportConcreteExcel} startIndex={aboveStartIndex} /> : null}
-            <FixedPResult row={row} index={fixedPResultIndex} />
+            {row.evidence.bracket && belowAudit ? <PhysicalAudit component={valueComponent ?? undefined} angleDeg={row.angleDeg} audit={belowAudit} point={row.evidence.bracket.below} stationDefinition={row.evidence.belowStation?.definition ?? null} exportKey="below" title={`Lower endpoint · ${row.evidence.belowStation ? stationDefinitionLabel(row.evidence.belowStation.definition) : row.evidence.bracket.below.stationId ?? 'physical state'}`} section={section} rebars={rebars} designBasis={designBasis} patternId={`${patternId}-below`} exportingConcreteKey={exportingConcreteKey} onExportConcreteExcel={onExportConcreteExcel} startIndex={belowStartIndex} /> : null}
+            {row.evidence.bracket && !row.evidence.bracket.exact && aboveAudit ? <PhysicalAudit component={valueComponent ?? undefined} angleDeg={row.angleDeg} audit={aboveAudit} point={row.evidence.bracket.above} stationDefinition={row.evidence.aboveStation?.definition ?? null} exportKey="above" title={`Upper endpoint · ${row.evidence.aboveStation ? stationDefinitionLabel(row.evidence.aboveStation.definition) : row.evidence.bracket.above.stationId ?? 'physical state'}`} section={section} rebars={rebars} designBasis={designBasis} patternId={`${patternId}-above`} exportingConcreteKey={exportingConcreteKey} onExportConcreteExcel={onExportConcreteExcel} startIndex={aboveStartIndex} /> : null}
+            {(!valueComponent || valueReady) && <FixedPResult component={valueComponent ?? undefined} row={row} index={fixedPResultIndex} />}
           </> : null}
           </>}
     </CalculationDialogFrame>

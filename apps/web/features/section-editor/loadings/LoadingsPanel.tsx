@@ -2,9 +2,9 @@
 
 import { QuantityInput, UnitLabel, useDisplayUnits } from '../shared/DisplayUnits'
 
-import { AddIcon, TransferIcon } from '../shared/WorkspaceIcons'
+import { AddIcon } from '../shared/WorkspaceIcons'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { CircleArrowRight, Loader2, X } from 'lucide-react'
+import { Loader2, X } from 'lucide-react'
 import type { LoadcaseQuickCheckResult } from '@pm/analysis'
 import { createLoadCombination, editLoadAtReference, loadReferenceOf, resultantAtCentroid, resultantAtLoadReference, type LoadCombination, type LoadingsInput } from '@pm/project'
 import { downloadLoadcaseWorkbook, importLoadcaseWorkbook } from './loadcase-xlsx'
@@ -17,7 +17,7 @@ type Props = {
   checksById?: Record<number, LoadcaseQuickCheckResult>
   updateStatus?: { active: boolean; message: string }
   onSelectLoadcase: (id: number | null) => void
-  onActivateLoadcase?: (loadcase: LoadCombination) => void
+  onOpenDetail?: () => void
   onChange: (input: LoadingsInput) => void
   /** Called when Pu/Mux/Muy change so the capacity check can refresh. */
   onDemandChanged?: (loadcase: LoadCombination) => void
@@ -79,7 +79,7 @@ export function LoadingsPanel({
   checksById = {},
   updateStatus = { active: false, message: '' },
   onSelectLoadcase,
-  onActivateLoadcase,
+  onOpenDetail,
   onChange,
   onDemandChanged
 }: Props) {
@@ -87,11 +87,6 @@ export function LoadingsPanel({
   const combinations = input.combinations
   const reference = loadReferenceOf(input)
   const excelInputRef = useRef<HTMLInputElement | null>(null)
-
-  const activateCombination = (combination: LoadCombination) => {
-    onSelectLoadcase(combination.id)
-    onActivateLoadcase?.(combination)
-  }
 
   const updateCombination = (id: number, patch: Partial<LoadCombination>, refreshCheck = false) => {
     const nextCombinations = combinations.map((item) => (item.id === id ? editLoadAtReference(item, patch, reference) : item))
@@ -158,35 +153,10 @@ export function LoadingsPanel({
             <h2>Loadcases</h2>
             <span className="pm-loadcase-units" aria-label="Load units"><UnitLabel quantity="force" />, <UnitLabel quantity="moment" /></span>
           </div>
-          <div className="pm-loadcase-header-actions" role="group" aria-label="Loadcase Excel tools">
-            <button
-              type="button"
-              className="ws-action pm-file-btn"
-              onClick={() => void exportExcel()}
-              title="Export loadcases to Excel"
-              aria-label="Export loadcases to Excel"
-            >
-              <TransferIcon direction="export" />
-              Excel
-            </button>
-            <button
-              type="button"
-              className="ws-action pm-file-btn"
-              onClick={() => excelInputRef.current?.click()}
-              title="Import loadcases from Excel"
-              aria-label="Import loadcases from Excel"
-            >
-              <TransferIcon direction="import" />
-              Excel
-            </button>
-            <input
-              ref={excelInputRef}
-              type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              hidden
-              onChange={importExcel}
-            />
-          </div>
+          <button type="button" className="ws-action" onClick={onOpenDetail} disabled={!onOpenDetail}
+            title="Open the calculation trace for the selected loadcase">
+            Detail calculation
+          </button>
         </div>
         {/* Keep this inline slot mounted so status visibility never moves the table. */}
         <div className={`pm-loadcase-update-slot${updateStatus.active ? ' is-active' : ''}`}>
@@ -206,7 +176,6 @@ export function LoadingsPanel({
         <table className="pm-loadcase-table" aria-label="Loadcase demand table">
           <colgroup>
             <col className="pm-col-name" />
-            <col className="pm-col-detail" />
             <col className="pm-col-load" />
             <col className="pm-col-load" />
             <col className="pm-col-load" />
@@ -216,7 +185,6 @@ export function LoadingsPanel({
           <thead>
             <tr>
               <th title="Load combination name">Name</th>
-              <th className="pm-col-detail" aria-label="Calculation details" />
               <th title="Factored axial force: positive compression, negative tension">Pu</th>
               <th title="Factored moment about X at the applied load reference.">Mux</th>
               <th title="Factored moment about Y at the applied load reference.">Muy</th>
@@ -229,7 +197,7 @@ export function LoadingsPanel({
           <tbody>
             {combinations.length === 0 && (
               <tr>
-                <td colSpan={7} className="pm-rebar-empty">
+                <td colSpan={6} className="pm-rebar-empty">
                   Add loadcases Pu, Mux, Muy.
                 </td>
               </tr>
@@ -244,12 +212,21 @@ export function LoadingsPanel({
               const indeterminate = check?.adequacy === 'indeterminate'
               const statusLabel = pass ? 'OK' : fail ? 'NG' : indeterminate ? 'CHECK' : ''
               const interval = check?.utilizationInterval
+              const selectRow = () => selectLoadcaseFromRow(selectedLoadcaseId, item.id, onSelectLoadcase)
 
               return (
                 <tr
                   key={item.id}
                   className={selectedLoadcaseId === item.id ? 'is-selected' : ''}
-                  onClick={() => selectLoadcaseFromRow(selectedLoadcaseId, item.id, onSelectLoadcase)}
+                  aria-current={selectedLoadcaseId === item.id ? 'true' : undefined}
+                  tabIndex={0}
+                  onClick={selectRow}
+                  onKeyDown={(event) => {
+                    if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                      event.preventDefault()
+                      selectRow()
+                    }
+                  }}
                 >
                   <td>
                     <SpreadsheetInput
@@ -257,20 +234,6 @@ export function LoadingsPanel({
                       ariaLabel={`Loadcase ${item.id} name`}
                       onCommit={(value) => updateCombination(item.id, { name: value })}
                     />
-                  </td>
-                  <td className="pm-col-detail">
-                    <button
-                      type="button"
-                      className="ws-action ws-action--quiet ws-action--compact ws-action--icon pm-table-icon-btn"
-                      title="Open calculation trace"
-                      aria-label={`Open calculation trace for ${item.name}`}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        activateCombination(item)
-                      }}
-                    >
-                      <CircleArrowRight size={15} />
-                    </button>
                   </td>
                   <td>
                     <QuantityInput showUnit={false} quantity="force"
@@ -335,7 +298,34 @@ export function LoadingsPanel({
           </tbody>
         </table>
       </div>
-      <div className="ws-table-actions">
+      <div className="ws-table-actions pm-loadcase-footer">
+        <div className="pm-loadcase-file-actions" role="group" aria-label="Loadcase Excel tools">
+          <button
+            type="button"
+            className="ws-action pm-file-btn"
+            onClick={() => void exportExcel()}
+            title="Export loadcases to Excel"
+            aria-label="Export XLSX loadcase workbook"
+          >
+            Export XLSX
+          </button>
+          <button
+            type="button"
+            className="ws-action pm-file-btn"
+            onClick={() => excelInputRef.current?.click()}
+            title="Import loadcases from Excel"
+            aria-label="Import XLSX loadcase workbook"
+          >
+            Import XLSX
+          </button>
+          <input
+            ref={excelInputRef}
+            type="file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            hidden
+            onChange={importExcel}
+          />
+        </div>
         <button type="button" className="ws-action ws-action--primary" onClick={addCombination}>
           <AddIcon />
           Add

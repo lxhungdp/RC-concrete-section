@@ -30,6 +30,9 @@ export const uniformSteelEndpointStrain = (
   if (declared.length > 0) {
     let minimum = Number.POSITIVE_INFINITY
     for (const value of declared) minimum = Math.min(minimum, value)
+    // A finite project design cutoff governs the new law. A plateau's display/saturation strain
+    // is not another material bound and must not truncate the declared hardening endpoint.
+    if ([...used.values()].some((law) => law.strainLimits !== undefined)) return minimum
     if (undeclaredPlateau.length > 0) {
       let maximumUndeclared = 0
       for (const value of undeclaredPlateau) maximumUndeclared = Math.max(maximumUndeclared, value)

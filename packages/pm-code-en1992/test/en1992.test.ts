@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  EN1992_CLASS_B_REFERENCE,
   en1992ConcreteDesignStrength,
   en1992ParabolicRectangularParameters,
   en1992SteelDesignStrength
 } from '../src/index'
+
+test('EN 1992 Annex C Table C.1 Class B lower-bound reference is explicit, without grade qualification', () => {
+  assert.deepEqual(EN1992_CLASS_B_REFERENCE, { strengthRatio: 1.08, epsUk: 0.05 })
+})
 
 test('EN 1992 normal-strength parabolic-rectangular parameters use Table 3.1 values', () => {
   assert.deepEqual(en1992ParabolicRectangularParameters(30), {

@@ -84,7 +84,7 @@ try {
     const select = async id => {
       const row = page.getByRole('table', { name: 'Loadcase demand table' }).locator('tr')
         .filter({ has: page.getByLabel(`Loadcase ${id} name`, { exact: true }) })
-      await row.locator('td').nth(5).click()
+      await row.locator('td.pm-col-ur').click()
       await page.waitForFunction(id => window.__capAudit.results[id], id, { timeout: 60000 })
       await page.waitForFunction(() => document.querySelector('.pm-results-stage')?.getAttribute('aria-busy') === 'false')
       return page.evaluate(id => window.__capAudit.results[id], id)

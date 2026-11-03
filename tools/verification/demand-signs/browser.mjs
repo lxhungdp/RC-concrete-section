@@ -51,7 +51,7 @@ try {
     for (const [index, [mx, my]] of quadrants.entries()) {
       const row = page.getByRole('table', { name: 'Loadcase demand table' }).locator('tr')
         .filter({ has: page.getByLabel(`Loadcase ${index + 1} name`, { exact: true }) })
-      await row.locator('td').nth(5).click()
+      await row.locator('td.pm-col-ur').click()
       await page.waitForFunction(() => document.querySelector('.pm-results-stage')?.getAttribute('aria-busy') === 'false')
       await axes.waitFor()
       assert.equal(await page.locator('.pm-demand-signs').count(), 0, 'no separate sign cards')
@@ -92,7 +92,7 @@ try {
     }
     const mixedRow = page.getByRole('table', { name: 'Loadcase demand table' }).locator('tr')
       .filter({ has: page.getByLabel('Loadcase 2 name', { exact: true }) })
-    await mixedRow.locator('td').nth(5).click()
+    await mixedRow.locator('td.pm-col-ur').click()
     await page.waitForFunction(() => document.querySelector('.pm-results-stage')?.getAttribute('aria-busy') === 'false')
     const layouts = []
     for (const width of [900, 560, 390]) {

@@ -1,4 +1,5 @@
 import type { MaterialStore, StressStrainPoint } from './types'
+import { resolveLinearHardeningSteel } from './steel/linear-hardening'
 
 export type MaterialValidationIssue = {
   path: string
@@ -146,11 +147,18 @@ export const materialStoreIssues = (store: MaterialStore): MaterialValidationIss
         issues.push({ path: `${path}.factors.${name}`, message: 'must be positive and finite when provided' })
       }
     }
-    if (!['elastic-perfectly-plastic', 'bilinear', 'user-curve'].includes(steel.stressStrain.type)) {
+    if (!['elastic-perfectly-plastic', 'bilinear', 'linear-hardening', 'user-curve'].includes(steel.stressStrain.type)) {
       issues.push({ path: `${path}.stressStrain.type`, message: `is unsupported (${String(steel.stressStrain.type)})` })
     } else if (steel.stressStrain.type === 'bilinear' &&
       (!Number.isFinite(steel.stressStrain.hardeningRatio) || steel.stressStrain.hardeningRatio < 0)) {
       issues.push({ path: `${path}.stressStrain.hardeningRatio`, message: 'must be nonnegative and finite' })
+    }
+    if (steel.stressStrain.type === 'linear-hardening') {
+      try {
+        resolveLinearHardeningSteel(steel)
+      } catch (error) {
+        issues.push({ path: `${path}.stressStrain`, message: error instanceof Error ? error.message : String(error) })
+      }
     }
     if (steel.stressStrain.type === 'user-curve') {
       issues.push(...curveIssues(steel.stressStrain.points, `${path}.stressStrain.points`))

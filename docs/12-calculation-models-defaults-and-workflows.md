@@ -43,7 +43,7 @@ kernel as their published siblings and change only where the parameters come fro
 | Concrete model | fixed by the standard | user-selected among the models that mechanics can evaluate |
 | `alpha`, `n`, `eps0`, `epsCu` | code table for `fck` | user input |
 | `beta1`, block stress factor | code table for `fck` | user input on the `user-block` concrete model |
-| Steel law | elastic-perfectly-plastic | elastic-perfectly-plastic, bilinear, or a user table |
+| Steel law | plateau, or immediate linear hardening for KDS/EN with declared endpoint and cutoff | plateau, endpoint hardening, legacy bilinear slope, or a user table |
 | `phi` factors, transition rule, axial cap | code defaults, deviations need a narrative | user input, no narrative required |
 | Status | `draft` pending named review | `user-defined`, outside the review ladder |
 
@@ -55,9 +55,15 @@ Two guards keep this from becoming a way to smuggle an unevaluable state into a 
 
 - persistence rejects a project whose concrete model the selected mechanics cannot evaluate — a
   block law cannot reach the fibre kernel, and a fibre law carries no `beta1` for the block kernel;
-- a non-elastic-perfectly-plastic steel law is accepted only by the custom block profile. A
-  published block profile is calibrated against that idealization, so accepting another law there
-  would silently change what the code check means.
+- KDS hardening is explicitly recorded as a project steel-model modification in both mechanics.
+  ACI and AS block profiles retain their plateau-only guard. The KDS block adapter compiles the
+  project law for each material-strength stage and preserves its code axial-cap definition.
+
+Endpoint hardening adds material-derived steel-controlled transition states to the selected fibre
+schedule. These states satisfy the inequalities of every used steel material and the exact concrete
+support boundary. An unused material does not add states. The ordinary plateau schedule retains its
+existing station counts. Fixed hardening-domain checks report utilization with an unqualified fixed
+uncertainty bound. Adaptive sampling supplies the convergence evidence used for classification.
 
 `@pm/code-custom` derives nothing. Where the KDS adapter reads Table 4.1-2 and the ACI adapter
 computes `beta1` from `f'c`, the custom adapter validates ranges and uses what it was given. Its

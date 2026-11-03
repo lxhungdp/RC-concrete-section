@@ -37,6 +37,7 @@ export const CUSTOM_BLOCK_PROVENANCE = {
 export type CustomTransverseReinforcement = 'other' | 'qualifying-spiral'
 
 export type CustomSteelLawDefinition =
+  | { type: 'compiled'; law: SteelLaw }
   | { type: 'elastic-perfectly-plastic' }
   | { type: 'bilinear'; hardeningRatio: number }
   | { type: 'user-curve'; points: ReadonlyArray<{ strain: number; stress: number }> }
@@ -168,6 +169,7 @@ const scaleResultants = (resultants: CapacityResultants, factor: number): Capaci
 
 const buildSteelLaw = (id: string, definition: CustomSteelDefinition): SteelLaw => {
   const law = definition.law ?? { type: 'elastic-perfectly-plastic' }
+  if (law.type === 'compiled') return law.law
   if (law.type === 'bilinear') {
     return createBilinearSteelLaw(
       definition.elasticModulus,

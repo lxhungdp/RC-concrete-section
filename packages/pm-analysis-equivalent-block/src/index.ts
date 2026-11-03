@@ -7,6 +7,10 @@ import {
   reconcileCalculationAuditResultant,
   sectionBoundaryPoints,
   stationDefinitionLabel,
+  strainResistanceFactorAudit,
+  selectGoverningSteelStrainLimit,
+  type SteelStrainLimitEvidence,
+  type CalculationAuditResistanceFactor,
   type AxialCapProjectionTrace,
   type CapacityFieldResult,
   type DesignResistanceTrace,
@@ -28,7 +32,7 @@ import {
   type SurfaceStation
 } from '@pm/analysis'
 import { ACI_318_19_PROVENANCE, createAci318Model } from '@pm/code-aci318'
-import { AS_3600_2018_PROVENANCE, createAs3600Model } from '@pm/code-as3600'
+import { AS_3600_2018_PROVENANCE, AS3600_BENDING_FACTOR_EXPRESSION, as3600BendingPhi, createAs3600Model } from '@pm/code-as3600'
 import {
   CUSTOM_BLOCK_PROVENANCE,
   createCustomBlockModel,
@@ -38,6 +42,7 @@ import {
 import { KDS_142020_PROVENANCE, createKds142020Model } from '@pm/code-kds142020'
 import {
   buildResistanceMaterialSets,
+  withSteelModelModification,
   minimumEccentricityCandidates,
   minimumEccentricityMessage,
   assertDesignMaterialApplicability,
@@ -62,6 +67,7 @@ import {
 import { netConcreteCentroid, rebarArea, rebarAreaSourceLabel, type GeometryInputRebarView, type SectionGeometry } from '@pm/geometry'
 import {
   assertValidMaterialStore,
+  compileSteelMaterial,
   describeSteelMaterialLaw,
   effectiveSteelYieldStress,
   userBlockCompressionStress,
@@ -133,6 +139,15 @@ const customBlockDefinition = (concrete: MaterialStore['concrete']): CustomBlock
 }
 
 const customSteelLaw = (steel: MaterialStore['steel'][number]): CustomSteelLawDefinition => {
+  if (steel.stressStrain.type === 'linear-hardening') {
+    const compiled = compileSteelMaterial(steel)
+    return { type: 'compiled', law: {
+      stressAt: compiled.stress,
+      yieldStrain: compiled.limits.epsYield,
+      ultimateStrain: compiled.limits.epsTensionUltimate,
+      strainLimits: { tension: compiled.limits.epsTensionUltimate, compression: compiled.limits.epsCompressionUltimate }
+    } }
+  }
   if (steel.stressStrain.type === 'bilinear') {
     return { type: 'bilinear', hardeningRatio: steel.stressStrain.hardeningRatio }
   }
@@ -151,6 +166,7 @@ type BlockModelResolutionInput = {
       elasticModulus: number
       yieldStress: number
       ultimateStrain: number | undefined
+      compileLaw?: (strengthMultiplier: number) => import('@pm/equivalent-block').SteelLaw
     }>
   }
 }
@@ -232,6 +248,7 @@ export const prepareBlockAnalysis = (
   materialStore: MaterialStore,
   designBasis: DesignBasis
 ): PreparedBlockAnalysis => {
+  designBasis = withSteelModelModification(designBasis, materialStore)
   if (!isEquivalentBlockProfileId(profileId)) {
     throw new Error(`The ${profileId} profile uses stress-strain integration and cannot be routed to the equivalent-block backend.`)
   }
@@ -257,18 +274,35 @@ export const prepareBlockAnalysis = (
   })
   const isCustom = profileId === 'custom-equivalent-block'
   const steel = Object.fromEntries(materialStore.steel.map((item) => {
+    if (profileId === 'kds-142020-equivalent-block' && item.stressStrain.type === 'user-curve') {
+      throw new AnalysisInputError('INVALID_MATERIAL', 'The KDS block route requires a plateau or a declared straight hardening branch for steel.')
+    }
     /**
-     * Only the custom profile may register a hardening or tabulated steel law. A published block
-     * profile is calibrated against the elastic-perfectly-plastic idealization, so accepting a
-     * different law there would silently change what the code check means.
+     * KDS also accepts an explicitly recorded project steel modification. ACI and AS keep their
+     * existing plateau-only scope; their adapters cannot silently acquire a new material law.
      */
-    if (!isCustom && item.stressStrain.type !== 'elastic-perfectly-plastic') {
+    if (!isCustom && profileId !== 'kds-142020-equivalent-block' && item.stressStrain.type !== 'elastic-perfectly-plastic') {
       throw new Error(`Equivalent-block code profiles currently require elastic-perfectly-plastic steel; material ${item.id} is ${item.stressStrain.type}.`)
     }
     return [String(item.id), {
       elasticModulus: item.elasticModulus,
       yieldStress: item.fy,
-      ultimateStrain: item.limits?.epsU
+      ultimateStrain: item.limits?.epsU,
+      ...(profileId === 'kds-142020-equivalent-block' && item.stressStrain.type !== 'elastic-perfectly-plastic' ? {
+        compileLaw: (strengthMultiplier: number) => {
+          const compiled = compileSteelMaterial({
+            ...item,
+            limits: { ...item.limits, epsY: item.fy * strengthMultiplier / item.elasticModulus },
+            factors: { gammaS: undefined, resistanceScale: strengthMultiplier }
+          })
+          return {
+            stressAt: compiled.stress,
+            yieldStrain: compiled.limits.epsYield,
+            ultimateStrain: compiled.limits.epsTensionUltimate,
+            strainLimits: { tension: compiled.limits.epsTensionUltimate, compression: compiled.limits.epsCompressionUltimate }
+          }
+        }
+      } : {})
     }]
   }))
   const common = {
@@ -314,6 +348,15 @@ export const prepareBlockAnalysis = (
     const model = BLOCK_MODEL_RESOLVERS[profileId]({ materialStore, basis: designBasis, common })
     referenceModel = model
     designModel = model
+  }
+  const usedSteel = new Set(preparedSection.rebars.map((bar) => bar.steelLawId))
+  for (const id of usedSteel) {
+    const law = designModel.steelLaws[id]
+    if (law?.strainLimits?.compression !== undefined && law.strainLimits.compression < designModel.blockLaw.extremeCompressionStrain) {
+      throw new AnalysisInputError('INVALID_MATERIAL',
+        'The physical steel compression limit is below the extreme strain of this equivalent block. Use fibre mechanics to construct the compatible steel-controlled compression boundary.',
+        { steelMaterialId: Number(id), limit: law.strainLimits.compression, concreteLimit: designModel.blockLaw.extremeCompressionStrain })
+    }
   }
   return {
     profileId,
@@ -1168,6 +1211,60 @@ export const buildEquivalentBlockPointCalculationAudit = (
       { pointId: point.id }
     )
   }
+  let resistanceFactorCalculation: CalculationAuditResistanceFactor | null = null
+  if (resistanceFactor !== null && prepared.designBasis.format === 'globalResultantFactor') {
+    const source = evaluation.source
+    if (!source || !('resistance' in source) || source.resistance.phi !== resistanceFactor) {
+      throw new AnalysisInputError('AUDIT_RECONCILIATION_FAILED', 'Resistance-factor evidence does not reproduce the stored equivalent-block factor.', { pointId: point.id })
+    }
+    const evaluated = source.resistance
+    const basis = prepared.designBasis
+    if ('tensionControlledLimit' in evaluated) {
+      const bar = nominal.bars.find(candidate => candidate.id === nominal.controllingBarId)
+      const steel = calculationMaterials.steel.find(material => String(material.id) === bar?.steelLawId)
+      const inputBar = prepared.rebars.find(candidate => String(candidate.id) === bar?.id)
+      if (!bar || !steel || !inputBar) {
+        throw new AnalysisInputError('AUDIT_RECONCILIATION_FAILED', 'The factor-controlling bar or steel material is unavailable.', { pointId: point.id })
+      }
+      resistanceFactorCalculation = strainResistanceFactorAudit({
+        factor: evaluated.phi, classification: evaluated.classification,
+        tensileStrain: evaluated.tensileStrain, yieldStrain: evaluated.yieldStrain,
+        tensionLimit: evaluated.tensionControlledLimit, yieldStress: steel.fy,
+        elasticModulus: steel.elasticModulus, steelMaterialId: steel.id,
+        controllingRebarId: inputBar.id,
+        compressionFactor: basis.transverseReinforcement === 'qualifying-spiral'
+          ? basis.factors.phiCompressionSpiral : basis.factors.phiCompressionOther,
+        tensionFactor: basis.factors.phiTension,
+        transverseReinforcement: basis.transverseReinforcement, limitRule: basis.transition,
+        transitionDenominator: evaluated.tensionControlledLimit - evaluated.yieldStrain,
+        minimumTransitionSpan: null,
+        // The published block evaluators use this boundary tolerance when classifying a state.
+        classificationTolerance: 1e-12 * Math.max(1, evaluated.tensionControlledLimit)
+      })
+    } else {
+      const model = prepared.designModel
+      if (!('compressionPhiClass' in model)) {
+        throw new AnalysisInputError('AUDIT_RECONCILIATION_FAILED', 'Axial/bending factor evidence has no matching AS capacity-factor model.', { pointId: point.id })
+      }
+      const factors = model.resistanceFactors
+      resistanceFactorCalculation = {
+        kind: 'axial-bending', factor: evaluated.phi, classification: evaluated.classification,
+        compressionClass: model.compressionPhiClass,
+        compressionFactor: model.compressionPhiClass === 'ordinary'
+          ? factors.phiCompressionOrdinary : factors.phiCompressionShortColumnHighPermanentLoad,
+        tensionFactor: factors.phiTension,
+        neutralAxisRatio: evaluated.neutralAxisRatio,
+        nominalAxial: evaluated.nominalAxial, balancedAxial: evaluated.balancedAxial,
+        pureTensionAxial: evaluated.pureTensionAxial,
+        bending: { ...AS3600_BENDING_FACTOR_EXPRESSION, minimum: factors.phiBendingMinimum,
+          maximum: factors.phiBendingMaximum, factor: as3600BendingPhi(evaluated.neutralAxisRatio, factors) },
+        axialRatio: evaluated.classification === 'combined-compression'
+          ? evaluated.nominalAxial / evaluated.balancedAxial
+          : evaluated.classification === 'combined-tension'
+            ? Math.max(0, Math.min(1, evaluated.nominalAxial / evaluated.pureTensionAxial)) : null
+      }
+    }
+  }
   const displayedLedger = resistanceFactor === null
     ? mechanicalLedger
     : blockAuditScale(mechanicalLedger, resistanceFactor)
@@ -1347,6 +1444,7 @@ export const buildEquivalentBlockPointCalculationAudit = (
     nominalReferenceLedger,
     displayedLedger,
     resistanceFactor,
+    resistanceFactorCalculation,
     nominalReferenceReconciliation,
     reconciliation
   }
@@ -1367,6 +1465,7 @@ const evaluateBlockAdmissibility = (
       concreteLimit,
       maxSteelTension: 0,
       steelTensionLimit: null,
+      governingSteelLimit: null,
       violations: []
     }
   }
@@ -1384,20 +1483,24 @@ const evaluateBlockAdmissibility = (
   }
   let maxSteelTension = 0
   let steelTensionLimit: number | null = null
+  let governingSteelLimit: SteelStrainLimitEvidence | null = null
   const violations: StrainAdmissibility['violations'] = []
   for (const bar of nominal.bars) {
     maxSteelTension = Math.max(maxSteelTension, Math.max(0, -bar.strain))
-    if (bar.ultimateStrain === undefined) continue
-    steelTensionLimit = steelTensionLimit === null
-      ? bar.ultimateStrain
-      : Math.min(steelTensionLimit, bar.ultimateStrain)
-    if (Math.abs(bar.strain) <= bar.ultimateStrain * (1 + 1e-9)) continue
+    if (bar.ultimateStrain !== undefined) steelTensionLimit = steelTensionLimit === null
+      ? bar.ultimateStrain : Math.min(steelTensionLimit, bar.ultimateStrain)
+    const limit = bar.strain < 0 ? bar.ultimateStrain : bar.compressionUltimateStrain
+    if (limit !== undefined) governingSteelLimit = selectGoverningSteelStrainLimit(governingSteelLimit, {
+      steelMaterialId: Number(bar.steelLawId), rebarId: Number(bar.id),
+      side: bar.strain < 0 ? 'tension' : 'compression', strain: bar.strain, limit
+    })
+    if (limit === undefined || Math.abs(bar.strain) <= limit * (1 + 1e-9)) continue
     const sourceBar = prepared.rebars.find((candidate) => String(candidate.id) === bar.id)
     violations.push({
       code: 'STEEL_STRAIN_EXCEEDS_ULTIMATE',
       rebarId: sourceBar?.id ?? Number(bar.id),
       value: bar.strain,
-      limit: bar.ultimateStrain
+      limit
     })
   }
   if (maxConcreteCompression > concreteLimit * (1 + 1e-9)) {
@@ -1414,6 +1517,7 @@ const evaluateBlockAdmissibility = (
     concreteLimit,
     maxSteelTension,
     steelTensionLimit,
+    governingSteelLimit,
     violations
   }
 }

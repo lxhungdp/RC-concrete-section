@@ -279,7 +279,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
             onChange(next)
           }}
         >
-          <option value="fixed">Fixed grid · 27 stations × 36 directions</option>
+          <option value="fixed">Fixed grid · 36 directions</option>
           <option value="adaptive">Independent adaptive · 12 seeds + 2 poles × 12 directions</option>
         </select>
       </label>
@@ -808,7 +808,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
                 ? createAdaptiveEquivalentBlockAnalysisOptions()
                 : createDefaultEquivalentBlockAnalysisOptions())}
             >
-              <option value="fixed">Fixed grid · 27 stations × 36 directions</option>
+              <option value="fixed">Fixed grid · 36 directions</option>
               <option value="adaptive">Independent adaptive · 12 seeds + 2 poles × 12 directions</option>
             </select>
           </label>

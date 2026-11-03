@@ -236,8 +236,9 @@ The web application is organized around these workspaces:
 1. **Section** — concrete regions, openings and reinforcement;
 2. **Materials** — code/method selection and material definitions;
 3. **Capacity** — nominal/design resistance surface and section slices;
-4. **Demand Check** — factored load combinations, utilization, inverse state and report export;
-5. **Options** — points, mesh/block, and resistance controls.
+4. **Demand Check** — factored load combinations, utilization and inverse state.
+5. **Report** — loadcase selection for worked detail and preview PDF and Excel exports.
+6. **Options** — points, mesh/block, and resistance controls.
 
 Production calculations run in a browser Web Worker. A calculated surface is cached in the worker
 and subsequent loadcase checks reference it by handle rather than repeatedly cloning the complete

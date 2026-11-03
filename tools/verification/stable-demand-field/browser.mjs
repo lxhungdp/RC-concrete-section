@@ -35,7 +35,7 @@ const settled = async (page, id) => {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 }
 const select = (page, id) => page.getByRole('table', { name: 'Loadcase demand table' }).locator('tr')
-  .filter({ has: page.getByLabel(`Loadcase ${id} name`, { exact: true }) }).locator('td').nth(5).click()
+  .filter({ has: page.getByLabel(`Loadcase ${id} name`, { exact: true }) }).locator('td.pm-col-ur').click()
 const monitor = async page => page.evaluate(() => {
   const el = document.querySelector('[data-chart="heatmap"]')
   window.__watch = { renderer: el.querySelector('canvas, .pm-section-field-canvas'), canvas: el.querySelector('canvas'), source: el.querySelector('canvas')?.toDataURL(), samples: [], running: true }

@@ -2,6 +2,17 @@
 
 Assessment date: **2026-08-08**.
 
+Steel-hardening capability addendum: **2026-11-03**. KDS and EN now expose plateau/immediate
+hardening choices per grade. KDS records the inclined branch as a project steel modification;
+EN remains a recommended-value preview without a National Annex. The same compiled definition
+drives the supported mechanics, inverse/field evidence, material graph, JSON/editable workbook and
+calculation exports. Finite-hardening fibre domains add explicit steel-controlled transition layers
+to the base schedule and refine them in Adaptive. Their Fixed checks have no qualified uncertainty
+bound and remain indeterminate. Independent interpolation, exhaustive group comparisons, mixed-grade
+workbook recalculation and a dense independently enumerated strain polygon are recorded in the
+[implementation packet](../task-packets/2026-11-03-reinforcing-steel-post-yield-plan.md). The baseline
+capability and release work below are not a new release assessment.
+
 This file describes implemented capability, not certification. Exact model formulas and defaults are
 in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-models-defaults-and-workflows.md).
 
@@ -48,7 +59,7 @@ in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-mode
 - Nominal resistance, Design resistance, and factored Demand are different DTO stages and UI terms.
 - KDS `P0` is now a code reference point; the high-strength flexural surface closes on its
   eta-reduced physical compression limit, eliminating an unsupported interpolation band.
-- Fixed 27 x 36 stress-strain checks use that mechanics' `@pm/results` two-percent screening
+- Legacy fixed 27 x 36 stress-strain checks use that mechanics' `@pm/results` two-percent screening
   interval. Fixed equivalent-block checks fail closed as indeterminate because its measured unsafe
   over-prediction exceeds that borrowed envelope. Adaptive checks fail indeterminate without
   converged error evidence.
@@ -138,8 +149,9 @@ surface/inverse reuse.
 - standard-specific `beta1`, block stress, strain limits, phi rules, and caps live in code adapters or
   DesignBasis, never in the generic block kernel;
 - all demand used by the governing check is factored ULS;
-- the production station schedule is owned only by `@pm/stations` and identified by
-  `unified-27-v2` in both analysis DTOs;
+- the base station schedule is owned only by `@pm/stations` and identified by
+  `unified-27-v2` in both analysis DTOs; the finite-steel boundary owner supplements it with the
+  explicitly documented material-derived layers;
 - every result-affecting default change updates code, tests, benchmarks, schema documentation, UI
   help, and report evidence in one change set.
 

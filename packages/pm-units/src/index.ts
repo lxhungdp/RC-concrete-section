@@ -120,6 +120,7 @@ export function formatInputQuantity(quantity: Quantity, canonical: number, selec
 }
 /** Unit-specific field adapters for declared material/project transport fields. */
 export function fieldQuantity(path: string): Quantity | null {
+  if (path === 'stressStrain.ultimateStrength.stress') return 'stress'
   const key = path.split('.').at(-1)
   if (key === 'elasticModulus') return 'modulus'
   if (['fck', 'fy', 'yieldStressThreshold'].includes(key ?? '')) return 'stress'

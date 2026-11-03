@@ -52,8 +52,12 @@ retains input order while using stable IDs.
 
 The current web UI keeps simple `Pu/Mux/Muy` entry and governing checks together in `Demand Check`
 rather than exposing a separate source-load-management module. The user can edit a combination,
-open its concise trace through the dedicated row action, and switch between combinations without
+select its row, open its concise trace with `Detail calculation`, and switch between combinations without
 closing the dialog. `Capacity` remains the resistance-surface and chart workspace.
+
+The `Report` menu follows `Demand Check`. Its sidebar owns the detail-loadcase selection, the
+preview PDF and Excel export actions, and their status messages. The adjacent charts continue to
+show the active Demand Check combination. Selecting cases for export affects only the reports.
 
 The v1 DTO needs no `My` mechanics discriminator. The UI and worker pass the canonical component
 unchanged, and both `@pm/analysis` and `@pm/equivalent-block` use `+F*(x-x0)`. Asymmetric ledger
@@ -211,7 +215,10 @@ modebar controls, click events, and filled 3D surfaces. Current preview implemen
 - explicit `mesh3d` with stored triangle indices for current `P-Mx-My` resistance surfaces; a
   Plotly `surface` trace is retained only as a fallback when triangle connectivity is absent and for
   the translucent slicing planes;
-- `scatter3d` for demand/loadcase points that can be clicked to trigger lazy inverse evaluation;
+- `scatter3d` for resistance meridians, topology and geometric slice outlines; the Capacity 3D
+  chart contains resistance geometry only, with no loadcase markers, proportional demand paths,
+  demand-related field markers or utilization crossings. Loadcase selection and checks belong to
+  Demand Check; clicking the Capacity resistance surface does not select a loadcase;
 - `scatter` for fixed-`P` `Mx-My` contours and vertical `P-Mtheta` slices;
 - a dedicated interactive canvas renderer for the clipped-cell section mesh under **Analysis
   Options > Mesh**, because drawing every triangle and optional quadrature point as individual
@@ -339,9 +346,11 @@ settle independently, then commit one coherent visual frame.
 The vertical chart offers the geometric Demand-theta slice and a separately labelled Direct-beta
 inspection with standard joined controls. Theta uses the checked moment vector; beta uses the
 qualified selected demand/capacity state or an explicitly selected inspection angle. Zero moments identify the
-theta plane as inspection rather than a unique demand direction. The Capacity overview also draws
-the selected stored Design ray/crossing; zero demand has no boundary crossing marker. Presentation
-units change only copied ordinates. The task and evidence are recorded in
+theta plane as inspection rather than a unique demand direction. The Capacity overview contains
+Design/Nominal resistance surfaces, their existing Direct-beta and Fixed-P slices, and explicitly
+qualified before-Pmax geometry. Its chart data do not depend on loadcase selection or checks.
+See [the Capacity presentation packet](18-capacity-resistance-only.md). Presentation units change
+only copied ordinates. The task and evidence are recorded in
 [the NG chart repair packet](12-ng-demand-charts.md). Existing report inverse-diagnostic contracts
 are unchanged; the new on-screen capacity field is not silently substituted into report ledgers.
 
@@ -349,7 +358,32 @@ are unchanged; the new on-screen capacity field is not silently substituted into
 
 Results are keyed by input hash and result ID, not by the currently selected row name.
 
-Envelope-table row selection is presentation state only. The selected row carries a discriminated
+The Capacity Fixed-P table labels the selected Design moment components `Mrx`/`Mry` and the
+Nominal components `Mnx`/`Mny`. These are presentation labels for the existing stage-specific
+`Mx`/`My` values; they introduce no additional resistance reduction or component transformation.
+
+The Capacity table toolbar has one Detail action immediately before Excel for the complete
+calculation inspector, whose criterion selector exposes every row. A row or its identifying cells
+do not open a dialog. Each available result value opens
+a component-focused calculation trace for that same row and resistance stage (`P`/projected `M`
+or `Mx`/`My`). The focused mode uses a compact shared document shell with a fixed row/stage caption
+and no comboboxes or contents navigation. It retains the criterion-to-strain derivation needed
+for the selected value, including the stored curvature direction and components, while omitting
+general input, geometry, unrelated state derivations/components and full-row export actions. Reinforcement terms expand on demand. It consumes
+the same worker audit DTOs:
+compatible state, relevant concrete and net-steel contributions, one declared resistance route,
+cap construction when applicable, and the selected Fixed-P endpoint interpolation. It cannot
+invent a physical strain state at an interpolated or cap-face point. The value trace has no source,
+stage or criterion switching; it remains tied to the clicked value. Closing restores the initiating
+action. Before Nominal-to-Design multiplication, the trace exposes the lazy mechanics-owned
+factor audit: controlling steel/strain, applicable transition limit, selected branch, active
+coefficients and interpolation for strain-controlled factors; AS uses its own bending/axial
+capacity-factor evidence. A design-material route identifies its material factors without inventing
+a global multiplier. React formats these operands and the stored factor; it does not select a
+branch or evaluate a resistance rule.
+See [the value-trace packet](19-capacity-value-traces.md).
+
+Envelope-table selection is presentation state only. The selected row carries a discriminated
 `vertical` or `fixedP` evidence object from the same package query that built its displayed values.
 React may format that evidence and draw explanatory geometry, but it must not search for different
 brackets, evaluate materials, apply factors, or reconstruct a capacity result. The inspector header
@@ -406,9 +440,10 @@ For that geometric-only case, Input labels the endpoint as geometric and records
 and resistance factor as unavailable rather than publishing the DTO's non-physical placeholder
 numbers as a resolved or pre-cap state.
 
-Each Demand Check row owns a dedicated calculation-trace button; the editable row itself is not a
-modal trigger. The button opens a separate loadcase calculation dialog keyed by the loadcase ID,
-not table order or name, and receives focus again after the dialog closes. Its header exposes every
+The Loadcases header in Demand Check has one `Detail calculation` button. With a selected combination
+and a ready resistance surface, it opens that combination's calculation trace by stable ID. Closing the
+dialog returns focus to that button. Export XLSX and Import XLSX sit on the left below the table and
+Add sits on the right. The calculation dialog header exposes every
 current combination through one compact selector
 and exports the selected combination through the existing `exportDemandCheck` worker route with
 that ID as the only worked-through detail. The body consumes the existing quick-check and composed
@@ -500,7 +535,7 @@ cancellation.
 
 ## 9. Delivery status and remaining order
 
-1. **Implemented preview:** dedicated `Capacity` and `Demand Check` workspaces, project round
+1. **Implemented preview:** dedicated `Capacity`, `Demand Check`, and `Report` workspaces, project round
    trip, analysis-option validation, two independent mechanics, five selectable code calculation
    routes, adaptive preview surfaces/checks, model-specific fields, calculation-trace workbooks for
    both mechanics, stress-strain mesh Excel/DXF, demand-check workbook, shared `ReportModel`, and a

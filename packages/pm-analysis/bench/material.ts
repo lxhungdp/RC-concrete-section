@@ -80,7 +80,10 @@ const interpolateWithPerCallSort = (strain: number) => {
 const userCurve: ConcreteMaterial = {
   ...concrete,
   standard: 'CUSTOM',
-  stressStrain: { type: 'user-curve', interpolation: 'linear', extrapolation: 'clamp', zeroTension: true, points }
+  // The compiler consumes validated, ordered input. Keep the reversed source only in the old
+  // per-call-sort comparator; normalization belongs outside both timed evaluation loops.
+  stressStrain: { type: 'user-curve', interpolation: 'linear', extrapolation: 'clamp', zeroTension: true,
+    points: [...points].sort((a, b) => a.strain - b.strain) }
 }
 compare(
   'user curve (13 points)',

@@ -38,6 +38,7 @@ import {
 import type { MaterialStore } from '@pm/materials'
 import {
   buildResistanceMaterialSets,
+  withSteelModelModification,
   createDefaultDesignBasis,
   designBasisRequiresOverrideReason,
   type DesignBasis
@@ -69,6 +70,7 @@ import {
   sectionHeading,
   steelDesignFy,
   steelLaw,
+  steelHardeningWorkbookInputs,
   title,
   CONST_FILL,
   GROUP_FILL,
@@ -150,7 +152,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const defineName = createDefineName(workbook)
 
   const { section, rebars } = input
-  const designBasis = input.designBasis ?? createDefaultDesignBasis(input.materialStore)
+  const designBasis = withSteelModelModification(input.designBasis ?? createDefaultDesignBasis(input.materialStore), input.materialStore)
   const resistanceMaterials = buildResistanceMaterialSets(input.materialStore, designBasis)
   // Detailed fibre ledgers audit the constitutive stage. A global-resultant factor is recorded
   // separately on Design_Check; design-material formats are reevaluated directly.
@@ -159,13 +161,23 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       ? resistanceMaterials.referenceMaterials
       : resistanceMaterials.designMaterials
   const concrete = materialStore.concrete
+  const usedSteelIds = new Set(rebars.map((bar) => bar.steelMaterialId ?? materialStore.defaults.steelMaterialId))
   const steel =
-    materialStore.steel.find((item) => item.id === materialStore.defaults.steelMaterialId) ?? materialStore.steel[0]
+    materialStore.steel.find((item) => item.id === materialStore.defaults.steelMaterialId && usedSteelIds.has(item.id)) ?? materialStore.steel.find((item) => usedSteelIds.has(item.id))
   if (!steel) throw new ExcelExportError('No steel material is defined.')
   if (rebars.length === 0) throw new ExcelExportError('The section has no reinforcement to report.')
 
   const cLaw = concreteLaw(concrete)
   const sLaw = steelLaw(steel)
+  const steelDefinitions = new Map(materialStore.steel.map((item) => [item.id, item]))
+  const mixedSteel = usedSteelIds.size > 1
+  const barLaw = (index: number) => {
+    if (!mixedSteel) return sLaw
+    const id = rebars[index].steelMaterialId ?? materialStore.defaults.steelMaterialId
+    const definition = steelDefinitions.get(id)
+    if (!definition) throw new ExcelExportError(`Steel material ${id} is missing.`)
+    return steelLaw(definition, true)
+  }
   const params = concreteModelParameters(concrete)
   const fyModel = steelDesignFy(steel)
   const epsY = steel.limits?.epsY ?? fyModel / steel.elasticModulus
@@ -327,15 +339,16 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   row += 1
   sectionHeading(inputSheet, row, 'Reinforcement', 4)
   row += 1
-  const appliesSteelGamma = steel.factors?.gammaS !== undefined
   const steelGammaS = steel.factors?.gammaS ?? 1
   const steelInputs: NamedInput[] = [
     { row: row++, label: 'standard', value: steel.standard, unit: '', note: steel.name },
     { row: row++, label: 'Es', value: steel.elasticModulus, unit: 'MPa', name: 'Es' },
     { row: row++, label: 'fy (characteristic)', value: steel.fy, unit: 'MPa', name: 'fy_char' },
     { row: row++, label: 'γs', value: steelGammaS, unit: '-', name: 'gamma_s', note: steel.factors?.gammaS === undefined ? 'not applied by this material family' : 'material partial factor' },
-    { row: row++, label: 'fy (model) / fyd', value: fyModel, unit: 'MPa', name: 'fy', note: 'yield stress used by formulas', formula: appliesSteelGamma ? 'fy_char/gamma_s' : 'fy_char' },
+    { row: row++, label: 'reinforcement resistance multiplier', value: steel.factors?.resistanceScale ?? 1, unit: '-', name: 'steel_res_scale' },
+    { row: row++, label: 'fy (model) / fyd', value: fyModel, unit: 'MPa', name: 'fy', note: 'yield stress used by formulas', formula: 'fy_char*steel_res_scale/gamma_s' },
     { row: row++, label: 'εy = fyd/Es', value: epsY, unit: '-', note: 'used by the fₛ/fyd stations', formula: 'fy/Es' },
+    ...steelHardeningWorkbookInputs(steel).map((entry) => ({ ...entry, row: row++ })),
     { row: row++, label: 'law', value: sLaw.description, unit: '', note: '' }
   ]
 
@@ -344,7 +357,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   row += 1
   const analysisInputs: NamedInput[] = [
     { row: row++, label: 'β (strain direction)', value: input.betaDeg, unit: 'deg', name: 'beta', note: 'strain-gradient direction of the audited states; not the N.A. line angle; drives Geometry, PM_Angle, Concrete, Steel' },
-    { row: row++, label: 'εtu', value: -0.05, unit: '-', name: 'etu', note: 'uniform strain used for station P18' },
+    { row: row++, label: 'εtu', value: engineStations[stationCount - 1].state.e0, unit: '-', name: 'etu', note: 'resolved uniform tensile strain at the pure-tension pole' },
     { row: row++, label: 'xc', value: origin.x, unit: 'mm', name: 'xc', note: 'analysis origin = net concrete centroid' },
     { row: row++, label: 'yc', value: origin.y, unit: 'mm', name: 'yc', note: 'all X, Y below are measured from it' },
     { row: row++, label: 'mesh cell size', value: mesh.report.cellSize, unit: 'mm', note: 'clipped-cell grid, docs/02 §5' },
@@ -524,6 +537,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     ['Resistance format', designBasis.format, '', 'Determines whether factors act on resultants or material strengths'],
     ['Profile status', designBasis.verificationStatus, '', designBasis.modified ? 'MODIFIED — independent review required' : 'Unmodified profile snapshot'],
     ['Concrete model basis', designBasis.materialModelModified ? 'User-defined / modified' : 'Code-default', '', designBasis.materialModelModified ? 'The selected concrete model replaces the profile default' : 'Resolved by the calculation profile'],
+    ['Steel model basis', designBasis.steelModelModified ? 'Project-modified' : 'Profile-supported', '', designBasis.steelModelModified ? designBasis.overrideReason : 'Resolved by the calculation profile'],
     [
       'Override reason',
       designBasis.overrideReason || 'None',
@@ -1004,6 +1018,15 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       pmSheet.getCell(r, PM.e0).value = { formula: `ecu-${kappa}*u_max` }
     }
 
+    if (materialStore.steel.some((item) => item.stressStrain.type === 'linear-hardening')) {
+      const state = engineStations[index].state
+      const magnitude = Math.hypot(state.kx, state.ky)
+      pmSheet.getCell(r, PM.e0).value = state.e0
+      pmSheet.getCell(r, PM.kappa).value = magnitude
+      pmSheet.getCell(r, PM.epsCtrl).value = state.e0 + magnitude * auditUBar
+      pmSheet.getCell(r, PM.c).value = magnitude === 0 ? 'n/a' : Math.max(...outerXY.map((point) => point.y * Math.cos(beta) + point.x * Math.sin(beta))) + state.e0 / magnitude
+      pmSheet.getCell(r, PM.e0).note = 'Compatible plane resolved against every material strain limit. Per-bar stresses and forces are recalculated below.'
+    }
     pmSheet.getCell(r, kxCol).value = { formula: `${kappa}*COS(RADIANS(beta))` }
     pmSheet.getCell(r, kyCol).value = { formula: `${kappa}*SIN(RADIANS(beta))` }
 
@@ -1191,7 +1214,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       steelSheet.getCell(r, base).value = {
         formula: `PM_Angle!$${col(PM.e0)}$${sRow}+PM_Angle!$${col(kxCol)}$${sRow}*$D${r}+PM_Angle!$${col(kyCol)}$${sRow}*$C${r}`
       }
-      steelSheet.getCell(r, base + 1).value = { formula: sLaw.scalar(eps) }
+      steelSheet.getCell(r, base + 1).value = { formula: barLaw(index).scalar(eps) }
       steelSheet.getCell(r, base + 2).value = { formula: cLaw.scalar(eps) }
       steelSheet.getCell(r, base + 3).value = { formula: `${fs}-${fc}` }
       steelSheet.getCell(r, base + 4).value = { formula: `${fsEff}*$E${r}` }
@@ -1238,7 +1261,7 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       const fsEff = `${col(EQ_STEEL_COL + 3)}${r}`
       const force = `${col(EQ_STEEL_COL + 4)}${r}`
       steelSheet.getCell(r, EQ_STEEL_COL).value = { formula: `Eq_e0+Eq_kx*$D${r}+Eq_ky*$C${r}` }
-      steelSheet.getCell(r, EQ_STEEL_COL + 1).value = { formula: sLaw.scalar(eps) }
+      steelSheet.getCell(r, EQ_STEEL_COL + 1).value = { formula: barLaw(index).scalar(eps) }
       steelSheet.getCell(r, EQ_STEEL_COL + 2).value = { formula: cLaw.scalar(eps) }
       steelSheet.getCell(r, EQ_STEEL_COL + 3).value = { formula: `${fs}-${fc}` }
       steelSheet.getCell(r, EQ_STEEL_COL + 4).value = { formula: `${fsEff}*$E${r}` }

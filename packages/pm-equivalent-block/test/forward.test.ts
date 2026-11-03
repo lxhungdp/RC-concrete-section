@@ -42,6 +42,16 @@ test('declared steel rupture strain is validated and governs the finite axial en
   close(uniformSteelEndpointStrain(prepared, { steel }), 0.02)
 })
 
+test('a new finite design cutoff is not truncated by an unbounded plateau sampling strain', () => {
+  const prepared = prepareEquivalentBlockSection(section({ rebars: [
+    { id: 'b1', x: 0, y: 200, area: 400, steelLawId: 'bounded' },
+    { id: 'b2', x: 0, y: -200, area: 400, steelLawId: 'plateau' }
+  ] }))
+  const bounded = { ...createElasticPerfectlyPlasticSteelLaw(200000, 400, 0.12),
+    strainLimits: { tension: 0.12 } }
+  assert.equal(uniformSteelEndpointStrain(prepared, { bounded, plateau: createElasticPerfectlyPlasticSteelLaw(200000, 400) }), 0.12)
+})
+
 const law = {
   compressionStress: 0.85 * 30,
   depthFactor: 0.8,

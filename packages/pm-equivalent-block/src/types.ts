@@ -70,6 +70,8 @@ export type SteelLaw = {
   stressAt: (strain: number) => number
   yieldStrain?: number
   ultimateStrain?: number
+  /** Explicit signed limits. Omitted on legacy laws whose ultimateStrain applies to both signs. */
+  strainLimits?: { tension?: number; compression?: number }
 }
 
 export type SteelLawRegistry = Readonly<Record<string, SteelLaw>>
@@ -118,6 +120,7 @@ export type BarBlockEvaluation = {
   tensileStrain: number
   yieldStrain?: number
   ultimateStrain?: number
+  compressionUltimateStrain?: number
   steelStress: number
   displacedConcreteStress: number
   netStress: number

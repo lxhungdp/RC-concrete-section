@@ -8,6 +8,7 @@
  * workbook only.
  */
 import type { ConcreteMaterial, SteelMaterial } from '@pm/materials'
+import { effectiveSteelYieldStress, resolveLinearHardeningSteel } from '@pm/materials'
 
 export class ExcelExportError extends Error {}
 
@@ -169,8 +170,74 @@ export const concreteLaw = (material: ConcreteMaterial): MaterialLaw => {
   }
 }
 
-export const steelLaw = (material: SteelMaterial): MaterialLaw => {
+/** Source inputs and algebra for the primary grade; other grades retain explicit per-row inputs. */
+export const steelHardeningWorkbookInputs = (material: SteelMaterial): Array<{
+  label: string; value: number; unit: string; name: string; formula?: string
+}> => {
   const model = material.stressStrain
+  if (model.type !== 'linear-hardening') return []
+  const p = resolveLinearHardeningSteel(material)
+  return [
+    model.ultimateStrength.type === 'ratio'
+      ? { label: 'k = fu / fy', value: model.ultimateStrength.ratio, unit: '-', name: 'steel_peak_ratio' }
+      : { label: 'fu (input basis)', value: model.ultimateStrength.stress, unit: 'MPa', name: 'steel_fu_input' },
+    { label: 'fu (stage construction)', value: p.ultimateStress, unit: 'MPa', name: 'steel_fu_model',
+      formula: model.ultimateStrength.type === 'ratio' ? 'fy*steel_peak_ratio' : 'steel_fu_input*steel_res_scale/gamma_s' },
+    { label: 'εuk (construction)', value: model.epsUk, unit: '-', name: 'steel_eps_uk' },
+    { label: model.strainLimit.type === 'factor' ? 'εlimit / εuk' : 'εlimit (input)', value: model.strainLimit.value, unit: '-', name: 'steel_limit_input' },
+    { label: 'εlimit (design cutoff)', value: p.epsUd, unit: '-', name: 'steel_eps_limit',
+      formula: model.strainLimit.type === 'factor' ? 'steel_limit_input*steel_eps_uk' : 'steel_limit_input' },
+    { label: 'Eh (stage tangent)', value: p.hardeningModulus, unit: 'MPa', name: 'steel_Eh',
+      formula: '(steel_fu_model-fy)/(steel_eps_uk-fy/Es)' }
+  ]
+}
+
+export const steelLaw = (material: SteelMaterial, inlineParameters = false): MaterialLaw => {
+  const model = material.stressStrain
+
+  if (model.type === 'linear-hardening') {
+    const p = resolveLinearHardeningSteel(material)
+    const fy = inlineParameters ? String(p.yieldStress) : 'fy'
+    const es = inlineParameters ? String(material.elasticModulus) : 'Es'
+    const epsY = `(${fy}/${es})`
+    // Recalculate the endpoint interpolation in Excel rather than copying the compiler's tangent.
+    const eh = inlineParameters ? `((${p.ultimateStress}-${fy})/(${p.epsUk}-${epsY}))` : 'steel_Eh'
+    const yielded = (e: string) => `SIGN(${e})*(${fy}+${eh}*(ABS(${e})-${epsY}))`
+    return {
+      kind: 'closed-form',
+      scalar: (e) => `IF(ABS(${e})<=${epsY},${es}*(${e}),${yielded(e)})`,
+      array: (e) => `${es}*(${e})*(ABS(${e})<=${epsY})+${yielded(e)}*(ABS(${e})>${epsY})`,
+      description: `Immediate post-yield hardening; εlimit = ${p.epsUd}; construction εuk = ${p.epsUk}`
+    }
+  }
+
+  if (inlineParameters && model.type !== 'user-curve') {
+    const fy = effectiveSteelYieldStress(material)
+    const es = material.elasticModulus
+    const epsY = material.limits?.epsY ?? fy / es
+    const hardening = model.type === 'bilinear' ? model.hardeningRatio * es : 0
+    return {
+      kind: 'closed-form',
+      scalar: (e) => `IF(ABS(${e})<=${epsY},${es}*(${e}),SIGN(${e})*(${fy}+${hardening}*(ABS(${e})-${epsY})))`,
+      array: null,
+      description: `Material ${material.id}, stage-specific steel law`
+    }
+  }
+
+  if (inlineParameters && model.type === 'user-curve') {
+    const points = orderedCurve(model.points)
+    const scalar = (e: string) => {
+      let expression = String(points[points.length - 1].stress)
+      for (let index = points.length - 2; index >= 0; index -= 1) {
+        const a = points[index]
+        const b = points[index + 1]
+        const span = Math.max(1e-12, b.strain - a.strain)
+        expression = `IF(${e}<=${b.strain},${a.stress}+(${e}-(${a.strain}))*${(b.stress - a.stress) / span},${expression})`
+      }
+      return `IF(${e}<=${points[0].strain},${points[0].stress},${expression})`
+    }
+    return { kind: 'closed-form', scalar, array: null, description: `Material ${material.id} explicit tabulated law` }
+  }
 
   if (model.type === 'elastic-perfectly-plastic') {
     return {

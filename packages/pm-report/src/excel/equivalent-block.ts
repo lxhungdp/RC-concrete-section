@@ -32,6 +32,8 @@ import { rebarArea, rebarAreaSourceLabel, type GeometryInputRebarView, type Sect
 import type { MaterialStore, SteelMaterial } from '@pm/materials'
 import {
   designBasisRequiresOverrideReason,
+  buildResistanceMaterialSets,
+  withSteelModelModification,
   resolveMaterialFactorExpression,
   resolveTensionControlledStrainLimit,
   type DesignBasis
@@ -69,6 +71,7 @@ import {
   sectionHeading,
   steelDesignFy,
   steelLaw,
+  steelHardeningWorkbookInputs,
   title,
   CONST_FILL,
   INPUT_FILL
@@ -113,7 +116,7 @@ export const equivalentBlockWorkbookFileName = (
 export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelInput) => {
   const { section, rebars, materialStore } = input
   if (rebars.length === 0) throw new ExcelExportError('The section has no reinforcement to report.')
-  const basis = input.designBasis
+  const basis = withSteelModelModification(input.designBasis, materialStore)
   const usesDesignMaterials = basis.format === 'designMaterialReevaluation'
   const usesAs3600CapacityFactors = input.calculationProfileId === 'as-3600-2018-amd2-equivalent-block'
   const profile = calculationProfile(input.calculationProfileId)
@@ -131,22 +134,16 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     materialStore.steel.find((item) => item.id === materialStore.defaults.steelMaterialId) ?? materialStore.steel[0]
   if (!steel) throw new ExcelExportError('No steel material is defined.')
 
-  /**
-   * Every bar must share one steel law for the workbook's single `fy`/`Es` named pair to be
-   * honest. A mixed-grade section is a valid analysis input, so this fails closed instead of
-   * exporting one grade's algebra over another grade's bars.
-   */
+  // Named inputs describe the first used grade. Mixed-grade rows use each bar's own resolved law.
   const usedSteelIds = new Set(
     rebars.map((bar) => String(bar.steelMaterialId ?? materialStore.defaults.steelMaterialId))
   )
-  if (usedSteelIds.size > 1) {
-    throw new ExcelExportError(
-      'The equivalent-block workbook publishes one steel law as named inputs; this section uses more than one steel grade. Export a single-grade section, or compare grades in separate runs.'
-    )
-  }
+  const stageMaterials = buildResistanceMaterialSets(materialStore, basis)
+  const stageSteel = basis.format === 'designMaterialReevaluation' ? stageMaterials.designMaterials.steel : stageMaterials.referenceMaterials.steel
   const barSteelId = [...usedSteelIds][0]
   const barSteel = materialStore.steel.find((item) => String(item.id) === barSteelId) ?? steel
-  const sLaw = steelLaw(barSteel)
+  const stageDefinition = stageSteel.find((item) => item.id === barSteel.id) ?? barSteel
+  const sLaw = steelLaw(stageDefinition)
   const designSteelLaw = prepared.designModel.steelLaws[String(barSteelId)]
   const fyModel = designSteelLaw?.yieldStrain !== undefined
     ? designSteelLaw.yieldStrain * barSteel.elasticModulus
@@ -213,6 +210,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   const bars = rebars.map((bar, index) => ({
     no: index + 1,
     id: String(bar.id),
+    steelMaterialId: bar.steelMaterialId ?? materialStore.defaults.steelMaterialId,
     dia: bar.dia,
     x: bar.x - origin.x,
     y: bar.y - origin.y,
@@ -276,7 +274,8 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     { row: row++, label: 'resistance profile', value: basis.identity.document, unit: '', note: basis.identity.edition },
     { row: row++, label: 'verification status', value: basis.verificationStatus, unit: '', note: 'not an engineering approval; see docs/00-README §4' },
     { row: row++, label: 'modified from defaults', value: basis.modified ? 'yes' : 'no', unit: '', note: basis.overrideReason || (designBasisRequiresOverrideReason(basis) ? 'a reason is required and missing' : '') },
-    { row: row++, label: 'concrete model basis', value: basis.materialModelModified ? 'user-defined / modified' : 'code-default', unit: '', note: basis.materialModelModified ? 'the selected model replaces the profile default' : '' }
+    { row: row++, label: 'concrete model basis', value: basis.materialModelModified ? 'user-defined / modified' : 'code-default', unit: '', note: basis.materialModelModified ? 'the selected model replaces the profile default' : '' },
+    { row: row++, label: 'steel model basis', value: basis.steelModelModified ? 'project-modified' : 'profile-supported', unit: '', note: basis.steelModelModified ? basis.overrideReason : '' }
   ]
 
   row += 1
@@ -306,7 +305,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   row += 1
   sectionHeading(inputSheet, row, 'Reinforcement', 4)
   row += 1
-  const appliesSteelGamma = barSteel.factors?.gammaS !== undefined
+  const appliesSteelGamma = stageDefinition.factors?.gammaS !== undefined
   const steelResistanceScale = usesDesignMaterials
     ? resolveMaterialFactorExpression(basis.factors.reinforcement)
     : 1
@@ -316,16 +315,17 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     { row: row++, label: 'standard', value: barSteel.standard, unit: '', note: barSteel.name },
     { row: row++, label: 'Es', value: barSteel.elasticModulus, unit: 'MPa', name: 'Es' },
     { row: row++, label: 'fy (characteristic)', value: barSteel.fy, unit: 'MPa', name: 'fy_char' },
-    { row: row++, label: 'γs', value: barSteel.factors?.gammaS ?? 1, unit: '-', name: 'gamma_s', note: appliesSteelGamma ? 'material partial factor' : 'not applied by this material family' },
-    ...(usesDesignMaterials ? [{
+    { row: row++, label: 'γs', value: stageDefinition.factors?.gammaS ?? 1, unit: '-', name: 'gamma_s', note: appliesSteelGamma ? 'material partial factor' : 'not applied by this material family' },
+    {
       row: row++, label: 'reinforcement resistance multiplier', value: steelResistanceScale,
-      unit: '-', name: 'steel_res_scale', note: factorReferences(basis.factors.reinforcement)
-    }] : []),
+      unit: '-', name: 'steel_res_scale', note: usesDesignMaterials ? factorReferences(basis.factors.reinforcement) : 'no material-strength reduction'
+    },
     {
       row: row++, label: 'fy (model)', value: fyModel, unit: 'MPa', name: 'fy',
       formula: usesDesignMaterials ? 'fy_char*steel_res_scale' : appliesSteelGamma ? 'fy_char/gamma_s' : 'fy_char'
     },
     { row: row++, label: 'εy = fy/Es', value: epsY, unit: '-', name: 'epsy', formula: 'fy/Es' },
+    ...steelHardeningWorkbookInputs(stageDefinition).map((entry) => ({ ...entry, row: row++ })),
     { row: row++, label: 'εu (declared)', value: epsU ?? 'not declared', unit: '-', name: epsU === undefined ? undefined : 'epsu', note: epsU === undefined ? 'rupture is not enforced' : 'tensile rupture limit enforced by the solver' },
     { row: row++, label: 'law', value: sLaw.description, unit: '', note: '' }
   ]
@@ -832,7 +832,10 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
         formula: `IF(AND(ec_pivot>0,D${r}>d_theta),ec_pivot*D${r}/(D${r}-(1-ec_pivot/ecu)*d_theta),ecu)*(1-F${r}/D${r})`
       }
       steelSheet.getCell(r, 8).value = { formula: `MAX(0,-G${r})` }
-      steelSheet.getCell(r, 9).value = { formula: sLaw.scalar(`G${r}`) }
+      const definition = stageSteel.find((item) => item.id === bar.steelMaterialId)
+      if (!definition) throw new ExcelExportError(`Steel material ${bar.steelMaterialId} is missing.`)
+      const rowLaw = usedSteelIds.size > 1 ? steelLaw(definition, true) : sLaw
+      steelSheet.getCell(r, 9).value = { formula: rowLaw.scalar(`G${r}`) }
       steelSheet.getCell(r, 10).value = { formula: `IF(E${r}>=u_max-beta_1*D${r}-blk_tol,1,0)` }
       steelSheet.getCell(r, 11).value = { formula: blockLaw.subtractDisplacedConcrete ? `J${r}*sig_blk` : '0' }
       steelSheet.getCell(r, 12).value = { formula: `I${r}-K${r}` }
@@ -921,7 +924,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   mmSheet.columns = [{ width: 4 }, { width: 10 }, { width: 12 }, ...Array.from({ length: 12 }, () => ({ width: 14 }))]
   title(mmSheet, 1, 'DESIGN SURFACE AT P = Pu, AND THE DEMAND-RAY QUERY', 13)
   noteCell(mmSheet, 2, 2,
-    'The grid is the independent fixed Design surface (27 stations and 36 directions). Everything after it — the P-interval bracket, the linear interpolation to Pu, and the ray query at θ_L — is a formula. No adaptive vertices are generated.')
+    'The grid is the independent fixed Design surface with its configured stations and directions. Everything after it — the P-interval bracket, the linear interpolation to Pu, and the ray query at θ_L — is a formula. No adaptive vertices are generated.')
   mmSheet.mergeCells('B2:N4')
   mmSheet.getRow(2).height = 30
 
@@ -999,7 +1002,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   ptSheet.columns = [{ width: 4 }, { width: 10 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 46 }]
   title(ptSheet, 1, 'GEOMETRIC P–Mθ DEMAND-PLANE DIAGNOSTIC', 5)
   noteCell(ptSheet, 2, 2,
-    'Independent geometric demand-plane diagnostic on the fixed 27-station / fixed-direction Design surface. The application Vertical chart is instead a direct exact-β meridian recovered from the valid equilibrium state.')
+    'Independent geometric demand-plane diagnostic on the configured fixed Design surface. The application Vertical chart is instead a direct exact-β meridian recovered from the valid equilibrium state.')
   ptSheet.mergeCells('B2:G3')
   const planePaths = sliceMomentPlane(
     activeDesignSurface.points,

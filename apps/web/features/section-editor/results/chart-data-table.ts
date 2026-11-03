@@ -11,6 +11,7 @@ import {
   type ExactDirectionCurve,
   type FixedPInterpolationBracket,
   type PreviewContourPoint,
+  type PointCalculationAudit,
   type PreviewSurface,
   type PreviewSurfacePoint,
   type Resultant,
@@ -30,6 +31,7 @@ import {
 
 export type ChartTableSource = 'vertical' | 'fixedP'
 export type ChartTableResistanceStage = 'design' | 'nominal'
+export type ChartValueComponent = 'P' | 'M' | 'Mx' | 'My'
 
 export type ChartTableForces = {
   /** Axial force, N. */
@@ -119,6 +121,34 @@ const normalizeAngleDeg = (degrees: number) => ((degrees % 360) + 360) % 360
 const momentAlong = (point: Pick<Resultant, 'Mx' | 'My'>, angleDeg: number) => {
   const theta = (normalizeAngleDeg(angleDeg) * Math.PI) / 180
   return point.Mx * Math.cos(theta) + point.My * Math.sin(theta)
+}
+
+/** Select an existing component; projected M uses the same adapter as the table itself. */
+export const chartResultantValue = (value: Resultant, component: ChartValueComponent, angleDeg: number) =>
+  component === 'M' ? momentAlong(value, angleDeg) : value[component]
+
+export const chartValueLabel = (component: ChartValueComponent, stage: ChartTableResistanceStage) => {
+  if (component === 'Mx') return stage === 'design' ? 'Mrx' : 'Mnx'
+  if (component === 'My') return stage === 'design' ? 'Mry' : 'Mny'
+  return stage === 'design' ? component : `${component}n`
+}
+
+/** A mismatched source/component is unavailable rather than another value substituted by index. */
+export const chartTableValue = (row: ChartTableRow, component: ChartValueComponent): number | null => {
+  if (row.kind === 'vertical') {
+    if (component !== 'P' && component !== 'M') return null
+    return (row.evidence.stage === 'design' ? row.design : row.nominal)?.total[component] ?? null
+  }
+  if (component !== 'Mx' && component !== 'My') return null
+  return (row.evidence.stage === 'design' ? row.design : row.nominal)?.[component] ?? null
+}
+
+/** Preview trace usability, never an engineering acceptance or release decision. */
+export const isReconciledPointAudit = (audit: PointCalculationAudit | undefined): boolean => {
+  if (!audit || audit.kind === 'unavailable' || !audit.reconciliation.ok) return false
+  if (audit.kind === 'axial-cap') return !audit.preCap || isReconciledPointAudit(audit.preCap.audit)
+  if (audit.resistanceFactor !== null && (audit.resistanceFactorCalculation?.factor !== audit.resistanceFactor)) return false
+  return audit.nominalReferenceReconciliation.ok
 }
 
 const forcesFromLedger = (
@@ -380,7 +410,7 @@ export const downloadChartTableExcel = async (input: {
 
   if (input.source === 'fixedP') {
     const headers = ['#', 'Direction ID', 'Branch', 'β (°)' ]
-    if (input.includeDesign) headers.push('Mx', 'My')
+    if (input.includeDesign) headers.push('Mrx', 'Mry')
     if (input.includeNominal) headers.push('Mnx', 'Mny')
     sheet.addRow(headers)
 

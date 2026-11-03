@@ -1,6 +1,9 @@
 'use client'
 
 import { QuantityInput, QuantityValue, UnitLabel, useDisplayUnits } from '../shared/DisplayUnits'
+import { SteelHardeningFields, SteelStressStrainCurve } from './SteelHardeningFields'
+import { MaterialFactorSymbol, MaterialSymbol } from './MaterialSymbol'
+import { MaterialCurveFrame, MATERIAL_CURVE_FRAME } from './MaterialCurveFrame'
 
 import { AddIcon } from '../shared/WorkspaceIcons'
 import { useMemo, useState } from 'react'
@@ -9,6 +12,7 @@ import {
   designBasisRequiresOverrideReason,
   resolveMaterialFactorExpression,
   setMaterialFactorComponentValue,
+  withSteelModelModification,
   type MaterialFactorComponent,
   type GlobalStrengthReductionBasis,
   type DesignBasis
@@ -38,6 +42,7 @@ import {
   applyCalculationProfileToMaterials,
   applyConcreteModelToMaterials,
   calculationProfile,
+  createSteelHardeningDefinition,
   type ConcreteModelId,
   type CalculationProfileId
 } from '@pm/project'
@@ -61,9 +66,12 @@ const numberValue = (value: string, fallback: number) => {
 
 const steelModelDefaults = (
   material: SteelMaterial,
-  type: SteelMaterial['stressStrain']['type']
+  type: SteelMaterial['stressStrain']['type'],
+  profileId: CalculationProfileId,
+  basis: DesignBasis
 ): SteelMaterial => {
   if (material.stressStrain.type === type) return material
+  if (type === 'linear-hardening') return { ...material, stressStrain: createSteelHardeningDefinition(profileId, material, basis) }
   if (type === 'bilinear') return { ...material, stressStrain: { type: 'bilinear', hardeningRatio: 0.01 } }
   if (type === 'user-curve') {
     const epsY = material.limits?.epsY ?? material.fy / material.elasticModulus
@@ -94,6 +102,7 @@ const modelName = (type: ConcreteMaterial['stressStrain']['type'] | SteelMateria
     'ec2-parabolic-rectangular': 'EC2 Parabola-Rectangle',
     'as3600-equivalent-block': 'AS 3600 Equivalent Block',
     'elastic-perfectly-plastic': 'Elastic Perfectly Plastic',
+    'linear-hardening': 'Immediate post-yield hardening',
     bilinear: 'Bilinear',
     'user-curve': 'User-Defined Curve',
     'user-block': 'User-Defined Block'
@@ -125,17 +134,17 @@ const formatFormulaNumber = (value: number, digits = 4) =>
 const concreteFormula = (material: ConcreteMaterial) => {
   switch (material.stressStrain.type) {
     case 'kds-parabolic':
-      return `σc = ${formatFormulaNumber(material.stressStrain.alpha)} fck [1 - (1 - ε / ε0)^${formatFormulaNumber(material.stressStrain.n, 2)}], then plateau to εcu`
+      return <><MaterialSymbol symbol="sigmaC" /> = {formatFormulaNumber(material.stressStrain.alpha)} <MaterialSymbol symbol="fck" /> [1 − (1 − <var>ε</var> / <MaterialSymbol symbol="epsC0" />)<sup>{formatFormulaNumber(material.stressStrain.n, 2)}</sup>], then plateau to <MaterialSymbol symbol="epsCu" /></>
     case 'aci-whitney-block':
-      return `σc = ${formatFormulaNumber(material.stressStrain.alpha)} fck over equivalent block, β1 = ${formatFormulaNumber(material.stressStrain.beta1, 2)}`
+      return <><MaterialSymbol symbol="sigmaC" /> = {formatFormulaNumber(material.stressStrain.alpha)} <MaterialSymbol symbol="fcPrime" /> over equivalent block, <MaterialSymbol symbol="beta1" /> = {formatFormulaNumber(material.stressStrain.beta1, 2)}</>
     case 'ec2-parabolic-rectangular':
-      return `σc = ${formatFormulaNumber(material.stressStrain.alpha)} fck [1 - (1 - ε / εc2)^${formatFormulaNumber(material.stressStrain.n, 2)}], then plateau`
+      return <><MaterialSymbol symbol="sigmaC" /> = {formatFormulaNumber(material.stressStrain.alpha)} <MaterialSymbol symbol="fck" /> [1 − (1 − <var>ε</var> / <MaterialSymbol symbol="epsC2" />)<sup>{formatFormulaNumber(material.stressStrain.n, 2)}</sup>], then plateau</>
     case 'as3600-equivalent-block':
-      return `σc = α₂ f'c = ${formatFormulaNumber(material.stressStrain.alpha2)} f'c over a = γc = ${formatFormulaNumber(material.stressStrain.gamma, 3)} c`
+      return <><MaterialSymbol symbol="sigmaC" /> = <MaterialSymbol symbol="alpha2" /> <MaterialSymbol symbol="fcPrime" /> = {formatFormulaNumber(material.stressStrain.alpha2)} <MaterialSymbol symbol="fcPrime" /> over <var>a</var> = <MaterialSymbol symbol="gamma" /><var>c</var> = {formatFormulaNumber(material.stressStrain.gamma, 3)} <var>c</var></>
     case 'user-curve':
-      return 'σc is linearly interpolated from user-defined ε-σ points'
+      return <><MaterialSymbol symbol="sigmaC" /> is linearly interpolated from user-defined <var>ε</var>–<var>σ</var> points</>
     case 'user-block':
-      return `σc = ${formatFormulaNumber(material.stressStrain.alpha)} fck over a = ${formatFormulaNumber(material.stressStrain.beta1, 3)}·c, zero elsewhere`
+      return <><MaterialSymbol symbol="sigmaC" /> = {formatFormulaNumber(material.stressStrain.alpha)} <MaterialSymbol symbol="fck" /> over <var>a</var> = {formatFormulaNumber(material.stressStrain.beta1, 3)}·<var>c</var>, zero elsewhere</>
     default:
       return ''
   }
@@ -147,6 +156,8 @@ const steelFormula = (material: SteelMaterial) => {
       return `σs = Es ε, limited to ±fy; εy = fy / Es`
     case 'bilinear':
       return `σs = Es ε to ±fy, then hardening with ratio ${formatFormulaNumber(material.stressStrain.hardeningRatio)}`
+    case 'linear-hardening':
+      return 'σs = Es·ε to yield, then a straight inclined branch; tensile strain ≤ εlimit'
     case 'user-curve':
       return 'σs is linearly interpolated from user-defined ε-σ points'
     default:
@@ -168,8 +179,10 @@ function StressStrainCurve({ material }: { material: ConcreteMaterial | SteelMat
     const points = Array.from({ length: 48 }, (_, i) => {
       const strain = minStrain + ((maxStrain - minStrain) * i) / 47
       const stress = compiled.stress(strain)
-      const x = 12 + ((strain - minStrain) / (maxStrain - minStrain)) * 226
-      const y = isConcrete ? 96 - (stress / maxAbsStress) * 76 : 55 - (stress / maxAbsStress) * 38
+      const frame = MATERIAL_CURVE_FRAME
+      const x = frame.left + ((strain - minStrain) / (maxStrain - minStrain)) * (frame.right - frame.left)
+      const y = isConcrete ? frame.bottom - (stress / maxAbsStress) * (frame.bottom - frame.peak)
+        : frame.middle - (stress / maxAbsStress) * frame.signedStressSpan
       return `${i === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`
     })
     return points.join(' ')
@@ -177,14 +190,11 @@ function StressStrainCurve({ material }: { material: ConcreteMaterial | SteelMat
 
   return (
     <div className="pm-material-curve">
-      <svg viewBox="0 0 250 110" aria-label="Stress strain curve">
-        <line x1="12" y1="96" x2="238" y2="96" />
-        <line x1="12" y1="55" x2="238" y2="55" className="pm-material-curve-axis-mid" />
-        <line x1="12" y1="96" x2="12" y2="14" />
+      <MaterialCurveFrame label="Stress strain curve"
+        stressLabel={<><MaterialSymbol symbol={'fck' in material ? 'sigmaC' : 'sigmaS'} svg /> (<UnitLabel quantity="stress" />)</>}
+        strainLabel={<MaterialSymbol symbol={'fck' in material ? 'epsC' : 'epsS'} svg />}>
         <path d={path} />
-        <text x="14" y="14">σ</text>
-        <text x="226" y="108">ε</text>
-      </svg>
+      </MaterialCurveFrame>
       <p>{'fck' in material ? concreteFormula(material) : steelFormula(material)}</p>
     </div>
   )
@@ -204,10 +214,10 @@ function ConcreteMaterialFactorFields({
   if (basis.format !== 'designMaterialReevaluation') return null
   return (
     <>
-      <div className="pm-material-inline-params">
+      <div className="pm-material-parameters">
         {basis.factors.concrete.components.map((component) => (
-          <label className="pm-inline-param" key={component.id}>
-            <span>{component.symbol}</span>
+          <label className="pm-material-param" key={component.id}>
+            <span><MaterialFactorSymbol symbol={component.symbol} /></span>
             <input
               type="number"
               step={component.id.startsWith('gamma') ? '0.05' : '0.01'}
@@ -220,8 +230,8 @@ function ConcreteMaterialFactorFields({
             />
           </label>
         ))}
-        <label className="pm-inline-param">
-          <span>{basis.factors.concrete.designSymbol}</span>
+        <label className="pm-material-param">
+          <span><MaterialSymbol symbol="fcd" /></span>
           <QuantityInput quantity="stress"
             type="number"
             readOnly
@@ -269,7 +279,7 @@ function ConcreteAxialLimitFields({
   return (
     <div className="pm-material-stress-box pm-material-axial-limit">
       <div className="pm-material-stress-title">Axial compression limit</div>
-      <div className="pm-material-row-2">
+      <div className="pm-material-form">
         <label className="pm-field">
           <span>Column type</span>
           <select
@@ -284,8 +294,8 @@ function ConcreteAxialLimitFields({
             <option value="qualifying-spiral">Qualifying spiral</option>
           </select>
         </label>
-        <label className="pm-field" title="Maximum design compression as a fraction of the uncapped compression pole.">
-          <span>Pmax factor</span>
+        <label className="pm-material-param" title="Maximum design compression as a fraction of the uncapped compression pole.">
+          <span><MaterialSymbol symbol="Pmax" /> factor</span>
           <input
             type="number"
             min={0.1}
@@ -357,8 +367,8 @@ function UserCurveEditor({
         <thead>
           <tr>
             <th>#</th>
-            <th>ε</th>
-            <th>σ (<UnitLabel quantity="stress" />)</th>
+            <th><var>ε</var></th>
+            <th><var>σ</var> (<UnitLabel quantity="stress" />)</th>
             <th>
               <button type="button" className="ws-action ws-action--primary ws-action--compact ws-action--icon pm-table-add-icon-btn" onClick={addPoint} title="Add point">
                 <AddIcon />
@@ -419,6 +429,7 @@ export function MaterialPanel({
   const isCustomProfile = profile.materialStandard === 'CUSTOM'
   const concreteSupportIssue = isBlockMechanics ? null : concreteModelSupportIssue(store.concrete)
   const [activePage, setActivePage] = useState<MaterialPage>('concrete')
+  const [steelCurveStage, setSteelCurveStage] = useState<'reference' | 'design'>('reference')
   const activeSteel = store.steel.find((material) => material.id === store.defaults.steelMaterialId) ?? store.steel[0]
   const kdsBlockResolution = useMemo(() => {
     if (calculationProfileId !== 'kds-142020-equivalent-block') return { parameters: null, error: '' }
@@ -464,10 +475,13 @@ export function MaterialPanel({
   }
 
   const updateSteel = (id: number, map: (material: SteelMaterial) => SteelMaterial) => {
-    onChange({
+    const next = {
       ...store,
       steel: store.steel.map((material) => (material.id === id ? map(material) : material))
-    })
+    }
+    onChange(next)
+    const basis = withSteelModelModification(designBasis, next)
+    if (basis !== designBasis) onDesignBasisChange(basis)
   }
 
   const selectSteel = (id: number) => {
@@ -490,14 +504,17 @@ export function MaterialPanel({
     if (store.steel.length <= 1) return
     if (usedSteelMaterialIds.has(id)) return
     const steel = store.steel.filter((material) => material.id !== id)
-    onChange({
+    const next = {
       ...store,
       steel,
       defaults: {
         ...store.defaults,
         steelMaterialId: store.defaults.steelMaterialId === id ? steel[0].id : store.defaults.steelMaterialId
       }
-    })
+    }
+    onChange(next)
+    const basis = withSteelModelModification(designBasis, next)
+    if (basis !== designBasis) onDesignBasisChange(basis)
   }
 
   return (
@@ -524,7 +541,7 @@ export function MaterialPanel({
       </div>
 
       {activePage === 'concrete' && (
-        <section className="pm-panel-section">
+        <section className="pm-panel-section pm-material-fields">
           <div className="pm-section-title pm-section-title--with-action">
             <h2>Concrete material</h2>
             <select
@@ -548,10 +565,10 @@ export function MaterialPanel({
               </p>
             ) : null}
 
-            <div className="pm-material-row-2">
-              <label className="pm-field">
-                <span>fc</span>
-                <QuantityInput quantity="stress"
+            <div className="pm-material-parameters">
+              <label className="pm-material-param">
+                <span><MaterialSymbol symbol={store.concrete.standard === 'ACI318' || store.concrete.standard === 'AS3600' ? 'fcPrime' : 'fck'} /></span>
+                <QuantityInput aria-label="fc" quantity="stress"
                   type="number"
                   min={1}
                   value={store.concrete.fck}
@@ -574,9 +591,9 @@ export function MaterialPanel({
                   }
                 />
               </label>
-              <label className="pm-field">
-                <span>mc</span>
-                <QuantityInput quantity="density"
+              <label className="pm-material-param">
+                <span><MaterialSymbol symbol="mc" /></span>
+                <QuantityInput aria-label="mc" quantity="density"
                   type="number"
                   min={1}
                   value={store.concrete.mc ?? DEFAULT_CONCRETE_DENSITY}
@@ -591,10 +608,10 @@ export function MaterialPanel({
               </label>
             </div>
 
-            <div className="pm-material-row-2">
-              <label className="pm-field">
-                <span>Ec</span>
-                <QuantityInput quantity="modulus"
+            <div className="pm-material-parameters">
+              <label className="pm-material-param">
+                <span><MaterialSymbol symbol="Ec" /></span>
+                <QuantityInput aria-label="Ec" quantity="modulus"
                   type="number"
                   min={0}
                   step="1"
@@ -602,8 +619,8 @@ export function MaterialPanel({
                   onValueChange={(canonical) => updateConcrete(material => ({ ...material, elasticModulus: canonical }))} onClear={() => updateConcrete(material => ({ ...material, elasticModulus: undefined }))}
                 />
               </label>
-              <label className="pm-field">
-                <span>εcu</span>
+              <label className="pm-material-param">
+                <span><MaterialSymbol symbol="epsCu" /></span>
                 <input
                   type="number"
                   step="0.0001"
@@ -634,9 +651,9 @@ export function MaterialPanel({
                 <div className="pm-material-stress-title">Equivalent rectangular stress block</div>
                 {isCustomProfile && store.concrete.stressStrain.type === 'user-block' ? (
                   <>
-                    <div className="pm-material-row-3">
-                      <label className="pm-field">
-                        <span>β1</span>
+                    <div className="pm-material-parameters">
+                      <label className="pm-material-param">
+                        <span><MaterialSymbol symbol="beta1" /></span>
                         <input
                           type="number"
                           step="0.01"
@@ -658,8 +675,8 @@ export function MaterialPanel({
                           }
                         />
                       </label>
-                      <label className="pm-field">
-                        <span>α (σblock/fck)</span>
+                      <label className="pm-material-param" title="α = σblock / fck">
+                        <span><MaterialSymbol symbol="alpha" /></span>
                         <input
                           type="number"
                           step="0.01"
@@ -684,8 +701,8 @@ export function MaterialPanel({
                           }
                         />
                       </label>
-                      <label className="pm-field">
-                        <span>εcu</span>
+                      <label className="pm-material-param">
+                        <span><MaterialSymbol symbol="epsCu" /></span>
                         <input
                           type="number"
                           step="0.0001"
@@ -705,34 +722,34 @@ export function MaterialPanel({
                         />
                       </label>
                     </div>
-                    <div className="pm-material-row-2">
-                      <label className="pm-field">
-                        <span>σblock</span>
+                    <div className="pm-material-parameters">
+                      <label className="pm-material-param">
+                        <span><MaterialSymbol symbol="sigmaBlock" /></span>
                         <QuantityInput quantity="stress" readOnly value={Number(userBlockCompressionStress(store.concrete).toFixed(3))} onValueChange={() => {}} />
                       </label>
                     </div>
                     <p className="pm-field-note">
-                      No code table is applied. β1, α and εcu are the values this project declares; the surface,
-                      the φ transition follows the selected code basis, and the Pmax limit is set below.
+                      No code table is applied. <MaterialSymbol symbol="beta1" />, <MaterialSymbol symbol="alpha" /> and <MaterialSymbol symbol="epsCu" /> are the values this project declares; the surface,
+                      the <var>φ</var> transition follows the selected code basis, and the <MaterialSymbol symbol="Pmax" /> limit is set below.
                     </p>
                   </>
                 ) : store.concrete.stressStrain.type === 'as3600-equivalent-block' ? (
                   <>
-                    <div className="pm-material-row-3">
-                      <label className="pm-field"><span>γ</span><input readOnly value={Number(store.concrete.stressStrain.gamma.toFixed(4))} /></label>
-                      <label className="pm-field"><span>α₂</span><input readOnly value={Number(store.concrete.stressStrain.alpha2.toFixed(4))} /></label>
-                      <label className="pm-field"><span>εcu</span><input readOnly value={store.concrete.stressStrain.epsCu} /></label>
+                    <div className="pm-material-parameters">
+                      <label className="pm-material-param"><span><MaterialSymbol symbol="gamma" /></span><input readOnly value={Number(store.concrete.stressStrain.gamma.toFixed(4))} /></label>
+                      <label className="pm-material-param"><span><MaterialSymbol symbol="alpha2" /></span><input readOnly value={Number(store.concrete.stressStrain.alpha2.toFixed(4))} /></label>
+                      <label className="pm-material-param"><span><MaterialSymbol symbol="epsCu" /></span><input readOnly value={store.concrete.stressStrain.epsCu} /></label>
                     </div>
-                    <p className="pm-field-note">AS 3600 preview block: concrete stress is α₂·f'c over a = γ·c; stress is zero outside the compression block.</p>
+                    <p className="pm-field-note">AS 3600 preview block: concrete stress is <MaterialSymbol symbol="alpha2" />·<MaterialSymbol symbol="fcPrime" /> over <var>a</var> = <MaterialSymbol symbol="gamma" />·<var>c</var>; stress is zero outside the compression block.</p>
                   </>
                 ) : (
                   <>
-                    <div className="pm-material-row-3">
-                      <label className="pm-field"><span>β1</span><input readOnly value={Number((kdsBlockParameters?.beta1 ?? (store.concrete.stressStrain.type === 'aci-whitney-block' ? store.concrete.stressStrain.beta1 : 0)).toFixed(4))} /></label>
-                      <label className="pm-field"><span>η</span><input readOnly value={Number((kdsBlockParameters?.eta ?? 1).toFixed(4))} /></label>
-                      <label className="pm-field"><span>εcu</span><input readOnly value={kdsBlockParameters?.extremeCompressionStrain ?? store.concrete.limits.epsCu} /></label>
+                    <div className="pm-material-parameters">
+                      <label className="pm-material-param"><span><MaterialSymbol symbol="beta1" /></span><input readOnly value={Number((kdsBlockParameters?.beta1 ?? (store.concrete.stressStrain.type === 'aci-whitney-block' ? store.concrete.stressStrain.beta1 : 0)).toFixed(4))} /></label>
+                      <label className="pm-material-param"><span><MaterialSymbol symbol="eta" /></span><input readOnly value={Number((kdsBlockParameters?.eta ?? 1).toFixed(4))} /></label>
+                      <label className="pm-material-param"><span><MaterialSymbol symbol="epsCu" /></span><input readOnly value={kdsBlockParameters?.extremeCompressionStrain ?? store.concrete.limits.epsCu} /></label>
                     </div>
-                    <p className="pm-field-note">Concrete stress is uniform only over a = β1·c. Stress is zero between a and c and over the tension region.</p>
+                    <p className="pm-field-note">Concrete stress is uniform only over <var>a</var> = <MaterialSymbol symbol="beta1" />·<var>c</var>. Stress is zero between <var>a</var> and <var>c</var> and over the tension region.</p>
                     {kdsBlockResolution.error && <p className="pm-field-error">{kdsBlockResolution.error}</p>}
                   </>
                 )}
@@ -767,9 +784,9 @@ export function MaterialPanel({
                 </label>
               </div>
               {store.concrete.stressStrain.type !== 'user-curve' && (
-              <div className="pm-material-inline-params">
-                <label className="pm-inline-param">
-                  <span>εc0</span>
+              <div className="pm-material-parameters">
+                <label className="pm-material-param">
+                  <span><MaterialSymbol symbol={store.concrete.stressStrain.type === 'ec2-parabolic-rectangular' ? 'epsC2' : 'epsC0'} /></span>
                   <input
                     type="number"
                     step="0.0001"
@@ -793,8 +810,8 @@ export function MaterialPanel({
                     }
                   />
                 </label>
-                <label className="pm-inline-param">
-                  <span>n</span>
+                <label className="pm-material-param">
+                  <span><var>n</var></span>
                   <input
                     type="number"
                     step="0.01"
@@ -823,8 +840,8 @@ export function MaterialPanel({
                 </label>
                 {/* A code profile derives alpha from its own table; only a Custom profile owns it. */}
                 {isCustomProfile && (
-                  <label className="pm-inline-param">
-                    <span>α</span>
+                  <label className="pm-material-param">
+                    <span><MaterialSymbol symbol="alpha" /></span>
                     <input
                       type="number"
                       step="0.01"
@@ -894,7 +911,7 @@ export function MaterialPanel({
       )}
 
       {activePage === 'steel' && (
-        <section className="pm-panel-section">
+        <section className="pm-panel-section pm-material-fields">
           <div className="pm-section-title pm-section-title--with-action">
             <h2>Steel materials</h2>
             <button type="button" className="ws-action ws-action--primary pm-table-add-btn" onClick={addSteel} title="Add steel material">
@@ -931,8 +948,8 @@ export function MaterialPanel({
                 <span>{modelName(activeSteel.stressStrain.type)}</span>
               </div>
               {isCustomProfile ? (
-                <div className="pm-material-row-2">
-                  <label className="pm-field">
+                <div className="pm-material-form">
+                  <label className="pm-field pm-material-name">
                     <span>Name</span>
                     <input
                       value={activeSteel.name}
@@ -947,7 +964,9 @@ export function MaterialPanel({
                         updateSteel(activeSteel.id, (material) =>
                           steelModelDefaults(
                             material,
-                            event.target.value as SteelMaterial['stressStrain']['type']
+                            event.target.value as SteelMaterial['stressStrain']['type'],
+                            calculationProfileId,
+                            designBasis
                           )
                         )
                       }
@@ -959,7 +978,7 @@ export function MaterialPanel({
                   </label>
                 </div>
               ) : (
-                <label className="pm-field">
+                <label className="pm-field pm-material-name">
                   <span>Name</span>
                   <input
                     value={activeSteel.name}
@@ -968,10 +987,10 @@ export function MaterialPanel({
                 </label>
               )}
 
-              <div className="pm-material-row-3">
-                <label className="pm-field">
-                  <span>fy</span>
-                  <QuantityInput quantity="stress"
+              <div className="pm-material-parameters">
+                <label className="pm-material-param">
+                  <span><MaterialSymbol symbol="fy" /></span>
+                  <QuantityInput aria-label="fy" quantity="stress"
                     type="number"
                     min={1}
                     value={activeSteel.fy}
@@ -986,8 +1005,8 @@ export function MaterialPanel({
                     }
                   />
                 </label>
-                <label className="pm-field">
-                  <span>Es</span>
+                <label className="pm-material-param">
+                  <span><MaterialSymbol symbol="Es" /></span>
                   <QuantityInput quantity="modulus"
                     type="number"
                     min={1}
@@ -1003,48 +1022,65 @@ export function MaterialPanel({
                     }
                   />
                 </label>
-                <label className="pm-field">
-                  <span>εu</span>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min={0}
-                    value={activeSteel.limits?.epsU ?? ''}
-                    placeholder="optional"
-                    onChange={(event) =>
-                      updateSteel(activeSteel.id, (material) => ({
-                        ...material,
-                        limits: {
-                          ...material.limits,
-                          epsU: event.target.value === '' ? undefined : numberValue(event.target.value, material.limits?.epsU ?? 0)
-                        }
-                      }))
-                    }
-                  />
-                </label>
               </div>
 
               <div className="pm-material-stress-box">
-                <div className="pm-material-stress-title">Stress–strain</div>
+                <div className="pm-material-stress-head">
+                  <div className="pm-material-stress-title">Stress–strain</div>
+                  <label className="pm-material-param">
+                    <span><MaterialSymbol symbol="epsY" /></span>
+                    <input aria-label="Yield strain εy" type="number" step="0.0001" min={0}
+                      readOnly={activeSteel.stressStrain.type !== 'user-curve'}
+                      value={activeSteel.limits?.epsY ?? activeSteel.fy / activeSteel.elasticModulus}
+                      onChange={(event) => updateSteel(activeSteel.id, (material) => ({
+                        ...material,
+                        limits: { ...material.limits, epsY: numberValue(event.target.value, material.fy / material.elasticModulus) }
+                      }))} />
+                  </label>
+                </div>
+                <SteelStressStrainCurve material={activeSteel} store={store} basis={designBasis} stage={steelCurveStage} />
+                <label className="pm-inline-param"><span>Curve stage</span>
+                  <select aria-label="Curve stage" value={steelCurveStage}
+                    onChange={(event) => setSteelCurveStage(event.target.value === 'design' ? 'design' : 'reference')}>
+                    <option value="reference">Reference</option>
+                    <option value="design">Design material</option>
+                  </select>
+                </label>
+                <div className="pm-material-form">
+                  <SteelHardeningFields key={activeSteel.id} material={activeSteel} profileId={calculationProfileId}
+                    onChange={(stressStrain) => updateSteel(activeSteel.id, (material) => ({ ...material, stressStrain }))}
+                    onPhysicalLimitChange={(epsU) => updateSteel(activeSteel.id, (material) => ({ ...material, limits: { ...material.limits, epsU } }))}
+                    toggle={(profile.code === 'KDS' || profile.code === 'EN') && <label className="pm-material-hardening-toggle">
+                    <input type="checkbox" aria-label="Post-yield hardening"
+                      checked={activeSteel.stressStrain.type === 'linear-hardening' || activeSteel.stressStrain.type === 'bilinear'}
+                      aria-checked={activeSteel.stressStrain.type === 'user-curve' ? 'mixed' : undefined}
+                      ref={(input) => { if (input) input.indeterminate = activeSteel.stressStrain.type === 'user-curve' }}
+                      onChange={(event) => updateSteel(activeSteel.id, (material) => steelModelDefaults(material,
+                        event.target.checked ? 'linear-hardening' : 'elastic-perfectly-plastic', calculationProfileId, designBasis))} />
+                    <span>Post-yield hardening</span>
+                  </label>} />
+                  {activeSteel.stressStrain.type === 'user-curve' && <p className="pm-field-note">Imported tabulated steel law.</p>}
+                </div>
 
-                <div className="pm-material-inline-params">
-                  <label className="pm-inline-param">
-                    <span>εy</span>
+                {activeSteel.stressStrain.type !== 'linear-hardening' && <div className="pm-material-parameters">
+                  <label className="pm-material-param">
+                    <span><MaterialSymbol symbol="epsU" /></span>
                     <input
                       type="number"
-                      step="0.0001"
+                      step="0.001"
                       min={0}
-                      value={activeSteel.limits?.epsY ?? activeSteel.fy / activeSteel.elasticModulus}
+                      value={activeSteel.limits?.epsU ?? ''}
+                      placeholder="optional"
                       onChange={(event) =>
                         updateSteel(activeSteel.id, (material) => ({
                           ...material,
-                          limits: { ...material.limits, epsY: numberValue(event.target.value, material.fy / material.elasticModulus) }
+                          limits: { ...material.limits, epsU: event.target.value === '' ? undefined : numberValue(event.target.value, material.limits?.epsU ?? 0) }
                         }))
                       }
                     />
                   </label>
                   {activeSteel.stressStrain.type === 'bilinear' && (
-                    <label className="pm-inline-param">
+                    <label className="pm-material-param">
                       <span>Hardening</span>
                       <input
                         type="number"
@@ -1067,13 +1103,13 @@ export function MaterialPanel({
                       />
                     </label>
                   )}
-                </div>
+                </div>}
 
                 {designBasis.format === 'designMaterialReevaluation' && (
-                  <div className="pm-material-inline-params">
+                  <div className="pm-material-parameters">
                     {designBasis.factors.reinforcement.components.map((component) => (
-                      <label className="pm-inline-param" key={component.id}>
-                        <span>{component.symbol}</span>
+                      <label className="pm-material-param" key={component.id}>
+                        <span><MaterialFactorSymbol symbol={component.symbol} /></span>
                         <input
                           type="number"
                           step={component.id.startsWith('gamma') ? '0.05' : '0.01'}
@@ -1086,8 +1122,9 @@ export function MaterialPanel({
                         />
                       </label>
                     ))}
-                    <label className="pm-inline-param">
-                      <span>{designBasis.factors.reinforcement.designSymbol}</span>
+                    <label className="pm-material-param">
+                      <span>{designBasis.factors.reinforcement.designSymbol === 'fyd'
+                        ? <MaterialSymbol symbol="fyd" /> : designBasis.factors.reinforcement.designSymbol}</span>
                       <QuantityInput quantity="stress"
                         type="number"
                         readOnly
@@ -1117,7 +1154,6 @@ export function MaterialPanel({
                   />
                 )}
 
-                <StressStrainCurve material={activeSteel} />
               </div>
             </div>
           )}

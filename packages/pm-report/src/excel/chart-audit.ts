@@ -30,6 +30,7 @@ import {
   type SectionGeometry
 } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
+import { resolveLinearHardeningSteel } from '@pm/materials'
 import {
   analysisMeshKernelOptions,
   isEquivalentBlockAnalysisOptions,
@@ -604,7 +605,7 @@ export const prepareAuditContext = (
   // -----------------------------------------------------------------------
   // Materials
   // -----------------------------------------------------------------------
-  const MATERIALS_SPAN = 8
+  const MATERIALS_SPAN = 12
   reportTitle(materials, 'MATERIALS AND RESISTANCE BASIS', MATERIALS_SPAN)
   addLegend(materials, 2, MATERIALS_SPAN)
 
@@ -681,7 +682,8 @@ export const prepareAuditContext = (
   concreteRow++
 
   const steelFirst = tableBlock(materials, concreteRow + 1, 'Reinforcing steel', [
-    'ID', 'Material', 'Standard', 'fy (MPa)', 'Eₛ (MPa)', 'εy', 'εu', 'Stress–strain law'
+    'ID', 'Material', 'Standard', 'fy (MPa)', 'Eₛ (MPa)', 'εy', 'εu physical', 'Stress–strain law',
+    'fu construction (MPa)', 'εuk', 'εlimit', 'Eh (MPa)'
   ])
   const steelNames = new Map<number, { fy: string; Es: string; curvePrefix: string }>()
   calculationMaterials.steel.forEach((steel, index) => {
@@ -697,6 +699,13 @@ export const prepareAuditContext = (
     setFormula(materials.getCell(row, 6), `=D${row}/E${row}`, steel.limits?.epsY ?? steelDesignFy(steel) / steel.elasticModulus, '0.000000')
     materials.getCell(row, 7).value = steel.limits?.epsU ?? null
     materials.getCell(row, 8).value = steel.stressStrain.type
+    if (steel.stressStrain.type === 'linear-hardening') {
+      const parameters = resolveLinearHardeningSteel(steel)
+      for (const [column, value] of [[9, parameters.ultimateStress], [10, parameters.epsUk], [11, parameters.epsUd], [12, parameters.hardeningModulus]]) {
+        materials.getCell(row, column).value = value
+        styleGenerated(materials.getCell(row, column))
+      }
+    }
     for (const column of [4, 5]) styleInput(materials.getCell(row, column))
     styleRegenerate(materials.getCell(row, 7))
     for (const column of [1, 2, 3, 8]) styleGenerated(materials.getCell(row, column))

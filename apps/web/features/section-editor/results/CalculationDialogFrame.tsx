@@ -108,6 +108,8 @@ type CalculationDialogFrameProps = {
   headerAction?: ReactNode
   bodyKey?: string
   defaultView?: CalculationDialogView
+  compact?: boolean
+  description?: string
   children: ReactNode
   onClose: () => void
 }
@@ -126,6 +128,8 @@ export function CalculationDialogFrame({
   headerAction,
   bodyKey,
   defaultView = 'classic',
+  compact = false,
+  description,
   children,
   onClose
 }: CalculationDialogFrameProps) {
@@ -288,16 +292,16 @@ export function CalculationDialogFrame({
     >
       <article
         ref={dialogRef}
-        className={`pm-calculation-dialog ${documentMode ? 'is-document' : 'is-classic'}`}
+        className={`pm-calculation-dialog ${documentMode ? 'is-document' : 'is-classic'}${compact ? ' is-value-trace' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
       >
         <header className="pm-calculation-dialog__header">
           <div className="pm-calculation-dialog__heading">
-            <span className="pm-calculation-dialog__document-type">Calculation help / technical note</span>
+            {!compact && <span className="pm-calculation-dialog__document-type">Calculation help / technical note</span>}
             <h2 id={titleId} className="pm-calc-kicker">{title}</h2>
-            <p className="pm-calculation-dialog__document-note">Method, inputs, equations and traceable result rows</p>
+            <p className="pm-calculation-dialog__document-note">{description ?? 'Method, inputs, equations and traceable result rows'}</p>
           </div>
           <div className="pm-calculation-dialog__header-actions">
             {documentMode ? (
@@ -347,7 +351,7 @@ export function CalculationDialogFrame({
           {!documentMode ? controls : null}
         </header>
 
-        {documentMode ? (
+        {documentMode && !compact ? (
           <div className="pm-calculation-dialog__document">
             <aside className="pm-calculation-document__sidebar" aria-label="Calculation document contents">
               <div className="pm-calculation-document__sidebar-inner">
@@ -387,6 +391,7 @@ export function CalculationDialogFrame({
           </div>
         ) : (
           <div ref={bodyRef} className="pm-calculation-dialog__body" key={bodyKey}>
+            {compact && <p className="pm-calc-caption">Preview calculation · Section resistance · {unit('force')} · {unit('moment')}</p>}
             {children}
           </div>
         )}

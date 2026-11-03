@@ -13,6 +13,10 @@ export const EN1992_ALPHA_CC = 1
 export const EN1992_GAMMA_C = 1.5
 export const EN1992_GAMMA_S = 1.15
 export const EN1992_STEEL_ES = 200000
+/** EN 1992-1-1:2004 §3.2.7(2), recommended value without a selected National Annex. */
+export const EN1992_RECOMMENDED_ULTIMATE_STRAIN_FACTOR = 0.9
+/** Annex C, Table C.1, Class B lower-bound reference; JRC/Walraven p.23. Not grade certification. */
+export const EN1992_CLASS_B_REFERENCE = { strengthRatio: 1.08, epsUk: 0.05 } as const
 
 const assertConcreteStrength = (fck: number) => {
   if (!Number.isFinite(fck) || fck <= 0 || fck > 90) {

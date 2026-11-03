@@ -1,4 +1,6 @@
 import { AnalysisInputError } from './analysis-error'
+import { strainResistanceFactorAudit, type CalculationAuditResistanceFactor } from './resistance-factor-audit'
+export { strainResistanceFactorAudit, type CalculationAuditResistanceFactor, type StrainResistanceFactorAudit, type AxialBendingResistanceFactorAudit } from './resistance-factor-audit'
 export { AnalysisInputError, type AnalysisErrorCode } from './analysis-error'
 import { clipDesignSurfaceAtAxialCap } from './axial-cap'
 export { resolveLoadcaseField, type LoadcaseFieldResult } from './loadcase-field'
@@ -6,6 +8,7 @@ export { axialCapExcludedPaths } from './axial-cap-display'
 import { solve3 } from './linear-solve'
 import { NEWTON_RESIDUAL_TOL, NEWTON_MAX_ITERATIONS } from './inverse-options'
 import {
+  prepareGroupedPointSupports,
   buildConcreteMesh,
   netConcreteCentroid,
   validatePolygonSection,
@@ -17,6 +20,9 @@ import {
   type GeometryInputRebarView,
   type SectionGeometry
 } from '@pm/geometry'
+import { createSteelStrainBoundary, type SteelStrainBoundary } from './steel-strain-boundary'
+import { selectGoverningSteelStrainLimit, type SteelStrainLimitEvidence } from './steel-strain-limit'
+export { selectGoverningSteelStrainLimit, type SteelStrainLimitEvidence } from './steel-strain-limit'
 import {
   compileMaterialStore,
   describeConcreteMaterialLaw,
@@ -35,11 +41,14 @@ import {
 } from '@pm/materials'
 import {
   buildResistanceMaterialSets,
+  withSteelModelModification,
   designMaterialApplicabilityIssues,
   cloneDesignBasis,
   createDefaultDesignBasis,
   designBasisRequiresOverrideReason,
   evaluateGlobalStrengthReduction,
+  globalStrengthReductionTransitionSpan,
+  GLOBAL_STRENGTH_REDUCTION_MINIMUM_SPAN,
   minimumEccentricityCandidates,
   minimumEccentricityMessage,
   resolveTensionControlledStrainLimit,
@@ -289,6 +298,7 @@ export type StressStrainPointCalculationAudit = {
   nominalReferenceLedger: ResultantLedger
   displayedLedger: ResultantLedger
   resistanceFactor: number | null
+  resistanceFactorCalculation: CalculationAuditResistanceFactor | null
   nominalReferenceReconciliation: CalculationAuditReconciliation
   reconciliation: CalculationAuditReconciliation
 }
@@ -334,6 +344,7 @@ export type EquivalentBlockPointCalculationAudit = {
   nominalReferenceLedger: ResultantLedger
   displayedLedger: ResultantLedger
   resistanceFactor: number | null
+  resistanceFactorCalculation: CalculationAuditResistanceFactor | null
   nominalReferenceReconciliation: CalculationAuditReconciliation
   reconciliation: CalculationAuditReconciliation
 }
@@ -822,8 +833,10 @@ export type StrainAdmissibility = {
   concreteLimit: number
   /** Largest tensile strain magnitude at any bar; 0 when every bar is in compression. */
   maxSteelTension: number
-  /** Rupture limit taken from the steel definitions, or null when none declares `limits.epsU`. */
+  /** Smallest declared tensile limit, an aggregate that must not be paired with maxSteelTension. */
   steelTensionLimit: number | null
+  /** The governing bar compared with its own material limit, including mixed-grade sections. */
+  governingSteelLimit?: SteelStrainLimitEvidence | null
   violations: AdmissibilityViolation[]
 }
 
@@ -942,6 +955,8 @@ export type PreparedAnalysis = {
   readonly mesh: ConcreteMesh
   readonly concreteFibers: ConcreteFiber[]
   readonly rebarFibers: RebarFiber[]
+  readonly steelSupports: ReturnType<typeof prepareGroupedPointSupports<RebarFiber>>
+  readonly hasSteelHardening: boolean
   readonly fibers: Fiber[]
   readonly materials: AnalysisMaterials
   /** Exact outer-boundary vertices in the centroidal analysis frame. */
@@ -1399,6 +1414,7 @@ export const prepareAnalysisFromMesh = (
   const materials = resolveAnalysisMaterials(materialStore, rebars)
   const concreteFibers = concreteFibersFromMesh(mesh, origin)
   const rebarFibers = buildRebarFibers(rebars, origin, materials, materialStore.defaults.steelMaterialId)
+  const usedSteelIds = new Set(rebarFibers.map((bar) => bar.steel.id))
   const concreteBoundary = section.solids.flatMap((solid) =>
     solid.outer.map((point) => ({ x: point.x - origin.x, y: point.y - origin.y }))
   )
@@ -1425,6 +1441,8 @@ export const prepareAnalysisFromMesh = (
     mesh,
     concreteFibers,
     rebarFibers,
+    steelSupports: prepareGroupedPointSupports(rebarFibers, (bar) => String(bar.steel.id)),
+    hasSteelHardening: materialStore.steel.some((steel) => usedSteelIds.has(steel.id) && steel.stressStrain.type === 'linear-hardening'),
     fibers: [...concreteFibers, ...rebarFibers],
     materials,
     concreteBoundary,
@@ -1624,7 +1642,7 @@ export const evaluatePreparedStateWithTangent = (
  * `steelTensionLimit: null` rather than treated as "admissible".
  */
 const evaluateAdmissibility = (
-  fibers: Fiber[],
+  prepared: PreparedAnalysis,
   concreteBoundary: Array<{ x: number; y: number }>,
   concreteLimit: number,
   state: StrainState
@@ -1636,15 +1654,35 @@ const evaluateAdmissibility = (
   )
   let maxSteelTension = 0
   let steelTensionLimit: number | null = null
+  let governingSteelLimit: SteelStrainLimitEvidence | null = null
 
-  for (const fiber of fibers) {
-    if (fiber.kind !== 'rebar') continue
-    const strain = strainAt(state, fiber)
-    if (strain < 0) maxSteelTension = Math.max(maxSteelTension, -strain)
-    const tensionLimit = fiber.steel.limits.epsTensionUltimate
+  const exceeded = new Set<number>()
+  for (const group of prepared.steelSupports(state.ky, state.kx)) {
+    const strainMin = strainAt(state, group.minimum)
+    const compressionLimit = group.maximum.steel.limits.epsCompressionUltimate
+    const strainMax = compressionLimit === undefined ? 0 : strainAt(state, group.maximum)
+    maxSteelTension = Math.max(maxSteelTension, -strainMin)
+    const tensionLimit = group.minimum.steel.limits.epsTensionUltimate
     if (tensionLimit !== undefined) {
       steelTensionLimit = steelTensionLimit === null ? tensionLimit : Math.min(steelTensionLimit, tensionLimit)
+      governingSteelLimit = selectGoverningSteelStrainLimit(governingSteelLimit, {
+        steelMaterialId: group.minimum.steel.id, rebarId: group.minimum.rebarId,
+        side: 'tension', strain: strainMin, limit: tensionLimit
+      })
     }
+    if (compressionLimit !== undefined) governingSteelLimit = selectGoverningSteelStrainLimit(governingSteelLimit, {
+      steelMaterialId: group.maximum.steel.id, rebarId: group.maximum.rebarId,
+      side: 'compression', strain: strainMax, limit: compressionLimit
+    })
+    if ((tensionLimit !== undefined && -strainMin > tensionLimit * (1 + STRAIN_LIMIT_TOL)) ||
+      (compressionLimit !== undefined && strainMax > compressionLimit * (1 + STRAIN_LIMIT_TOL))) {
+      exceeded.add(group.minimum.steel.id)
+    }
+  }
+  // Reconstruct full diagnostics only for groups that fail their extreme checks.
+  for (const fiber of exceeded.size > 0 ? prepared.rebarFibers : []) {
+    if (!exceeded.has(fiber.steel.id)) continue
+    const strain = strainAt(state, fiber)
     const limit =
       strain < 0 ? fiber.steel.limits.epsTensionUltimate : fiber.steel.limits.epsCompressionUltimate
     if (limit === undefined) continue
@@ -1668,6 +1706,7 @@ const evaluateAdmissibility = (
     concreteLimit,
     maxSteelTension,
     steelTensionLimit,
+    governingSteelLimit,
     violations
   }
 }
@@ -1717,10 +1756,34 @@ const projectedExtents = (
     }
   }
 
-  return { min, max, tensionControl, controllingRebarIndex }
+  return { min, max, tensionControl, controllingRebarIndex, steelBoundary: null as SteelStrainBoundary | null }
 }
 
 type ProjectedExtents = ReturnType<typeof projectedExtents>
+
+const projectedSteelExtents = (prepared: PreparedAnalysis, beta: number) => {
+  const extents = projectedExtents(prepared.section, beta, prepared.origin, prepared.rebars)
+  if (prepared.hasSteelHardening) {
+    const nx = Math.sin(beta)
+    const ny = Math.cos(beta)
+    extents.steelBoundary = createSteelStrainBoundary(prepared.steelSupports(nx, ny), extents.max,
+      prepared.materialStore.concrete.limits.epsCu, nx, ny, STRAIN_LIMIT_TOL)
+  }
+  return extents
+}
+
+const withSteelBoundaryStations = (stations: SurfaceStation[], prepared: PreparedAnalysis): SurfaceStation[] => {
+  if (!prepared.hasSteelHardening) return stations
+  const last = stations[stations.length - 2]
+  if (!last) return stations
+  const transitions: SurfaceStation[] = [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875].map((ratio, index) => ({
+    id: `adaptive-station-steel-boundary-${index}`,
+    label: `Steel-controlled boundary ${ratio}`,
+    definition: { kind: 'tension-pole-transition-ratio', from: last.definition, ratio },
+    fixed: true
+  }))
+  return [...stations.slice(0, -1), ...transitions, stations[stations.length - 1]]
+}
 
 /**
  * Fallback pure-tension strain when no steel definition declares a rupture limit.
@@ -1873,8 +1936,14 @@ const previewStationStateFromExtents = (
   globalPureTensionStrain: number,
   extents: ProjectedExtents
 ): StrainState => {
-  if (station.kind === 'pure-compression') return { e0: pureCompressionStrain, kx: 0, ky: 0 }
-  if (station.kind === 'pure-tension') return { e0: globalPureTensionStrain, kx: 0, ky: 0 }
+  if (station.kind === 'pure-compression') {
+    const state = { e0: pureCompressionStrain, kx: 0, ky: 0 }
+    return extents.steelBoundary?.constrain(state) ?? state
+  }
+  if (station.kind === 'pure-tension') {
+    const state = { e0: globalPureTensionStrain, kx: 0, ky: 0 }
+    return extents.steelBoundary?.constrain(state) ?? state
+  }
   if (station.kind === 'adaptive-state-interpolation') {
     const left = previewStationStateFromExtents(
       beta,
@@ -1896,6 +1965,7 @@ const previewStationStateFromExtents = (
       globalPureTensionStrain,
       extents
     )
+    if (extents.steelBoundary) return extents.steelBoundary.interpolate(left, right, station.ratio)
     return {
       e0: left.e0 + (right.e0 - left.e0) * station.ratio,
       kx: left.kx + (right.kx - left.kx) * station.ratio,
@@ -1913,6 +1983,7 @@ const previewStationStateFromExtents = (
       globalPureTensionStrain,
       extents
     )
+    if (extents.steelBoundary) return extents.steelBoundary.transition(source, station.ratio)
     const c = Math.cos(beta)
     const s = Math.sin(beta)
     const controlDistance = Math.max(1e-12, extents.max - extents.tensionControl)
@@ -1984,11 +2055,12 @@ const previewStationStateFromExtents = (
     Math.max(1e-9, compressionProjection - controlProjection)
   const c = Math.cos(beta)
   const s = Math.sin(beta)
-  return {
+  const state = {
     e0: compressionBoundaryStrain - curvature * compressionProjection,
     kx: curvature * c,
     ky: curvature * s
   }
+  return extents.steelBoundary?.constrain(state) ?? state
 }
 
 /**
@@ -2357,7 +2429,7 @@ const buildPreviewSurfaceFromPreparedLegacy = (
   const meshReport = prepared.mesh.report
   const epsCu = materialStore.concrete.limits.epsCu
   const pureCompressionStrain = resolvePureCompressionStrain(materialStore, designBasis)
-  let stations = analysisStations(analysisOptions)
+  let stations = withSteelBoundaryStations(analysisStations(analysisOptions), prepared)
   const fixedStationCount = stations.length
   const seedBetas = analysisDirections(analysisOptions)
   const warnings: string[] = []
@@ -2366,7 +2438,7 @@ const buildPreviewSurfaceFromPreparedLegacy = (
   if (section.solids.length !== 1) warnings.push('Preview engine supports one concrete region best; multi-region output is approximate.')
   for (const issue of meshReport.warnings) warnings.push(`Concrete mesh: ${issue}`)
   if (rebars.length === 0) warnings.push('No rebars are present; steel contribution is zero.')
-  const domainMismatch = strainDomainMismatch(materialStore.concrete)
+  const domainMismatch = strainDomainMismatch(materialStore.concrete, prepared.hasSteelHardening ? materialStore.steel : undefined)
   if (domainMismatch) warnings.push(`Strain domain: ${domainMismatch.message} See ${domainMismatch.reference}.`)
 
   const usedSteel = new Map<number, CompiledMaterial>()
@@ -2400,7 +2472,9 @@ const buildPreviewSurfaceFromPreparedLegacy = (
   )
   const globalPureTensionStrain = -(
     declaredTensionLimits.length > 0
-      ? Math.min(...effectiveTensionLimits)
+      ? prepared.hasSteelHardening
+        ? Math.min(...declaredTensionLimits)
+        : Math.min(...effectiveTensionLimits)
       : Math.max(
           ...effectiveTensionLimits,
           deepestConfiguredTensionStrain,
@@ -2419,7 +2493,7 @@ const buildPreviewSurfaceFromPreparedLegacy = (
     schedule: SurfaceStation[] = stations,
     stationOrders: number[] = allStationOrders(schedule)
   ): PreviewSurfacePoint[] => {
-    const extents = projectedExtents(section, beta, origin, rebars)
+    const extents = projectedSteelExtents(prepared, beta)
     // The controlling bar changes with direction, so its yield and rupture strains do too.
     const control = stationSteelControl(
       materials,
@@ -2444,7 +2518,7 @@ const buildPreviewSurfaceFromPreparedLegacy = (
       return { station, descriptor, state }
     })
 
-    if (stationOrders.length === schedule.length && rebars.length > 0) {
+    if (stationOrders.length === schedule.length && rebars.length > 0 && !extents.steelBoundary) {
       const bar = rebars[extents.controllingRebarIndex]
       let previous = Number.POSITIVE_INFINITY
       for (const point of resolved) {
@@ -2744,7 +2818,7 @@ const buildPreviewSurfaceFromPreparedLegacy = (
     stations,
     directions: sortedBetas(),
     analysisOptions: cloneAnalysisOptions(analysisOptions),
-    strainDomain: IMPLEMENTED_STRAIN_DOMAIN,
+    strainDomain: prepared.hasSteelHardening ? 'steel-limited-ultimate' : IMPLEMENTED_STRAIN_DOMAIN,
     directionError: {
       directions: rows.size,
       probedStations: reportedProbeStationOrders,
@@ -2840,7 +2914,7 @@ const buildIndependentAdaptivePreviewSurface = (
   designBasis: DesignBasis,
   sampling: PreviewSamplingHooks
 ): PreviewSurface => {
-  const seedStations = analysisStations(analysisOptions)
+  const seedStations = withSteelBoundaryStations(analysisStations(analysisOptions), prepared)
   const { section, rebars, materialStore, origin, concreteFibers, rebarFibers, materials } = prepared
   const meshReport = prepared.mesh.report
   const epsCu = materialStore.concrete.limits.epsCu
@@ -2851,7 +2925,7 @@ const buildIndependentAdaptivePreviewSurface = (
   if (section.solids.length !== 1) warnings.push('Preview engine supports one concrete region best; multi-region output is approximate.')
   for (const issue of meshReport.warnings) warnings.push(`Concrete mesh: ${issue}`)
   if (rebars.length === 0) warnings.push('No rebars are present; steel contribution is zero.')
-  const domainMismatch = strainDomainMismatch(materialStore.concrete)
+  const domainMismatch = strainDomainMismatch(materialStore.concrete, prepared.hasSteelHardening ? materialStore.steel : undefined)
   if (domainMismatch) warnings.push(`Strain domain: ${domainMismatch.message} See ${domainMismatch.reference}.`)
 
   const usedSteel = new Map<number, CompiledMaterial>()
@@ -2884,7 +2958,9 @@ const buildIndependentAdaptivePreviewSurface = (
   )
   const globalPureTensionStrain = -(
     declaredTensionLimits.length > 0
-      ? Math.min(...effectiveTensionLimits)
+      ? prepared.hasSteelHardening
+        ? Math.min(...declaredTensionLimits)
+        : Math.min(...effectiveTensionLimits)
       : Math.max(
           ...effectiveTensionLimits,
           deepestConfiguredTensionStrain,
@@ -2903,7 +2979,7 @@ const buildIndependentAdaptivePreviewSurface = (
     const key = beta.toPrecision(15)
     const cached = evaluatorCache.get(key)
     if (cached) return cached
-    const extents = projectedExtents(section, beta, origin, rebars)
+    const extents = projectedSteelExtents(prepared, beta)
     const control = stationSteelControl(
       materials,
       materialStore,
@@ -2948,7 +3024,7 @@ const buildIndependentAdaptivePreviewSurface = (
       return mapped
     }
     const validate = (stations: SurfaceStation[], points: PreviewSurfacePoint[]) => {
-      if (rebars.length === 0) return
+      if (rebars.length === 0 || extents.steelBoundary) return
       const bar = rebars[extents.controllingRebarIndex]
       let previous = Number.POSITIVE_INFINITY
       for (let index = 0; index < points.length; index += 1) {
@@ -3024,14 +3100,12 @@ const buildIndependentAdaptivePreviewSurface = (
     let passes = 0
     const candidates = () => stations.slice(0, -1).flatMap((left, interval) => {
       const right = stations[interval + 1]
-      // Pure tension is an axial pole, not another finite neutral-axis state. The path from the
-      // last finite strain criterion to uniform tension is non-unique, so refining a constructed
-      // transition would add visually dense points to an arbitrary path. Keep this as one explicit
-      // topology edge, consistent with the fixed schedule.
+      // Legacy unbounded laws retain their explicit pole edge. Finite endpoint hardening instead
+      // defines a unique compatible steel boundary, so its transition intervals must be refined.
       if (
-        right.definition.kind === 'pure-tension' ||
+        !prepared.hasSteelHardening && (right.definition.kind === 'pure-tension' ||
         left.definition.kind === 'tension-pole-transition-ratio' ||
-        right.definition.kind === 'tension-pole-transition-ratio'
+        right.definition.kind === 'tension-pole-transition-ratio')
       ) return []
       const coordinate = (coordinates[interval] + coordinates[interval + 1]) / 2
       const station = adaptiveStation(midpointStationDefinition(left.definition, right.definition))
@@ -3214,7 +3288,7 @@ const buildIndependentAdaptivePreviewSurface = (
     stations: [...uniqueStations.values()],
     directions: sortedBetas(),
     analysisOptions: cloneAnalysisOptions(analysisOptions),
-    strainDomain: IMPLEMENTED_STRAIN_DOMAIN,
+    strainDomain: prepared.hasSteelHardening ? 'steel-limited-ultimate' : IMPLEMENTED_STRAIN_DOMAIN,
     directionError: {
       directions: rows.size,
       probedStations: [],
@@ -3783,6 +3857,28 @@ export const buildStressStrainPointCalculationAudit = (
       { pointId: point.id }
     )
   }
+  let resistanceFactorCalculation: CalculationAuditResistanceFactor | null = null
+  if (resistanceFactor !== null && designBasis.format === 'globalResultantFactor') {
+    const evidence = controllingSteelEvidence(referencePrepared, point.state)
+    const evaluated = evaluateGlobalStrengthReduction(designBasis, evidence.tensileStrain, evidence.yieldStrain, evidence.yieldStress)
+    if (!evidence.steel || evidence.rebarId === null || evaluated.phi !== resistanceFactor) {
+      throw new AnalysisInputError('AUDIT_RECONCILIATION_FAILED', 'Resistance-factor evidence does not reproduce the stored stress-strain factor.', { pointId: point.id })
+    }
+    resistanceFactorCalculation = strainResistanceFactorAudit({
+      factor: evaluated.phi, classification: evaluated.classification,
+      tensileStrain: evaluated.controllingTensileStrain, yieldStrain: evaluated.yieldStrain,
+      tensionLimit: evaluated.tensionControlledLimit, yieldStress: evidence.yieldStress,
+      elasticModulus: evidence.steel.elasticModulus, steelMaterialId: evidence.steel.id,
+      controllingRebarId: evidence.rebarId,
+      compressionFactor: designBasis.transverseReinforcement === 'qualifying-spiral'
+        ? designBasis.factors.phiCompressionSpiral : designBasis.factors.phiCompressionOther,
+      tensionFactor: designBasis.factors.phiTension,
+      transverseReinforcement: designBasis.transverseReinforcement, limitRule: designBasis.transition,
+      transitionDenominator: globalStrengthReductionTransitionSpan(evaluated.tensionControlledLimit, evaluated.yieldStrain),
+      minimumTransitionSpan: GLOBAL_STRENGTH_REDUCTION_MINIMUM_SPAN,
+      classificationTolerance: 0
+    })
+  }
   const displayedLedger = resistanceFactor === null
     ? mechanicalLedger
     : scaleLedger(mechanicalLedger, resistanceFactor)
@@ -3848,6 +3944,7 @@ export const buildStressStrainPointCalculationAudit = (
     nominalReferenceLedger,
     displayedLedger,
     resistanceFactor,
+    resistanceFactorCalculation,
     nominalReferenceReconciliation,
     reconciliation
   }
@@ -3862,7 +3959,9 @@ const surfaceBounds = (points: PreviewSurfacePoint[]) => ({
 const controllingSteelEvidence = (
   prepared: PreparedAnalysis,
   state: StrainState
-): { tensileStrain: number; yieldStrain: number; yieldStress: number } => {
+): { tensileStrain: number; yieldStrain: number; yieldStress: number; steel: SteelMaterial | null; rebarId: number | null } => {
+  let selectedSteel: SteelMaterial | null = null
+  let rebarId: number | null = null
   let tensileStrain = 0
   let yieldStrain = Number.POSITIVE_INFINITY
   let yieldStress = 400
@@ -3878,16 +3977,19 @@ const controllingSteelEvidence = (
       prepared.materialStore.steel.find((item) => item.id === materialId) ??
       prepared.materialStore.steel.find((item) => item.id === prepared.materialStore.defaults.steelMaterialId)
     if (!steel) continue
+    selectedSteel = steel
+    rebarId = bar.id
     tensileStrain = tension
     yieldStrain = steel.fy / steel.elasticModulus
     yieldStress = steel.fy
   }
   if (!Number.isFinite(yieldStrain)) {
     const steel = prepared.materialStore.steel[0]
+    selectedSteel = steel ?? null
     yieldStrain = steel ? steel.fy / steel.elasticModulus : 0.002
     yieldStress = steel?.fy ?? 400
   }
-  return { tensileStrain, yieldStrain, yieldStress }
+  return { tensileStrain, yieldStrain, yieldStress, steel: selectedSteel, rebarId }
 }
 
 const designPointFromState = (
@@ -3979,6 +4081,7 @@ export const buildDesignPreviewSurfaceFromPrepared = (
   designBasis: DesignBasis,
   analysisOptions: AnalysisOptions = createDefaultAnalysisOptions()
 ): PreviewSurface => {
+  designBasis = withSteelModelModification(designBasis, sourceMaterials)
   const applicabilityIssues = designMaterialApplicabilityIssues(sourceMaterials, designBasis)
   if (applicabilityIssues.length > 0) {
     throw new AnalysisInputError(
@@ -4756,14 +4859,15 @@ const checkRawLoadcaseUtilizationFromSurface = (
   const equivalentBlock =
     surface.mechanics === 'equivalent-rectangular-block' ||
     surface.analysisOptions.methodId === 'equivalent-block-surface-v1'
+  const unqualifiedFixedDomain = equivalentBlock || surface.strainDomain === 'steel-limited-ultimate'
   const relativeUncertainty = adaptive
     ? adaptiveUncertainty
-    : equivalentBlock
+    : unqualifiedFixedDomain
       ? null
       : FIXED_GRID_SCREENING_RELATIVE_UNCERTAINTY
   const evidence = adaptive
     ? 'adaptive-sampling-estimate'
-    : equivalentBlock
+    : unqualifiedFixedDomain
       ? 'fixed-grid-no-validated-bound'
       : 'fixed-grid-screening-margin'
   const classification = classifyUtilization(
@@ -4792,8 +4896,8 @@ const checkRawLoadcaseUtilizationFromSurface = (
     message:
       proportionalUtilization == null
         ? 'No proportional demand-ray crossing was found on the design-resistance surface.'
-        : !adaptive && equivalentBlock
-          ? 'Factored ULS demand intersected the Fixed equivalent-block Design surface, but no validated Fixed-grid uncertainty bound exists; the verdict is indeterminate. Use Adaptive sampling for a measured estimate.'
+        : !adaptive && unqualifiedFixedDomain
+          ? 'Factored ULS demand intersected the Fixed Design surface, but no validated Fixed-grid uncertainty bound exists for this material domain; the verdict is indeterminate. Use Adaptive sampling for a measured estimate.'
           : 'Factored ULS demand checked against the 3D design-resistance surface; fixed-P UR is secondary.'
   }
 }
@@ -4898,7 +5002,7 @@ export const createCapacityFieldEvaluator = (
   const designPrepared = prepareSet(sets.designMaterials)
   const pureCompression = resolvePureCompressionStrain(prepared.materialStore, basis)
   return (beta: number, definition: StationDefinition, coordinate: number) => {
-    const extents = projectedExtents(prepared.section, beta, prepared.origin, prepared.rebars)
+    const extents = projectedSteelExtents(prepared, beta)
     const control = stationSteelControl(prepared.materials, prepared.materialStore, prepared.rebars,
       prepared.materialStore.defaults.steelMaterialId, extents.controllingRebarIndex)
     const state = previewStationStateFromExtents(beta, definition, prepared.materialStore.concrete.limits.epsCu,
@@ -4912,7 +5016,7 @@ export const createCapacityFieldEvaluator = (
     const point = designPointFromState(raw, prepared, referencePrepared, designPrepared, basis).design
 
     return { point, projectedDepth: extents.max - extents.min,
-      admissibility: evaluateAdmissibility(prepared.fibers, prepared.concreteBoundary,
+      admissibility: evaluateAdmissibility(prepared, prepared.concreteBoundary,
       prepared.materialStore.concrete.limits.epsCu, state) }
   }
 }
@@ -4992,7 +5096,7 @@ const solveRawInversePreviewFromPrepared = (
   // docs/04 §6: acceptance requires the residual test *and* admissible material strains. A plane
   // that balances the demand outside the material domain is not a state the section can reach.
   const admissibility = evaluateAdmissibility(
-    prepared.fibers,
+    prepared,
     prepared.concreteBoundary,
     prepared.materialStore.concrete.limits.epsCu,
     state

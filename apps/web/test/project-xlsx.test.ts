@@ -10,6 +10,7 @@ import {
 } from '@pm/project'
 import { createDefaultMaterialStore } from '@pm/materials'
 import { createEmptyGeometryInput } from '@pm/geometry'
+import { UNIT_PRESETS } from '@pm/units'
 import { buildProjectWorkbook, importProjectWorkbook, projectWorkbookFileName } from '../features/section-editor/project/project-xlsx'
 
 const buffer = (bytes: Uint8Array) => new Uint8Array(bytes).buffer
@@ -51,6 +52,23 @@ const assertImported = async (book: ExcelJS.Workbook) => {
   assert.ok(result.ok, result.ok ? '' : `${result.code}: ${result.error}`)
   return result.document
 }
+
+test('hardening strength, cutoff and KDS modification round-trip in metric and US input workbooks', async () => {
+  const project = example()
+  project.inputs.materials.steel[0].stressStrain = {
+    type: 'linear-hardening', ultimateStrength: { type: 'stress', stress: 550 }, epsUk: 0.05,
+    strainLimit: { type: 'absolute', value: 0.04 }
+  }
+  const canonicalProject = canonical(project)
+  for (const units of [UNIT_PRESETS.metric, UNIT_PRESETS.us]) {
+    const bytes = await buildProjectWorkbook(canonicalProject, units)
+    const imported = await importProjectWorkbook(buffer(bytes))
+    assert.ok(imported.ok, imported.ok ? '' : imported.error)
+    if (!imported.ok) continue
+    assert.deepEqual(imported.document.inputs.materials.steel[0].stressStrain, canonicalProject.inputs.materials.steel[0].stressStrain)
+    assert.equal(imported.document.inputs.design.steelModelModified, true)
+  }
+})
 
 test('development/02 §10: every canonical JSON example is the independent exact input round-trip oracle', async () => {
   const roots = ['docs/examples/equivalent-block', 'docs/examples/realistic-sections', 'docs/examples/reference-case/projects']
@@ -106,7 +124,7 @@ test('compact v5 hides advanced sheets/technical IDs and shows concise project/d
   const projectSheet = book.getWorksheet('Project')!
   assert.equal(projectSheet.rowCount, 10)
   assert.equal(field(book, 'Project', 'Name').value, '=SUM(A1:A2)')
-  assert.equal(field(book, 'Analysis', 'workbookVersion').value, 6)
+  assert.equal(field(book, 'Analysis', 'workbookVersion').value, 7)
   assert.equal(book.getWorksheet('Section')!.getCell(marker(book, 'Section', 'OUTER'), 1).value, 'outer #1')
   assert.equal(book.getWorksheet('Section')!.getCell(marker(book, 'Section', 'HOLE'), 1).value, 'hole #1')
   const loadHeader = book.getWorksheet('Loadings')!.getRow(marker(book, 'Loadings', 'LOADINGS') + 1)

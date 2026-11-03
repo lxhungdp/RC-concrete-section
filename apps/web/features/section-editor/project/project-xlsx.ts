@@ -6,7 +6,7 @@ import { allocateIds, rebarAreaSource } from '@pm/geometry'
 import type { CellValue, Workbook, Worksheet } from 'exceljs'
 
 const FORMAT = 'pm-column-input-workbook'
-const VERSION = 6
+const VERSION = 7
 export const PROJECT_WORKBOOK_MAX_BYTES = 10 * 1024 * 1024
 const MAX_EXPANDED_BYTES = 64 * 1024 * 1024
 const MAX_ROWS = 100_000
@@ -96,6 +96,8 @@ declare('concrete', 'number', ['fck', 'mc', ...['n', 'eps0', 'epsCu', 'alpha', '
   'limits.eps0', 'limits.epsCu', 'factors.alpha', 'factors.gammaC'])
 declare('concrete', 'boolean', ['limits.ignoreTension', 'stressStrain.zeroTension'])
 declare('steel', 'number', ['fy', 'stressStrain.hardeningRatio', 'limits.epsY', 'limits.epsU', 'factors.gammaS'])
+declare('steel', 'string', ['stressStrain.ultimateStrength.type', 'stressStrain.strainLimit.type'])
+declare('steel', 'number', ['stressStrain.ultimateStrength.ratio', 'stressStrain.ultimateStrength.stress', 'stressStrain.epsUk', 'stressStrain.strainLimit.value'])
 declare('steel', 'object', ['limits'])
 declare('analysis', 'string', ['methodId', 'samplingMode', 'stations.basedOn', 'stations.refinement.type',
   'neutralAxisStations.basedOn', 'neutralAxisStations.refinement.type', 'directions.seed.type',
@@ -116,7 +118,7 @@ declare('resistance', 'number', ['basisVersion',
   ...['extraStrain', 'yieldStressThreshold', 'fixedStrainLimit', 'highStrengthYieldMultiple'].map((key) => `transition.${key}`),
   'minimumEccentricity.constantMm', 'minimumEccentricity.depthFactor',
   'factors.concrete.components.#.value', 'factors.reinforcement.components.#.value'])
-declare('resistance', 'boolean', ['modified', 'materialModelModified', 'axialCapEnabled'])
+declare('resistance', 'boolean', ['modified', 'materialModelModified', 'steelModelModified', 'axialCapEnabled'])
 declare('resistance', 'array', ['factors.concrete.components', 'factors.reinforcement.components'])
 const specFor = (scope: Scope, path: string, context: string, units: UnitSelection = CANONICAL_WORKBOOK_UNITS): FieldSpec => {
   const type = specifications[scope].get(path.replace(/\.\d+(?=\.|$)/g, '.#'))
@@ -236,7 +238,7 @@ export const buildProjectWorkbook = async (project: PmProjectDocument, units: Un
     const fixed = ['strainSign', 'stressStrain.interpolation', 'stressStrain.extrapolation'].includes(field)
     const advanced = field.startsWith('limits.') || field.startsWith('factors.') || ['limits', 'factors'].includes(field) ||
       (field.startsWith('stressStrain.') && !['stressStrain.type', 'stressStrain.zeroTension'].includes(field) &&
-        !['user-block', 'bilinear'].includes(materialModel))
+        !['user-block', 'bilinear', 'linear-hardening'].includes(materialModel))
     if (fixed || advanced || (settingsBlock && materials.steel.length <= 1 && !field.startsWith('#'))) row.hidden = true
   })
   for (const load of loadings.combinations) if (load.actionBasis !== 'factoredULS') return fail('WORKBOOK_CELL', 'Loadings: only factoredULS demand is supported.')
@@ -487,7 +489,7 @@ export const importProjectWorkbook = async (buffer: ArrayBuffer): Promise<Projec
     const sheets = new Map(Object.keys(sheetKeywords).map((name) => [name, scanSheet(book, name, declaredUnits)]))
     const blocks = (name: string) => sheets.get(name)!
     const raw = readFields(single(blocks('Analysis'), 'PROJECT_METADATA'), 'project')
-    if (raw.workbookFormat !== FORMAT || (raw.workbookVersion !== 5 && raw.workbookVersion !== VERSION)) return fail('WORKBOOK_FORMAT', 'Unsupported project workbook format/version. Re-export the project with the current application.')
+    if (raw.workbookFormat !== FORMAT || ![5, 6, VERSION].includes(Number(raw.workbookVersion))) return fail('WORKBOOK_FORMAT', 'Unsupported project workbook format/version. Re-export the project with the current application.')
     const workbookVersion = raw.workbookVersion
     delete raw.workbookFormat
     delete raw.workbookVersion
@@ -540,7 +542,7 @@ export const importProjectWorkbook = async (buffer: ArrayBuffer): Promise<Projec
     }
     const loadRows = recordRows(blocks('Loadings'), 'LOADINGS')
     const loadIds = rowIds(loadRows, 4, identityWarnings, 'Loadings')
-    const reference = readLoadReferenceSheet(book, declaredUnits, workbookVersion === VERSION || raw.version === 3)
+    const reference = readLoadReferenceSheet(book, declaredUnits, Number(workbookVersion) >= 6 || raw.version === 3)
     if (raw.version !== 3 && (reference.offsetX !== 0 || reference.offsetY !== 0)) return fail('WORKBOOK_FORMAT', 'Offset load references require project version 3.')
     inputs.loadings = { ...(raw.version === 3 ? { reference } : {}), combinations: loadRows.map((row) => resultantAtCentroid(createLoadCombination({ id: loadIds.get(row)!,
       name: text(row.values[0], row.context), P: readQuantityCell('force', number(row.values[1], row.context), declaredUnits, row.notes[1]),
