@@ -1,3 +1,5 @@
+import { finiteCompiledMaterial } from '../compiled'
+import { assertValidConcreteMaterial } from '../validation'
 import type { CompiledMaterial, ConcreteMaterial } from '../types'
 import { positiveOr } from '../math'
 
@@ -58,6 +60,7 @@ export const stressKdsParabolicConcrete = (material: ConcreteMaterial, strain: n
 }
 
 export const compileKdsParabolicConcrete = (material: ConcreteMaterial): CompiledMaterial => {
+  assertValidConcreteMaterial(material, 'kds-parabolic')
   const params = resolveKdsParabolicParams(material)
   const stress =
     params.n === 2
@@ -77,7 +80,7 @@ export const compileKdsParabolicConcrete = (material: ConcreteMaterial): Compile
           return (2 * params.peak * (1 - strain / params.eps0)) / params.eps0
         }
       : (strain: number) => tangentKdsParabolicFrom(params, strain)
-  return {
+  return finiteCompiledMaterial({
     id: material.id,
     family: 'concrete',
     stress,
@@ -85,5 +88,5 @@ export const compileKdsParabolicConcrete = (material: ConcreteMaterial): Compile
     limits: {
       epsCompressionUltimate: material.limits.epsCu
     }
-  }
+  })
 }

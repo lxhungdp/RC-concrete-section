@@ -6,7 +6,7 @@ import { allocateIds, rebarAreaSource } from '@pm/geometry'
 import type { CellValue, Workbook, Worksheet } from 'exceljs'
 
 const FORMAT = 'pm-column-input-workbook'
-const VERSION = 7
+const VERSION = 8
 export const PROJECT_WORKBOOK_MAX_BYTES = 10 * 1024 * 1024
 const MAX_EXPANDED_BYTES = 64 * 1024 * 1024
 const MAX_ROWS = 100_000
@@ -75,7 +75,7 @@ const declare = (scope: Scope, type: FieldType, paths: string[]) =>
   paths.forEach((path) => specifications[scope].set(path, type))
 declare('project', 'string', ['workbookFormat', 'schema', 'meta.name', 'meta.createdAt', 'meta.updatedAt',
   ...['client', 'company', 'designedBy', 'checkedBy', 'address', 'date'].map((key) => `meta.information.${key}`),
-  'inputs.calculationProfileId'])
+  'inputs.calculationProfileId', 'inputs.loadCheckBasis'])
 declare('project', 'number', ['workbookVersion', 'version', 'meta.id'])
 const PROJECT_LABELS: Record<string, string> = {
   'meta.name': 'Name', 'meta.information.client': 'Client', 'meta.information.company': 'Company',
@@ -264,7 +264,7 @@ export const buildProjectWorkbook = async (project: PmProjectDocument, units: Un
   const { name: _name, information: _information, ...meta } = project.meta
   addBlock(analysisSheet, 'PROJECT_METADATA', [], flatten('project', {
     workbookFormat: FORMAT, workbookVersion: VERSION, schema: project.schema, version: project.version,
-    meta, inputs: { calculationProfileId }
+    meta, inputs: { calculationProfileId, loadCheckBasis: project.inputs.loadings.checkBasis }
   }))
   addBlock(analysisSheet, 'SECTION_METADATA', [], flatten('section', { id: geometry.id, name: geometry.name }))
   analysisSheet.state = 'hidden'
@@ -489,7 +489,7 @@ export const importProjectWorkbook = async (buffer: ArrayBuffer): Promise<Projec
     const sheets = new Map(Object.keys(sheetKeywords).map((name) => [name, scanSheet(book, name, declaredUnits)]))
     const blocks = (name: string) => sheets.get(name)!
     const raw = readFields(single(blocks('Analysis'), 'PROJECT_METADATA'), 'project')
-    if (raw.workbookFormat !== FORMAT || ![5, 6, VERSION].includes(Number(raw.workbookVersion))) return fail('WORKBOOK_FORMAT', 'Unsupported project workbook format/version. Re-export the project with the current application.')
+    if (raw.workbookFormat !== FORMAT || ![5, 6, 7, VERSION].includes(Number(raw.workbookVersion))) return fail('WORKBOOK_FORMAT', 'Unsupported project workbook format/version. Re-export the project with the current application.')
     const workbookVersion = raw.workbookVersion
     delete raw.workbookFormat
     delete raw.workbookVersion
@@ -544,7 +544,9 @@ export const importProjectWorkbook = async (buffer: ArrayBuffer): Promise<Projec
     const loadIds = rowIds(loadRows, 4, identityWarnings, 'Loadings')
     const reference = readLoadReferenceSheet(book, declaredUnits, Number(workbookVersion) >= 6 || raw.version === 3)
     if (raw.version !== 3 && (reference.offsetX !== 0 || reference.offsetY !== 0)) return fail('WORKBOOK_FORMAT', 'Offset load references require project version 3.')
-    inputs.loadings = { ...(raw.version === 3 ? { reference } : {}), combinations: loadRows.map((row) => resultantAtCentroid(createLoadCombination({ id: loadIds.get(row)!,
+    const { loadCheckBasis } = inputs
+    delete inputs.loadCheckBasis
+    inputs.loadings = { ...(raw.version === 3 ? { reference } : {}), ...(loadCheckBasis === undefined ? {} : { checkBasis: loadCheckBasis }), combinations: loadRows.map((row) => resultantAtCentroid(createLoadCombination({ id: loadIds.get(row)!,
       name: text(row.values[0], row.context), P: readQuantityCell('force', number(row.values[1], row.context), declaredUnits, row.notes[1]),
       Mx: readQuantityCell('moment', number(row.values[2], row.context), declaredUnits, row.notes[2]), My: readQuantityCell('moment', number(row.values[3], row.context), declaredUnits, row.notes[3])
     }), reference)) }

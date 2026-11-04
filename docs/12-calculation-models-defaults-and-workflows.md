@@ -62,8 +62,8 @@ Two guards keep this from becoming a way to smuggle an unevaluable state into a 
 Endpoint hardening adds material-derived steel-controlled transition states to the selected fibre
 schedule. These states satisfy the inequalities of every used steel material and the exact concrete
 support boundary. An unused material does not add states. The ordinary plateau schedule retains its
-existing station counts. Fixed hardening-domain checks report utilization with an unqualified fixed
-uncertainty bound. Adaptive sampling supplies the convergence evidence used for classification.
+existing station counts. Fixed hardening-domain checks use the project's 2% screening margin, which
+is unmeasured for that domain. Adaptive sampling supplies measured convergence evidence.
 
 `@pm/code-custom` derives nothing. Where the KDS adapter reads Table 4.1-2 and the ACI adapter
 computes `beta1` from `f'c`, the custom adapter validates ranges and uses what it was given. Its
@@ -92,8 +92,9 @@ The inverse solver seeks a compatible strain plane whose three resultants match 
 demand components. It uses the consistent tangent/Jacobian, scaling, line search, admissibility
 checks, and bounded fallback described in `03` and `04`.
 
-In the current ULS UI this inverse state is a diagnostic source for the selected section field; it
-does not determine adequacy. Governing utilization still comes from the factored-demand ray against
+This inverse state supplies Field at demand for non-NG stress-strain cases. NG stress-strain
+and every equivalent-block case use qualified Field at capacity, as specified in root 05 section 10.
+Governing utilization comes from the factored-demand ray against
 the Design surface. Convergence of this diagnostic Newton solve must not be presented as proof that
 an interior ULS demand has a unique physical failure state.
 
@@ -229,7 +230,9 @@ concrete/reinforcement multipliers `0.65/0.90`, uses `epsilon_c0` at pure compre
 
 The governing biaxial check intersects the Design surface with the 3D proportional ray through
 `(Pu,Mux,Muy)`. Fixed-P contours are display and diagnostic slices; they are not a substitute for the
-governing 3D utilization check.
+governing 3D utilization check. A project may declare the separate `constantAxial` check basis owned
+by [engineering/05](engineering/05-loadings-analysis-results-and-reports.md) §3; both mechanics then
+query the same Design surface at `P = Pu`, and the capacity field is solved at that axial force.
 
 ## 5. End-to-end workflow
 
@@ -308,9 +311,9 @@ checks direct fixed-axial roots. It does not insert resistance-transition statio
 reuse for multiple load combinations remains part of the measured workflow.
 
 That matrix has demonstrated an unsafe Fixed-grid ray over-prediction larger than the 2% envelope
-measured for stress-strain sampling. Fixed equivalent-block checks therefore remain
-`indeterminate`; only converged Adaptive evidence can provide a mechanics-specific screening
-interval. The benchmark must gate any future proposed Fixed bound before that policy changes.
+measured for stress-strain sampling, at 2.18%. Fixed equivalent-block checks nevertheless use the 2%
+margin by project decision of 2026-11-04, so the margin is a screening rule and not a bound for this
+mechanics. Only converged Adaptive evidence provides a mechanics-specific estimate.
 
 The benchmark is a regression gate, not design-code validation. Code validation still requires
 independent clause calculations, analytical sections, commercial-program comparisons with matched

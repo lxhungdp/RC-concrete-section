@@ -8,6 +8,7 @@ import { compileLinearHardeningSteel } from './steel/linear-hardening'
 import { compileElasticPerfectlyPlasticSteel } from './steel/elastic-perfectly-plastic'
 import { compileConcreteUserCurve, compileSteelUserCurve } from './user-curve'
 import type { CompiledMaterial, ConcreteMaterial, MaterialDefinition, MaterialStore, SteelMaterial } from './types'
+import { assertValidConcreteMaterial, assertValidSteelMaterial, assertValidMaterialStore } from './validation'
 
 export const isConcreteMaterial = (material: MaterialDefinition): material is ConcreteMaterial =>
   'fck' in material
@@ -16,6 +17,7 @@ export const isSteelMaterial = (material: MaterialDefinition): material is Steel
   'fy' in material && 'elasticModulus' in material
 
 export const compileConcreteMaterial = (material: ConcreteMaterial): CompiledMaterial => {
+  assertValidConcreteMaterial(material)
   switch (material.stressStrain.type) {
     case 'kds-parabolic':
       return compileKdsParabolicConcrete(material)
@@ -35,6 +37,7 @@ export const compileConcreteMaterial = (material: ConcreteMaterial): CompiledMat
 }
 
 export const compileSteelMaterial = (material: SteelMaterial): CompiledMaterial => {
+  assertValidSteelMaterial(material)
   switch (material.stressStrain.type) {
     case 'linear-hardening':
       return compileLinearHardeningSteel(material)
@@ -52,7 +55,10 @@ export const compileSteelMaterial = (material: SteelMaterial): CompiledMaterial 
 export const compileMaterial = (material: MaterialDefinition): CompiledMaterial =>
   isConcreteMaterial(material) ? compileConcreteMaterial(material) : compileSteelMaterial(material)
 
-export const compileMaterialStore = (store: MaterialStore) => ({
-  concrete: compileConcreteMaterial(store.concrete),
-  steel: new Map(store.steel.map((material) => [material.id, compileSteelMaterial(material)]))
-})
+export const compileMaterialStore = (store: MaterialStore) => {
+  assertValidMaterialStore(store)
+  return {
+    concrete: compileConcreteMaterial(store.concrete),
+    steel: new Map(store.steel.map((material) => [material.id, compileSteelMaterial(material)]))
+  }
+}

@@ -27,7 +27,7 @@ The accepted-product target is that every demand records:
 - combination rule/version and governing design situation where applicable.
 
 Factored ULS combinations and service actions shall not share an untyped table or solver request.
-The current schema-v1/UI implements only `factoredULS`; `service` is a future typed extension, not a
+The current project/UI contract implements only `factoredULS`; `service` is a future typed extension, not a
 currently selectable action basis.
 
 The v3 load-reference input is a project-wide parallel origin at centroid plus applied offsets.
@@ -67,14 +67,38 @@ proportional 3D loading:
 
 `R(λ) = λ(Pu, Mux, Muy)`, `UR = 1 / λcap`.
 
-A fixed-`P` moment ratio may be reported only as a named secondary metric. It is not total
-utilization and does not make a pure-axial demand have zero utilization.
+`proportional3D` is the default check basis. A project may instead declare `constantAxial`, defined
+below. Under the default, a fixed-`P` moment ratio is reported only as a named secondary metric.
+Under either basis that ratio is moment utilization at `Pu`. It is not total utilization and does
+not make a pure-axial demand have zero utilization.
 
-For that secondary fixed-axial metric, compute `thetaLoad = atan2(Muy, Mux)`, slice the completed
+For the fixed-axial query, compute `thetaLoad = atan2(Muy, Mux)`, slice the completed
 surface by `P = Pu`, and intersect the resulting `Mx-My` contour with the ray
 `Mx = t*cos(thetaLoad), My = t*sin(thetaLoad)`. The boundary value is `Mb = t` and the component
 coordinates are `Mbnx = Mb*cos(thetaLoad)`, `Mbny = Mb*sin(thetaLoad)`. This query is geometric; it
 must not use the strain-plane sampling angle as a proxy for the demand moment direction.
+
+`inputs.loadings.checkBasis = 'constantAxial'` makes that query the declared check. It holds
+`P = Pu`, intersects the horizontal ray from `(Pu, 0, 0)` through the checked demand with the same
+Design surface, and reports `UR = Md/Mb`, where `Md = hypot(Mux, Muy)`. This is a project-selected
+engineering query, not a design-code rule. Its table, chart, calculation detail, section field and
+reports state the basis and never label the ratio as total utilization. Outcomes are explicit:
+
+| Case | UR | Verdict |
+|---|---|---|
+| `Pu` outside the Design axial range | unavailable | `inadequate`: no moment capacity exists at that axial force |
+| `Mux = Muy = 0` | unavailable | `indeterminate`: the ratio has no direction and is never reported as 0 |
+| `(Pu, 0, 0)` outside the Design domain | unavailable | `indeterminate` |
+| More than one surface exit on the ray | unavailable | `indeterminate` |
+| One exit, Fixed sampling | calculated | classified with the 2% Fixed screening margin of §4 |
+| One exit, Adaptive sampling | calculated | classified from the surface's measured sampling estimate |
+
+Constant-P axis containment must be established independently of the number of intersections on
+the selected ray. A tangential vertex/edge contact is not a transverse exit. Unresolved tangency,
+coplanarity or a start on a side boundary returns unavailable geometric evidence. An interior point
+of a horizontal axial-bound face is a valid start in the closed Constant-P cross-section. Field
+and workbook axial residuals compare P_response directly with Pu; only moment targets scale.
+Their residual norms must use the same residual vector and declared force/moment normalization.
 
 Classification uses a numerical uncertainty interval and approved margin:
 
@@ -91,13 +115,22 @@ PDF and demand-check workbook. Quick checks expose an uncertainty interval and t
 classification. Immutable accepted-result identity, result history, and release gates remain
 requirements for accepted output.
 
-For stress-strain Fixed 27 x 36 mode, the interval uses a 2% regression screening margin derived
-from that mechanics' current dense-grid comparison matrix. It is not a formal error bound: any
-interval crossing `UR = 1` is `indeterminate` and the UI instructs the user to rerun with Adaptive
-sampling. The equivalent-block Fixed matrix has demonstrated a larger unsafe ray over-prediction,
-so that mechanics has no approved Fixed screening interval and must return `indeterminate` rather
-than borrow the stress-strain margin. Adaptive mode uses its returned station/direction error
+Every Fixed check uses a 2% screening margin: `UR <= 0.98` is `adequate`, `UR > 1.02` is
+`inadequate`, and between them is `indeterminate`. The margin comes from the stress-strain
+proportional dense-grid matrix. Using it for equivalent-block, hardening and constant-axial checks
+is a project decision of 2026-11-04, recorded in the
+[task packet](../task-packets/2026-11-04-constant-p-check-basis.md). It is not a formal error bound
+in any domain, and an exact block refinement has measured a 2.18% unsafe over-prediction. The verdict
+message says so outside the measured domain. Adaptive mode uses its returned station/direction error
 evidence and is indeterminate if either refinement did not converge.
+
+The same classification owner serves every code profile and both mechanics. Diagnostic text must
+identify why a check is indeterminate: a boundary-crossing interval, unconverged direction/station
+sampling, missing/invalid uncertainty, missing intersection, or an undefined constant-axial query.
+A finite UR far from one cannot override missing Adaptive convergence. The table and calculation
+dialog consume that check message; they must not describe every CHECK as a near-boundary case or
+recommend switching to Adaptive when that mode is already unconverged. Cross-profile verification
+is recorded in [the verdict matrix packet](../task-packets/2026-11-04-demand-verdict-matrix.md).
 
 The Results module consumes an immutable result DTO; it does not recalculate material factors or
 capacity. It provides:
@@ -220,16 +253,15 @@ comparison but cannot be released as the current report.
 
 ## 5. Result package
 
-The Demand Check section-field view uses **Field at demand** for non-NG cases with a qualified
-equilibrium at the checked entered demand, and **Field at capacity** only for cases classified
-`inadequate` by the governing check. The capacity state is separate from demand equilibrium and the
-triangulated governing crossing. A failed demand inverse does not change the classification or
-authorize a capacity-field substitution for a non-NG case. Equivalent-block capacity-ray output
-does not constitute demand equilibrium: that mechanics currently has no non-NG demand field.
-Indeterminate cases retain their classification; any available demand field is diagnostic only.
+The Demand Check stress-strain section field uses **Field at demand** for adequate and
+indeterminate cases with qualified demand equilibrium, and **Field at capacity** for inadequate
+cases. Equivalent block uses **Field at capacity** for every checked classification. Capacity
+carries explicit boundary load-multiplier evidence and remains separate from demand equilibrium
+and the triangulated governing crossing. Missing qualified evidence leaves that basis explicitly
+unavailable. Indeterminate cases retain their classification.
 Outside demands retain resistance plots, load paths and UR. Root document 05 sections 8–10 owns
 the geometric demand-plane versus Direct-beta views and field admissibility. An axial-cap face
-has no fabricated strain field: for a cap-governed NG case, the diagnostic field is independently
+has no fabricated strain field: for a cap-governed case, the diagnostic field is independently
 resolved at the physical pre-cap Design boundary on the same checked proportional ray. Its
 before-Pmax label and visible note identify that this state exceeds permitted Design resistance;
 the capped governing point and UR remain authoritative. The clipped-away Design curves are

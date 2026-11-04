@@ -458,13 +458,14 @@ The repository implements two independent mechanics and the common resistance fo
   The legacy steel definitions retain the warning about their incomplete tension-controlled domain.
   The recommended `epsUd = 0.9 epsUk` is a named no-National-Annex preview parameter, not a universal
   national choice. Fixed sampling of the new finite-steel domain has no qualified uncertainty bound;
-  it yields an indeterminate adequacy classification. Adaptive uses its measured convergence estimate;
+  it uses the project screening policy defined by engineering/05 section 4. Adaptive uses its
+  measured convergence estimate;
 - AS 3600:2018 Amendments 1 and 2 has an executable equivalent-block preview using `alpha2`, `gamma`,
   `epsCu = 0.003` and action/state-dependent capacity factors. It is not verified or releasable; the
   general-prismatic shape assumption and omitted member-level checks are disclosed in UI/reports/docs.
 
-Canonical project schema-v1 exports persist DesignBasis version 3 inside project schema v1 and
-loadcases are explicitly
+Canonical project schema-v3 exports persist DesignBasis version 3, with explicit legacy project
+v1/v2 readers, and loadcases are explicitly
 factored ULS actions. The parser's remaining omitted-field defaults are listed as pre-release debt
 in `development/02` and `development/06`.
 The result DTO contains both `nominalPoints` and governing design `points`. Options owns

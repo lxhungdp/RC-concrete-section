@@ -1,11 +1,15 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
+import { inspectWorkspaceDependencies, type WorkspaceDefinition, type WorkspaceSource } from './workspace-dependencies'
 
 const root = process.cwd()
 const issues: string[] = []
 const codeRoots = ['apps', 'packages', 'tools', 'bench']
 const sourceExtensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])
 const runtimeGuard = 'node ../../tools/runtime/check-runtime.mjs && '
+const ignoredDirectories = new Set(['node_modules', '.next', '.git', 'dist', 'outputs', 'coverage'])
+const workspaces: WorkspaceDefinition[] = []
+const workspaceSources: WorkspaceSource[] = []
 
 const normalized = (path: string) => path.replace(/\\/g, '/')
 const extension = (path: string) => {
@@ -15,9 +19,10 @@ const extension = (path: string) => {
 
 const walk = (directory: string, visit: (path: string, isDirectory: boolean) => void) => {
   if (!existsSync(directory)) return
-  for (const entry of readdirSync(directory)) {
-    const path = resolve(directory, entry)
-    const isDirectory = statSync(path).isDirectory()
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (ignoredDirectories.has(entry.name) || entry.isSymbolicLink()) continue
+    const path = resolve(directory, entry.name)
+    const isDirectory = entry.isDirectory()
     visit(path, isDirectory)
     if (isDirectory) walk(path, visit)
   }
@@ -92,6 +97,7 @@ for (const workspaceRoot of ['apps', 'packages']) {
     if (!existsSync(path)) continue
     const projectPath = normalized(relative(root, path))
     const manifest = JSON.parse(readFileSync(path, 'utf8')) as PackageManifest
+    workspaces.push({ ...manifest, directory: resolve(directory, entry) } as WorkspaceDefinition)
     if (manifest.devDependencies?.['@types/node'] && !manifest.devDependencies['@types/node'].startsWith('24.')) {
       issues.push(`${projectPath}: @types/node must target Node.js 24`)
     }
@@ -208,6 +214,10 @@ for (const codeRoot of codeRoots) {
 
     if (!sourceExtensions.has(extension(projectPath))) return
     const text = readFileSync(path, 'utf8')
+    if (!/(?:^|\/)(?:test|bench|examples)\//u.test(projectPath) &&
+      (projectPath.startsWith('apps/') || /^packages\/[^/]+\/src\//u.test(projectPath))) {
+      workspaceSources.push({ path, text })
+    }
 
     if (projectPath.startsWith('packages/') && /(?:from\s*|import\s*\()['"][^'"]*apps\//.test(text)) {
       issues.push(`${projectPath}: workspace packages may not import application code`)
@@ -232,6 +242,8 @@ const forbiddenLegacyPaths = [
   'docs/example',
   'docs/example case'
 ]
+
+issues.push(...inspectWorkspaceDependencies(workspaces, workspaceSources))
 
 const requiredStandardAdapters = [
   'packages/pm-code-kds142020',

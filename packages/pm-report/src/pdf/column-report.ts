@@ -1,3 +1,4 @@
+import { checkBasisLabels } from '../model/check-basis'
 import { fromCanonical, quantityUnit, type Quantity, type UnitSelection } from '@pm/units'
 /**
  * Renders a `ColumnReportModel` to PDF.
@@ -146,7 +147,7 @@ const drawInteraction = (
   frame: Frame,
   bounds: { minX: number; maxX: number; minY: number; maxY: number },
   curve: InteractionCurve,
-  marks?: { demand: { m: number; p: number }; capacity: { m: number; p: number } | null }
+  marks?: { demand: { m: number; p: number }; capacity: { m: number; p: number } | null; loadPath: 'proportional' | 'constant-axial' }
 ) => {
   const { page } = frame
   drawAxes(frame, bounds, { x: `Mθ (${unit('moment')})`, y: `P (${unit('force')})` })
@@ -170,10 +171,10 @@ const drawInteraction = (
     const origin = frame.map({ x: 0, y: marks.demand.p })
     const demand = frame.map({ x: marks.demand.m, y: marks.demand.p })
     if (marks.capacity) {
-      // The proportional ray is the governing check, so it is drawn from the origin through the
-      // demand point out to the surface — the geometry the utilization number comes from.
+      // The checked ray is drawn through the demand out to the surface: the geometry the utilization
+      // number comes from. It starts at the origin, or on the Pu axis at constant axial force.
       const capacity = frame.map({ x: marks.capacity.m, y: marks.capacity.p })
-      const zero = frame.map({ x: 0, y: 0 })
+      const zero = marks.loadPath === 'constant-axial' ? origin : frame.map({ x: 0, y: 0 })
       page.setStroke(REPORT_COLORS.demand)
       page.setLineWidth(0.5)
       page.setDash([1.6, 1.6])
@@ -280,13 +281,13 @@ const drawFixedPContour = (
     page.setStroke(REPORT_COLORS.nominal)
     page.setLineWidth(0.7)
     page.setDash([2.4, 1.8])
-    page.polyline(curve.nominal.map(toFrame), true)
+    for (const path of curve.nominalPaths) page.polyline(path.map(toFrame), false)
     page.setDash([])
   }
   if (curve.design.length > 1) {
     page.setStroke(REPORT_COLORS.design)
     page.setLineWidth(1.1)
-    page.polyline(curve.design.map(toFrame), true)
+    for (const path of curve.designPaths) page.polyline(path.map(toFrame), false)
   }
 
   // The ray from the moment origin through the demand point is the direction the check is made in;
@@ -712,7 +713,7 @@ const render = (
 
   // ---- 3. Demand ----------------------------------------------------------
   doc.newPage(A4_PORTRAIT)
-  doc.title('3. Factored ULS demand', 'Governing check is the proportional 3D ray against the Design surface.')
+  doc.title('3. Factored ULS demand', checkBasisLabels(model.checkBasis).heading)
   doc.table({
     columns: [
       { title: '#', width: 5, align: 'right' },
@@ -752,7 +753,7 @@ const render = (
     }
   })
   doc.paragraph(
-    'UR is the governing proportional utilization: the factored demand vector scaled until it meets the Design surface. A fixed-axial ratio is reported per combination in its detail section and is a secondary diagnostic only.'
+    checkBasisLabels(model.checkBasis).pdfNote
   )
   const notChecked = model.combinations.filter((row) =>
     row.verdict === 'not-checked' || row.verdict === 'indeterminate')
@@ -777,7 +778,9 @@ const render = (
             ? 'INDETERMINATE'
             : 'NOT CHECKED'}` +
         `   ·   utilization ${detail.row.utilization === null ? '—' : num(detail.row.utilization, 4)}` +
-        `   ·   fixed-P diagnostic ${detail.row.fixedPUtilization === null ? '—' : num(detail.row.fixedPUtilization, 4)}`,
+        (detail.row.checkBasis === 'constantAxial'
+          ? `   ·   proportional 3D diagnostic ${detail.row.proportionalUtilization === null ? '—' : num(detail.row.proportionalUtilization, 4)}`
+          : `   ·   fixed-P diagnostic ${detail.row.fixedPUtilization === null ? '—' : num(detail.row.fixedPUtilization, 4)}`),
       { color, size: 9, font: HELVETICA_BOLD }
     )
   }
@@ -813,7 +816,8 @@ const render = (
     })
     drawInteraction(verticalFrame, verticalBounds, detail.interaction, {
       demand: detail.interaction.demand,
-      capacity: detail.interaction.capacity
+      capacity: detail.interaction.capacity,
+      loadPath: detail.interaction.loadPath
     })
     const fixedBounds = contourBounds(
       [detail.fixedP.design, detail.fixedP.nominal],

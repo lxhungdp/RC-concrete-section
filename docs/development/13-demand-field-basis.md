@@ -1,5 +1,9 @@
 # Demand and capacity field selection
 
+Historical decision. The display selection below is superseded by the user-authorized
+[mechanics-specific field decision](../task-packets/2026-11-04-mechanics-specific-field-basis.md).
+Current behavior is owned by root 05 section 10. Verification below describes the former behavior.
+
 Status: scoped correction implemented and regression-checked; Preview only. User-authorized
 correction on 2026-10-29. The equivalent-block demand-response gap below remains explicit.
 

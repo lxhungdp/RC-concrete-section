@@ -1,0 +1,33 @@
+# Fixed-P and Adaptive repair
+
+Date: 2026-11-04. Class 4 numerical/query change, Preview.
+
+Objective: implement the authorized [research plan](2026-11-04-fixed-p-and-adaptive-plan.md), preserving current user changes. Requirements ENG-AN-002/003, ENG-RES-001 and ENG-REP-002. Owners are the analysis Fixed-P query, block sampler, downstream chart/report adapters and project options if a measured budget adjustment is necessary.
+
+Contracts: centroidal compression-positive N and N mm; fixed-P segment adjacency comes from indexed surface triangles; separate paths survive rendering and serialization. Every Adaptive verdict requires the original combined station/direction tests. Resource exhaustion and an unresolved finite-steel/pole interval remain typed unavailable convergence evidence. The existing Constant-P containment/transverse-exit query and shared classification policy stay authoritative.
+
+Oracles: analytical closed/disconnected/nested polyhedra, independent triangle-plane/segment-ray intersections, the 22 measured contour discrepancies, exact block evaluations, nine Adaptive failures plus converged controls, workbook/PDF and actual-worker comparisons. Acceptance requires structure/typecheck, focused/full tests, build/bundle and numerical benchmark gates with recorded drift. No baseline replacement is authorized.
+
+Impact: transient path and sampling diagnostic contracts, corrected secondary capacities/plots and improved Adaptive surfaces. Persistence changes require an explicit decision if needed. A new finite-steel mechanics branch requires the engineering definition and independent review described in the plan. This repair delivers an explicit non-convergence reason for an interval that cannot be subdivided into distinct admissible states.
+
+## Implemented changes
+
+Fixed-P extraction now keeps the surface-edge graph, individual path identity and closure. Coplanar cap patches expose their perimeter. Points are joined only along actual triangle cuts. A radial diagnostic requires one transverse positive exit, rejecting open components, exterior axes, tangencies and re-entry. Physical-meridian labels at a shared pole retain their source direction. The chart, capacity marker, report curves and PDF follow the complete paths, and the stress-strain workbook supplies explicit topology. Multiple-component 3D cuts display separate outlines; the optional translucent fill is restricted to a single qualified loop to avoid covering holes or connecting separate components.
+
+The Adaptive block sampler adds a tested physical-depth station in a neighboring row when that row's interpolation dominates a failed angular cell. The required station is protected during pruning and the original combined facet estimator is remeasured. All existing pass and station/direction limits remain active. Repeated midpoints that resolve to an existing state are excluded from insertion, their error retained and their non-convergence explicitly reported as `state-stalled` through the bridge and loadcase message.
+
+The fingerprint serializer keeps its established polar ordering for coordinate point-cloud fields. Runtime path connectivity has its own analytical and differential tests. Canonical segment endpoint orientation makes arithmetic stable against graph traversal direction. Baseline data and comparison tolerances were retained.
+
+## Verification and limits
+
+Evidence is in ignored `outputs/verdict-audit/`. Full npm test passed 592 unit tests, five AdSec, CAD, project round trip, both calculation workbooks, Demand Check and PDF checks. Focused path/query/sampling tests also pass after the final arithmetic change. The 84-surface matrix passed 47,040 checks and 3,360 independent segment comparisons. All 14 example projects passed 180 authored-demand checks. The prior 22 flattened-contour discrepancies were eliminated. All seven original plateau Adaptive failures now converge at the original 8-pass/1% settings. The two finite-steel pole failures retain CHECK with explicit cause.
+
+Equivalent-block, strain-sampling and pipeline benchmarks passed. The portable fingerprint passed on its declared Node 24.20.0/npm 11.19.0 runtime with the same 17 resultant-roundoff allowances and maximum section-normalized delta 4.957e-17. The host 24.22.1 provenance rejection was retained. Initial permutation-only fingerprint failures were resolved by preserving canonical coordinate serialization. No baseline or tolerance was replaced.
+
+Direct exact-block checks were attempted on 28 fixed physical demands across the seven repaired configurations and both bases. Twenty-six converged and confirmed the expected side of UR=1. Two AS hollow proportional demands still have unavailable exact inverse states. Replaying the pre-repair block sampler on the same immutable demands reproduced those inverse failures. They remain an existing preview solver limitation, distinct from the now-converged surface estimator. Neither a converged estimator nor these sampled comparisons establishes a universal utilization error bound.
+
+Production build succeeded outside the sandbox after an EPERM error in generated .next directories. Concurrent local processes subsequently replaced those artifacts, so final browser/bundle verification used an ignored source snapshot with junctions to already-installed dependencies. No production dependency or project configuration was added. SHA-256 comparisons confirmed that the snapshot matched every repaired runtime file.
+
+The final isolated production build and bundle gate passed (347.9/375, 1325.4/1400, 83.7/120 and 248.1/300 KiB gzip). An isolated localhost:3005 server and browser ran in the same external sandbox context after confirming loopback isolation. Actual-worker QA passed 19 configurations and 228 table verdicts across both bases, with matching messages, kernel values and fallback results. The retained KDS hardening CHECK explanation was inspected in desktop light and narrow dark layouts. Generated evidence is in `outputs/fixed-p-adaptive-browser/`.
+
+The repaired transients do not change project JSON or resistance coefficients. Changes to secondary radii, path geometry and Adaptive surfaces are intentional and covered above. The two KDS hardening intervals require a separately reviewed admissible mechanics continuation before they can converge. The two pre-existing AS inverse failures remain qualified as unavailable physical states. Multiple-loop outlines are preserved; translucent 3D fill is intentionally limited to one qualified loop. These limits remain Preview release evidence rather than accepted-result approval.

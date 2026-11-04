@@ -3,7 +3,12 @@ import test from 'node:test'
 import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
 import { createDefaultAnalysisOptions } from '@pm/project'
 import { BENCH_CASES } from '../bench/sections'
-import { buildPreviewSurface, sliceMomentPlane, type PreviewSurface } from '../src/index'
+import {
+  buildPreviewSurface,
+  sliceMomentPlane,
+  type PreviewSurface,
+  type PreviewSurfacePoint
+} from '../src/index'
 
 const ANGLES_DEG = [0, 7, 17, 31, 45, 61, 83, 107, 137, 173]
 const fixedDisplayOptions = (() => {
@@ -70,6 +75,43 @@ test('8 structural fixtures × 10 moment planes produce only topology-closed pat
       }
     }
   }
+})
+
+test('a non-manifold slice terminates and consumes every edge after its first start node is exhausted', () => {
+  const zeroLedger = {
+    concrete: { P: 0, Mx: 0, My: 0 },
+    steelGross: { P: 0, Mx: 0, My: 0 },
+    displacedConcrete: { P: 0, Mx: 0, My: 0 },
+    steel: { P: 0, Mx: 0, My: 0 },
+    total: { P: 0, Mx: 0, My: 0 }
+  }
+  const vertex = (index: number, P: number, Mx: number, My: number): PreviewSurfacePoint => ({
+    id: `star-${index}`,
+    beta: 0,
+    station: index,
+    stationId: null,
+    surfaceRole: 'physical-state',
+    P,
+    Mx,
+    My,
+    state: { e0: 0, kx: 0, ky: 0 },
+    ledger: zeroLedger
+  })
+  // Three facets meet the plane My = 0 in three arms of a star. The first walk runs arm 0 -> hub ->
+  // arm 1, which exhausts arm 0 (the first irregular key) while the edge to arm 2 is still unused.
+  const points = [
+    vertex(0, 1, 2, 0),
+    vertex(1, -1, 2, 0),
+    vertex(2, 0, 3, 0),
+    vertex(3, 0, 1, 0),
+    vertex(4, 0, 0, 1)
+  ]
+  const triangles = [0, 1, 2].map((arm) => ({ a: 3, b: arm, c: 4 }))
+
+  const paths = sliceMomentPlane(points, 0, triangles)
+  const segments = paths.reduce((sum, path) => sum + path.points.length - 1, 0)
+  assert.equal(segments, 3, 'every intersection edge belongs to exactly one returned path')
+  assert.ok(paths.every((path) => !path.closed), 'an open branch must not be closed for presentation')
 })
 
 test('an asymmetric section can have nonzero pole moment without opening its vertical slice', () => {

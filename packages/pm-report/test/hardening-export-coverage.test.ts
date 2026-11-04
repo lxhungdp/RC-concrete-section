@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import ExcelJS from 'exceljs'
-import { HyperFormula } from 'hyperformula'
 import { activeDesignSurfaceDataset, activeNominalSurfaceDataset, buildDesignPreviewSurface } from '@pm/analysis'
 import { buildEquivalentBlockPreviewSurface } from '@pm/analysis-equivalent-block'
 import { buildResistanceMaterialSets, createKdsAppendixDesignBasis, withSteelModelModification } from '@pm/design'
@@ -18,6 +16,7 @@ import { buildChartAuditWorkbook } from '../src/excel/chart-audit'
 import { buildCalculationTraceAuditWorkbook } from '../src/excel/calculation-trace-audit'
 import { buildDemandCheckWorkbook } from '../src/excel/demand-check'
 import { buildEquivalentBlockWorkbook } from '../src/excel/equivalent-block'
+import { near, recalculate } from './support/recalculate'
 
 const geometry: GeometryInput = {
   id: 1,
@@ -80,63 +79,7 @@ const fixture = (profile: HardeningProfile, appendix = false, plateau = false) =
   return { ...common, profile, analysisOptions: options, surface }
 }
 
-const near = (a: number, b: number, scale = 1) => {
-  assert.ok(Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b), scale), `${a} versus ${b}`)
-}
-
 const stageScale = (material: SteelMaterial) => (material.factors?.resistanceScale ?? 1) / (material.factors?.gammaS ?? 1)
-
-/** Serialize, reload and recalculate every formula independently of the stored engine results. */
-const recalculate = async (book: ExcelJS.Workbook) => {
-  const loaded = new ExcelJS.Workbook()
-  await loaded.xlsx.load(await book.xlsx.writeBuffer() as unknown as ArrayBuffer)
-  const grids: Record<string, Array<Array<string | number | boolean | null>>> = {}
-  for (const sheet of loaded.worksheets) {
-    grids[sheet.name] = Array.from({ length: sheet.rowCount }, (_, r) =>
-      Array.from({ length: sheet.columnCount }, (_, c) => {
-        const cell = sheet.getCell(r + 1, c + 1)
-        if (cell.formula) return `=${cell.formula}`
-        return typeof cell.value === 'string' || typeof cell.value === 'number' || typeof cell.value === 'boolean'
-          ? cell.value
-          : null
-      }))
-  }
-  const engine = HyperFormula.buildFromSheets(grids, { licenseKey: 'gpl-v3', useArrayArithmetic: true, smartRounding: false })
-  for (const name of loaded.definedNames.model) {
-    for (const range of name.ranges) engine.addNamedExpression(name.name, `=${range}`)
-  }
-  const value = (sheet: string, address: string) =>
-    engine.getCellValue(engine.simpleCellAddressFromString(address, engine.getSheetId(sheet)!)!)
-  try {
-    for (const sheet of loaded.worksheets) {
-      sheet.eachRow((row) => row.eachCell((cell) => {
-        if (!cell.formula) return
-        const actual = value(sheet.name, cell.address)
-        assert.ok(actual === null || typeof actual !== 'object', `${sheet.name}!${cell.address}: ${JSON.stringify(actual)}`)
-        if (typeof actual !== 'number' || typeof cell.result !== 'number') return
-        // Block ray residual caches are ideal zeros. Normalise cancellation by the demand,
-        // in the same units as the residual, rather than treating an ideal zero as a load scale.
-        let scale = 1
-        if (String(sheet.getCell(row.number, 1).value).startsWith('Residual Δ')) {
-          const target = cell.formula.match(/-([A-Za-z_][A-Za-z_0-9]*)$/)?.[1]
-          assert.ok(target)
-          const demand = engine.getNamedExpressionValue(target)
-          assert.equal(typeof demand, 'number')
-          scale = Math.abs(Number(demand))
-        }
-        try {
-          near(actual, cell.result, scale)
-        } catch (error) {
-          throw new Error(`${sheet.name}!${cell.address}: ${cell.formula}`, { cause: error })
-        }
-      }))
-    }
-  } catch (error) {
-    engine.destroy()
-    throw error
-  }
-  return { loaded, engine, value }
-}
 
 for (const profile of ['kds-2024-stress-strain', 'en-1992-1-1-2004-stress-strain', 'kds-142020-equivalent-block'] as const) {
   for (const source of ['vertical', 'fixedP'] as const) {

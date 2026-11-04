@@ -81,21 +81,40 @@ try {
         .filter({ has: page.getByLabel(`Loadcase ${demand.id} name`, { exact: true }) })
       await row.locator('td.pm-col-ur').click()
       await page.waitForFunction(id => window.__demandAudit.results[id], demand.id, { timeout: 60000 })
-      await page.waitForFunction(() => document.querySelector('.pm-results-stage')?.getAttribute('aria-busy') === 'false')
+      await page.waitForFunction(id => {
+        const stage = document.querySelector('.pm-results-stage')
+        return stage?.getAttribute('aria-busy') === 'false' && stage.dataset.fieldFrame === 'current' &&
+          Number(stage.dataset.displayedLoadcase) === id
+      }, demand.id)
       const result = await page.evaluate(id => window.__demandAudit.results[id], demand.id)
       const expected = checkLoadcaseUtilizationFromSurface(surface, demand)
       assert.equal(result.utilization, expected.utilization)
       assert.deepEqual(result.designCapacityPoint, expected.capacityPoint)
       const isNg = expected.adequacy === 'inadequate'
-      const expectedField = isNg
+      const atCapacity = mechanics === 'equivalent-block' || isNg
+      const expectedField = atCapacity
         ? result.capacityField?.status === 'available' ? result.capacityField : null
-        : mechanics === 'stress-strain' && result.ok && result.admissibility.evaluated ? result : null
-      assert.equal(await page.locator('.pm-results-stage').getAttribute('data-field-basis'), isNg ? 'capacity' : 'demand')
+        : result.ok && result.admissibility.evaluated && result.admissibility.ok ? result : null
+      if ([1, 6].includes(demand.id)) {
+        assert.equal(expected.adequacy, 'adequate')
+        assert.ok(expectedField, 'an OK case displays its qualified mechanics-specific field')
+      }
+      assert.equal(await page.locator('.pm-results-stage').getAttribute('data-field-basis'), atCapacity ? 'capacity' : 'demand')
       assert.equal(await page.locator('.pm-results-plot.is-ng').count(), isNg ? 3 : 0)
       const badge = page.locator('[data-chart="heatmap"] .pm-field-basis-label')
-      assert.equal(await badge.innerText(), isNg ? 'Field at capacity' : 'Field at demand')
-      const badgeStyle = await badge.evaluate(el => ({ border: getComputedStyle(el).borderStyle,
-        background: getComputedStyle(el).backgroundColor }))
+      assert.equal(await badge.innerText(), atCapacity ? 'Field at capacity' : 'Field at demand')
+      const badgeStyle = await badge.evaluate(el => {
+        const style = getComputedStyle(el)
+        const token = el.closest('.pm-shell')
+        const expected = getComputedStyle(token).getPropertyValue(el.closest('.is-ng') ? '--danger' : '--accent').trim()
+        const probe = document.createElement('span')
+        probe.style.color = expected
+        el.appendChild(probe)
+        const expectedColor = getComputedStyle(probe).color
+        probe.remove()
+        return { border: style.borderStyle, background: style.backgroundColor, color: style.color, expectedColor }
+      })
+      assert.equal(badgeStyle.color, badgeStyle.expectedColor, 'field label colour follows verdict')
       assert.equal(badgeStyle.border, 'solid')
       assert.notEqual(badgeStyle.background, 'rgba(0, 0, 0, 0)', 'field basis must be prominent in both modes')
       const chartBackgrounds = await page.locator('.pm-results-plot').evaluateAll(elements =>
@@ -132,7 +151,7 @@ try {
       assert.ok(fixedP.some(trace => trace.name === 'Fixed-P moment ray (secondary)'))
       if (expectedField) {
         assert.deepEqual(await page.evaluate(() => window.__demandAudit.fieldStates.at(-1)), expectedField.state,
-          'rendered field request uses the correct stored demand/capacity strain plane')
+          'rendered field request uses the selected demand or capacity strain plane')
         assert.ok(await page.locator('[data-chart="heatmap"] canvas').count())
         const colouredPixels = await page.locator('[data-chart="heatmap"] canvas').evaluate(canvas => {
           const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data
@@ -165,7 +184,7 @@ try {
         }
       }
       cases.push({ name: demand.name, UR: result.utilization, inverseOk: result.ok,
-        classification: expected.adequacy, fieldBasis: isNg ? 'capacity' : 'demand', fieldAvailable: !!expectedField,
+        classification: expected.adequacy, fieldBasis: atCapacity ? 'capacity' : 'demand', fieldAvailable: !!expectedField,
         field: result.capacityField, thetaPoints: theta.filter(trace => trace.name.startsWith('Design demand plane')).map(trace => trace.x.length),
         betaPoints: beta.filter(trace => trace.name.startsWith('Direct β =')).map(trace => trace.x.length) })
       if (demand.id === 1 || demand.id === 2) {

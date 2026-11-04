@@ -57,13 +57,13 @@ accidentally to the physical equilibrium solver.
 Only a successful result that carries a `CertifiedDesignDomain` brand can enter report-generation
 or downstream adequacy APIs. Preview surfaces use a different type.
 
-## 4. Runtime schemas and current v1 policy
+## 4. Runtime schemas and versioned contracts
 
 Compile-time types do not validate JSON. Use the current local runtime parser for the project
-boundary. Every persisted calculation contract in the repository is v1:
+boundary. Persisted and runtime namespaces have independent declared versions:
 
 ```ts
-PM_PROJECT_VERSION = 2
+PM_PROJECT_VERSION = 3
 DESIGN_BASIS_VERSION = 3
 ANALYSIS_OPTIONS_VERSION = 1
 STRAIN_DOMAIN_SURFACE_METHOD = 'strain-domain-surface-v1'
@@ -138,9 +138,10 @@ Required release capabilities:
 
 Parallelism is optional and must produce tolerance-equivalent results to single-thread execution.
 
-Current behavior is narrower: aborting a client request drops its late result, but a synchronous job
-already executing in the worker or main-thread fallback is not interrupted. Monotone progress,
-time/memory budgets for every job, and cooperative checkpoints are still open.
+Current worker cancellation terminates the busy worker and replays other live jobs on a fresh
+worker, rehydrating surface handles. Late results from the old generation are ignored. The synchronous
+main-thread fallback is cancellable only at request boundaries. Monotone progress, time/memory
+budgets for every job and cooperative inner-loop checkpoints remain open.
 
 ## 8. Performance budgets
 

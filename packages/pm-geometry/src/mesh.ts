@@ -9,6 +9,7 @@
 import polygonClipping from 'polygon-clipping'
 import type { MultiPolygon, Pair, Polygon, Ring } from 'polygon-clipping'
 import type { Point2, SectionGeometry } from './index'
+import { GeometryResourceLimitError, geometryResourceLimitIssue } from './resource-limits'
 
 export type MeshQuadraturePoint = {
   x: number
@@ -65,6 +66,8 @@ export type ConcreteMeshReport = {
 }
 
 export type ConcreteMesh = {
+  /** Exact source coordinate/ring definition; independent of names and entity IDs. */
+  readonly geometryKey: string
   points: MeshQuadraturePoint[]
   /** Triangle connectivity used for field visualization; same triangles as the quadrature rule. */
   triangles: MeshTriangle[]
@@ -92,6 +95,14 @@ export type ConcreteMeshOptions = {
 const DEFAULT_SEED_DIVISIONS = 32
 const DEFAULT_MAX_CELLS = 250_000
 const DEFAULT_MAX_SUBDIVISION = 4
+
+/** Collision-free identity of the actual input rings; no rounding or geometric repair. */
+export const concreteMeshGeometryKey = (section: SectionGeometry): string => JSON.stringify(
+  section.solids.map(({ outer, holes }) => [
+    outer.map(({ x, y }) => [x, y]),
+    holes.map((hole) => hole.map(({ x, y }) => [x, y]))
+  ])
+)
 
 const closeRing = (points: Array<{ x: number; y: number }>): Ring => {
   const ring = points.map((point) => [point.x, point.y] as Pair)
@@ -306,12 +317,16 @@ export const buildConcreteMesh = (
   section: SectionGeometry,
   options: ConcreteMeshOptions = {}
 ): ConcreteMesh => {
+  const resourceIssue = geometryResourceLimitIssue(section)
+  if (resourceIssue) throw new GeometryResourceLimitError(resourceIssue)
+  const geometryKey = concreteMeshGeometryKey(section)
   const warnings: string[] = []
   const net = netConcreteMultiPolygon(section)
   const exact = multiPolygonProperties(net)
   const emptyReport = (message: string): ConcreteMesh => {
     warnings.push(message)
     return {
+      geometryKey,
       points: [],
       triangles: [],
       report: {
@@ -574,6 +589,7 @@ export const buildConcreteMesh = (
   }
 
   return {
+    geometryKey,
     points,
     triangles: trianglesList,
     report: {

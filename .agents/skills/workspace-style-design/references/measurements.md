@@ -72,7 +72,8 @@ normal text, equal height and the input radius. It supersedes the initial
 Add-size preservation and the reconstructed Delete dimensions above; those
 remain source observations, not current product dimensions. Engineering
 status colours and CAD/result palettes are not replaced by this reference. Exact maintained tokens and
-resize limits belong in [UI Theme](../../../../docs/development/frontend/UI_THEME.md).
+resize ownership belong in the [canonical design standard](design-standard.md) and
+[workspace implementation map](../../../../docs/development/09-workspace-design-system.md).
 No unseen hover/focus/disabled or dark state is established by these images.
 
 ## Source 5: dark palette (2026-09-30)

@@ -19,6 +19,7 @@ import {
   type ProjectInputSnapshot
 } from './types'
 import { collectProjectWarnings, parseProjectDocumentValue } from './validate'
+import { assertProjectInputResources, assertProjectJsonSize, ProjectResourceLimitError } from './resource-limits'
 
 const nowIso = () => new Date().toISOString()
 
@@ -75,6 +76,7 @@ export const cloneProjectInformation = (information: ProjectInformation): Projec
  * Pass existing meta.id / createdAt when updating an open project.
  */
 export const createProjectDocument = (snapshot: ProjectInputSnapshot): PmProjectDocument => {
+  assertProjectInputResources({ inputs: snapshot })
   const stamp = nowIso()
   const calculationProfileId = snapshot.calculationProfileId ?? DEFAULT_CALCULATION_PROFILE_ID
   const geometry = cloneGeometryInput(snapshot.geometry,
@@ -132,6 +134,7 @@ export const projectDocumentFileName = (document: PmProjectDocument): string =>
 
 export const parseProjectDocument = (raw: string | unknown): ParseProjectResult => {
   try {
+    if (typeof raw === 'string') assertProjectJsonSize(raw)
     const value = typeof raw === 'string' ? (JSON.parse(raw) as unknown) : raw
     const document = parseProjectDocumentValue(value)
     const warnings = collectProjectWarnings(document)
@@ -144,6 +147,7 @@ export const parseProjectDocument = (raw: string | unknown): ParseProjectResult 
   } catch (error) {
     return {
       ok: false,
+      code: error instanceof ProjectResourceLimitError ? error.code : 'INVALID_PROJECT',
       error: error instanceof Error ? error.message : 'Invalid project JSON'
     }
   }

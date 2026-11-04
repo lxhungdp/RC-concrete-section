@@ -1,10 +1,17 @@
 # 01 — Domain Model, Materials, and Design-Code Boundary
 
-This file defines the **normalized analysis** engineering contract. It is not the current persisted
-editor DTO. Project schema v1 stores `GeometryInput.outers[]`; the adapter required by
+This file defines the target **normalized analysis** engineering contract. Its illustrative types
+are not current exported interfaces or the persisted editor DTO. Canonical project schema v3
+(and the explicit legacy v1/v2 readers) stores `GeometryInput.outers[]`; the adapter required by
 [`development/02-data-contracts-persistence-and-versioning.md`](development/02-data-contracts-persistence-and-versioning.md)
 maps that definition to the validated model below. Runtime data shall be serializable at the
 definition boundary, validated, immutable after normalization, and independent of UI state.
+
+Current Preview implementations use `PolygonSection`, serializable `MaterialStore` definitions and
+compiled evaluators. They validate public compilation, finite evaluation and input resource limits;
+branded normalized models, arbitrary extrapolation policies and accepted-result provenance below
+remain target contracts. The live owners and gaps are in the control map and
+[`development/06`](development/06-current-state-and-roadmap.md).
 
 The first verified analysis profile may restrict this normalized contract to one connected concrete
 region with holes even though the editor/project format can store several regions. Unsupported
@@ -135,6 +142,10 @@ seed is required, the analysis scenario supplies separate `serviceElasticModuli`
 
 Binary search is preferred to a linear segment scan because a material curve can contain many
 points. The evaluator returns the exact segment slope inside each segment.
+
+The current Preview curve helper sorts once and scans linearly within the bounded curve-point
+budget. The implementation below describes the target compiled-segment API; it is not a claim
+that this API or a binary-search implementation already exists.
 
 ```ts
 interface Segment { e0:number; e1:number; s0:number; slope:number; }

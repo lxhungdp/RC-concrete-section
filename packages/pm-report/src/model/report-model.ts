@@ -23,6 +23,7 @@ import {
   contourStrainAngleSamples,
   evaluatePreparedState,
   intersectFixedPContourWithMomentRay,
+  fixedPContourPaths,
   intersectSurfaceWithDemandRay,
   prepareAnalysis,
   sliceFixedPContour,
@@ -77,6 +78,8 @@ import {
 } from '@pm/project'
 import { ExcelExportError } from '../excel/workbook-common'
 import { solveLoadcases } from './loadcase-solutions'
+import { checkBasisLabels, checkBasisOfResult } from './check-basis'
+import { DEFAULT_DEMAND_CHECK_BASIS, type DemandCheckBasis } from '@pm/project'
 
 export type ReportInput = {
   loadReference?: LoadReference
@@ -93,6 +96,7 @@ export type ReportInput = {
   /** Governing surface already built by the app. Exact demand meridians reuse these settings. */
   surface: PreviewSurface
   loadcases: readonly LoadCombination[]
+  checkBasis?: DemandCheckBasis
   /**
    * Combinations the user asked to see worked through. May be empty (summary-only report), a
    * subset, or all of them.
@@ -155,9 +159,11 @@ export type CurveMarker = {
 export type FixedPCurve = {
   /** Axial level of the cut in presentation force units. Always the combination's own Pu. */
   p: number
-  /** Closed contour in (Mx, My), in presentation moment units. Empty when the cut misses the surface. */
+  /** Flattened path coordinates for bounds/tables. Rendering consumes the individual paths. */
   nominal: ReadonlyArray<{ mx: number; my: number }>
   design: ReadonlyArray<{ mx: number; my: number }>
+  nominalPaths: ReadonlyArray<ReadonlyArray<{ mx: number; my: number }>>
+  designPaths: ReadonlyArray<ReadonlyArray<{ mx: number; my: number }>>
   demand: { mx: number; my: number }
   /** Where the demand moment direction meets the Design contour at this P. */
   capacity: { mx: number; my: number } | null
@@ -186,6 +192,8 @@ export type CombinationRow = {
     evidence: string
   } | null
   fixedPUtilization: number | null
+  proportionalUtilization: number | null
+  checkBasis: DemandCheckBasis
   phi: number | null
   classification: string
   verdict: 'adequate' | 'inadequate' | 'indeterminate' | 'not-checked'
@@ -252,6 +260,7 @@ export type CombinationDetail = {
   evidence: LabelledValue[]
   /** Exact direct-β meridian when equilibrium defines β; otherwise a labelled fixed-plane diagnostic. */
   interaction: InteractionCurve & {
+    loadPath: 'proportional' | 'constant-axial'
     demand: { m: number; p: number }
     capacity: { m: number; p: number } | null
   }
@@ -263,6 +272,7 @@ export type CombinationDetail = {
 
 export type ColumnReportModel = {
   presentationUnits: UnitSelection
+  checkBasis: DemandCheckBasis
   project: {
     name: string
     sectionName: string
@@ -505,6 +515,8 @@ const combinationRow = (loadcase: LoadCombination, result: InversePreviewResult 
       ? { ...result.designCheck.utilizationInterval }
       : null,
     fixedPUtilization: result?.fixedPUtilization ?? null,
+    proportionalUtilization: result?.proportionalUtilization ?? null,
+    checkBasis: result ? checkBasisOfResult(result) : DEFAULT_DEMAND_CHECK_BASIS,
     phi: result?.resistance?.factor ?? null,
     classification: result?.resistance?.classification ?? '—',
     verdict: verdictOf(result),
@@ -590,7 +602,8 @@ const interactionFor = (
   surface: PreviewSurface,
   loadcase: LoadCombination,
   curves: readonly InteractionCurve[],
-  exactCurve: ExactDirectionCurve | null
+  exactCurve: ExactDirectionCurve | null,
+  result: InversePreviewResult
 ) => {
   const demandTheta =
     Math.abs(loadcase.Mx) < 1e-9 && Math.abs(loadcase.My) < 1e-9 ? 0 : Math.atan2(loadcase.My, loadcase.Mx)
@@ -609,17 +622,19 @@ const interactionFor = (
         nominal: planeCurve(displayNominal.points, displayNominal.triangles, demandTheta)
       }
   const projectionAngle = exactCurve?.beta ?? demandTheta
-  const ray = intersectSurfaceWithDemandRay(surface, loadcase)
+  const constantAxial = checkBasisOfResult(result) === 'constantAxial'
+  const capacityPoint = constantAxial ? result.designCapacityPoint ?? null : intersectSurfaceWithDemandRay(surface, loadcase)?.point ?? null
   return {
     ...curve,
+    loadPath: constantAxial ? 'constant-axial' as const : 'proportional' as const,
     demand: {
       m: fromCanonical('moment', (loadcase.Mx * Math.cos(projectionAngle) + loadcase.My * Math.sin(projectionAngle)), displayUnits),
       p: fromCanonical('force', loadcase.P, displayUnits)
     },
-    capacity: ray
+    capacity: capacityPoint
       ? {
-          m: fromCanonical('moment', (ray.point.Mx * Math.cos(projectionAngle) + ray.point.My * Math.sin(projectionAngle)), displayUnits),
-          p: fromCanonical('force', ray.point.P, displayUnits)
+          m: fromCanonical('moment', (capacityPoint.Mx * Math.cos(projectionAngle) + capacityPoint.My * Math.sin(projectionAngle)), displayUnits),
+          p: fromCanonical('force', capacityPoint.P, displayUnits)
         }
       : null
   }
@@ -639,18 +654,22 @@ const fixedPCurveFor = (surface: PreviewSurface, loadcase: LoadCombination): Fix
   const nominalContour = sliceFixedPContour(nominal.points, loadcase.P, nominal.triangles)
   const ring = (contour: typeof designContour) => {
     const points = contour.map((point) => ({ mx: fromCanonical('moment', point.Mx, displayUnits), my: fromCanonical('moment', point.My, displayUnits) }))
-    return points.length > 2 ? [...points, points[0]] : points
+    return points.length > 2 && contour[0].pathClosed !== false ? [...points, points[0]] : points
   }
   // The ray query uses the sampled-direction subset, exactly as the Demand Check chart does.
-  const samples = contourStrainAngleSamples(designContour)
+  const samples = designContour
   const capacity =
     Math.hypot(loadcase.Mx, loadcase.My) < 1e-9 || samples.length < 2
       ? null
       : intersectFixedPContourWithMomentRay(samples, Math.atan2(loadcase.My, loadcase.Mx))
+  const designPaths = fixedPContourPaths(designContour).map(ring)
+  const nominalPaths = fixedPContourPaths(nominalContour).map(ring)
   return {
     p: fromCanonical('force', loadcase.P, displayUnits),
-    design: ring(designContour),
-    nominal: ring(nominalContour),
+    designPaths,
+    nominalPaths,
+    design: designPaths.flat(),
+    nominal: nominalPaths.flat(),
     demand: { mx: fromCanonical('moment', loadcase.Mx, displayUnits), my: fromCanonical('moment', loadcase.My, displayUnits) },
     capacity: capacity ? { mx: fromCanonical('moment', capacity.Mx, displayUnits), my: fromCanonical('moment', capacity.My, displayUnits) } : null
   }
@@ -843,7 +862,10 @@ const basicsFor = (
       ? 'unavailable'
       : `${fmt(row.utilizationInterval.lower, 4)} – ${fmt(row.utilizationInterval.upper, 4)}`],
     ['Uncertainty evidence', row.utilizationInterval?.evidence ?? 'not evaluated'],
-    ['Fixed-P ratio', row.fixedPUtilization === null ? '—' : fmt(row.fixedPUtilization, 4)],
+    ['Check basis', checkBasisLabels(row.checkBasis).title],
+    ...(row.checkBasis === 'constantAxial'
+      ? [['Proportional 3D UR', row.proportionalUtilization === null ? '—' : fmt(row.proportionalUtilization, 4)] as LabelledValue]
+      : [['Fixed-P ratio', row.fixedPUtilization === null ? '—' : fmt(row.fixedPUtilization, 4)] as LabelledValue]),
     ['Verdict', row.verdict === 'adequate'
       ? 'ADEQUATE'
       : row.verdict === 'inadequate'
@@ -916,7 +938,8 @@ const build = (input: ReportInput): ColumnReportModel => {
     designBasis: basis,
     analysisOptions: input.analysisOptions,
     surface: input.surface,
-    loadcases: input.loadcases
+    loadcases: input.loadcases,
+    checkBasis: input.checkBasis
   })
 
   for (const solution of solved.solutions) {
@@ -968,6 +991,7 @@ const build = (input: ReportInput): ColumnReportModel => {
 
   return {
     presentationUnits: displayUnits,
+    checkBasis: input.checkBasis ?? DEFAULT_DEMAND_CHECK_BASIS,
     project: {
       name: input.projectName,
       sectionName: input.sectionName,
@@ -1195,7 +1219,7 @@ const blockDetail = (
 ): CombinationDetail => {
   const row = combinationRow(loadcase, result)
   const trace = result.equivalentBlock
-  const interaction = interactionFor(surface, loadcase, curves, exactCurve)
+  const interaction = interactionFor(surface, loadcase, curves, exactCurve, result)
   const fixedP = fixedPCurveFor(surface, loadcase)
   const base = {
     row,
@@ -1319,7 +1343,7 @@ const fibreDetail = (
   detailed: boolean
 ): CombinationDetail => {
   const row = combinationRow(loadcase, result)
-  const interaction = interactionFor(surface, loadcase, curves, exactCurve)
+  const interaction = interactionFor(surface, loadcase, curves, exactCurve, result)
   const fixedP = fixedPCurveFor(surface, loadcase)
   const base = {
     row,

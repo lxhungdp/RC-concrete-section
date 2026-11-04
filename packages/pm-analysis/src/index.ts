@@ -1,6 +1,136 @@
+import { activeDesignSurfaceDataset, activeNominalSurfaceDataset } from '@pm/results/audit'
+export { activeDesignSurfaceDataset, activeNominalSurfaceDataset } from '@pm/results/audit'
+import type {
+  Resultant,
+  StrainState,
+  AnalysisOrigin,
+  ResultantLedger,
+  CalculationAuditStage,
+  CalculationAuditTerm,
+  CalculationAuditConcreteGroup,
+  CalculationAuditRebar,
+  CalculationAuditDepthProfile,
+  CalculationAuditOriginStrainTrace,
+  CalculationAuditOriginStrainContext,
+  CalculationAuditReconciliation,
+  StressStrainPointCalculationAudit,
+  EquivalentBlockPointCalculationAudit,
+  AxialCapTracePoint,
+  AxialCapProjectionTrace,
+  AxialCapPointCalculationAudit,
+  UnavailablePointCalculationAudit,
+  PointCalculationAudit,
+  PreviewSurfacePointRole,
+  PreviewSurfacePoint,
+  EquivalentBlockStateTrace,
+  SurfaceIndexTriangle,
+  DesignResistanceTrace,
+  SurfaceStationId,
+  SurfaceStation,
+  SurfaceDirectionError,
+  SurfaceStationError,
+  PreviewSurfaceDataset,
+  ExactDirectionCurve,
+  PreviewSurface,
+  PreviewContourPoint,
+  DirectMeridianSectionPoint,
+  DirectMeridianSection,
+  PreviewMomentPlanePoint,
+  PreviewMomentPlanePath,
+  AdmissibilityViolation,
+  StrainAdmissibility,
+  CapacityFieldResult,
+  InversePreviewResult,
+  LoadcaseQuickCheckResult,
+  StationDefinition,
+  ResultantTangent,
+  StationSteelLimits,
+  FixedPInterpolationBracket,
+  FixedPContourSampleTrace,
+  SurfaceRayIntersection,
+  ConstantAxialIntersection,
+  SectionFieldSample,
+  SectionFieldRebar,
+  SectionFieldTriangle,
+  SectionFieldMap
+} from '@pm/results/contracts'
+export type {
+  Resultant,
+  StrainState,
+  AnalysisOrigin,
+  ResultantLedger,
+  CalculationAuditStage,
+  CalculationAuditTerm,
+  CalculationAuditConcreteGroup,
+  CalculationAuditRebar,
+  CalculationAuditDepthProfile,
+  CalculationAuditOriginStrainTrace,
+  CalculationAuditOriginStrainContext,
+  CalculationAuditReconciliation,
+  StressStrainPointCalculationAudit,
+  EquivalentBlockPointCalculationAudit,
+  AxialCapTracePoint,
+  AxialCapProjectionTrace,
+  AxialCapPointCalculationAudit,
+  UnavailablePointCalculationAudit,
+  PointCalculationAudit,
+  PreviewSurfacePointRole,
+  PreviewSurfacePoint,
+  EquivalentBlockStateTrace,
+  SurfaceIndexTriangle,
+  DesignResistanceTrace,
+  SurfaceStationId,
+  SurfaceStation,
+  SurfaceDirectionError,
+  SurfaceStationError,
+  PreviewSurfaceDataset,
+  ExactDirectionCurve,
+  PreviewSurface,
+  PreviewContourPoint,
+  DirectMeridianSectionPoint,
+  DirectMeridianSection,
+  PreviewMomentPlanePoint,
+  PreviewMomentPlanePath,
+  AdmissibilityViolation,
+  StrainAdmissibility,
+  CapacityFieldResult,
+  InversePreviewResult,
+  LoadcaseQuickCheckResult,
+  StationDefinition,
+  ResultantTangent,
+  StationSteelLimits,
+  FixedPInterpolationBracket,
+  FixedPContourSampleTrace,
+  SurfaceRayIntersection,
+  ConstantAxialIntersection,
+  SectionFieldSample,
+  SectionFieldRebar,
+  SectionFieldTriangle,
+  SectionFieldMap
+} from '@pm/results/contracts'
+import {
+  stationDefinitionLabel,
+  buildCalculationAuditOriginStrainTrace,
+  reconcileCalculationAuditResultant,
+  projectedBoundaryDepth,
+  sectionBoundaryPoints
+} from '@pm/results/audit'
+export {
+  stationDefinitionLabel,
+  buildCalculationAuditOriginStrainTrace,
+  reconcileCalculationAuditResultant,
+  projectedBoundaryDepth,
+  sectionBoundaryPoints
+} from '@pm/results/audit'
 import { AnalysisInputError } from './analysis-error'
+import { IndexedSurfaceTopologyCache, type PreparedSurfaceTriangle } from './surface-topology'
 import { strainResistanceFactorAudit, type CalculationAuditResistanceFactor } from './resistance-factor-audit'
-export { strainResistanceFactorAudit, type CalculationAuditResistanceFactor, type StrainResistanceFactorAudit, type AxialBendingResistanceFactorAudit } from './resistance-factor-audit'
+export {
+  strainResistanceFactorAudit,
+  type CalculationAuditResistanceFactor,
+  type StrainResistanceFactorAudit,
+  type AxialBendingResistanceFactorAudit
+} from './resistance-factor-audit'
 export { AnalysisInputError, type AnalysisErrorCode } from './analysis-error'
 import { clipDesignSurfaceAtAxialCap } from './axial-cap'
 export { resolveLoadcaseField, type LoadcaseFieldResult } from './loadcase-field'
@@ -10,6 +140,7 @@ import { NEWTON_RESIDUAL_TOL, NEWTON_MAX_ITERATIONS } from './inverse-options'
 import {
   prepareGroupedPointSupports,
   buildConcreteMesh,
+  concreteMeshGeometryKey,
   netConcreteCentroid,
   validatePolygonSection,
   rebarArea,
@@ -64,20 +195,16 @@ import {
   type AnalysisOptions,
   type CalculationAnalysisOptions,
   type AnalysisStationCriterion,
+  type DemandCheckBasis,
   type LoadCombination
 } from '@pm/project'
 import {
   FIXED_GRID_SCREENING_RELATIVE_UNCERTAINTY,
+  axialOutsideDomainClassification,
   classifyUtilization,
   type AdequacyStatus,
   type UtilizationInterval
 } from '@pm/results'
-
-export type Resultant = {
-  P: number
-  Mx: number
-  My: number
-}
 
 /**
  * Reduction helpers deliberately use a loop instead of spreading sampled surfaces into function
@@ -106,570 +233,15 @@ const mappedMaximum = <T>(
   return maximum
 }
 
-/**
- * Strain plane `eps(x,y) = e0 + kx*y + ky*x`.
- *
- * `x, y` are measured from the analysis reference origin, i.e. the exact centroid of the net
- * concrete region (`docs/02` §1 step 9). `e0` is therefore the strain at that centroidal axis and
- * `Mx, My` are moments about this declared origin.
- */
-export type StrainState = {
-  e0: number
-  kx: number
-  ky: number
-}
-
-/** Analysis reference origin (net-concrete centroid) that all preview results are reported about. */
-export type AnalysisOrigin = { x: number; y: number }
-
-/**
- * Contribution ledger for one strain state.
- *
- * `docs/11` §3.3 requires the embedded-bar contribution `steel - displaced concrete` to keep the
- * full-steel and displaced-concrete terms separately, so a contribution-factor transform can be
- * applied (or rejected) per independently factorable group.
- */
-export type ResultantLedger = {
-  /** Concrete integrated over the concrete fibers only. */
-  concrete: Resultant
-  /** fs·As at every bar, before the displaced-concrete deduction. */
-  steelGross: Resultant
-  /** −fc·As at every bar (concrete replaced by the bar). */
-  displacedConcrete: Resultant
-  /** Net steel contribution: steelGross + displacedConcrete. */
-  steel: Resultant
-  /** concrete + steel. */
-  total: Resultant
-}
-
-export type CalculationAuditStage = 'design' | 'nominal'
-
-export type CalculationAuditTerm = {
-  x: number
-  y: number
-  area: number
-  strain: number
-  stress: number
-  force: number
-  Mx: number
-  My: number
-}
-
-export type CalculationAuditConcreteGroup = {
-  id: string
-  label: string
-  count: number
-  area: number
-  strainMinimum: number
-  strainMaximum: number
-  stressMinimum: number
-  stressMaximum: number
-  resultant: Resultant
-  /** Largest absolute force term in this exact group; a readable term, not a statistical sample. */
-  representative: CalculationAuditTerm
-}
-
-export type CalculationAuditRebar = CalculationAuditTerm & {
-  id: number
-  diameter: number
-  areaSource?: string
-  storedArea?: boolean
-  steelMaterialId: number
-  steelStress: number
-  displacedConcreteStress: number
-  netStress: number
-  steelGross: Resultant
-  displacedConcrete: Resultant
-  net: Resultant
-}
-
-export type CalculationAuditDepthProfile = {
-  normalX: number
-  normalY: number
-  tensionEdgeProjection: number
-  compressionEdgeProjection: number
-  projectedSectionDepth: number
-  neutralAxisProjection: number | null
-  neutralAxisDepth: number | null
-  neutralAxisInsideSection: boolean | null
-  originStrainTrace: CalculationAuditOriginStrainTrace
-  samples: Array<{ depth: number; strain: number; stress: number }>
-}
-
-export type CalculationAuditOriginStrainTrace =
-  | {
-      kind: 'uniform-strain'
-      compressionEdgeStrain: number
-      calculatedE0: number
-    }
-  | {
-      kind: 'neutral-axis-depth'
-      derivation: 'declared-depth-ratio' | 'resolved-compatible-state'
-      criterionLabel: string | null
-      projectedSectionDepth: number
-      neutralAxisDepthRatio: number
-      neutralAxisDepth: number
-      compressionEdgeStrain: number
-      compressionEdgeProjection: number
-      curvatureFromDepth: number
-      calculatedE0: number
-    }
-  | {
-      kind: 'controlling-bar-strain'
-      criterionLabel: string
-      strainRatio: number
-      controllingRebarId: number
-      steelMaterialId: number
-      effectiveYieldStress: number
-      elasticModulus: number
-      yieldStrain: number
-      yieldStrainBasis: 'effective-yield-stress-over-elastic-modulus' | 'declared-material-limit'
-      requestedSteelStrain: number
-      controllingSteelStrain: number
-      strainLimitApplied: boolean
-      compressionEdgeStrain: number
-      compressionEdgeProjection: number
-      controllingBarProjection: number
-      compressionEdgeToBarDepth: number
-      neutralAxisDepth: number
-      curvatureFromCompatibility: number
-      calculatedE0: number
-    }
-
-export type CalculationAuditOriginStrainContext =
-  | {
-      kind: 'depth-ratio'
-      criterionLabel: string
-      ratio: number
-    }
-  | {
-      kind: 'controlling-bar-strain'
-      criterionLabel: string
-      ratio: number
-      controllingRebarId: number
-      steelMaterialId: number
-      effectiveYieldStress: number
-      elasticModulus: number
-      yieldStrain: number
-      yieldStrainBasis: 'effective-yield-stress-over-elastic-modulus' | 'declared-material-limit'
-      requestedSteelStrain: number
-      controllingSteelStrain: number
-      controllingBarProjection: number
-      compressionEdgeToBarDepth: number
-    }
-  | {
-      kind: 'resolved-compatible-state'
-      criterionLabel: string | null
-    }
-
-export type CalculationAuditReconciliation = {
-  expected: Resultant
-  stored: Resultant
-  delta: Resultant
-  relativeMaximum: number
-  tolerance: number
-  ok: boolean
-}
-
-export type StressStrainPointCalculationAudit = {
-  kind: 'stress-strain'
-  pointId: string
-  stage: CalculationAuditStage
-  origin: AnalysisOrigin
-  state: StrainState
-  depthProfile: CalculationAuditDepthProfile
-  concreteLaw: MaterialLawAudit
-  steelLaws: Array<{ materialId: number; name: string; law: MaterialLawAudit }>
-  mesh: ConcreteMeshReport
-  concreteSummary: {
-    pointCount: number
-    area: number
-    strainMinimum: number
-    strainMaximum: number
-    stressMinimum: number
-    stressMaximum: number
-    resultant: Resultant
-  }
-  concreteGroups: CalculationAuditConcreteGroup[]
-  rebars: CalculationAuditRebar[]
-  /** Result of the local stress integration before a global resultant factor, if any. */
-  mechanicalLedger: ResultantLedger
-  /** Reference-material result at the same compatible state, before any Design route. */
-  nominalReferenceLedger: ResultantLedger
-  displayedLedger: ResultantLedger
-  resistanceFactor: number | null
-  resistanceFactorCalculation: CalculationAuditResistanceFactor | null
-  nominalReferenceReconciliation: CalculationAuditReconciliation
-  reconciliation: CalculationAuditReconciliation
-}
-
-export type EquivalentBlockPointCalculationAudit = {
-  kind: 'equivalent-block'
-  pointId: string
-  stage: CalculationAuditStage
-  origin: AnalysisOrigin
-  state: StrainState
-  depthProfile: CalculationAuditDepthProfile
-  provenance: {
-    document: string
-    concrete: string
-    resistance: string
-    methodId: string
-    implementationVersion: string
-    verificationStatus: string
-  }
-  block: {
-    neutralAxisAngle: number
-    neutralAxisDepth: number
-    projectedSectionDepth: number
-    extremeCompressionStrain: number
-    beta1: number
-    blockDepth: number
-    compressionStress: number
-    compressionEdgeProjection: number
-    neutralAxisProjection: number
-    blockBoundaryProjection: number
-    area: number
-    centroidX: number
-    centroidY: number
-    geometry: Array<{
-      outer: Array<{ x: number; y: number }>
-      holes: Array<Array<{ x: number; y: number }>>
-    }>
-    resultant: Resultant
-  }
-  steelLaws: Array<{ materialId: number; name: string; law: MaterialLawAudit }>
-  rebars: CalculationAuditRebar[]
-  mechanicalLedger: ResultantLedger
-  nominalReferenceLedger: ResultantLedger
-  displayedLedger: ResultantLedger
-  resistanceFactor: number | null
-  resistanceFactorCalculation: CalculationAuditResistanceFactor | null
-  nominalReferenceReconciliation: CalculationAuditReconciliation
-  reconciliation: CalculationAuditReconciliation
-}
-
-export type AxialCapTracePoint = Resultant & {
-  pointId: string
-  stationId: SurfaceStationId | null
-}
-
-export type AxialCapProjectionTrace = {
-  maximumAxialResistance: number
-  capRatio: number | null
-  cap: number
-  /** Physical criterion point before the maximum-axial domain operation, when one exists. */
-  preCapPoint?: PreviewSurfacePoint
-  source:
-    | {
-        kind: 'source-vertex'
-        point: AxialCapTracePoint
-        crossing: Resultant
-      }
-    | {
-        kind: 'edge-interpolation'
-        compressionSide: AxialCapTracePoint
-        admissibleSide: AxialCapTracePoint
-        interpolationRatio: number
-        crossing: Resultant
-      }
-  projection:
-    | { kind: 'identity'; factor: 1 }
-    | {
-        kind: 'radial'
-        factor: number
-        sourceStationCoordinate: number
-        crossingStationCoordinate: number
-      }
-}
-
-export type AxialCapPointCalculationAudit = {
-  kind: 'axial-cap'
-  pointId: string
-  stage: CalculationAuditStage
-  trace: AxialCapProjectionTrace
-  preCap?: {
-    point: PreviewSurfacePoint
-    audit: StressStrainPointCalculationAudit | EquivalentBlockPointCalculationAudit
-    comparison: {
-      calculatedAxialResistance: number
-      maximumAxialResistance: number
-      selectedAxialResistance: number
-      capGoverns: boolean
-    }
-  }
-  displayedLedger: ResultantLedger
-  reconciliation: CalculationAuditReconciliation
-}
-
-export type UnavailablePointCalculationAudit = {
-  kind: 'unavailable'
-  pointId: string
-  stage: CalculationAuditStage
-  reason: 'synthetic-axial-cap' | 'missing-physical-state'
-  message: string
-}
-
-export type PointCalculationAudit =
-  | StressStrainPointCalculationAudit
-  | EquivalentBlockPointCalculationAudit
-  | AxialCapPointCalculationAudit
-  | UnavailablePointCalculationAudit
-
-export type PreviewSurfacePointRole =
-  | 'physical-state'
-  | 'pure-tension'
-  | 'pure-compression'
-  | 'axial-cap'
-
-export type PreviewSurfacePoint = Resultant & {
-  id: string
-  beta: number
-  /** Zero-based display order within one physical direction row; −1 for a synthetic face point. */
-  station: number
-  /** Monotone domain coordinate; comparable across independently-adaptive meridians. */
-  stationCoordinate?: number
-  /** Stable physical station identity; null for a synthetic face that is not a strain station. */
-  stationId: SurfaceStationId | null
-  /** Structural/topological meaning; never infer this from numeric station order. */
-  surfaceRole: PreviewSurfacePointRole
-  /**
-   * False for a synthetic face vertex that belongs to the triangle mesh but to no sampled
-   * meridian. Undefined preserves compatibility with structured stress-strain surfaces.
-   */
-  onSampledDirection?: boolean
-  state: StrainState
-  ledger: ResultantLedger
-  resistance?: DesignResistanceTrace
-  /** Geometric provenance for a synthetic maximum-axial-resistance face point. */
-  axialCapTrace?: AxialCapProjectionTrace
-  /** Present only for a physical block state; an axial-cap face has no unique strain state. */
-  equivalentBlock?: EquivalentBlockStateTrace
-}
-
-export type EquivalentBlockStateTrace = {
-  neutralAxisAngle: number
-  neutralAxisDepth: number
-  blockDepth: number
-  beta1: number
-  projectedSectionDepth: number
-  compressionStress: number
-  concreteBlockArea?: number
-  concreteForce?: number
-  controllingTensileStrain?: number
-  controllingBarId?: string
-  /** Component reconstruction roundoff; not an inverse-equilibrium residual. */
-  componentForceResidual?: number
-  componentMomentXResidual?: number
-  componentMomentYResidual?: number
-}
-
-export type SurfaceIndexTriangle = { a: number; b: number; c: number }
-
-export type DesignResistanceTrace = {
-  nominalReference: Resultant
-  format: DesignBasis['format']
-  factor: number | null
-  classification: ResistanceClassification | 'design-material'
-  controllingTensileStrain: number | null
-  yieldStrain: number | null
-  axialCapApplied: boolean
-  stages: string[]
-}
-
-export type SurfaceStationId =
-  | 'pure-compression'
-  | `station-${number}`
-  | `adaptive-station-${string}`
-  | 'pure-tension'
-
-export type SurfaceStation = {
-  id: SurfaceStationId
-  label: string
-  definition: StationDefinition
-  /** Canonical/project station versus a generated midpoint retained only in this result. */
-  fixed: boolean
-}
-
-/**
- * How much the surface still depends on how coarsely the strain-plane directions were sampled
- * (`docs/06` §5). Measured, not assumed: the engine evaluates the true state halfway between two
- * sampled directions and compares it with the chord the surface actually uses there.
- *
- * This is a sampled estimate over `probedStations`, not a bound over the whole surface
- * (`docs/06` §11 — no universal error claim from one benchmark).
- */
-export type SurfaceDirectionError = {
-  /** Strain-plane directions in the finished surface. */
-  directions: number
-  /** Station indices used as probes. */
-  probedStations: number[]
-  probedStationIds: SurfaceStationId[]
-  /** Worst chord error in `P`, relative to the surface `P` span. */
-  maxRelativeP: number
-  /** Worst chord error in the moment vector, relative to the surface moment span. */
-  maxRelativeMoment: number
-  /** Worst component-ledger error; equals the total error when component checking is not required. */
-  maxRelativeComponent: number
-  /** Direction (rad) of the worst moment error. */
-  worstBeta: number
-  /** Bisection passes actually performed; 0 when refinement is off. */
-  refinementPasses: number
-  /** True when the estimate is at or below the requested tolerance. */
-  withinTolerance: boolean
-  tolerance: number
-}
-
-/** Measured chord error along the compression-to-tension station coordinate. */
-export type SurfaceStationError = {
-  stations: number
-  fixedStations: number
-  minStations?: number
-  maxStations?: number
-  averageStations?: number
-  totalStates?: number
-  /** Constitutive integrations, including rejected adaptive probes. */
-  evaluations?: number
-  maxRelative: number
-  refinementPasses: number
-  withinTolerance: boolean
-  tolerance: number
-}
-
-export type PreviewSurfaceDataset = {
-  points: PreviewSurfacePoint[]
-  triangles?: SurfaceIndexTriangle[]
-  directions: number[]
-  stations: SurfaceStation[]
-}
-
-export type ExactDirectionCurve = {
-  /** Exact strain-gradient direction requested by the user or recovered from equilibrium. */
-  beta: number
-  /** Active Design meridian for the selected Fixed or Adaptive station policy. */
-  designCurve?: PreviewSurfacePoint[]
-  /** Active nominal/reference meridian; its independently adaptive schedule may differ. */
-  nominalCurve?: PreviewSurfacePoint[]
-  /** Diagnostic Design meridian before the axial cap; never used by governing checks. */
-  beforeAxialCap?: PreviewSurfacePoint[]
-  /** @deprecated Compatibility alias for `designCurve`. */
-  designAdaptive: PreviewSurfacePoint[]
-  /** @deprecated Compatibility alias for `designCurve`. */
-  designFixed: PreviewSurfacePoint[]
-  /** @deprecated Compatibility alias for `nominalCurve`. */
-  nominalFixed: PreviewSurfacePoint[]
-  /** Station descriptors for the design meridian. */
-  stations: SurfaceStation[]
-  /** Nominal descriptors may differ when that mechanics samples Nominal independently. */
-  nominalStations?: SurfaceStation[]
-  stationError: SurfaceStationError
-}
-
 export const activeDesignDirectionPoints = (curve: ExactDirectionCurve): PreviewSurfacePoint[] =>
   curve.designCurve ?? curve.designAdaptive ?? curve.designFixed
 
 export const activeNominalDirectionPoints = (curve: ExactDirectionCurve): PreviewSurfacePoint[] =>
   curve.nominalCurve ?? curve.nominalFixed
 
-export type PreviewSurface = {
-  calculationProfileId?: import('@pm/project').CalculationProfileId
-  mechanics?: 'stress-strain-integration' | 'equivalent-rectangular-block'
-  /** Governing adaptive design-resistance vertices used by all ULS checks, not by fixed-grid plots. */
-  points: PreviewSurfacePoint[]
-  /** Reference/nominal vertices at the exact same stored strain states. */
-  nominalPoints: PreviewSurfacePoint[]
-  /** Explicit connectivity is authoritative for independently triangulated/capped surfaces. */
-  triangles?: SurfaceIndexTriangle[]
-  nominalTriangles?: SurfaceIndexTriangle[]
-  /** Fixed 27 × 36 visual/diagnostic grid; shared with the production Design surface. */
-  /** Active Design dataset for the selected Fixed or Adaptive mode. */
-  designSurface?: PreviewSurfaceDataset
-  /** Original reduced Design geometry/topology before Pmax; diagnostic only. */
-  beforeAxialCap?: PreviewSurfaceDataset
-  /** Active Nominal/reference dataset; its adaptive topology may differ from Design. */
-  nominalSurface?: PreviewSurfaceDataset
-  /** @deprecated Compatibility alias for `designSurface`. */
-  designFixed?: PreviewSurfaceDataset
-  /** Nominal values evaluated at the same fixed 27 × 36 states. */
-  /** @deprecated Compatibility alias for `nominalSurface`. */
-  nominalFixed?: PreviewSurfaceDataset
-  /** Discrete code values for reporting only; never triangulated as equilibrium states. */
-  codeReferencePoints?: Array<Resultant & {
-    id: string
-    label: string
-    kind: 'code-endpoint'
-  }>
-  /** Outer-boundary vertices used by code demand rules such as KDS Appendix e_min. */
-  sectionBoundaryPoints?: Array<{ x: number; y: number }>
-  bounds: {
-    P: [number, number]
-    Mx: [number, number]
-    My: [number, number]
-  }
-  mesh: ConcreteMeshReport
-  /** Canonical schedule and direction grid actually used by this result. */
-  stations: SurfaceStation[]
-  directions: number[]
-  analysisOptions: CalculationAnalysisOptions
-  directionError: SurfaceDirectionError
-  stationError: SurfaceStationError
-  /** Which ultimate strain domain produced these states — never inferred from the material label. */
-  strainDomain: StrainDomainId
-  warnings: string[]
-  designBasis: DesignBasis
-}
-
-/** Active Design dataset, independent of whether the calculation mode is Fixed or Adaptive. */
-export const activeDesignSurfaceDataset = (surface: PreviewSurface): PreviewSurfaceDataset =>
-  surface.designSurface ?? surface.designFixed ?? {
-    points: surface.points,
-    triangles: surface.triangles,
-    directions: surface.directions,
-    stations: surface.stations
-  }
-
-/** Active Nominal/reference dataset, which may have a topology independent from Design. */
-export const activeNominalSurfaceDataset = (surface: PreviewSurface): PreviewSurfaceDataset =>
-  surface.nominalSurface ?? surface.nominalFixed ?? {
-    points: surface.nominalPoints,
-    triangles: surface.nominalTriangles,
-    directions: surface.directions,
-    stations: surface.stations
-  }
-
-export type PreviewContourPoint = {
-  beta: number
-  P: number
-  Mx: number
-  My: number
-  station?: number
-  /**
-   * True when the point lies on one sampled strain-plane meridian: either a surface vertex or the
-   * intersection of `P = fixedP` with an edge whose two endpoints share the same beta. False or
-   * absent identifies an intermediate intersection on a cross-beta/diagonal triangle edge.
-   */
-  onSampledDirection?: boolean
-}
-
 /** The sampled-direction subset of a fixed-P contour, in ascending `beta`. */
 export const contourStrainAngleSamples = (contour: PreviewContourPoint[]): PreviewContourPoint[] =>
   contour.filter((point) => point.onSampledDirection).sort((a, b) => a.beta - b.beta)
-
-/**
- * A point used to present one direct sampled meridian. `surface-vertex` retains an authoritative
- * resistance-surface vertex. `axial-center` is a section-only vertex required when one half of a
- * vertical plane cuts a triangulated axial-cap face from M=0 to its boundary crossing.
- */
-export type DirectMeridianSectionPoint = PreviewSurfacePoint & {
-  sectionPointRole: 'surface-vertex' | 'axial-center'
-}
-
-export type DirectMeridianSection = {
-  primary: DirectMeridianSectionPoint[]
-  opposite: DirectMeridianSectionPoint[]
-  displayPaths: DirectMeridianSectionPoint[][]
-  closed: boolean
-}
 
 /** Physical criteria and qualified geometric cap crossings, never a synthetic axis closure. */
 export const isMeridianAuditPoint = (point: DirectMeridianSectionPoint): boolean =>
@@ -799,135 +371,6 @@ export const buildDirectMeridianSection = (
   return { primary, opposite, displayPaths: [loop], closed: true }
 }
 
-export type PreviewMomentPlanePoint = PreviewContourPoint & {
-  /** Moment coordinate on the checked load direction. */
-  M: number
-}
-
-/**
- * One connected component of a vertical moment-plane/surface intersection.
- *
- * A closed path repeats its first point as its last point. `closed` is derived from the triangle
- * adjacency graph; callers must never close an open path merely for presentation.
- */
-export type PreviewMomentPlanePath = {
-  points: PreviewMomentPlanePoint[]
-  closed: boolean
-}
-
-export type AdmissibilityViolation =
-  | { code: 'CONCRETE_STRAIN_EXCEEDS_ULTIMATE'; value: number; limit: number }
-  | { code: 'STEEL_STRAIN_EXCEEDS_ULTIMATE'; rebarId: number; value: number; limit: number }
-
-/**
- * Whether a strain plane lies inside the material domain — `docs/04` §6 requires "all material
- * strains admissible" for acceptance, and defines `MATERIAL_DOMAIN_EXCEEDED` as a failure. A plane
- * that balances the demand outside this domain is not an equilibrium state the section can reach.
- */
-export type StrainAdmissibility = {
-  /** False for a code-envelope face that has no unique material strain state. */
-  evaluated: boolean
-  ok: boolean
-  /** Peak compressive strain anywhere in the concrete region (compression positive). */
-  maxConcreteCompression: number
-  concreteLimit: number
-  /** Largest tensile strain magnitude at any bar; 0 when every bar is in compression. */
-  maxSteelTension: number
-  /** Smallest declared tensile limit, an aggregate that must not be paired with maxSteelTension. */
-  steelTensionLimit: number | null
-  /** The governing bar compared with its own material limit, including mixed-grade sections. */
-  governingSteelLimit?: SteelStrainLimitEvidence | null
-  violations: AdmissibilityViolation[]
-}
-
-/** Physical capacity evidence is separate from full-demand inverse equilibrium and governing UR. */
-export type CapacityFieldResult =
-  | {
-      status: 'available'
-      boundary: { kind: 'design' } | { kind: 'before-axial-cap'; limit: number }
-      state: StrainState
-      response: Resultant
-      loadFactor: number
-      residual: Resultant
-      residualNorm: number
-      iterations: number
-      admissibility: StrainAdmissibility
-      resistance: DesignResistanceTrace | null
-      equivalentBlock?: EquivalentBlockStateTrace | null
-      message: string
-    }
-  | {
-      status: 'unavailable'
-      reason: 'zero-demand' | 'no-crossing' | 'axial-cap' | 'non-converged' | 'inadmissible' | 'invalid-input' | 'evaluation-error'
-      iterations: number
-      message: string
-    }
-
-export type InversePreviewResult = {
-  /** Converged **and** admissible. Only this may be presented as an equilibrium state. */
-  ok: boolean
-  /** Residual test alone; true even when the plane leaves the material domain. */
-  converged: boolean
-  admissibility: StrainAdmissibility
-  loadcaseId: number
-  demand: LoadCombination
-  /** Demand after a code-prescribed minimum-eccentricity rule, when applicable. */
-  codeAdjustedDemand?: LoadCombination
-  minimumEccentricityMm?: number
-  state: StrainState
-  response: Resultant
-  residual: Resultant
-  residualNorm: number
-  iterations: number
-  utilization: number | null
-  proportionalUtilization?: number | null
-  /** Exact inverse/capacity-ray ratio used only to reconcile that diagnostic response. */
-  inverseProportionalUtilization?: number | null
-  fixedPUtilization?: number | null
-  /** Governing Design-surface decision composed after the inverse diagnostic has been solved. */
-  designCheck:
-    | { evaluated: false }
-    | {
-        evaluated: true
-        adequacy: AdequacyStatus
-        utilizationInterval: UtilizationInterval
-      }
-  designCapacityPoint?: Resultant | null
-  resistance?: DesignResistanceTrace | null
-  equivalentBlock?: EquivalentBlockStateTrace | null
-  contourPoint: PreviewContourPoint | null
-  message: string
-  /** Lazily resolved physical boundary state for Field at capacity; never supplies governing UR. */
-  capacityField?: CapacityFieldResult
-}
-
-export type LoadcaseQuickCheckResult = {
-  loadcaseId: number
-  demand: LoadCombination
-  /** Demand after a code-prescribed minimum-eccentricity rule, when applicable. */
-  codeAdjustedDemand?: LoadCombination
-  minimumEccentricityMm?: number
-  utilizationDefinition: 'proportional3D'
-  /** Finite multiplier at the first Design-surface crossing; null for zero demand or no crossing. */
-  capacityMultiplier: number | null
-  /** Checked demand moment direction in action space; null when the moment vector is zero. */
-  demandMomentDirection: number | null
-  utilization: number | null
-  proportionalUtilization: number | null
-  fixedPUtilization: number | null
-  fixedPDemandMoment: number
-  fixedPCapacityMoment: number | null
-  adequate: boolean | null
-  /** Three-state screening verdict; fixed-grid cases near UR=1 are deliberately indeterminate. */
-  adequacy: AdequacyStatus
-  /** Utilization interval implied by the active surface's sampling evidence. */
-  utilizationInterval: UtilizationInterval
-  capacityPoint: Resultant | null
-  resistance: DesignResistanceTrace | null
-  contourPoint: PreviewMomentPlanePoint | null
-  message: string
-}
-
 /**
  * A fiber carries its already-resolved constitutive law. Resolution happens once, up front, so the
  * integration loop cannot encounter a missing material and cannot silently substitute one.
@@ -988,32 +431,6 @@ const PREVIEW_GEOMETRY_TOL = 1e-9
  * comparison would reject them on rounding alone.
  */
 const STRAIN_LIMIT_TOL = 1e-9
-export type StationDefinition =
-  | { kind: 'pure-compression' }
-  | { kind: 'neutral-axis-ratio'; cOverC1: number }
-  | { kind: 'neutral-axis-depth-ratio'; ratio: number }
-  | { kind: 'steel-strain'; strain: number }
-  | { kind: 'steel-stress-ratio'; ratio: number }
-  | { kind: 'bar-tension-yield-ratio'; ratio: number }
-  | { kind: 'strength-reduction-transition-ratio'; ratio: number }
-  /** @deprecated Prefer `steel-strain`; retained for in-flight definitions only. */
-  | { kind: 'strength-reduction-post-transition'; strain: number }
-  | { kind: 'extreme-tension-strain'; strain: number }
-  | { kind: 'bar-tension-strain'; strain: number }
-  | { kind: 'block-depth-ratio'; ratio: number }
-  | { kind: 'block-adaptive'; label: string }
-  /** Fraction of the concrete-edge-to-controlling-bar cover gap traversed by the neutral axis. */
-  | { kind: 'neutral-axis-control-gap-ratio'; ratio: number }
-  /** Physical three-stage continuation from the last finite-c state to the exact tension pole. */
-  | { kind: 'tension-pole-transition-ratio'; from: StationDefinition; ratio: number }
-  /** Internal deterministic fallback for a midpoint between two otherwise incompatible states. */
-  | {
-      kind: 'adaptive-state-interpolation'
-      left: StationDefinition
-      right: StationDefinition
-      ratio: number
-    }
-  | { kind: 'pure-tension' }
 
 /** Shared 27-station schedule used by compatibility helpers and the production surface. */
 export const UNIFIED_STATIONS: StationDefinition[] = [
@@ -1025,46 +442,6 @@ export const UNIFIED_STATIONS: StationDefinition[] = [
   })),
   { kind: 'pure-tension' }
 ]
-
-export const stationDefinitionLabel = (station: StationDefinition): string => {
-  if (station.kind === 'pure-compression') return 'Pure compression'
-  if (station.kind === 'pure-tension') return 'Pure tension'
-  if (station.kind === 'block-depth-ratio') return `c/D = ${station.ratio}`
-  if (station.kind === 'block-adaptive') return station.label
-  if (station.kind === 'neutral-axis-depth-ratio') return `c/D = ${station.ratio}`
-  if (station.kind === 'extreme-tension-strain') return `εt = ${station.strain}`
-  if (station.kind === 'bar-tension-strain') return `εₛ = ${station.strain}`
-  if (station.kind === 'bar-tension-yield-ratio') return `εₛ/εy = ${station.ratio}`
-  if (station.kind === 'neutral-axis-control-gap-ratio') {
-    return `cover-gap = ${Number(station.ratio.toPrecision(6))}`
-  }
-  if (station.kind === 'tension-pole-transition-ratio') {
-    return `Pure tens ${Number((station.ratio * 100).toPrecision(6))}%`
-  }
-  if (station.kind === 'adaptive-state-interpolation') {
-    return `adaptive ${Number(station.ratio.toPrecision(6))}`
-  }
-  if (station.kind === 'neutral-axis-ratio') {
-    const ratio = Number(station.cOverC1.toPrecision(6))
-    return `c/c₁ = ${ratio}`
-  }
-  if (station.kind === 'steel-stress-ratio') {
-    if (station.ratio === 0) return 'fs/fyd = 0'
-    if (Math.abs(station.ratio - 1) < 1e-9) return 'fs/fyd = 1'
-    return `fs/fyd = ${Number(station.ratio.toPrecision(6))}`
-  }
-  if (station.kind === 'steel-strain') {
-    if (Math.abs(station.strain) < 1e-12) return 'εₛ = 0'
-    return `εₛ = ${Number(station.strain.toPrecision(6))}`
-  }
-  if (station.kind === 'strength-reduction-transition-ratio') {
-    return `φᵣ = ${Number(station.ratio.toPrecision(6))}`
-  }
-  if (station.kind === 'strength-reduction-post-transition') {
-    return `εₛ = ${Number(station.strain.toPrecision(6))}`
-  }
-  return 'Station'
-}
 
 const criterionDefinition = (criterion: AnalysisStationCriterion): StationDefinition => {
   if (criterion.type === 'c-over-c1') return { kind: 'neutral-axis-ratio', cOverC1: criterion.ratio }
@@ -1387,6 +764,9 @@ const assertValidSectionGeometry = (
 ) => {
   const geometryIssues = validatePolygonSection({ solids: section.solids, rebars })
   if (geometryIssues.length === 0) return
+  if (geometryIssues.some((issue) => issue.code === 'GEOMETRY_RESOURCE_LIMIT')) {
+    throw new AnalysisInputError('GEOMETRY_RESOURCE_LIMIT', geometryIssues[0].message, { issues: geometryIssues })
+  }
   const rebarOnly = geometryIssues.every((issue) =>
     issue.code === 'INVALID_REBAR' || issue.code.startsWith('REBAR_'))
   const rebarIds = rebarOnly
@@ -1409,8 +789,14 @@ export const prepareAnalysisFromMesh = (
   mesh: ConcreteMesh,
   origin: AnalysisOrigin = originFromMesh(mesh)
 ): PreparedAnalysis => {
+  if (![origin.x, origin.y].every(Number.isFinite)) {
+    throw new AnalysisInputError('NON_FINITE_ANALYSIS', 'Analysis origin must contain finite coordinates.')
+  }
   assertValidSectionGeometry(section, rebars)
   assertUsableMesh(mesh)
+  if (mesh.geometryKey !== concreteMeshGeometryKey(section)) {
+    throw new AnalysisInputError('MESH_GEOMETRY_MISMATCH', 'The integration mesh does not belong to the requested section geometry.')
+  }
   const materials = resolveAnalysisMaterials(materialStore, rebars)
   const concreteFibers = concreteFibersFromMesh(mesh, origin)
   const rebarFibers = buildRebarFibers(rebars, origin, materials, materialStore.defaults.steelMaterialId)
@@ -1463,8 +849,21 @@ export const prepareAnalysis = (
   return prepareAnalysisFromMesh(section, rebars, materialStore, buildConcreteMesh(section, meshOptions), origin)
 }
 
+const finiteAnalysisNumber = (value: number, quantity: string): number => {
+  if (!Number.isFinite(value)) {
+    throw new AnalysisInputError('NON_FINITE_ANALYSIS', `Non-finite analysis ${quantity}.`, { quantity })
+  }
+  return value
+}
+
+const assertFiniteStrainState = (state: StrainState) => {
+  finiteAnalysisNumber(state.e0, 'origin strain')
+  finiteAnalysisNumber(state.kx, 'X curvature')
+  finiteAnalysisNumber(state.ky, 'Y curvature')
+}
+
 const strainAt = (state: StrainState, fiber: Pick<Fiber, 'x' | 'y'>) =>
-  state.e0 + state.kx * fiber.y + state.ky * fiber.x
+  finiteAnalysisNumber(state.e0 + state.kx * fiber.y + state.ky * fiber.x, 'point strain')
 
 const zeroResultant = (): Resultant => ({ P: 0, Mx: 0, My: 0 })
 
@@ -1474,6 +873,7 @@ class CompensatedScalar {
   private correction = 0
 
   add(value: number) {
+    finiteAnalysisNumber(value, 'reduction term')
     const next = this.sum + value
     this.correction += Math.abs(this.sum) >= Math.abs(value)
       ? (this.sum - next) + value
@@ -1482,7 +882,7 @@ class CompensatedScalar {
   }
 
   value() {
-    return this.sum + this.correction
+    return finiteAnalysisNumber(this.sum + this.correction, 'reduction total')
   }
 }
 
@@ -1534,6 +934,7 @@ const evaluate = (
   materials: AnalysisMaterials,
   state: StrainState
 ): ResultantLedger => {
+  assertFiniteStrainState(state)
   const concreteSum = new CompensatedResultant()
   const steelGrossSum = new CompensatedResultant()
   const displacedConcreteSum = new CompensatedResultant()
@@ -1565,17 +966,12 @@ const evaluate = (
   return { concrete, steelGross, displacedConcrete, steel, total: addResultant(concrete, steel) }
 }
 
-export type ResultantTangent = [
-  [number, number, number],
-  [number, number, number],
-  [number, number, number]
-]
-
 const evaluateWithTangent = (
   fibers: Fiber[],
   materials: AnalysisMaterials,
   state: StrainState
 ): { ledger: ResultantLedger; tangent: ResultantTangent } => {
+  assertFiniteStrainState(state)
   const concreteSum = new CompensatedResultant()
   const steelGrossSum = new CompensatedResultant()
   const displacedConcreteSum = new CompensatedResultant()
@@ -1794,18 +1190,6 @@ const withSteelBoundaryStations = (stations: SurfaceStation[], prepared: Prepare
  * yielded, and reported as an assumption rather than presented as a code value.
  */
 const PURE_TENSION_YIELD_MULTIPLE = 25
-
-/**
- * Strain limits of the bar that controls one direction, taken from its compiled law.
- *
- * `epsYield` already carries the material partial factor: an EC2 bar with `gammaS = 1.15` yields at
- * `fy / 1.15 / Es`, so a station labelled `fs = fyd` must sit there and not at `fy / Es`.
- */
-export type StationSteelLimits = {
-  epsY: number
-  /** Declared rupture strain of the controlling bar, or null when the definition omits it. */
-  epsU: number | null
-}
 
 const DEFAULT_STATION_STEEL_LIMITS: StationSteelLimits = { epsY: 0.002, epsU: null }
 
@@ -2129,13 +1513,12 @@ const groupSurfaceRows = (points: PreviewSurfacePoint[]) => {
     }))
 }
 
-type SurfaceTriangle = {
-  vertices: [PreviewSurfacePoint, PreviewSurfacePoint, PreviewSurfacePoint]
-  /** Per edge `(0,1) (1,2) (2,0)`: true when both ends belong to the same sampled `beta` row. */
-  sameDirectionEdge: [boolean, boolean, boolean]
-}
+type SurfaceTriangle = PreparedSurfaceTriangle<PreviewSurfacePoint>
 
 const surfaceTrianglesCache = new WeakMap<PreviewSurfacePoint[], SurfaceTriangle[]>()
+const indexedSurfaceTriangles = new IndexedSurfaceTopologyCache<PreviewSurfacePoint>(
+  (left, right) => physicalEdgeDirection(left, right) !== null
+)
 
 const directionNeutralSurfaceVertex = (point: PreviewSurfacePoint) =>
   point.surfaceRole === 'pure-compression' ||
@@ -2159,20 +1542,7 @@ const previewSurfaceTriangles = (
   topology?: readonly SurfaceIndexTriangle[]
 ): SurfaceTriangle[] => {
   if (topology) {
-    const samePhysicalDirection = (left: PreviewSurfacePoint, right: PreviewSurfacePoint) =>
-      physicalEdgeDirection(left, right) !== null
-    return topology.flatMap(({ a, b, c }) => {
-      const vertices = [points[a], points[b], points[c]] as const
-      if (vertices.some((point) => point === undefined)) return []
-      return [{
-        vertices: [vertices[0], vertices[1], vertices[2]],
-        sameDirectionEdge: [
-          samePhysicalDirection(vertices[0], vertices[1]),
-          samePhysicalDirection(vertices[1], vertices[2]),
-          samePhysicalDirection(vertices[2], vertices[0])
-        ]
-      }]
-    })
+    return indexedSurfaceTriangles.get(points, topology)
   }
   const cached = surfaceTrianglesCache.get(points)
   if (cached) return cached
@@ -3424,84 +2794,6 @@ const concreteAuditBranch = (material: MaterialStore['concrete'], strain: number
   return { id: 'unsupported-local-law', label: 'Unsupported local concrete law' }
 }
 
-/**
- * Auditable derivation of the strain at the declared analysis origin.
- *
- * The trace follows the criterion that actually generated the state. A declared `c / D` station
- * recovers `c` directly from the exact projected section depth. A controlling-bar station first
- * resolves the bar strain, then uses the exact compression-edge-to-bar depth to derive `kappa`
- * and `c`. Other generated/adaptive states report their already-resolved compatible geometry
- * without pretending that a `c / D` criterion created them. Keeping this derivation in the owning
- * result DTO prevents a presentation adapter from reconstructing strain-plane mechanics.
- */
-export const buildCalculationAuditOriginStrainTrace = (
-  profile: Pick<CalculationAuditDepthProfile,
-    'projectedSectionDepth' | 'neutralAxisDepth' | 'compressionEdgeProjection'>,
-  compressionEdgeStrain: number,
-  context: CalculationAuditOriginStrainContext = {
-    kind: 'resolved-compatible-state',
-    criterionLabel: null
-  }
-): CalculationAuditOriginStrainTrace => {
-  if (profile.neutralAxisDepth === null) {
-    return {
-      kind: 'uniform-strain',
-      compressionEdgeStrain,
-      calculatedE0: compressionEdgeStrain
-    }
-  }
-
-  if (context.kind === 'controlling-bar-strain') {
-    const curvatureFromCompatibility =
-      (compressionEdgeStrain - context.controllingSteelStrain) /
-      context.compressionEdgeToBarDepth
-    const neutralAxisDepth = compressionEdgeStrain / curvatureFromCompatibility
-    const strainLimitApplied = Math.abs(context.controllingSteelStrain - context.requestedSteelStrain) >
-      1e-12 * Math.max(1, Math.abs(context.requestedSteelStrain))
-    return {
-      kind: 'controlling-bar-strain',
-      criterionLabel: context.criterionLabel,
-      strainRatio: context.ratio,
-      controllingRebarId: context.controllingRebarId,
-      steelMaterialId: context.steelMaterialId,
-      effectiveYieldStress: context.effectiveYieldStress,
-      elasticModulus: context.elasticModulus,
-      yieldStrain: context.yieldStrain,
-      yieldStrainBasis: context.yieldStrainBasis,
-      requestedSteelStrain: context.requestedSteelStrain,
-      controllingSteelStrain: context.controllingSteelStrain,
-      strainLimitApplied,
-      compressionEdgeStrain,
-      compressionEdgeProjection: profile.compressionEdgeProjection,
-      controllingBarProjection: context.controllingBarProjection,
-      compressionEdgeToBarDepth: context.compressionEdgeToBarDepth,
-      neutralAxisDepth,
-      curvatureFromCompatibility,
-      calculatedE0: compressionEdgeStrain - curvatureFromCompatibility * profile.compressionEdgeProjection
-    }
-  }
-
-  const neutralAxisDepthRatio = context.kind === 'depth-ratio'
-    ? context.ratio
-    : profile.neutralAxisDepth / profile.projectedSectionDepth
-  const neutralAxisDepth = context.kind === 'depth-ratio'
-    ? context.ratio * profile.projectedSectionDepth
-    : profile.neutralAxisDepth
-  const curvatureFromDepth = compressionEdgeStrain / neutralAxisDepth
-  return {
-    kind: 'neutral-axis-depth',
-    derivation: context.kind === 'depth-ratio' ? 'declared-depth-ratio' : 'resolved-compatible-state',
-    criterionLabel: context.criterionLabel,
-    projectedSectionDepth: profile.projectedSectionDepth,
-    neutralAxisDepthRatio,
-    neutralAxisDepth,
-    compressionEdgeStrain,
-    compressionEdgeProjection: profile.compressionEdgeProjection,
-    curvatureFromDepth,
-    calculatedE0: compressionEdgeStrain - curvatureFromDepth * profile.compressionEdgeProjection
-  }
-}
-
 const auditDepthProfile = (
   prepared: PreparedAnalysis,
   state: StrainState,
@@ -3614,27 +2906,6 @@ const auditDepthProfile = (
       originStrainContext
     )
   }
-}
-
-export const reconcileCalculationAuditResultant = (
-  expected: Resultant,
-  stored: Resultant,
-  forceScale: number,
-  lengthScale: number
-): CalculationAuditReconciliation => {
-  const delta = {
-    P: expected.P - stored.P,
-    Mx: expected.Mx - stored.Mx,
-    My: expected.My - stored.My
-  }
-  const normalized = [
-    Math.abs(delta.P) / Math.max(1, forceScale, Math.abs(stored.P)),
-    Math.abs(delta.Mx) / Math.max(1, forceScale * lengthScale, Math.abs(stored.Mx)),
-    Math.abs(delta.My) / Math.max(1, forceScale * lengthScale, Math.abs(stored.My))
-  ]
-  const relativeMaximum = Math.max(...normalized)
-  const tolerance = 1e-8
-  return { expected, stored, delta, relativeMaximum, tolerance, ok: relativeMaximum <= tolerance }
 }
 
 /**
@@ -4328,34 +3599,110 @@ export const sliceFixedPContour = (
   const forceScale = mappedMaximum(points, (point) => Math.abs(point.P), 1)
   const momentTol = momentScale * PREVIEW_GEOMETRY_TOL
   const forceTol = forceScale * PREVIEW_GEOMETRY_TOL
-  const contour: PreviewContourPoint[] = []
-
-  for (const triangle of previewSurfaceTriangles(points, triangles)) {
-    const intersections = trianglePlaneIntersections(triangle, (point) => point.P - fixedP, forceTol)
-    for (const point of intersections) {
-      appendUniquePoint(contour, { ...point, P: fixedP }, momentTol, forceTol)
-    }
+  if (!Number.isFinite(fixedP)) return []
+  const vertexIndices = new Map(points.map((point, index) => [point, index]))
+  const vertexKey = (point: PreviewSurfacePoint) =>
+    point.stationId === 'pure-tension' || point.stationId === 'pure-compression'
+      ? `pole:${point.stationId}` : `v:${vertexIndices.get(point)}`
+  const nodes = new Map<string, { point: PreviewContourPoint; neighbours: Set<string> }>()
+  const edges = new Map<string, [string, string]>()
+  const coplanar = new Map<string, { edge: [string, string]; count: number }>()
+  const edgeKey = (a: string, b: string) => a < b ? `${a}|${b}` : `${b}|${a}`
+  const addNode = (key: string, point: PreviewContourPoint) => {
+    const previous = nodes.get(key)
+    if (!previous) nodes.set(key, { point: { ...point, P: fixedP }, neighbours: new Set() })
+    else if (point.onSampledDirection) previous.point.onSampledDirection = true
+    return key
   }
-
-  return contour.sort((a, b) => Math.atan2(a.My, a.Mx) - Math.atan2(b.My, b.Mx))
+  const addEdge = (a: string, b: string) => {
+    const pa = nodes.get(a)!.point, pb = nodes.get(b)!.point
+    if (a === b || Math.hypot(pa.Mx - pb.Mx, pa.My - pb.My) <= momentTol) return
+    edges.set(edgeKey(a, b), [a, b])
+  }
+  for (const triangle of previewSurfaceTriangles(points, triangles)) {
+    const vertices = triangle.vertices
+    const distances = vertices.map(point => point.P - fixedP)
+    const onPlane = distances.map(distance => Math.abs(distance) <= forceTol)
+    const cut = new Set<string>()
+    for (let index = 0; index < 3; index += 1) {
+      const next = (index + 1) % 3
+      const a = vertices[index], b = vertices[next]
+      if (onPlane[index]) cut.add(addNode(vertexKey(a), { ...a, onSampledDirection: a.onSampledDirection !== false }))
+      if (!onPlane[index] && !onPlane[next] && distances[index] * distances[next] < 0) {
+        const key = `e:${edgeKey(vertexKey(a), vertexKey(b))}`
+        const point = lerpPoint(a, b, distances[index] / (distances[index] - distances[next]))
+        cut.add(addNode(key, { ...point, beta: physicalEdgeDirection(a, b) ?? point.beta,
+          onSampledDirection: triangle.sameDirectionEdge[index] }))
+      }
+    }
+    if (onPlane.every(Boolean)) {
+      for (let index = 0; index < 3; index += 1) {
+        const a = vertexKey(vertices[index]), b = vertexKey(vertices[(index + 1) % 3])
+        const key = edgeKey(a, b)
+        const previous = coplanar.get(key)
+        coplanar.set(key, { edge: [a, b], count: (previous?.count ?? 0) + 1 })
+      }
+    } else if (cut.size === 2) addEdge(...[...cut] as [string, string])
+  }
+  for (const { edge, count } of coplanar.values()) if (count === 1) addEdge(...edge)
+  for (const [a, b] of edges.values()) {
+    nodes.get(a)!.neighbours.add(b)
+    nodes.get(b)!.neighbours.add(a)
+  }
+  const unused = new Set(edges.keys())
+  const contour: PreviewContourPoint[] = []
+  let pathId = 0
+  while (unused.size) {
+    const [seedA] = edges.get(unused.values().next().value!)!
+    const component = new Set<string>()
+    const queue = [seedA]
+    while (queue.length) {
+      const key = queue.pop()!
+      if (component.has(key)) continue
+      component.add(key)
+      queue.push(...nodes.get(key)!.neighbours)
+    }
+    const regular = [...component].every(key => nodes.get(key)!.neighbours.size === 2)
+    const start = [...component].find(key => nodes.get(key)!.neighbours.size === 1 &&
+      [...nodes.get(key)!.neighbours].some(other => unused.has(edgeKey(key, other)))) ?? seedA
+    const path = [start]
+    let current = start
+    while (true) {
+      const next = [...nodes.get(current)!.neighbours].find(key => unused.has(edgeKey(current, key)))
+      if (!next) break
+      unused.delete(edgeKey(current, next))
+      current = next
+      if (current === start) break
+      path.push(current)
+    }
+    for (const key of path) contour.push({ ...nodes.get(key)!.point, pathId, pathClosed: regular && current === start })
+    pathId += 1
+  }
+  for (const node of nodes.values()) if (!node.neighbours.size) {
+    // Coplanar patch interiors are not isolated surface contacts.
+    if ([...coplanar.values()].some(({ edge }) => edge.some(key => nodes.get(key) === node))) continue
+    contour.push({ ...node.point, pathId: pathId++, pathClosed: false })
+  }
+  return contour
 }
 
-export type FixedPInterpolationBracket = {
-  /** Surface state at or below the selected axial force. */
-  below: PreviewSurfacePoint
-  /** Surface state at or above the selected axial force. */
-  above: PreviewSurfacePoint
-  /** `t = (Pselected - Pbelow) / (Pabove - Pbelow)`; zero for an exact station. */
-  ratio: number
-  exact: boolean
+/** Complete geometric paths, including their qualified closure, for downstream adapters. */
+export const fixedPContourPaths = (contour: readonly PreviewContourPoint[]) => {
+  const paths = new Map<number, PreviewContourPoint[]>()
+  for (const point of contour) {
+    const key = point.pathId ?? 0
+    const path = paths.get(key) ?? []
+    path.push(point)
+    paths.set(key, path)
+  }
+  return [...paths.values()]
 }
 
-export type FixedPContourSampleTrace = {
-  /** The same sampled-direction point returned by `contourStrainAngleSamples`. */
-  point: PreviewContourPoint
-  /** Null is a fail-closed diagnostic: the displayed point could not be traced to one meridian. */
-  bracket: FixedPInterpolationBracket | null
-}
+/** Plot coordinates with explicit path breaks. No line joins different components. */
+export const fixedPContourLinePoints = (contour: readonly PreviewContourPoint[]): Array<PreviewContourPoint | null> =>
+  fixedPContourPaths(contour).flatMap(path => [
+    ...path, ...(path.length > 2 && path[0].pathClosed !== false ? [path[0]] : []), null
+  ])
 
 const normalizeAngleDegrees = (degrees: number) => ((degrees % 360) + 360) % 360
 const angleDistanceDegrees = (left: number, right: number) => {
@@ -4632,10 +3979,14 @@ export const sliceMomentPlane = (
 
     // An open component starts at an odd/non-manifold vertex so the diagnostic stays visible.
     // A regular loop starts deterministically at its highest-P, then lowest-M point.
-    const irregular = [...seedComponent].filter((key) => graph.get(key)!.neighbours.size !== 2)
+    // Only a node that still owns an unused edge can start a walk: an earlier walk of this same
+    // component may have exhausted the irregular node, and restarting there would consume no edge.
+    const walkable = [...seedComponent].filter((key) =>
+      [...graph.get(key)!.neighbours].some((next) => unusedEdges.has(edgeKey(key, next))))
+    const irregular = walkable.filter((key) => graph.get(key)!.neighbours.size !== 2)
     const start =
       irregular.sort()[0] ??
-      [...seedComponent].sort((a, b) => {
+      walkable.sort((a, b) => {
         const pa = graph.get(a)!.point
         const pb = graph.get(b)!.point
         return pb.P - pa.P || pa.M - pb.M || a.localeCompare(b)
@@ -4681,46 +4032,41 @@ export const intersectFixedPContourWithMomentRay = (
   contour: PreviewContourPoint[],
   theta: number
 ): PreviewMomentPlanePoint | null => {
-  if (contour.length < 2) return null
-  const c = Math.cos(theta)
-  const s = Math.sin(theta)
+  if (contour.length < 2 || contour.some(point => point.pathClosed === false)) return null
+  const c = Math.cos(theta), s = Math.sin(theta)
   const direction = { Mx: c, My: s }
-  const momentScale = mappedMaximum(contour, (point) => Math.hypot(point.Mx, point.My), 1)
-  const tol = momentScale * PREVIEW_GEOMETRY_TOL
-  let best: PreviewMomentPlanePoint | null = null
-
-  for (let i = 0; i < contour.length; i++) {
-    const a = contour[i]
-    const b = contour[(i + 1) % contour.length]
-    const edge = { Mx: b.Mx - a.Mx, My: b.My - a.My }
-    const denom = cross2(edge, direction)
-
-    if (Math.abs(denom) <= tol) {
-      for (const candidate of [a, b]) {
-        const offRay = Math.abs(cross2(candidate, direction))
-        const m = candidate.Mx * c + candidate.My * s
-        if (offRay <= tol && m >= -tol && (!best || m < best.M)) {
-          best = { ...candidate, beta: theta, M: Math.max(0, m) }
-        }
+  const tolerance = mappedMaximum(contour, point => Math.hypot(point.Mx, point.My), 1) * PREVIEW_GEOMETRY_TOL
+  const hits: Array<{ point: PreviewMomentPlanePoint; signs: Set<number> }> = []
+  for (const path of fixedPContourPaths(contour)) {
+    for (let index = 0; index < path.length; index += 1) {
+      let a = path[index], b = path[(index + 1) % path.length]
+      // Canonical endpoint orientation makes arithmetic independent of the graph walk direction.
+      const delta = Math.atan2(b.My, b.Mx) - Math.atan2(a.My, a.Mx)
+      if (delta < 0 && delta > -Math.PI || delta > Math.PI) [a, b] = [b, a]
+      const da = cross2(a, direction), db = cross2(b, direction)
+      const alongA = a.Mx * c + a.My * s, alongB = b.Mx * c + b.My * s
+      if (Math.abs(da) <= tolerance && Math.abs(db) <= tolerance) {
+        if (Math.max(alongA, alongB) >= -tolerance) return null
+        continue
       }
-      continue
+      if (da * db > 0 && Math.abs(da) > tolerance && Math.abs(db) > tolerance) continue
+      const edge = { Mx: b.Mx - a.Mx, My: b.My - a.My }
+      const fraction = -da / cross2(edge, direction)
+      if (fraction < -PREVIEW_GEOMETRY_TOL || fraction > 1 + PREVIEW_GEOMETRY_TOL) continue
+      const Mx = a.Mx + fraction * edge.Mx, My = a.My + fraction * edge.My
+      const point = { beta: theta, P: a.P, Mx, My, M: Mx * c + My * s }
+      if (point.M < -tolerance) continue
+      if (point.M <= tolerance) return null
+      const existing = hits.find(hit => Math.abs(hit.point.M - point.M) <= tolerance)
+      const hit = existing ?? { point, signs: new Set<number>() }
+      if (!existing) hits.push(hit)
+      if (Math.abs(da) > tolerance) hit.signs.add(Math.sign(da))
+      if (Math.abs(db) > tolerance) hit.signs.add(Math.sign(db))
     }
-
-    const q = -cross2(a, direction) / denom
-    if (q < -1e-9 || q > 1 + 1e-9) continue
-    const point = {
-      beta: theta,
-      P: a.P + (b.P - a.P) * q,
-      Mx: a.Mx + edge.Mx * q,
-      My: a.My + edge.My * q
-    }
-    const m = point.Mx * c + point.My * s
-    if (m < -tol) continue
-    const candidate = { ...point, M: Math.max(0, m) }
-    if (!best || candidate.M < best.M) best = candidate
   }
-
-  return best
+  // A single transverse exit qualifies the radial ratio. Outside axes, re-entry and tangency
+  // remain unavailable, matching the independently evaluated Constant-P surface-ray contract.
+  return hits.length === 1 && hits[0].signs.size === 2 ? hits[0].point : null
 }
 
 const residualNorm = (residual: Resultant, forceScale: number, momentScale: number) =>
@@ -4753,18 +4099,83 @@ const vecCross = (a: Vec3, b: Vec3): Vec3 => [
 ]
 const vecDot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 
-export type SurfaceRayIntersection = {
-  lambda: number
-  point: Resultant
-  state: StrainState
-  resistance: DesignResistanceTrace | null
-  source: { vertices: readonly [PreviewSurfacePoint, PreviewSurfacePoint, PreviewSurfacePoint]; weights: readonly [number, number, number] } | null
+type SurfaceRayCrossing = {
+  /** Ray parameter, in the units of the supplied direction. */
+  t: number
+  u: number
+  v: number
+  vertices: readonly [PreviewSurfacePoint, PreviewSurfacePoint, PreviewSurfacePoint]
 }
 
+const surfaceActionScales = (surface: PreviewSurface) => ({
+  forceScale: Math.max(Math.abs(surface.bounds.P[0]), Math.abs(surface.bounds.P[1]), 1),
+  momentScale: Math.max(
+    Math.abs(surface.bounds.Mx[0]),
+    Math.abs(surface.bounds.Mx[1]),
+    Math.abs(surface.bounds.My[0]),
+    Math.abs(surface.bounds.My[1]),
+    1
+  )
+})
+
 /**
- * Intersect `lambda * demand` with the completed 3D resistance surface. Coordinates are normalized
- * before Möller–Trumbore intersection so force and moment units cannot condition the geometry test.
+ * One Möller–Trumbore pass over the resistance triangles. Coordinates are normalized so force and
+ * moment units cannot condition the geometry test. Coplanar triangles report no crossing.
  */
+const visitSurfaceRayCrossings = (
+  surface: PreviewSurface,
+  origin: Resultant,
+  rayDirection: Resultant,
+  visit: (crossing: SurfaceRayCrossing) => void
+) => {
+  const { forceScale, momentScale } = surfaceActionScales(surface)
+  const toVec = (value: Resultant): Vec3 => [
+    value.P / forceScale,
+    value.Mx / momentScale,
+    value.My / momentScale
+  ]
+  const start = toVec(origin)
+  const direction = toVec(rayDirection)
+  for (const triangle of previewSurfaceTriangles(surface.points, surface.triangles)) {
+    const [pa, pb, pc] = triangle.vertices
+    const a = toVec(pa)
+    const b = toVec(pb)
+    const c = toVec(pc)
+    const edge1 = vecSubtract(b, a)
+    const edge2 = vecSubtract(c, a)
+    const h = vecCross(direction, edge2)
+    const determinant = vecDot(edge1, h)
+    if (Math.abs(determinant) < 1e-12) continue
+    const inverse = 1 / determinant
+    const s = vecSubtract(start, a)
+    const u = inverse * vecDot(s, h)
+    if (u < -1e-9 || u > 1 + 1e-9) continue
+    const q = vecCross(s, edge1)
+    const v = inverse * vecDot(direction, q)
+    if (v < -1e-9 || u + v > 1 + 1e-9) continue
+    visit({ t: inverse * vecDot(edge2, q), u, v, vertices: [pa, pb, pc] })
+  }
+}
+
+const surfaceIntersectionAt = (crossing: SurfaceRayCrossing, lambda: number, point: Resultant): SurfaceRayIntersection => {
+  const { u, v, vertices: [pa, pb, pc] } = crossing
+  const w = 1 - u - v
+  const dominant =
+    w >= u && w >= v ? pa : u >= v ? pb : pc
+  return {
+    lambda,
+    point,
+    state: {
+      e0: w * pa.state.e0 + u * pb.state.e0 + v * pc.state.e0,
+      kx: w * pa.state.kx + u * pb.state.kx + v * pc.state.kx,
+      ky: w * pa.state.ky + u * pb.state.ky + v * pc.state.ky
+    },
+    resistance: dominant.resistance ?? null,
+    source: { vertices: [pa, pb, pc], weights: [w, u, v] }
+  }
+}
+
+/** Intersect `lambda * demand` with the completed 3D resistance surface. */
 export const intersectSurfaceWithDemandRay = (
   surface: PreviewSurface,
   demand: Resultant
@@ -4779,71 +4190,134 @@ export const intersectSurfaceWithDemandRay = (
       source: null
     }
   }
-  const forceScale = Math.max(Math.abs(surface.bounds.P[0]), Math.abs(surface.bounds.P[1]), 1)
-  const momentScale = Math.max(
-    Math.abs(surface.bounds.Mx[0]),
-    Math.abs(surface.bounds.Mx[1]),
-    Math.abs(surface.bounds.My[0]),
-    Math.abs(surface.bounds.My[1]),
-    1
-  )
-  const toVec = (value: Resultant): Vec3 => [
-    value.P / forceScale,
-    value.Mx / momentScale,
-    value.My / momentScale
-  ]
-  const direction = toVec(demand)
-  let best: SurfaceRayIntersection | null = null
-
-  for (const triangle of previewSurfaceTriangles(surface.points, surface.triangles)) {
-    const [pa, pb, pc] = triangle.vertices
-    const a = toVec(pa)
-    const b = toVec(pb)
-    const c = toVec(pc)
-    const edge1 = vecSubtract(b, a)
-    const edge2 = vecSubtract(c, a)
-    const h = vecCross(direction, edge2)
-    const determinant = vecDot(edge1, h)
-    if (Math.abs(determinant) < 1e-12) continue
-    const inverse = 1 / determinant
-    const s: Vec3 = [-a[0], -a[1], -a[2]]
-    const u = inverse * vecDot(s, h)
-    if (u < -1e-9 || u > 1 + 1e-9) continue
-    const q = vecCross(s, edge1)
-    const v = inverse * vecDot(direction, q)
-    if (v < -1e-9 || u + v > 1 + 1e-9) continue
+  let best = null as SurfaceRayIntersection | null
+  visitSurfaceRayCrossings(surface, { P: 0, Mx: 0, My: 0 }, demand, (crossing) => {
+    const [pa, pb, pc] = crossing.vertices
     const horizontal = pa.P === pb.P && pa.P === pc.P && demand.P !== 0
-    const lambda = horizontal ? pa.P / demand.P : inverse * vecDot(edge2, q)
-    if (lambda <= 1e-10 || (best && lambda >= best.lambda)) continue
-    const w = 1 - u - v
-    const dominant =
-      w >= u && w >= v ? pa : u >= v ? pb : pc
-    best = {
-      lambda,
-      point: {
-        P: horizontal ? pa.P : lambda * demand.P,
-        Mx: lambda * demand.Mx,
-        My: lambda * demand.My
-      },
-      state: {
-        e0: w * pa.state.e0 + u * pb.state.e0 + v * pc.state.e0,
-        kx: w * pa.state.kx + u * pb.state.kx + v * pc.state.kx,
-        ky: w * pa.state.ky + u * pb.state.ky + v * pc.state.ky
-      },
-      resistance: dominant.resistance ?? null,
-      source: { vertices: [pa, pb, pc], weights: [w, u, v] }
-    }
-  }
+    const lambda = horizontal ? pa.P / demand.P : crossing.t
+    if (lambda <= 1e-10 || (best && lambda >= best.lambda)) return
+    best = surfaceIntersectionAt(crossing, lambda, {
+      P: horizontal ? pa.P : lambda * demand.P,
+      Mx: lambda * demand.Mx,
+      My: lambda * demand.My
+    })
+  })
   return best
+}
+
+/** docs/07 §4: independent signed-solid-angle containment, in normalized action space. */
+const constantAxialStart = (surface: PreviewSurface, P: number, direction: Vec3) => {
+  const { forceScale, momentScale } = surfaceActionScales(surface)
+  const angles = new CompensatedScalar()
+  let boundary = false, sideBoundary = false, coplanar = false
+  for (const { vertices } of previewSurfaceTriangles(surface.points, surface.triangles)) {
+    const [a, b, c] = vertices.map(point => [(point.P - P) / forceScale, point.Mx / momentScale, point.My / momentScale] as Vec3)
+    const ab = vecSubtract(b, a), ac = vecSubtract(c, a), normal = vecCross(ab, ac)
+    const norm = Math.hypot(...normal)
+    if (norm === 0) continue
+    const plane = vecDot(a, normal)
+    const horizontalBound = vertices.every(point => point.P === P) && (P === surface.bounds.P[0] || P === surface.bounds.P[1])
+    if (Math.abs(plane) <= PREVIEW_GEOMETRY_TOL * norm) {
+      const aa = vecDot(ab, ab), cc = vecDot(ac, ac), cross = vecDot(ab, ac)
+      const denominator = vecDot(normal, normal)
+      const barycentric = (v: Vec3) => [
+        (cc * vecDot(v, ab) - cross * vecDot(v, ac)) / denominator,
+        (aa * vecDot(v, ac) - cross * vecDot(v, ab)) / denominator
+      ]
+      const [u, v] = barycentric(a.map(value => -value) as Vec3)
+      if (u >= -PREVIEW_GEOMETRY_TOL && v >= -PREVIEW_GEOMETRY_TOL && u + v <= 1 + PREVIEW_GEOMETRY_TOL) {
+        boundary = true
+        sideBoundary ||= !horizontalBound
+      }
+      // Clip a coplanar ray against the triangle's three barycentric half-spaces. A cap
+      // interior is permitted; following any other boundary segment is unresolved geometry.
+      if (!horizontalBound && Math.abs(vecDot(normal, direction)) < 1e-12) {
+        const [du, dv] = barycentric(direction)
+        let lower = 0, upper = Number.POSITIVE_INFINITY
+        for (const [offset, slope] of [[u, du], [v, dv], [1 - u - v, -du - dv]]) {
+          if (slope === 0) { if (offset < -PREVIEW_GEOMETRY_TOL) upper = -1 }
+          else if (slope > 0) lower = Math.max(lower, (-PREVIEW_GEOMETRY_TOL - offset) / slope)
+          else upper = Math.min(upper, (-PREVIEW_GEOMETRY_TOL - offset) / slope)
+        }
+        coplanar ||= upper >= lower && upper > 1e-10
+      }
+    }
+    const lengths = [Math.hypot(...a), Math.hypot(...b), Math.hypot(...c)]
+    angles.add(2 * Math.atan2(vecDot(a, vecCross(b, c)), lengths[0] * lengths[1] * lengths[2] +
+      vecDot(a, b) * lengths[2] + vecDot(b, c) * lengths[0] + vecDot(c, a) * lengths[1]))
+  }
+  if (sideBoundary) return 'geometric-ambiguity' as const
+  // On a closed, oriented surface the solid angle is 0 outside and +/-4pi inside.
+  // Boundary cases were handled above; 2pi separates those topological values.
+  if (!boundary && Math.abs(angles.value()) < 2 * Math.PI) return 'axis-outside-domain' as const
+  if (!Number.isFinite(angles.value()) || coplanar) return 'geometric-ambiguity' as const
+  return 'inside' as const
+}
+
+/**
+ * Intersect the horizontal ray `(Pu, t cos(thetaLoad), t sin(thetaLoad))` with the same surface.
+ * `lambda` scales only the moments. docs/07 section 4 requires `(Pu, 0, 0)` inside the domain and a
+ * unique transverse exit. Containment is independent of ray parity; tangencies and coplanar
+ * ambiguities publish no ratio. The contour route is the independent crossing oracle.
+ */
+export const intersectSurfaceAtConstantAxial = (
+  surface: PreviewSurface,
+  demand: Resultant
+): ConstantAxialIntersection => {
+  if (demand.P > surface.bounds.P[1] || demand.P < surface.bounds.P[0]) return { status: 'axial-outside-domain' }
+  const demandMoment = Math.hypot(demand.Mx, demand.My)
+  if (demandMoment < 1e-9) return { status: 'zero-moment' }
+  // A unit ray in normalized action space keeps the determinant test independent of demand size.
+  const { forceScale, momentScale } = surfaceActionScales(surface)
+  const toUnitRay = momentScale / demandMoment
+  const direction: Vec3 = [0, demand.Mx / demandMoment, demand.My / demandMoment]
+  const start = constantAxialStart(surface, demand.P, direction)
+  if (start !== 'inside') return { status: start }
+  const crossings: SurfaceRayCrossing[] = []
+  visitSurfaceRayCrossings(
+    surface,
+    { P: demand.P, Mx: 0, My: 0 },
+    { P: 0, Mx: demand.Mx * toUnitRay, My: demand.My * toUnitRay },
+    (crossing) => { if (crossing.t > 1e-10) crossings.push(crossing) }
+  )
+  crossings.sort((left, right) => left.t - right.t)
+  // Triangles sharing the crossed edge or vertex report one exit.
+  const exits = crossings.filter((crossing, index) => index === 0 || crossing.t - crossings[index - 1].t > 1e-9)
+  // A tangent at a welded edge/vertex has incident hits in opposing directions.
+  for (const exit of exits) {
+    const signs = crossings.filter(hit => Math.abs(hit.t - exit.t) <= PREVIEW_GEOMETRY_TOL).map(hit => {
+      const [a, b, c] = hit.vertices.map(point => [point.P / forceScale,
+        point.Mx / momentScale, point.My / momentScale] as Vec3)
+      return Math.sign(vecDot(vecCross(vecSubtract(b, a), vecSubtract(c, a)), direction))
+    })
+    if (signs.some(sign => sign !== signs[0])) return { status: 'geometric-ambiguity' }
+  }
+  if (exits.length % 2 === 0) return { status: 'geometric-ambiguity' }
+  if (exits.length > 1) return { status: 'non-unique-exit' }
+  const lambda = exits[0].t * toUnitRay
+  return {
+    status: 'crossing',
+    intersection: surfaceIntersectionAt(exits[0], lambda, { P: demand.P, Mx: lambda * demand.Mx, My: lambda * demand.My })
+  }
+}
+
+const CONSTANT_AXIAL_MESSAGES: Record<Exclude<ConstantAxialIntersection['status'], 'crossing'>, string> = {
+  'axial-outside-domain': 'Pu lies outside the Design axial range, so no moment capacity exists at this axial force.',
+  'zero-moment': 'A zero-moment demand has no moment direction, so the constant-P ratio is not defined.',
+  'axis-outside-domain': 'The point (Pu, 0, 0) lies outside the Design domain, so the constant-P ratio is not defined.',
+  'non-unique-exit': 'The constant-P ray leaves the Design domain more than once, so the ratio is not unique.',
+  'geometric-ambiguity': 'The constant-P ray touches or follows an unresolved Design boundary; no unique transverse exit is qualified.'
 }
 
 const checkRawLoadcaseUtilizationFromSurface = (
   surface: PreviewSurface,
-  loadcase: LoadCombination
+  loadcase: LoadCombination,
+  checkBasis: DemandCheckBasis
 ): LoadcaseQuickCheckResult => {
   const contour = sliceActiveDesignPContour(surface, loadcase.P)
   const fixedP = estimateUtilization(loadcase, contour)
   const proportional = intersectSurfaceWithDemandRay(surface, loadcase)
+  const constantAxial = checkBasis === 'constantAxial' ? intersectSurfaceAtConstantAxial(surface, loadcase) : null
   const demandMoment = demandMomentRadius(loadcase)
   const proportionalUtilization =
     proportional == null
@@ -4859,30 +4333,60 @@ const checkRawLoadcaseUtilizationFromSurface = (
   const equivalentBlock =
     surface.mechanics === 'equivalent-rectangular-block' ||
     surface.analysisOptions.methodId === 'equivalent-block-surface-v1'
-  const unqualifiedFixedDomain = equivalentBlock || surface.strainDomain === 'steel-limited-ultimate'
-  const relativeUncertainty = adaptive
-    ? adaptiveUncertainty
-    : unqualifiedFixedDomain
-      ? null
-      : FIXED_GRID_SCREENING_RELATIVE_UNCERTAINTY
-  const evidence = adaptive
-    ? 'adaptive-sampling-estimate'
-    : unqualifiedFixedDomain
-      ? 'fixed-grid-no-validated-bound'
-      : 'fixed-grid-screening-margin'
-  const classification = classifyUtilization(
-    proportionalUtilization,
-    relativeUncertainty,
-    evidence
-  )
+  // One Fixed rule by project decision: only the stress-strain proportional matrix measured this
+  // margin, so every other check says that it is not a validated bound for that domain.
+  const unvalidatedMargin = !adaptive &&
+    (equivalentBlock || surface.strainDomain === 'steel-limited-ultimate' || constantAxial !== null)
+  const relativeUncertainty = adaptive ? adaptiveUncertainty : FIXED_GRID_SCREENING_RELATIVE_UNCERTAINTY
+  const evidence = adaptive ? 'adaptive-sampling-estimate' : 'fixed-grid-screening-margin'
+  const selected = constantAxial
+    ? constantAxial.status === 'crossing' ? constantAxial.intersection : null
+    : proportional
+  const utilization = constantAxial
+    ? selected && 1 / selected.lambda
+    : proportionalUtilization
+  const classification = constantAxial?.status === 'axial-outside-domain'
+    ? axialOutsideDomainClassification()
+    : classifyUtilization(utilization, relativeUncertainty, evidence)
+  let message = constantAxial && constantAxial.status !== 'crossing'
+    ? CONSTANT_AXIAL_MESSAGES[constantAxial.status]
+    : !constantAxial && proportionalUtilization == null
+      ? 'No proportional demand-ray crossing was found on the design-resistance surface.'
+      : unvalidatedMargin
+        ? `Factored ULS demand checked${constantAxial ? ' at constant P' : ''} against the Fixed design-resistance surface. The 2% screening margin is applied by project decision and is not a validated bound for this check; use Adaptive sampling for a measured estimate.`
+        : constantAxial
+          ? 'Factored ULS demand checked at constant P against the Adaptive 3D design-resistance surface.'
+          : 'Factored ULS demand checked against the 3D design-resistance surface; fixed-P UR is secondary.'
+  // ENG-RES-001: distinguish unavailable evidence from a valid interval crossing UR = 1.
+  // Consumers display this diagnostic; they must not infer its cause from UR or the code profile.
+  if (classification.status === 'indeterminate' && selected) {
+    if (classification.interval.lower !== null && classification.interval.upper !== null) {
+      message += ' The utilization uncertainty interval crosses UR = 1; the verdict is indeterminate.'
+    } else if (adaptive && !adaptiveConverged) {
+      const dimensions = [
+        ...(!surface.directionError.withinTolerance ? ['direction'] : []),
+        ...(!surface.stationError.withinTolerance ? ['station'] : [])
+      ].join(' and ')
+      message += ` Adaptive ${dimensions} sampling has not converged. UR alone cannot determine adequacy; review the sampling error and refinement limits.`
+      if (surface.stationError.reason === 'state-stalled') {
+        message += ' A steel-limit/pole interval has no distinct admissible depth midpoint; further depth subdivision cannot resolve it.'
+      }
+    } else {
+      message += ' Utilization or its uncertainty estimate is missing or invalid; adequacy cannot be determined.'
+    }
+  }
   return {
     loadcaseId: loadcase.id,
     demand: loadcase,
-    utilizationDefinition: 'proportional3D',
+    utilizationDefinition: checkBasis,
+    ...(constantAxial ? {
+      constantAxialStatus: constantAxial.status,
+      constantAxialCapacityMoment: selected ? demandMoment * selected.lambda : null
+    } : {}),
     capacityMultiplier:
-      proportional && Number.isFinite(proportional.lambda) ? proportional.lambda : null,
+      selected && Number.isFinite(selected.lambda) ? selected.lambda : null,
     demandMomentDirection: demandMoment > 1e-9 ? Math.atan2(loadcase.My, loadcase.Mx) : null,
-    utilization: proportionalUtilization,
+    utilization,
     proportionalUtilization,
     fixedPUtilization: fixedP.utilization,
     fixedPDemandMoment: demandMoment,
@@ -4890,41 +4394,12 @@ const checkRawLoadcaseUtilizationFromSurface = (
     adequate: classification.status === 'indeterminate' ? null : classification.status === 'adequate',
     adequacy: classification.status,
     utilizationInterval: classification.interval,
-    capacityPoint: proportional?.point ?? null,
-    resistance: proportional?.resistance ?? null,
+    capacityPoint: selected?.point ?? null,
+    resistance: selected?.resistance ?? null,
     contourPoint: fixedP.point,
-    message:
-      proportionalUtilization == null
-        ? 'No proportional demand-ray crossing was found on the design-resistance surface.'
-        : !adaptive && unqualifiedFixedDomain
-          ? 'Factored ULS demand intersected the Fixed Design surface, but no validated Fixed-grid uncertainty bound exists for this material domain; the verdict is indeterminate. Use Adaptive sampling for a measured estimate.'
-          : 'Factored ULS demand checked against the 3D design-resistance surface; fixed-P UR is secondary.'
+    message
   }
 }
-
-export const projectedBoundaryDepth = (
-  points: ReadonlyArray<{ x: number; y: number }>,
-  nx: number,
-  ny: number
-) => {
-  let minimum = Number.POSITIVE_INFINITY
-  let maximum = Number.NEGATIVE_INFINITY
-  for (const point of points) {
-    const projection = nx * point.x + ny * point.y
-    minimum = Math.min(minimum, projection)
-    maximum = Math.max(maximum, projection)
-  }
-  return maximum - minimum
-}
-
-/**
- * Outer-boundary vertices of every solid, structurally typed so the stress-strain `SectionGeometry`
- * and the prepared equivalent-block section both feed one implementation.
- */
-export const sectionBoundaryPoints = (
-  section: { solids: ReadonlyArray<{ outer: ReadonlyArray<{ x: number; y: number }> }> }
-): Array<{ x: number; y: number }> =>
-  section.solids.flatMap((solid) => solid.outer.map(({ x, y }) => ({ x, y })))
 
 /**
  * KDS Appendix 3.2 makes minimum eccentricity a factored-demand rule. It is deliberately applied
@@ -4933,18 +4408,19 @@ export const sectionBoundaryPoints = (
  */
 export const checkLoadcaseUtilizationFromSurface = (
   surface: PreviewSurface,
-  loadcase: LoadCombination
+  loadcase: LoadCombination,
+  checkBasis: DemandCheckBasis = 'proportional3D'
 ): LoadcaseQuickCheckResult => {
   const boundary = surface.sectionBoundaryPoints ?? []
   const candidates = boundary.length === 0
     ? []
     : minimumEccentricityCandidates(surface.designBasis, loadcase, (nx, ny) =>
       projectedBoundaryDepth(boundary, nx, ny))
-  if (candidates.length === 0) return checkRawLoadcaseUtilizationFromSurface(surface, loadcase)
+  if (candidates.length === 0) return checkRawLoadcaseUtilizationFromSurface(surface, loadcase, checkBasis)
 
   const checked = candidates.map((candidate) => {
     const adjusted = { ...loadcase, Mx: candidate.Mx, My: candidate.My }
-    const result = checkRawLoadcaseUtilizationFromSurface(surface, adjusted)
+    const result = checkRawLoadcaseUtilizationFromSurface(surface, adjusted, checkBasis)
     return {
       ...result,
       demand: loadcase,
@@ -4962,14 +4438,15 @@ export const checkLoadcaseUtilizationFromSurface = (
 
 export const checkLoadcasesUtilizationFromSurface = (
   surface: PreviewSurface,
-  loadcases: LoadCombination[]
-): LoadcaseQuickCheckResult[] => loadcases.map((loadcase) => checkLoadcaseUtilizationFromSurface(surface, loadcase))
+  loadcases: LoadCombination[],
+  checkBasis: DemandCheckBasis = 'proportional3D'
+): LoadcaseQuickCheckResult[] => loadcases.map((loadcase) => checkLoadcaseUtilizationFromSurface(surface, loadcase, checkBasis))
 
 /**
  * Attach the governing design check to a converged inverse state.
  *
  * The inverse solve answers "what strain plane balances this demand"; it does not answer "is the
- * section adequate". Adequacy is the proportional 3D ray against the **design** surface, and the
+ * section adequate". Adequacy is the declared basis against the **design** surface, and the
  * inverse's own `utilization` is a fixed-P estimate on the contour it was handed. Composing them in
  * one place stops a second consumer — a report, a batch check — from publishing the diagnostic
  * where the governing number belongs.
@@ -4979,11 +4456,12 @@ export const applyDesignCheckToInverse = (
   check: LoadcaseQuickCheckResult
 ): InversePreviewResult => ({
   ...inverse,
-  utilization: check.proportionalUtilization,
+  utilization: check.utilization,
   proportionalUtilization: check.proportionalUtilization,
   fixedPUtilization: check.fixedPUtilization,
   designCheck: {
     evaluated: true,
+    definition: check.utilizationDefinition,
     adequacy: check.adequacy,
     utilizationInterval: check.utilizationInterval
   },
@@ -5183,62 +4661,6 @@ export const solveInversePreview = (
     contour,
     codeDemand
   )
-
-export type SectionFieldSample = {
-  x: number
-  y: number
-  area: number
-  strain: number
-  stress: number
-  kind: 'concrete' | 'rebar'
-}
-
-export type SectionFieldRebar = {
-  id: number
-  x: number
-  y: number
-  dia: number
-  area: number
-  strain: number
-  stress: number
-  /** Axial force in the bar, N (compression positive with the strain convention). */
-  force: number
-}
-
-/** One mesh triangle with vertex field values for continuous canvas shading. */
-export type SectionFieldTriangle = {
-  ax: number
-  ay: number
-  bx: number
-  by: number
-  cx: number
-  cy: number
-  strainA: number
-  strainB: number
-  strainC: number
-  stressA: number
-  stressB: number
-  stressC: number
-}
-
-export type SectionFieldMap = {
-  mechanics?: 'stress-strain-integration' | 'equivalent-rectangular-block'
-  origin: AnalysisOrigin
-  /** Legacy quadrature samples (debug / hover). */
-  samples: SectionFieldSample[]
-  /** Clipped-cell triangles for stress-strain integration; empty for analytic equivalent blocks. */
-  triangles: SectionFieldTriangle[]
-  rebars: SectionFieldRebar[]
-  bounds: { minX: number; maxX: number; minY: number; maxY: number }
-  mesh: ConcreteMeshReport
-  equivalentBlock?: {
-    neutralAxisAngle: number
-    neutralAxisDepth: number
-    blockDepth: number
-    compressionStress: number
-    geometry: Array<{ outer: Array<{ x: number; y: number }>; holes: Array<Array<{ x: number; y: number }>> }>
-  }
-}
 
 /** Mesh samples colored by strain/stress for a known strain plane (loadcase inverse state). */
 export const buildSectionFieldMapFromPrepared = (

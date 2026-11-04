@@ -55,7 +55,7 @@ Current UI note:
 
 ## 3. Current Implementation Status
 
-As of 2026-09-03:
+Implementation map as of 2026-11-04 (Preview; no release approval):
 
 - Geometry editor, material editor, rebar input, project JSON round trip, Results preview plots, and
   loadcase entry are implemented as **preview** capability.
@@ -72,10 +72,13 @@ As of 2026-09-03:
   [`12-calculation-models-defaults-and-workflows.md`](12-calculation-models-defaults-and-workflows.md).
 - Every stress-strain and equivalent-block profile uses the shared `unified-27-v2` schedule: two
   exact poles, six outside/on-section `c/D` states, and nineteen inside-section `εₛ/εy` states.
-  Production station/direction refinement and automatic transition/event insertion are disabled;
-  both mechanics use 36 fixed directions.
+  Fixed uses 36 directions and no midpoint refinement. Independent Adaptive uses its own seed
+  schedule and per-meridian station/direction refinement. Finite endpoint hardening supplements
+  the base schedule with its documented material-derived transition layers; clipped geometry can
+  add geometric vertices without adding physical strain stations.
 - Nominal/reference and design-resistance surfaces are separated. Factored ULS loadcases use a
-  governing 3D proportional check; Fixed-P utilization is a secondary diagnostic.
+  default governing 3D proportional check. An explicit `constantAxial` basis selects the qualified
+  Constant-P query; the other ratio remains secondary.
 - The KDS 2024 current-set profiles (with resistance clauses explicitly traced to KDS 14 20 10:2021
   and KDS 14 20 20:2022) and ACI 318-19(22) block profile are implemented as `draft` design
   previews; no profile is approved for released engineering use. EN 1992-1-1:2004 is selectable only

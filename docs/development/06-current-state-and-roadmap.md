@@ -1,171 +1,93 @@
 # Current-State Assessment and Roadmap
 
-Assessment date: **2026-08-08**.
+Implementation map: **2026-11-04**. Status: **Stage 1 cross-section Preview**.
+This map records capability and remaining gates, not release approval. Engineering meaning remains
+in the control-map authorities. Historical task packets are dated evidence for their recorded
+working tree/runtime rather than a substitute for fresh verification.
 
-Steel-hardening capability addendum: **2026-11-03**. KDS and EN now expose plateau/immediate
-hardening choices per grade. KDS records the inclined branch as a project steel modification;
-EN remains a recommended-value preview without a National Annex. The same compiled definition
-drives the supported mechanics, inverse/field evidence, material graph, JSON/editable workbook and
-calculation exports. Finite-hardening fibre domains add explicit steel-controlled transition layers
-to the base schedule and refine them in Adaptive. Their Fixed checks have no qualified uncertainty
-bound and remain indeterminate. Independent interpolation, exhaustive group comparisons, mixed-grade
-workbook recalculation and a dense independently enumerated strain polygon are recorded in the
-[implementation packet](../task-packets/2026-11-03-reinforcing-steel-post-yield-plan.md). The baseline
-capability and release work below are not a new release assessment.
+## 1. Implemented capability
 
-This file describes implemented capability, not certification. Exact model formulas and defaults are
-in [`../12-calculation-models-defaults-and-workflows.md`](../12-calculation-models-defaults-and-workflows.md).
-
-## 1. Capability matrix
-
-| Area | Implemented now | Remaining gate |
+| Area | Current owner and capability | Remaining acceptance boundary |
 |---|---|---|
-| Project | canonical v2 exports with stored rebar area; explicit diameter-only v1 reader; profile, geometry, materials, factored loadings, model-specific options and DesignBasis; exact canonical round trip | accepted-result artifact and signed release metadata |
-| Profile selection | one Materials selection atomically binds KDS stress-strain, KDS block, ACI block, or either `Custom` mechanics and defaults; the profile table is the single owner of mechanics/material-standard/resistance-profile coherence | add only edition-scoped profiles with independent review evidence |
-| Geometry | multiple solids/holes, shared fail-closed topology and circular-bar disk/overlap gate, exact properties, clipping, triangle/quadrature mesh | persisted multi-region bar parent, code-specific cover/spacing, normalization and complete acceptance UX |
-| Materials | persisted concrete/steel definitions, shared physics validator, compiled stress/tangent laws, material support gates, and package-owned ordinate tests for every implemented law | finish authority-derived clause verification for every declared scope |
-| Stress-strain kernel | prepared mesh, shared 27-state default, 36 fixed directions, full fields, inverse Newton | accepted-result numerical-uncertainty gate and larger independent oracle set |
-| Equivalent-block kernel | shared fixed 27-state schedule, standard-independent exact clipping, forward evaluator, exact-refined inverse solvers, rupture/admissibility, block field | independent clause calculations and additional commercial cross-checks |
-| KDS block adapter | KDS 14 20 20 parameter table, `a=beta1 c`, block stress, KDS phi transition and axial cap | named structural-code review and release status above draft |
-| ACI block adapter | ACI 318-19(22) beta1, Whitney stress, phi transition and axial cap | named structural-code review and release status above draft |
-| Custom block adapter | user-declared beta1/block stress/epsCu, either transition rule shape, elastic-perfectly-plastic, bilinear or tabulated steel; unit-tested to reproduce the ACI and KDS adapters exactly when given their parameters | none — it is `user-defined` by construction and is never promoted |
-| Resistance | Nominal/Design separation, global-factor and design-material formats, single ledger scaling, axial cap | accepted-result/profile certification workflow |
-| Demand | explicit `factoredULS`, governing 3D proportional ray, secondary fixed-P diagnostic, three-state UR screening | immutable accepted check artifact and batch governance |
-| Results | fixed-grid 3D/fixed-P, direct fixed/exact vertical meridians, model-specific fields/evidence | final accepted-result-only presentation rules |
-| Display units | Metric, US Customary and independent quantity groups for editors, charts and preview reports; fixed mm/N/MPa/N·mm calculation data; versioned unit-declared editable workbooks | released-report status remains subject to the engineering gates below |
-| Rebar area/catalog | editable independent As in generator/list; one-time equation or published catalog fills; stored As used by both mechanics and reports; explicit source/edition labels | published reference subsets are not qualified current normative design profiles; see [scope and evidence](11-rebar-area-and-catalogs.md) |
-| Report/export | stress-strain and equivalent-block formula-audited result workbooks; stress-strain mesh Excel/DXF; a format-neutral `ReportModel` and a deterministic, vector, watermarked preview PDF with per-combination detail selection | immutable accepted result, **released** PDF, and cryptographic result identity |
-| Performance | production-bundled worker, prepared-analysis/block surface caches, worker-owned surface handles for loadcase checks, mesh/sampling/pipeline benchmarks | compact plotting DTO, memory budgets, larger batches, cooperative cancellation checkpoints |
+| Project | `@pm/project`: canonical v3 with load reference/stored As; v1 diameter-only and v2 centroidal readers; DesignBasis v3/options v1 are separate contracts | immutable result identity and complete provenance |
+| Selection | one profile registry binds mechanics, material standard, resistance profile and options | exact-edition independent profile review |
+| Geometry | shared topology, identity, full bar-disk/overlap gates; exact boundary, properties, quadrature; source-bound mesh and resource preflight | normalization/source mapping, persisted region parents and code-specific detailing |
+| Materials | validated compiled laws/tangents, consistent effective yield data, finite evaluation and endpoint hardening | complete clause/physical-validation matrix |
+| Stress-strain | prepared mesh, exact-support states, independent Fixed/Adaptive sampling, forward/Newton and field/audit DTOs | integration/utilization uncertainty and independent reference coverage |
+| Equivalent block | separate clipped-polygon kernel/adapters, independent sampling, inverse and admissibility | complete inverse coverage and independent profile qualification |
+| Resistance | retained reference ledger, exactly one global-factor or design-material route, geometric axial clipping | verified profile and accepted-result gating |
+| Demand | factored ULS, default proportional 3D or declared Constant-P basis, common three-state classification | immutable accepted checks and targeted error verification |
+| Results | neutral contracts/audit assembly in `@pm/results`, separate constitutive owners, indexed surfaces, connected Fixed-P paths and exact-beta inspection | accepted/current/stale history and topology certification |
+| Units | presentation-only `@pm/units`; canonical mm/N/MPa/N mm through workers and kernels | released-report qualification |
+| Reinforcement | stored diameter/As, one-time Equation/Catalog fills and source snapshots | qualified normative catalogs and code detailing |
+| Reports | independently recalculated workbooks, shared deterministic preview-PDF model, mesh/point/trace exports | accepted-result eligibility, hashes/signatures and approval |
+| Execution | shared worker/fallback use cases, worker-owned handles, bounded LRU reuse, termination/replay, disposable cancellable JSON-import worker and lazy exports | cooperative checkpoints and complete time/peak-memory budgets |
 
-## 2. Closed hazards
+## 2. Sampling and query status
 
-- A Whitney law is no longer evaluated as a local fiber stress. Fiber/material requests for that law
-  fail closed, while the ACI calculation profile routes to the implemented equivalent-block adapter.
-- Missing steel references, empty concrete, mesh resource excess, and failed mesh self-checks are
-  typed fatal errors.
-- Both mechanics reject nonphysical material definitions. Project import and both preparation paths
-  share the same simple/nested/disjoint topology and full circular-bar disk/overlap gate.
-  Code-specific cover/clear-spacing and persisted multi-region parent assignment remain separate
-  geometry/detailing rules.
-- KDS runtime and project parsing reject nonprestressing `fy > 600 MPa`; KDS table models stop at
-  `fck = 90 MPa` unless a documented modified user stress-strain model is selected.
-- Every mechanics/profile now reads the same `unified-27-v2` station schedule and uses 36 fixed
-  directions. Production surface construction performs no station/direction midpoint probes.
-- Automatic design-factor transition/event stations are disabled. Five fixed tensile-strain ratios
-  increase resolution in the high-curvature yield range.
-- Project exports use v2; v1 remains an explicit diameter-only reader. DesignBasis v3, options v1,
-  method IDs and the shared `unified-27-v2` schedule retain their independent contracts. Legacy
-  area materialization is isolated and documented; no general migration framework is introduced.
-- Nominal resistance, Design resistance, and factored Demand are different DTO stages and UI terms.
-- KDS `P0` is now a code reference point; the high-strength flexural surface closes on its
-  eta-reduced physical compression limit, eliminating an unsupported interpolation band.
-- Legacy fixed 27 x 36 stress-strain checks use that mechanics' `@pm/results` two-percent screening
-  interval. Fixed equivalent-block checks fail closed as indeterminate because its measured unsafe
-  over-prediction exceeds that borrowed envelope. Adaptive checks fail indeterminate without
-  converged error evidence.
-- Next production/dev builds use the Webpack worker pipeline because the current Turbopack route
-  emitted the worker TypeScript as media. Loadcase checks reuse a worker-owned surface handle rather
-  than cloning the multi-megabyte surface back to the worker.
-- Declared steel rupture strain is enforced in the block surface and inverse result; cap-face states
-  are explicitly marked strain-unevaluated.
-- Failed exact block refinement is `mesh-fallback`, never reported as converged, and equilibrium
-  residuals are computed from the exact response rather than reconstructed by identity.
-- Validated maximum sampling sizes and imported polygon extents use reduction loops rather than
-  argument-spread extrema, avoiding engine stack limits.
-- The equivalent-block backend is selected by mechanics, not by excluding one profile id, so a newly
-  added fibre profile can no longer fall through to a block adapter.
-- Both result surfaces declare their `mechanics`, so a consumer never re-derives it from a method id.
-- The governing design check is composed onto an inverse state in one place, so a second consumer
-  cannot publish the fixed-P diagnostic where the governing utilization belongs.
-- PDF and Excel copy the composed three-state decision and uncertainty interval; they no longer
-  create a second `UR <= 1` adequacy rule.
-- Stress-strain force, moment, contribution-ledger, and tangent reductions use compensated sums,
-  with a fiber-order regression test.
+Fixed defaults to `unified-27-v2`, 27 states by 36 directions. Endpoint hardening can add its
+material-derived layers; axial clipping adds geometric points. Adaptive is independent, with
+per-meridian refinement and indexed topology; unequal rows are never paired by array ordinal.
+Root 05/06/12 and the project registry own actual seeds, limits and convergence evidence.
 
-## 3. Consistency hazards found by the documentation audit
+Every Fixed verdict uses the project-selected 2% screening policy in engineering/05 section 4.
+Its measured scope is stress-strain proportional sampling. The use for block, finite-hardening
+and Constant-P cases is explicitly unvalidated; it is not a universal capacity-error bound.
+Adaptive remains indeterminate when either station or direction convergence fails.
 
-- **Equivalent-block `My` sign boundary:** closed. Stress-strain and block now use
-  `My = +sum(F*(x-x0))` throughout the kernel ledgers, bridge/UI, report model, and Excel formulas.
-  An asymmetric-section regression checks concrete and steel contributions independently.
-- **Equivalent-block workbook:** closed. `@pm/report/equivalent-block.ts` publishes the block
-  ledger — clipped polygon with a shoelace reconciliation, `c`, `a`, `beta1`, block area/centroid,
-  the bar ledger, the resistance stage and the solver evidence — and `npm run test:excel-block`
-  recalculates it in an independent formula engine against the kernel.
-- **One solve behind two demand-check formats:** closed. `@pm/report/model/loadcase-solutions.ts`
-  owns the per-loadcase inverse, and both the PDF report model and `excel/demand-check.ts` read it,
-  so the report and the workbook cannot publish two utilizations for one combination.
-  `npm run test:demand-check` recalculates the exported workbook in an independent formula engine,
-  checks that each inverse sheet's formula ledger reproduces the kernel's own response, and compares
-  the workbook combination table with the PDF model row for row.
+The Fixed-P repair preserves triangle-cut adjacency, separate loops and cap perimeters. The block
+Adaptive repair retains the combined facet estimator and original resource limits. Two documented
+KDS finite-steel/pole intervals remain CHECK with explicit `state-stalled` evidence; they need a
+separately reviewed admissible continuation. Two pre-existing AS hollow proportional exact inverse
+cases remain unavailable physical states. Surface convergence does not remove those limitations.
+See [the repair packet](../task-packets/2026-11-04-fixed-p-adaptive-repair.md).
 
-## 4. Numerical evidence for the unified station default
+## 3. Package and input boundaries
 
-The permanent `bench:strain-sampling` harness uses five structural geometries and compares the
-shared fixed 27 x 36 surface with a 144-direction, independently station-refined reference. It
-checks every non-cap reference vertex, reports signed under/over prediction, and fails on the
-declared empirical regression envelope. The separate read-only P16 gate compares exact fixed-P
-anchors with a committed external UMD transcription and records the understood pure-compression
-endpoint-definition difference. Cross-model tests additionally assert the exact criterion list,
-both poles, all four equivalent-block profiles, workbook export, schema parsing, and
-surface/inverse reuse.
+The mechanics remain independent. `@pm/results/contracts` owns common DTOs; `@pm/results/audit`
+assembles existing trace operands without selecting a material law or resistance policy. Existing
+`@pm/analysis` public exports remain available. Direct dependencies belong in the consumer manifest;
+hoisting is not an ownership contract.
 
-## 5. Current P0 blockers before engineering release
+Public preparation rejects another section's mesh. Compilation rejects invalid or contradictory
+parameters and finite arithmetic boundaries are explicit. JSON byte/entity, geometry and material
+preflight runs before expensive topology/compilation. These are software work bounds, not accuracy
+or engineering applicability limits. See the audit-remediation packet for current evidence.
 
-1. **No accepted-result contract.** Preview surface/check DTOs are not a signed, immutable design
-   artifact with complete input and implementation hashes.
-2. **Profiles remain draft for release purposes.** Clause-level unit tests exist, but independent
-   calculations and named discipline review are not complete.
-3. **Numerical uncertainty is not yet a release gate.** Quick checks now classify uncertainty, but
-   the product does not yet prevent every preview report/export after a missed tolerance.
-4. **KDS Appendix biaxial minimum eccentricity needs clause sign-off.** The preview preserves a
-   nonzero resultant-moment direction and uses projected section depth. Equivalence to applying the
-   minimum independently about both principal axes, including every sign combination, has not been
-   established by independent discipline review.
-5. **Geometry/material verification matrix is incomplete.** More topology, high-strength,
-   multi-material, and property-based cases are required.
-6. **Final report release is incomplete.** Both Excel workbooks and the PDF are audit previews. The
-   PDF is deterministic and structurally verified, which is what a result-identity hash over it
-   would need, but it is generated from a preview result: the accepted-result gate, the provenance
-   signature and the approval fields remain open, and the watermark says so on every page.
+## 4. Remaining release gates
 
-## 6. P1 engineering and architecture work
+1. **Result integrity:** immutable scenarios/results, dependency/profile identity, canonical hashes,
+   current-state match and signed release metadata remain incomplete.
+2. **Design-code verification:** implemented profiles remain draft/user-defined; independent
+   calculations, exact-edition applicability and named structural review are not release-qualified.
+3. **Numerical uncertainty:** integration refinement, targeted demand-utilization verification and
+   combined uncertainty are not complete accepted-result gates.
+4. **KDS Appendix interpretation:** resultant-direction minimum eccentricity has not received
+   independent sign-off against separate principal-axis application for every sign combination.
+5. **Geometry/material matrix:** normalization, region assignment, thin-feature/multi-material
+   acceptance, detailing and complete invariant/physical-validation evidence remain incomplete.
+6. **System/report release:** cooperative cancellation, full memory/time limits, immutable history,
+   renderer eligibility, signatures and named residual-risk acceptance remain open.
 
-- add progress/cooperative-cancellation checkpoints to expensive production builds;
-- add targeted refinement around the governing demand intersection and report utilization drift;
-- define an immutable result identity covering canonical inputs, options, profile, package versions,
-  effective sampling, warnings, and solver evidence;
-- extend independent analytical and commercial-program comparison fixtures for both mechanics;
-- finish model-specific Results field presentation and report tables without duplicating formulas in
-  React or workbook code;
-- drive a second output format from the existing `ReportModel` rather than a second renderer;
-- reduce large editor components without moving engineering ownership into UI helpers.
+Passing an aggregate command cannot promote Preview, a draft profile or a diagnostic inverse to
+accepted/released engineering output. Gate identities and approvals remain in engineering/06/root 09.
 
-## 7. Rules that remain fixed
+## 5. Verification entry points
 
-- one calculation-profile selection in Materials owns model/code/default coherence;
-- the two numerical kernels remain independent and communicate only through common input/result
-  contracts;
-- stress-strain mesh controls never enter the equivalent-block DTO;
-- standard-specific `beta1`, block stress, strain limits, phi rules, and caps live in code adapters or
-  DesignBasis, never in the generic block kernel;
-- all demand used by the governing check is factored ULS;
-- the base station schedule is owned only by `@pm/stations` and identified by
-  `unified-27-v2` in both analysis DTOs; the finite-steel boundary owner supplements it with the
-  explicitly documented material-derived layers;
-- every result-affecting default change updates code, tests, benchmarks, schema documentation, UI
-  help, and report evidence in one change set.
+`npm run lint` runs source/architecture, documentation, traceability and TypeScript gates. `npm test`
+adds owner/application tests, ADSEC/CAD, project round trips, independent workbook recalculation and
+preview-PDF data/reproducibility checks. Numerical work also runs `bench:strain-sampling`,
+`bench:equivalent-block`, `bench:pipelines`, `bench:sampling-modes`, the declared-runtime fingerprint
+and `verify:p16`. Build/bundle and dependency advisory gates are separate system checks.
 
-## 8. Verification commands
+Exact fingerprint replay requires the recorded runtime/platform. Portable replay retains exact
+structure/state data and only the approved resultant-roundoff allowance. P16 retains its archived
+v1 input, compares through the documented canonical export boundary and retains external numbers.
 
-```text
-npm run typecheck
-npm run test
-npm run build
-npm run bench:strain-sampling
-npm run bench:equivalent-block
-npm run bench:pipelines
-npm run bench:verify
-```
+## 6. Change records
 
-Passing these commands supports regression confidence. It does not replace structural-code approval
-or justify changing a profile from `draft` to a released/verified design status.
+- [Programming-audit remediation](../task-packets/2026-11-04-programming-audit-remediation.md)
+- [Fixed-P and Adaptive repair](../task-packets/2026-11-04-fixed-p-adaptive-repair.md)
+- [Hardening implementation](../task-packets/2026-11-03-reinforcing-steel-post-yield-plan.md)
+- [Constant-P basis](../task-packets/2026-11-04-constant-p-check-basis.md)
+- [Demand verdict matrix](../task-packets/2026-11-04-demand-verdict-matrix.md)

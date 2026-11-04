@@ -126,7 +126,7 @@ test('an unused hardening grade cannot change the active plateau surface', () =>
   assert.deepEqual(surface.points, other.points)
 })
 
-test('Fixed hardening checks do not borrow the qualified plateau screening margin', () => {
+test('Fixed hardening checks use the 2% margin and state that it is unvalidated', () => {
   const { materials, basis } = setup('kds-2024-stress-strain')
   const prepared = prepareAnalysis(section, rebars, materials)
   const options = createAnalysisOptionsForProfile('kds-2024-stress-strain')
@@ -134,8 +134,9 @@ test('Fixed hardening checks do not borrow the qualified plateau screening margi
   const surface = buildDesignPreviewSurfaceFromPrepared(prepared, materials, basis, options)
   const check = checkLoadcaseUtilizationFromSurface(surface, createLoadCombination({ id: 2, name: 'Fixed domain', P: 100000, Mx: 1000000, My: 0 }))
   assert.ok(check.proportionalUtilization !== null)
-  assert.equal(check.adequacy, 'indeterminate')
-  assert.equal(check.utilizationInterval.evidence, 'fixed-grid-no-validated-bound')
+  assert.equal(check.adequacy, check.proportionalUtilization <= 0.98 ? 'adequate' : check.proportionalUtilization > 1.02 ? 'inadequate' : 'indeterminate')
+  assert.equal(check.utilizationInterval.evidence, 'fixed-grid-screening-margin')
+  assert.match(check.message, /not a validated bound/)
 })
 
 test('KDS Appendix compiles reduced strength at the same Es exactly once in both mechanics', () => {

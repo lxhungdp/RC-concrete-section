@@ -21,7 +21,7 @@ for (const file of ['docs/examples/realistic-sections/KDS-REAL-05-complex-stress
     const input = { section: sectionGeometryFromGeometryInput(geometry), rebars: geometryInputRebars(geometry),
       materialStore: materials, analysisOptions: analysis, designBasis: design, calculationProfileId }
     const { surface } = buildPreviewSurfaceFallback(input)
-    const checks = checkLoadcasesFallback({ surface, loadcases: loadings.combinations })
+    const checks = checkLoadcasesFallback({ surface, checkBasis: 'proportional3D', loadcases: loadings.combinations })
     const initial = JSON.stringify({ project, surface, checks })
     const reportInput = { ...input, surface, loadcases: loadings.combinations, detailLoadcaseIds: [loadings.combinations[0].id],
       projectName: project.meta.name, projectInformation: project.meta.information, sectionName: geometry.name }
@@ -46,7 +46,7 @@ for (const file of ['docs/examples/realistic-sections/KDS-REAL-05-complex-stress
       }
     }
     assert.equal(JSON.stringify({ project, surface, checks }), initial)
-    assert.deepEqual(checkLoadcasesFallback({ surface, loadcases: loadings.combinations }), checks)
+    assert.deepEqual(checkLoadcasesFallback({ surface, checkBasis: 'proportional3D', loadcases: loadings.combinations }), checks)
   })
 }
 

@@ -1,4 +1,5 @@
 import { isValidEntityId } from './ids'
+import { geometryResourceLimitIssue, geometryInputResourceLimitIssue } from './resource-limits'
 import type { GeometryInput } from './section-input'
 
 type Coordinate = { x: number; y: number }
@@ -18,6 +19,7 @@ export type SectionValidationRebar = {
 }
 
 export type GeometryValidationIssueCode =
+  | 'GEOMETRY_RESOURCE_LIMIT'
   | 'INVALID_ENTITY_ID'
   | 'DUPLICATE_ENTITY_ID'
   | 'NON_FINITE_COORDINATE'
@@ -204,6 +206,8 @@ const rebarRadius = (bar: SectionValidationRebar) => {
 export const validatePolygonSection = (
   input: PolygonSectionValidationInput
 ): GeometryValidationIssue[] => {
+  const resourceIssue = geometryResourceLimitIssue(input)
+  if (resourceIssue) return [{ code: 'GEOMETRY_RESOURCE_LIMIT', path: 'geometry', message: resourceIssue }]
   const issues: GeometryValidationIssue[] = []
   const tolerance = BASE_TOLERANCE * sectionScale(input.solids)
   const validRings = new Set<readonly Coordinate[]>()
@@ -365,6 +369,8 @@ const duplicateIdIssues = (
 }
 
 export const validateGeometryInput = (input: GeometryInput): GeometryValidationIssue[] => {
+  const resourceIssue = geometryInputResourceLimitIssue(input)
+  if (resourceIssue) return [{ code: 'GEOMETRY_RESOURCE_LIMIT', path: 'geometry', message: resourceIssue }]
   const issues: GeometryValidationIssue[] = []
   issues.push(...duplicateIdIssues(input.outers, 'outers'))
   issues.push(...duplicateIdIssues(input.outers.flatMap((outer) => outer.holes), 'holes'))

@@ -5,9 +5,10 @@
   "license": "MIT",
   "type": "module",
   "main": "src/index.ts",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "dependencies": {
-    "@pm/analysis": "0.1.0",
     "@pm/code-aci318": "0.1.0",
     "@pm/code-as3600": "0.1.0",
     "@pm/code-custom": "0.1.0",
@@ -16,6 +17,10 @@
     "@pm/equivalent-block": "0.1.0",
     "@pm/geometry": "0.1.0",
     "@pm/materials": "0.1.0",
-    "@pm/project": "0.1.0"
+    "@pm/project": "0.1.0",
+    "@pm/results": "0.1.0"
+  },
+  "devDependencies": {
+    "@pm/analysis": "0.1.0"
   }
 }

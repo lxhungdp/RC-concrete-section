@@ -55,6 +55,7 @@ import {
   type AnalysisOptions
 } from '@pm/project'
 import { createEn1992DesignBasis, setMaterialFactorComponentValue } from '@pm/design'
+import { canonicalVerificationProject, verificationInputMismatch } from '../project-input'
 
 const ROOT = process.cwd()
 const SOURCE = resolve(ROOT, 'docs/examples/reference-case/source/P16_Column_ULS_R _260730_콘크리트 커브 추가수정.md')
@@ -898,9 +899,10 @@ if (UPDATE_EXPECTED) {
   writeFileSync(PROJECT_OUT, projectText, 'utf8')
   writeFileSync(RESULT_OUT, resultText, 'utf8')
 } else {
-  const committedProject = readFileSync(PROJECT_OUT, 'utf8')
-  if (committedProject !== projectText) {
-    throw new Error('P16 project fixture is stale; review the change and run verify.ts --update explicitly.')
+  const committedProject = canonicalVerificationProject(readFileSync(PROJECT_OUT, 'utf8'))
+  const inputMismatch = verificationInputMismatch(JSON.parse(projectText) as unknown, JSON.parse(serializeProjectDocument(committedProject)) as unknown)
+  if (inputMismatch) {
+    throw new Error(`P16 canonical project input differs: ${inputMismatch}. Review the engineering/identity change before updating its fixture.`)
   }
   verifyCommittedRegression(JSON.parse(resultText) as unknown, readExpected())
 }

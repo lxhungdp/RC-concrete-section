@@ -1,7 +1,8 @@
 import {
   parseProjectDocument,
   serializeProjectDocument,
-  type CalculationProfileId
+  type CalculationProfileId,
+  type PmProjectDocument
 } from '@pm/project'
 
 export const RECENT_PROJECT_STORAGE_KEY = 'pm-column-designer:recent-project:v1'
@@ -21,13 +22,18 @@ export const recentProjectFromRaw = (raw: unknown): RecentProject | null => {
   if (raw == null) return null
   const parsed = parseProjectDocument(raw)
   if (!parsed.ok) return null
+  return recentProjectFromValidatedDocument(parsed.document)
+}
+
+/** Accept a successful project-parser result without repeating topology validation on the UI. */
+export const recentProjectFromValidatedDocument = (document: PmProjectDocument): RecentProject => {
   return {
-    raw: serializeProjectDocument(parsed.document),
-    id: parsed.document.meta.id,
-    name: parsed.document.meta.name || parsed.document.inputs.geometry.name || 'Column project',
-    createdAt: parsed.document.meta.createdAt,
-    updatedAt: parsed.document.meta.updatedAt,
-    calculationProfileId: parsed.document.inputs.calculationProfileId
+    raw: serializeProjectDocument(document),
+    id: document.meta.id,
+    name: document.meta.name || document.inputs.geometry.name || 'Column project',
+    createdAt: document.meta.createdAt,
+    updatedAt: document.meta.updatedAt,
+    calculationProfileId: document.inputs.calculationProfileId
   }
 }
 

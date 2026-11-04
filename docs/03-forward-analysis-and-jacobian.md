@@ -3,6 +3,10 @@
 The forward evaluator is the trusted computational kernel. It is pure, deterministic, independent
 of design-code reduction rules, and evaluated only in the declared reference frame.
 
+Public preparation/evaluation rejects a non-finite origin or generalized strain before material
+evaluation. Force/moment products, compensated reductions and final values must also remain finite;
+overflow is a typed blocking arithmetic failure, never a zero-stress or zero-resultant substitute.
+
 ## 1. Generalized strains and resultants
 
 This section documents the project-wide resultant convention implemented by both `@pm/analysis`

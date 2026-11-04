@@ -1,34 +1,5 @@
-import {
-  analysisInputKey,
-  applyDesignCheckToInverse,
-  buildDesignPreviewSurfaceFromPrepared,
-  buildExactDirectionCurveFromPrepared,
-  buildStressStrainPointCalculationAudit,
-  buildSectionFieldMapFromPrepared,
-  checkLoadcaseUtilizationFromSurface,
-  checkLoadcasesUtilizationFromSurface,
-  codeAdjustedDemandOfCheck,
-  prepareAnalysis,
-  sliceActiveDesignPContour,
-  solveInversePreviewFromPrepared,
-  type ExactDirectionCurve,
-  type CapacityFieldResult,
-  type InversePreviewResult,
-  type LoadcaseQuickCheckResult,
-  type PreparedAnalysis,
-  type PreviewSurface,
-  type SectionFieldMap
-} from '@pm/analysis'
-import {
-  buildEquivalentBlockExactDirectionCurveFromPrepared,
-  buildEquivalentBlockFieldMapFromPrepared,
-  buildEquivalentBlockPointCalculationAudit,
-  buildEquivalentBlockPreviewSurfaceFromPrepared,
-  prepareBlockAnalysis,
-  solveEquivalentBlockDemandFromPrepared,
-  type PreparedBlockAnalysis
-} from '@pm/analysis-equivalent-block'
-import { buildResistanceMaterialSets, createDefaultDesignBasis, type DesignBasis } from '@pm/design'
+import { createAnalysisExecution } from './execution'
+
 import {
   buildChartAuditWorkbookBytes,
   buildCalculationTraceAuditWorkbookBytes,
@@ -46,23 +17,17 @@ import {
   type ExcelExportInput
 } from '@pm/report'
 import type { ReportInput } from '@pm/report/report-model'
-import { analysisMeshKernelOptions, isEquivalentBlockAnalysisOptions, type AnalysisOptions } from '@pm/project'
+
 import { packSectionMeshView, type SectionMeshView } from './section-mesh-view'
 import type {
-  BuildExactDirectionPayload,
-  BuildFieldMapPayload,
-  BuildPointAuditsPayload,
   BuildSectionMeshPayload,
   BuildSurfacePayload,
   BuildSurfaceWorkerResult,
-  CheckLoadcasePayload,
-  CheckLoadcasesPayload,
   MeshAuditExportPayload
 } from './worker-contract'
-import { BoundedLruCache } from './bounded-lru'
 
-const preparedCache = new BoundedLruCache<string, PreparedAnalysis>(2)
-const blockCache = new BoundedLruCache<string, PreparedBlockAnalysis>(2)
+const execution = createAnalysisExecution()
+
 let pdfUnicodeFontPromise: Promise<Uint8Array> | null = null
 
 const pdfUnicodeFont = () => {
@@ -73,145 +38,25 @@ const pdfUnicodeFont = () => {
   return pdfUnicodeFontPromise
 }
 
-const preparedFor = (
-  payload: Pick<BuildSurfacePayload, 'section' | 'rebars' | 'materialStore'> & { analysisOptions: AnalysisOptions } & {
-    designBasis?: DesignBasis
-  }
-) => {
-  const meshOptions = analysisMeshKernelOptions(payload.analysisOptions)
-  const designBasis = payload.designBasis ?? createDefaultDesignBasis(payload.materialStore)
-  const stateMaterials = buildResistanceMaterialSets(payload.materialStore, designBasis).stateMaterials
-  const key = `${analysisInputKey(payload.section, payload.rebars, stateMaterials, meshOptions)}:${JSON.stringify(designBasis)}`
-  const cached = preparedCache.get(key)
-  if (cached) return cached
-  const value = prepareAnalysis(payload.section, payload.rebars, stateMaterials, meshOptions)
-  preparedCache.set(key, value)
-  return value
-}
+export const buildPreviewSurfaceFallback = (payload: BuildSurfacePayload): BuildSurfaceWorkerResult => ({ surfaceId: 'main-thread-fallback', surface: execution.buildSurface(payload) })
 
-const blockFor = (
-  payload: Pick<BuildSurfacePayload, 'calculationProfileId' | 'section' | 'rebars' | 'materialStore' | 'designBasis'>
-) => {
-  const key = JSON.stringify(payload)
-  const cached = blockCache.get(key)
-  if (cached) return cached
-  const value = prepareBlockAnalysis(
-    payload.calculationProfileId,
-    payload.section,
-    payload.rebars,
-    payload.materialStore,
-    payload.designBasis
-  )
-  blockCache.set(key, value)
-  return value
-}
+export const buildExactDirectionFallback = execution.buildExactDirection
 
-/** Main-thread implementations, loaded only after the analysis worker is unavailable. */
-export const buildPreviewSurfaceFallback = (payload: BuildSurfacePayload): BuildSurfaceWorkerResult => {
-  if (isEquivalentBlockAnalysisOptions(payload.analysisOptions)) {
-    const result = buildEquivalentBlockPreviewSurfaceFromPrepared(blockFor(payload), payload.analysisOptions)
-    result.calculationProfileId = payload.calculationProfileId
-    return { surfaceId: 'main-thread-fallback', surface: result }
-  }
-  const result = buildDesignPreviewSurfaceFromPrepared(
-    preparedFor({ ...payload, analysisOptions: payload.analysisOptions }),
-    payload.materialStore,
-    payload.designBasis,
-    payload.analysisOptions
-  )
-  result.calculationProfileId = payload.calculationProfileId
-  return { surfaceId: 'main-thread-fallback', surface: result }
-}
+export const checkLoadcasesFallback = execution.checkLoadcases
 
-export const buildExactDirectionFallback = (payload: BuildExactDirectionPayload): ExactDirectionCurve => {
-  if (isEquivalentBlockAnalysisOptions(payload.analysisOptions)) {
-    return buildEquivalentBlockExactDirectionCurveFromPrepared(
-      blockFor(payload),
-      payload.analysisOptions,
-      payload.beta
-    )
-  }
-  return buildExactDirectionCurveFromPrepared(
-    preparedFor({ ...payload, analysisOptions: payload.analysisOptions }),
-    payload.materialStore,
-    payload.designBasis,
-    payload.analysisOptions,
-    payload.beta
-  )
-}
+export const checkLoadcaseFallback = execution.checkLoadcase
 
-export const checkLoadcasesFallback = (payload: CheckLoadcasesPayload): LoadcaseQuickCheckResult[] =>
-  checkLoadcasesUtilizationFromSurface(payload.surface, payload.loadcases)
+export const buildSectionFieldMapFallback = execution.buildFieldMap
 
-export const checkLoadcaseFallback = async (payload: CheckLoadcasePayload): Promise<InversePreviewResult> => {
-  if (isEquivalentBlockAnalysisOptions(payload.surface.analysisOptions)) {
-    return applyDesignCheckToInverse(
-      solveEquivalentBlockDemandFromPrepared(blockFor(payload), payload.surface.analysisOptions, payload.loadcase),
-      checkLoadcaseUtilizationFromSurface(payload.surface, payload.loadcase)
-    )
-  }
-  const contour = sliceActiveDesignPContour(payload.surface, payload.loadcase.P)
-  const designCheck = checkLoadcaseUtilizationFromSurface(payload.surface, payload.loadcase)
-  const prepared = preparedFor({ ...payload, analysisOptions: payload.surface.analysisOptions })
-  const inverse = solveInversePreviewFromPrepared(
-    prepared,
-    payload.loadcase,
-    contour,
-    codeAdjustedDemandOfCheck(designCheck)
-  )
-  let capacityField: CapacityFieldResult
-  try {
-    const { solveStressStrainCapacityFieldFromPrepared } = await import('@pm/analysis/capacity-field')
-    capacityField = solveStressStrainCapacityFieldFromPrepared(prepared, payload.materialStore,
-      payload.designBasis, payload.surface, designCheck.codeAdjustedDemand ?? payload.loadcase)
-  } catch {
-    capacityField = { status: 'unavailable', reason: 'evaluation-error', iterations: 0,
-      message: 'Capacity-field evaluation failed.' }
-  }
-  return { ...applyDesignCheckToInverse(inverse, designCheck), capacityField }
-}
+export const buildSectionMeshFallback = (payload: BuildSectionMeshPayload): SectionMeshView => packSectionMeshView(execution.buildSectionMesh(payload))
 
-export const buildSectionFieldMapFallback = (payload: BuildFieldMapPayload): SectionFieldMap => {
-  if (isEquivalentBlockAnalysisOptions(payload.analysisOptions)) {
-    if (!payload.blockState) throw new Error('The axial-cap face has no unique equivalent-block field state.')
-    return buildEquivalentBlockFieldMapFromPrepared(blockFor(payload), payload.blockState)
-  }
-  return buildSectionFieldMapFromPrepared(
-    preparedFor({ ...payload, analysisOptions: payload.analysisOptions }),
-    payload.state
-  )
-}
-
-export const buildSectionMeshFallback = (payload: BuildSectionMeshPayload): SectionMeshView =>
-  packSectionMeshView(preparedFor(payload).mesh)
-
-export const buildPointAuditsFallback = (payload: BuildPointAuditsPayload) => {
-  if (isEquivalentBlockAnalysisOptions(payload.analysisOptions)) {
-    const prepared = blockFor(payload)
-    return payload.points.map(({ key, point, stationDefinition }) => ({
-      key,
-      audit: buildEquivalentBlockPointCalculationAudit(prepared, payload.stage, point, stationDefinition)
-    }))
-  }
-  const prepared = preparedFor({ ...payload, analysisOptions: payload.analysisOptions })
-  return payload.points.map(({ key, point, stationDefinition }) => ({
-    key,
-    audit: buildStressStrainPointCalculationAudit(
-      prepared,
-      payload.materialStore,
-      payload.designBasis,
-      payload.stage,
-      point,
-      stationDefinition
-    )
-  }))
-}
+export const buildPointAuditsFallback = execution.buildPointAudits
 
 export const exportMeshAuditFallback = async (
   type: 'exportMeshExcel' | 'exportMeshDxf',
   payload: MeshAuditExportPayload
 ): Promise<ArrayBuffer> => {
-  const mesh = preparedFor(payload).mesh
+  const mesh = execution.buildSectionMesh(payload)
   const input = {
     presentationUnits: payload.presentationUnits,
     projectName: payload.projectName,

@@ -1,5 +1,6 @@
-import type { MaterialStore, StressStrainPoint } from './types'
-import { resolveLinearHardeningSteel } from './steel/linear-hardening'
+import type { ConcreteMaterial, MaterialStore, SteelMaterial, StressStrainPoint } from './types'
+import { resolveLinearHardeningSteel } from './steel/linear-hardening-parameters'
+import { MATERIAL_INPUT_LIMITS } from './resource-limits'
 
 export type MaterialValidationIssue = {
   path: string
@@ -14,6 +15,7 @@ const finiteUnitInterval = (value: number) =>
 
 const curveIssues = (points: readonly StressStrainPoint[], path: string): MaterialValidationIssue[] => {
   const issues: MaterialValidationIssue[] = []
+  if (points.length > MATERIAL_INPUT_LIMITS.curvePoints) return [{ path, message: 'exceeds the material curve-point resource limit' }]
   if (points.length < 2) {
     issues.push({ path, message: 'must contain at least two stress-strain points' })
     return issues
@@ -26,7 +28,7 @@ const curveIssues = (points: readonly StressStrainPoint[], path: string): Materi
     if (index > 0 && Number.isFinite(point.strain) && !(point.strain > points[index - 1].strain)) {
       issues.push({
         path: `${path}[${index}].strain`,
-        message: 'must be strictly greater than the preceding strain ordinate'
+        message: 'must be strictly increasing; each must be strictly greater than the preceding strain ordinate'
       })
     }
   })
@@ -39,14 +41,10 @@ const curveIssues = (points: readonly StressStrainPoint[], path: string): Materi
  * This deliberately sits below the UI. Imported JSON and programmatic callers must not be able to
  * bypass the same fail-closed boundary by constructing a structurally valid TypeScript object.
  */
-export const materialStoreIssues = (store: MaterialStore): MaterialValidationIssue[] => {
+export const concreteMaterialIssues = (
+  concrete: ConcreteMaterial, concretePath = 'materials.concrete'
+): MaterialValidationIssue[] => {
   const issues: MaterialValidationIssue[] = []
-  const concretePath = 'materials.concrete'
-  const concrete = store.concrete
-
-  if (store.strainSign !== 'compression-positive') {
-    issues.push({ path: 'materials.strainSign', message: 'must be compression-positive' })
-  }
   if (!Number.isInteger(concrete.id) || concrete.id <= 0) {
     issues.push({ path: `${concretePath}.id`, message: 'must be a positive integer' })
   }
@@ -109,7 +107,7 @@ export const materialStoreIssues = (store: MaterialStore): MaterialValidationIss
         issues.push({ path: `${modelPath}.interpolation`, message: 'must be linear' })
       }
       if (model.extrapolation !== 'clamp') {
-        issues.push({ path: `${modelPath}.extrapolation`, message: 'must be clamp' })
+        issues.push({ path: `${modelPath}.extrapolation`, message: 'must use clamp extrapolation' })
       }
       break
     default:
@@ -119,67 +117,112 @@ export const materialStoreIssues = (store: MaterialStore): MaterialValidationIss
       })
   }
 
-  if (store.steel.length === 0) {
-    issues.push({ path: 'materials.steel', message: 'must contain at least one steel material' })
+  return issues
+}
+
+export const steelMaterialIssues = (
+  steel: SteelMaterial, path = 'materials.steel'
+): MaterialValidationIssue[] => {
+  const issues: MaterialValidationIssue[] = []
+  if (!Number.isInteger(steel.id) || steel.id <= 0) issues.push({ path: `${path}.id`, message: 'must be a positive integer' })
+  if (!finitePositive(steel.fy)) issues.push({ path: `${path}.fy`, message: 'must be positive and finite' })
+  if (!finitePositive(steel.elasticModulus)) issues.push({ path: `${path}.elasticModulus`, message: 'must be positive and finite' })
+  if (steel.limits?.epsY !== undefined && !finitePositive(steel.limits.epsY)) {
+    issues.push({ path: `${path}.limits.epsY`, message: 'must be positive and finite when provided' })
   }
+  if ((steel.stressStrain.type === 'elastic-perfectly-plastic' || steel.stressStrain.type === 'bilinear') &&
+    finitePositive(steel.fy) && finitePositive(steel.elasticModulus) && steel.limits?.epsY !== undefined) {
+    const derivedYield = (steel.fy / (steel.factors?.gammaS ?? 1) * (steel.factors?.resistanceScale ?? 1)) / steel.elasticModulus
+    if (steel.limits.epsY !== derivedYield) {
+      issues.push({ path: `${path}.limits.epsY`, message: 'must equal the effective yield stress divided by Es; it is a derived snapshot' })
+    }
+  }
+  if (steel.limits?.epsU !== undefined && !finitePositive(steel.limits.epsU)) {
+    issues.push({ path: `${path}.limits.epsU`, message: 'must be positive and finite when provided' })
+  }
+  if (
+    finitePositive(steel.limits?.epsY) && finitePositive(steel.limits?.epsU) &&
+    (steel.limits?.epsU ?? 0) < (steel.limits?.epsY ?? 0)
+  ) {
+    issues.push({ path: `${path}.limits.epsU`, message: 'must be greater than or equal to epsY' })
+  }
+  for (const [name, value] of Object.entries(steel.factors ?? {})) {
+    if (value !== undefined && !finitePositive(value)) {
+      issues.push({ path: `${path}.factors.${name}`, message: 'must be positive and finite when provided' })
+    }
+  }
+  if (!['elastic-perfectly-plastic', 'bilinear', 'linear-hardening', 'user-curve'].includes(steel.stressStrain.type)) {
+    issues.push({ path: `${path}.stressStrain.type`, message: `is unsupported (${String(steel.stressStrain.type)})` })
+  } else if (steel.stressStrain.type === 'bilinear' &&
+    (!Number.isFinite(steel.stressStrain.hardeningRatio) || steel.stressStrain.hardeningRatio < 0)) {
+    issues.push({ path: `${path}.stressStrain.hardeningRatio`, message: 'must be nonnegative and finite' })
+  }
+  if (steel.stressStrain.type === 'linear-hardening') {
+    try {
+      resolveLinearHardeningSteel(steel)
+    } catch (error) {
+      issues.push({ path: `${path}.stressStrain`, message: error instanceof Error ? error.message : String(error) })
+    }
+  }
+  if (steel.stressStrain.type === 'user-curve') {
+    issues.push(...curveIssues(steel.stressStrain.points, `${path}.stressStrain.points`))
+    if (steel.stressStrain.interpolation !== 'linear') {
+      issues.push({ path: `${path}.stressStrain.interpolation`, message: 'must be linear' })
+    }
+    if (steel.stressStrain.extrapolation !== 'clamp') {
+      issues.push({ path: `${path}.stressStrain.extrapolation`, message: 'must use clamp extrapolation' })
+    }
+  }
+  return issues
+}
+
+export const materialStoreIssues = (store: MaterialStore): MaterialValidationIssue[] => {
+  if (store.steel.length > MATERIAL_INPUT_LIMITS.steelMaterials) return [{ path: 'materials.steel', message: 'exceeds the steel-material resource limit' }]
+  let curvePoints = store.concrete.stressStrain.type === 'user-curve' ? store.concrete.stressStrain.points.length : 0
+  for (const steel of store.steel) {
+    if (steel.stressStrain.type === 'user-curve') curvePoints += steel.stressStrain.points.length
+    if (curvePoints > MATERIAL_INPUT_LIMITS.curvePoints) return [{ path: 'materials', message: 'exceeds the total curve-point resource limit' }]
+  }
+  const issues = concreteMaterialIssues(store.concrete)
+  if (store.strainSign !== 'compression-positive') {
+    issues.push({ path: 'materials.strainSign', message: 'must be compression-positive' })
+  }
+  if (store.steel.length === 0) issues.push({ path: 'materials.steel', message: 'must contain at least one steel material' })
   const ids = new Set<number>()
   store.steel.forEach((steel, index) => {
-    const path = `materials.steel[${index}]`
-    if (!Number.isInteger(steel.id) || steel.id <= 0) issues.push({ path: `${path}.id`, message: 'must be a positive integer' })
-    if (ids.has(steel.id)) issues.push({ path: `${path}.id`, message: 'must be unique' })
+    if (ids.has(steel.id)) issues.push({ path: `materials.steel[${index}].id`, message: 'must be unique' })
     ids.add(steel.id)
-    if (!finitePositive(steel.fy)) issues.push({ path: `${path}.fy`, message: 'must be positive and finite' })
-    if (!finitePositive(steel.elasticModulus)) issues.push({ path: `${path}.elasticModulus`, message: 'must be positive and finite' })
-    if (steel.limits?.epsY !== undefined && !finitePositive(steel.limits.epsY)) {
-      issues.push({ path: `${path}.limits.epsY`, message: 'must be positive and finite when provided' })
-    }
-    if (steel.limits?.epsU !== undefined && !finitePositive(steel.limits.epsU)) {
-      issues.push({ path: `${path}.limits.epsU`, message: 'must be positive and finite when provided' })
-    }
-    if (
-      finitePositive(steel.limits?.epsY) && finitePositive(steel.limits?.epsU) &&
-      (steel.limits?.epsU ?? 0) < (steel.limits?.epsY ?? 0)
-    ) {
-      issues.push({ path: `${path}.limits.epsU`, message: 'must be greater than or equal to epsY' })
-    }
-    for (const [name, value] of Object.entries(steel.factors ?? {})) {
-      if (value !== undefined && !finitePositive(value)) {
-        issues.push({ path: `${path}.factors.${name}`, message: 'must be positive and finite when provided' })
-      }
-    }
-    if (!['elastic-perfectly-plastic', 'bilinear', 'linear-hardening', 'user-curve'].includes(steel.stressStrain.type)) {
-      issues.push({ path: `${path}.stressStrain.type`, message: `is unsupported (${String(steel.stressStrain.type)})` })
-    } else if (steel.stressStrain.type === 'bilinear' &&
-      (!Number.isFinite(steel.stressStrain.hardeningRatio) || steel.stressStrain.hardeningRatio < 0)) {
-      issues.push({ path: `${path}.stressStrain.hardeningRatio`, message: 'must be nonnegative and finite' })
-    }
-    if (steel.stressStrain.type === 'linear-hardening') {
-      try {
-        resolveLinearHardeningSteel(steel)
-      } catch (error) {
-        issues.push({ path: `${path}.stressStrain`, message: error instanceof Error ? error.message : String(error) })
-      }
-    }
-    if (steel.stressStrain.type === 'user-curve') {
-      issues.push(...curveIssues(steel.stressStrain.points, `${path}.stressStrain.points`))
-      if (steel.stressStrain.interpolation !== 'linear') {
-        issues.push({ path: `${path}.stressStrain.interpolation`, message: 'must be linear' })
-      }
-      if (steel.stressStrain.extrapolation !== 'clamp') {
-        issues.push({ path: `${path}.stressStrain.extrapolation`, message: 'must be clamp' })
-      }
-    }
+    issues.push(...steelMaterialIssues(steel, `materials.steel[${index}]`))
   })
-
   if (!ids.has(store.defaults.steelMaterialId)) {
     issues.push({ path: 'materials.defaults.steelMaterialId', message: 'must reference an existing steel material' })
   }
   return issues
 }
 
+export class MaterialInputError extends Error {
+  readonly code = 'INVALID_MATERIAL' as const
+  constructor(readonly issues: readonly MaterialValidationIssue[]) {
+    super(issues.map((issue) => `${issue.path} ${issue.message}`).join('; '))
+    this.name = 'MaterialInputError'
+  }
+}
+
+export const assertValidConcreteMaterial = (material: ConcreteMaterial, expectedModel?: ConcreteMaterial['stressStrain']['type']) => {
+  const issues = concreteMaterialIssues(material)
+  if (expectedModel !== undefined && material.stressStrain.type !== expectedModel) {
+    issues.push({ path: 'materials.concrete.stressStrain.type', message: `must be ${expectedModel} for this compiler` })
+  }
+  if (issues.length) throw new MaterialInputError(issues)
+}
+export const assertValidSteelMaterial = (material: SteelMaterial, expectedModel?: SteelMaterial['stressStrain']['type']) => {
+  const issues = steelMaterialIssues(material)
+  if (expectedModel !== undefined && material.stressStrain.type !== expectedModel) {
+    issues.push({ path: 'materials.steel.stressStrain.type', message: `must be ${expectedModel} for this compiler` })
+  }
+  if (issues.length) throw new MaterialInputError(issues)
+}
 export const assertValidMaterialStore = (store: MaterialStore) => {
   const issues = materialStoreIssues(store)
-  if (issues.length > 0) {
-    throw new Error(issues.map((issue) => `${issue.path} ${issue.message}`).join('; '))
-  }
+  if (issues.length) throw new MaterialInputError(issues)
 }

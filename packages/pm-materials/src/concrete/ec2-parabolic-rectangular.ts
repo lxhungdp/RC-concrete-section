@@ -1,3 +1,5 @@
+import { finiteCompiledMaterial } from '../compiled'
+import { assertValidConcreteMaterial } from '../validation'
 import type { CompiledMaterial, ConcreteMaterial } from '../types'
 import { positiveOr } from '../math'
 
@@ -43,6 +45,7 @@ export const stressEc2ParabolicRectangularConcrete = (material: ConcreteMaterial
   stressEc2ParabolicRectangularFrom(resolveEc2ParabolicRectangularParams(material), strain)
 
 export const compileEc2ParabolicRectangularConcrete = (material: ConcreteMaterial): CompiledMaterial => {
+  assertValidConcreteMaterial(material, 'ec2-parabolic-rectangular')
   const params = resolveEc2ParabolicRectangularParams(material)
   const stress =
     params.n === 2
@@ -63,7 +66,7 @@ export const compileEc2ParabolicRectangularConcrete = (material: ConcreteMateria
           return (2 * params.peak * (1 - strain / params.epsC2)) / params.epsC2
         }
       : (strain: number) => tangentEc2ParabolicRectangularFrom(params, strain)
-  return {
+  return finiteCompiledMaterial({
     id: material.id,
     family: 'concrete',
     stress,
@@ -71,5 +74,5 @@ export const compileEc2ParabolicRectangularConcrete = (material: ConcreteMateria
     limits: {
       epsCompressionUltimate: material.limits.epsCu
     }
-  }
+  })
 }

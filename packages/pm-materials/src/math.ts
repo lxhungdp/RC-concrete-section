@@ -35,9 +35,9 @@ export const interpolateSorted = (sorted: SortedCurve, strain: number) => {
  *
  * The interpolator clamps outside the tabulated domain, so the tangent is zero there. At an
  * interior breakpoint it uses the segment on the left, matching interpolateSorted's
- * first-matching-interval rule. Strict material validation will eventually reject duplicate
- * strains; until then the same 1e-12 denominator guard as the stress interpolation keeps preview
- * evaluation finite and deterministic.
+ * first-matching-interval rule. Public material compilation rejects duplicate strains. The
+ * existing 1e-12 denominator guard is shared with stress interpolation so both retain the same
+ * segment arithmetic; it is not a material-validation or acceptance tolerance.
  */
 export const interpolateSortedTangent = (sorted: SortedCurve, strain: number) => {
   if (sorted.length < 2 || strain <= sorted[0].strain || strain >= sorted[sorted.length - 1].strain) return 0

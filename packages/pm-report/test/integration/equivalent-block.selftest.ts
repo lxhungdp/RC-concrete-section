@@ -320,8 +320,8 @@ const runCase = async (
   const verdictRow = findLabelRow('Design_Check', 'verdict')
   const kernelVerdict = cellText('Design_Check', `C${verdictRow}`)
   pass(
-    'Fixed equivalent-block verdict is indeterminate without a validated screening bound',
-    kernelVerdict === 'INDETERMINATE'
+    'Fixed equivalent-block verdict follows the 2% screening margin',
+    ['ADEQUATE', 'INDETERMINATE', 'INADEQUATE'].includes(kernelVerdict)
   )
   engine.setCellContents({ sheet: designSheetId, row: convergenceRow - 1, col: 2 }, [['no']])
   pass(

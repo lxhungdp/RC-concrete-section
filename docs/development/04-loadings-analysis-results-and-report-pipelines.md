@@ -59,7 +59,7 @@ The `Report` menu follows `Demand Check`. Its sidebar owns the detail-loadcase s
 preview PDF and Excel export actions, and their status messages. The adjacent charts continue to
 show the active Demand Check combination. Selecting cases for export affects only the reports.
 
-The v1 DTO needs no `My` mechanics discriminator. The UI and worker pass the canonical component
+The project DTO needs no `My` mechanics discriminator. The UI and worker pass the canonical component
 unchanged, and both `@pm/analysis` and `@pm/equivalent-block` use `+F*(x-x0)`. Asymmetric ledger
 tests protect this boundary because symmetric sections would not expose a sign mismatch.
 
@@ -81,9 +81,10 @@ must never pass stress-strain mesh options into the block kernel or emulate a co
 stress. Model-specific fields remain attached to each result. See `../12` for the exact workflows.
 
 The target orchestration boundary below is not yet a standalone `@pm/engine` package. Today,
-`SectionDrawingClient.tsx`, the analysis client, and `pm-analysis.worker.ts` route requests to the
-two analysis packages. A later engine extraction may own the same sequence without moving formulas
-out of their kernels:
+`application/analysis/execution.ts` routes worker and fallback requests to the two analysis packages
+and owns their prepared-model/surface caches. Transport, cancellation, surface handles and export
+I/O stay in the worker/client adapters. A later engine extraction may own the same sequence without
+moving formulas out of their kernels:
 
 ```text
 Project input snapshot
@@ -170,9 +171,11 @@ multiplies factors or chooses strain limits.
 
 ## 4. Results package
 
-A future `@pm/results` package will own immutable accepted-result schemas and pure
-query/presentation adapters. It does not exist today. Current preview surface/check/field DTOs and
-query helpers are exported by `@pm/analysis`, with the block bridge normalizing into those types.
+`@pm/results/contracts` owns the mechanics-neutral preview surface/check/field and audit DTOs.
+`@pm/results/audit` owns pure shared trace assembly and dataset selection. Both mechanics consume
+these public subpaths; the `@pm/analysis` facade preserves its existing public exports. Constitutive
+evaluation and surface construction remain in their separate mechanics owners. Immutable
+accepted-result schemas and release eligibility are still future work.
 The accepted product still requires separate brands/types:
 
 ```ts
@@ -311,13 +314,12 @@ detail has Section field, Fixed-P Mx-My, and Vertical slice. Each mode allows on
 and two secondary charts; hidden charts can be restored, but there is no fourth Section-mesh chart
 inside Results.
 
-Demand Check uses the pure `@pm/analysis` `resolveLoadcaseField` query to select Field at demand
-from a qualified non-NG stress-strain inverse, and Field at capacity only for a governing
-`inadequate` check. Missing demand equilibrium never selects capacity as a hidden fallback.
-Equivalent-block inverse output is a capacity-ray state, so its non-NG demand field is explicitly
-unavailable; no block strain is scaled or replaced with a fibre response. An indeterminate check
-remains indeterminate even if its diagnostic demand field exists. Every NG chart uses the shared
-theme-aware semantic failure tint. Both field-basis labels are prominent semantic badges. Field
+Demand Check uses the pure `@pm/analysis` `resolveLoadcaseField` query with the explicit mechanics.
+Stress-strain non-NG uses qualified stored demand equilibrium; NG uses the capacity state.
+Equivalent block uses qualified capacity evidence for every checked classification independently
+of demand-inverse convergence. Missing evidence stays unavailable for the selected basis.
+An indeterminate check retains its classification. Every NG chart uses the shared
+theme-aware semantic failure tint. Each field-basis label is a prominent semantic badge. Field
 basis, tint, NA angle and plots use one coherent displayed frame during selection changes.
 The capacity field uses typed `capacityField` evidence on the transient inverse DTO.
 The stress-strain worker and async fallback lazily load `@pm/analysis/capacity-field`;
@@ -454,6 +456,19 @@ moment direction, and fixed-`P` demand/capacity moment magnitudes needed to expl
 ratios. While either DTO is pending or belongs to an older demand revision, the dialog stays open
 and reports that evidence as pending instead of showing stale values.
 
+The quick-check message also owns the reason for an indeterminate verdict. Table tooltips and
+calculation detail display that message directly, including which Adaptive sampling dimension did
+not converge. They do not append a universal boundary-crossing explanation or a mode-switch hint.
+All registered profiles share the same Fixed classification policy; code/profile warnings do not
+introduce a second UI classification path.
+
+Fixed-P preview contours now carry path identity/closure through transient point DTOs. Charts and
+PDF consume separate paths, while bounds and audit tables can consume their flattened coordinates.
+The complete triangle-cut chain supplies capacity markers and radial diagnostics. Sampled-meridian
+subsets remain audit markers. The block bridge also forwards a `state-stalled` station reason when
+finite steel limits prevent a distinct admissible depth midpoint. See the
+[repair evidence](../task-packets/2026-11-04-fixed-p-adaptive-repair.md).
+
 ## 6. Report package
 
 Hardening report contract: chart, selected-point and shared demand workbooks bind the same resolved
@@ -514,7 +529,7 @@ invalidates the analysis domain.
 Cache entries never upgrade preview data to accepted data and include numerically relevant
 dependency versions.
 
-The equivalent-block worker implements this rule directly: its core Design surface key includes the
+The shared execution module implements this rule directly: its block core Design surface key includes the
 profile, geometry, rebars, materials, analysis options, and DesignBasis, but excludes the load
 combination. Repeated demand checks reuse that immutable core surface; any resistance-domain input
 change produces a different key and rebuilds it.
@@ -522,7 +537,7 @@ change produces a different key and rebuilds it.
 ## 8. Pipeline tests
 
 This is the required release test set. Current `npm test` covers the numerical packages,
-canonical-v2 and legacy-v1 round trips, UI helper logic, CAD, both mechanics' calculation workbooks, the demand-check
+canonical-v3 and explicit v1/v2 round trips, UI helper logic, CAD, both mechanics' calculation workbooks, the demand-check
 workbook, and deterministic preview-PDF rendering/content checks. It does not yet cover
 accepted-result hashing, renderer eligibility from accepted/stale brands, or true cooperative
 cancellation.
@@ -545,7 +560,7 @@ cancellation.
    routes, adaptive preview surfaces/checks, model-specific fields, calculation-trace workbooks for
    both mechanics, stress-strain mesh Excel/DXF, demand-check workbook, shared `ReportModel`, and a
    deterministic watermarked preview PDF.
-2. **Next integrity work:** confirm and test the documented parser-v1 defaults, add shared typed
+2. **Next integrity work:** maintain tests for the documented version-specific parser defaults, add shared typed
    issues, canonical hashing, and
    a complete stale-state graph.
 3. **Production gates:** finish geometry/material validation gateways, accepted-result numerical
@@ -554,6 +569,22 @@ cancellation.
    immutable accepted DTO; enforce accepted/current eligibility; attach result identity, signature,
    approval, and rollback metadata; then qualify the existing Excel/PDF renderers for released
    reports without weakening their Preview path.
+
+### Check basis
+
+`@pm/analysis` owns the query. `checkLoadcaseUtilizationFromSurface` takes the project basis and
+selects the definition before minimum-eccentricity candidates are ranked, so `utilization`,
+`adequacy`, `capacityPoint` and the code-adjusted demand describe one basis. Both the proportional
+and fixed-P ratios stay on the DTO. Worker, fallback, report and workbook callers pass the basis;
+none selects a value in a renderer. The Demand Check sidebar edits it through the project loadings
+state. Stale evidence from another basis is rejected by the same current-evidence guards as a changed
+demand. Changing it reuses the surface and invalidates only checks, inverse results and fields.
+
+Constant-P field residuals retain Pu while scaling moments, with the block surface's declared
+component normalization. The standalone block workbook and shared Demand Check workbook use
+the same target convention in their independent formula audits and identify the moment multiplier.
+PDF detail captions show the proportional ratio as secondary under Constant P. Proportional-path
+arithmetic and report formulas remain unchanged by the Constant-P audit corrections.
 
 ### Display-unit boundary
 

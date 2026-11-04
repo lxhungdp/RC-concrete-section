@@ -1,7 +1,7 @@
 import type { MaterialStore } from '@pm/materials'
 import type { DesignBasis } from '@pm/design'
-import type { LoadCombination } from '@pm/project'
-import { analysisStations, intersectSurfaceWithDemandRay, createCapacityFieldEvaluator,
+import type { DemandCheckBasis, LoadCombination } from '@pm/project'
+import { analysisStations, intersectSurfaceAtConstantAxial, intersectSurfaceWithDemandRay, createCapacityFieldEvaluator,
   type CapacityFieldResult, type PreparedAnalysis, type PreviewSurface, type StationDefinition } from './index'
 import { solve3 } from './linear-solve'
 import { NEWTON_RESIDUAL_TOL, NEWTON_MAX_ITERATIONS } from './inverse-options'
@@ -15,17 +15,24 @@ export const solveStressStrainCapacityFieldFromPrepared = (
   sourceMaterials: MaterialStore,
   basis: DesignBasis,
   surface: PreviewSurface,
-  checkedDemand: LoadCombination
+  checkedDemand: LoadCombination,
+  checkBasis: DemandCheckBasis = 'proportional3D'
 ): CapacityFieldResult => {
   const unavailable = (reason: Extract<CapacityFieldResult, { status: 'unavailable' }>['reason'],
     message: string, iterations = 0): CapacityFieldResult => ({ status: 'unavailable', reason, message, iterations })
   if (![checkedDemand.P, checkedDemand.Mx, checkedDemand.My].every(Number.isFinite)) {
     return unavailable('invalid-input', 'Capacity-field demand components must be finite.')
   }
-  const governingIntersection = intersectSurfaceWithDemandRay(surface, checkedDemand)
+  const constantAxial = checkBasis === 'constantAxial'
+  const constantCrossing = constantAxial ? intersectSurfaceAtConstantAxial(surface, checkedDemand) : null
+  if (constantCrossing && constantCrossing.status !== 'crossing') {
+    return unavailable('no-crossing', 'No unique constant-P Design-surface crossing is available.')
+  }
+  const governingIntersection = constantCrossing ? constantCrossing.intersection : intersectSurfaceWithDemandRay(surface, checkedDemand)
   if (!governingIntersection) return unavailable('no-crossing', 'No Design-surface ray crossing is available.')
-  const onCapFace = governingIntersection.source?.vertices.every(point => point.surfaceRole === 'axial-cap') ||
-    (surface.beforeAxialCap && governingIntersection.source?.vertices.every(point => point.P === surface.bounds.P[1]))
+  // A constant-P ray runs parallel to the cap, so it can only leave through a side face.
+  const onCapFace = !constantAxial && (governingIntersection.source?.vertices.every(point => point.surfaceRole === 'axial-cap') ||
+    (surface.beforeAxialCap && governingIntersection.source?.vertices.every(point => point.P === surface.bounds.P[1])))
   if (onCapFace && !surface.beforeAxialCap) {
     return unavailable('axial-cap', 'The original Design boundary before the axial cap is unavailable.')
   }
@@ -50,6 +57,8 @@ export const solveStressStrainCapacityFieldFromPrepared = (
   // Normalize the ray at its existing crossing, so scaling the entered demand cannot condition Newton.
   const target = intersection.point
   const scaledTarget = [target.P / forceScale, target.Mx / momentScale, target.My / momentScale]
+  // The multiplier scales the whole target on a proportional ray, and only its moments at constant P.
+  const multipliedTarget = constantAxial ? [0, scaledTarget[1], scaledTarget[2]] : scaledTarget
   const caps = surface.points.filter(point => point.surfaceRole === 'axial-cap')
   const cap = caps.length ? Math.max(...caps.map(point => point.P)) : null
   const declaredSteelLimit = prepared.rebarFibers.some(fiber => fiber.steel.limits.epsTensionUltimate !== undefined)
@@ -91,7 +100,7 @@ export const solveStressStrainCapacityFieldFromPrepared = (
     }
     const { point, admissibility } = evaluateState(beta, definition, coordinate)
     const boundaryQualified = definition.kind !== 'tension-pole-transition-ratio' || definition.ratio <= 1 / 3 || reachesSteelLimit(point.state)
-    const residual = { P: point.P - multiplier * target.P,
+    const residual = { P: point.P - (constantAxial ? target.P : multiplier * target.P),
       Mx: point.Mx - multiplier * target.Mx, My: point.My - multiplier * target.My }
     const scaled = [residual.P / forceScale, residual.Mx / momentScale, residual.My / momentScale]
     if (!scaled.every(Number.isFinite)) return null
@@ -102,12 +111,12 @@ export const solveStressStrainCapacityFieldFromPrepared = (
   let current = evaluateAt(values)
   // A yielded axial plateau can admit many non-uniform states. Prefer the declared uniform pole
   // when its independently evaluated resultants lie on this ray; do not invent an axial beta.
-  const targetNormSquared = scaledTarget.reduce((sum, value) => sum + value * value, 0)
-  for (const coordinate of [0, stations.length - 1]) {
+  const targetNormSquared = multipliedTarget.reduce((sum, value) => sum + value * value, 0)
+  for (const coordinate of constantAxial ? [] : [0, stations.length - 1]) {
     const pole = evaluateAt([0, coordinate, 1])
     if (!pole || targetNormSquared === 0) continue
     const multiplier = pole.scaled.reduce((sum, value, index) =>
-      sum + (value + scaledTarget[index]) * scaledTarget[index], 0) / targetNormSquared
+      sum + (value + multipliedTarget[index]) * multipliedTarget[index], 0) / targetNormSquared
     const candidate = evaluateAt([0, coordinate, multiplier])
     if (candidate && candidate.norm <= NEWTON_RESIDUAL_TOL) {
       values = [0, coordinate, multiplier]; current = candidate; break
@@ -122,7 +131,7 @@ export const solveStressStrainCapacityFieldFromPrepared = (
       const seed = evaluateAt([beta, coordinate, 1])
       if (!seed || targetNormSquared === 0) continue
       const multiplier = seed.scaled.reduce((sum, value, index) =>
-        sum + (value + scaledTarget[index]) * scaledTarget[index], 0) / targetNormSquared
+        sum + (value + multipliedTarget[index]) * multipliedTarget[index], 0) / targetNormSquared
       const candidate = evaluateAt([beta, coordinate, multiplier])
       if (candidate && (!current || candidate.norm < current.norm)) {
         values = [beta, coordinate, multiplier]; current = candidate
@@ -144,7 +153,7 @@ export const solveStressStrainCapacityFieldFromPrepared = (
       }
     }
     if (!differentiable) break
-    for (let row = 0; row < 3; row++) jacobian[row][2] = -scaledTarget[row]
+    for (let row = 0; row < 3; row++) jacobian[row][2] = -multipliedTarget[row]
     const delta = solve3(jacobian, current.scaled.map(value => -value))
     if (!delta) break
     const bound = Math.min(1, 0.25 / Math.max(Math.abs(delta[0]), Number.EPSILON),

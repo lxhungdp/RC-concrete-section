@@ -1,3 +1,5 @@
+import { checkBasisLabels } from '../model/check-basis'
+import type { DemandCheckBasis } from '@pm/project'
 import type { UnitSelection } from '@pm/units'
 import { appendPresentationSummary } from './presentation-summary'
 /**
@@ -100,6 +102,7 @@ export type ExcelExportInput = {
   /** Axial level for the Mx-My contour sheet, N. */
   fixedP: number
   loadcase: LoadCombination | null
+  checkBasis?: DemandCheckBasis
   /**
    * Converged strain plane of the inverse solution, if the app has one. Newton and its tangent
    * modulus stay in the program: a general material law has no closed-form derivative, so the
@@ -274,11 +277,11 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
     const uBar = Math.min(...bars.map((b) => b.y * c + b.x * sn))
     return { uMax, uBar, c1: uMax - uBar }
   }
-  const engineContour = sliceFixedPContour(engineSurface.points, demandP)
+  const engineContour = sliceFixedPContour(engineSurface.points, demandP, engineSurface.triangles)
   const engineBoundary = intersectFixedPContourWithMomentRay(engineContour, thetaLoad)
   const engineMb = engineBoundary ? engineBoundary.M / 1e6 : null
   const designCheck = input.loadcase
-    ? checkLoadcaseUtilizationFromSurface(designSurface, input.loadcase)
+    ? checkLoadcaseUtilizationFromSurface(designSurface, input.loadcase, input.checkBasis)
     : null
 
   const stationCount = stationDefinitions.length
@@ -610,8 +613,10 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
   const checkRows: Array<[string, number | string, string, string]> = [
     ['Action basis', input.loadcase?.actionBasis ?? 'factoredULS', '', 'Only factored ULS actions are supported by this check'],
     ['Loadcase', input.loadcase?.name ?? 'None', '', ''],
-    ['3D proportional UR', designCheck?.proportionalUtilization ?? 'n/a', '-', 'Governing reported section utilization'],
-    ['Fixed-P UR', designCheck?.fixedPUtilization ?? 'n/a', '-', 'Secondary diagnostic at Pu'],
+    ['Check basis', checkBasisLabels(input.checkBasis).title, '', checkBasisLabels(input.checkBasis).basis],
+    ['Utilization UR', designCheck?.utilization ?? 'n/a', '-', 'Value of the selected check basis'],
+    ['3D proportional UR', designCheck?.proportionalUtilization ?? 'n/a', '-', 'Origin-ray ratio'],
+    ['Fixed-P UR', designCheck?.fixedPUtilization ?? 'n/a', '-', 'Constant-axial contour ratio at Pu'],
     ['Verdict', designCheck?.adequacy?.toUpperCase() ?? 'n/a', '', 'Fixed-grid checks use ADEQUATE / INDETERMINATE / INADEQUATE screening; indeterminate requires Adaptive sampling'],
     ['UR screening interval', designCheck?.utilizationInterval.lower == null || designCheck.utilizationInterval.upper == null
       ? 'n/a'

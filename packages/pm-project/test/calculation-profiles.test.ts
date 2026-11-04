@@ -215,6 +215,11 @@ test('KDS parser enforces reinforcement and concrete applicability limits', () =
   })
   const highStrengthSteel = structuredClone(base)
   highStrengthSteel.inputs.materials.steel[0].fy = 601
+  // Keep the physics valid so this fixture isolates the KDS applicability gate.
+  highStrengthSteel.inputs.materials.steel[0].limits = {
+    ...highStrengthSteel.inputs.materials.steel[0].limits,
+    epsY: 601 / highStrengthSteel.inputs.materials.steel[0].elasticModulus
+  }
   const steelResult = parseProjectDocument(highStrengthSteel)
   assert.equal(steelResult.ok, false)
   if (!steelResult.ok) assert.match(steelResult.error, /must not exceed 600 MPa/)

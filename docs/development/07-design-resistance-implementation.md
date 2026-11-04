@@ -17,10 +17,10 @@ resistance used for a factored ULS check. The engineering requirements remain au
 - construction of reference, state and design material sets;
 - state-dependent global-strength-reduction evaluation.
 
-`@pm/project` writes `inputs.design` directly in the current project schema version 1. DesignBasis
+`@pm/project` writes `inputs.design` directly in the canonical project schema version 3, retaining explicit v1/v2 readers. DesignBasis
 version 2 replaced the old EN-only scalar fields with standard-neutral factor expressions; version
 3 corrects the EN domain-5 pure-compression endpoint from `eps_cu2` to the `eps_c2` point-C pivot.
-The parser migrates both legacy forms. As a parser-v1 rule, a missing basis is synthesized;
+The parser migrates both legacy forms. As a documented version-specific parser rule, a missing basis is synthesized;
 canonical exports always contain it. `calculationProfileId`, materials, analysis
 options, and the DesignBasis must be mutually consistent after parsing.
 Every load combination is explicitly tagged `actionBasis: "factoredULS"`.
@@ -104,11 +104,10 @@ yet verified as equivalent to applying the Appendix minimum separately about bot
 including all moment-sign combinations. That clause interpretation is a release blocker for the
 Appendix route; the product must continue to label it `draft` preview.
 
-The maximum axial-compression operation is applied after the state factor. A row crossing is
-interpolated and clipped stations are projected onto radial rings between the axial centre and that
-crossing. This closes the horizontal cap face, including the pure-compression demand ray, while
-beta/station IDs remain stable. Capped design vertices therefore represent a domain boundary and
-need not retain the uncapped nominal strain state with the same ID.
+The maximum axial-compression operation is applied after the state factor as the exact half-space
+intersection of the sampled domain. Original permitted vertices/faces remain unchanged, actual
+source-edge intersections are inserted and the cap boundary is triangulated. Geometric cap vertices
+carry explicit provenance and no unique physical strain state. See development/15 for its oracles.
 
 ## 3. Governing utilization
 
@@ -120,15 +119,16 @@ UR_3D = 1 / lambda
 classify the UR interval as adequate / indeterminate / inadequate
 ```
 
-Fixed 27 x 36 stress-strain mode applies that mechanics' `@pm/results` 2% screening margin. This
-value is a regression envelope, not a mathematical bound, and it is not applied to equivalent-
-block Fixed results: those remain indeterminate until that mechanics has an approved bound.
+Every Fixed check uses the shared `@pm/results` 2% screening policy by the project decision
+recorded in engineering/05 section 4. Its measured scope is stress-strain proportional sampling;
+the use for other mechanics/domains/bases is explicitly unvalidated. It is not an error bound.
 Adaptive mode uses its station and direction error evidence. Only an interval wholly below
 `UR = 1` is adequate; only one wholly above it is inadequate.
 
 Normalization affects only numerical conditioning; the returned capacity is in physical units.
-The Fixed-P Mx-My intersection is retained as a secondary diagnostic and is reported separately as
-`fixedPUtilization`. It is not the governing value in the loadcase table.
+The default check basis is `proportional3D`; Fixed-P is then a separate secondary diagnostic.
+With an explicit `constantAxial` project basis, the qualified Constant-P query governs and the
+proportional ratio is secondary. Engineering/05 owns all qualified/unavailable outcomes.
 
 This is the **Stage 1: Section Resistance Only** check. It does not include member slenderness, second-order effects,
 stability, load generation, accidental eccentricity, seismic detailing, or serviceability.
@@ -157,7 +157,7 @@ duplicated in Capacity.
 - The selected profile is persisted and invalidates/rebuilds the result surface.
 - Fixed-P and Vertical Slice charts show `Design` and `Nominal` layers. Both are independently
   switchable; Design is on by default.
-- Loadcase rows state that actions are factored ULS and display governing `3D UR`.
+- Loadcase rows state that actions are factored ULS and display the governing UR for the declared check basis.
 - Loadcase detail shows the secondary Fixed-P UR and the controlling global factor or
   design-material method.
 
@@ -222,7 +222,7 @@ engineer approves the exact project jurisdiction and code edition.
 - EN recommended-factor regression and legacy scalar-factor migration;
 - 3D proportional demand-ray utilization.
 
-The project round-trip test covers schema version 1, factored ULS action basis and design-profile
+The project round-trip tests cover canonical v3 and explicit v1/v2 readers, factored ULS action basis and design-profile
 persistence. Full regression is `npm test`, followed by `npm run build`; block-specific verification
 also runs through `npm run bench:equivalent-block` and `npm run bench:pipelines`.
 

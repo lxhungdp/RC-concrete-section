@@ -32,9 +32,14 @@ export type LoadCombination = {
   My: number
 }
 
+/** engineering/05 section 3: the query that supplies UR and the verdict for every combination. */
+export type DemandCheckBasis = 'proportional3D' | 'constantAxial'
+
 export type LoadingsInput = {
   /** Explicit in canonical v3. Omitted only by centroidal v1/v2 inputs and programmatic seeds. */
   reference?: LoadReference
+  /** Canonical exports write this. An omitted value declares the proportional default. */
+  checkBasis?: DemandCheckBasis
   combinations: LoadCombination[]
 }
 
@@ -97,6 +102,7 @@ export type ParseProjectSuccess = {
 
 export type ParseProjectFailure = {
   ok: false
+  code: 'INVALID_PROJECT' | 'PROJECT_RESOURCE_LIMIT'
   error: string
 }
 

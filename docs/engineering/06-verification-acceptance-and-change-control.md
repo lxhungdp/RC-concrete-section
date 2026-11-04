@@ -32,12 +32,12 @@ published benchmark, experimental validation, or approved regression fixture.
 | Gate | Required outcome |
 |---|---|
 | A — specification | scope, conventions, equations, profile, output meaning, and acceptance policy approved |
-| B — input kernels | geometry, material, loading, and the sole current schema-v1 contracts verified; no migration/backward-compatibility layer |
+| B — input kernels | geometry, material, loading, and canonical project-v3 and explicit legacy v1/v2 reader contracts verified, including documented normalization |
 | C — mechanics | forward resultants, tangents, scaling, integration, and invariants verified |
 | D — resistance/checks | strain domains, resistance sequencing, adaptive surface, topology, utilization, and uncertainty verified |
 | E — design code | clause trace, exact edition/method, examples, applicability, anti-double-reduction tests, and independent structural review pass |
 | F — system/report | workers, cancellation, reproducibility, security, performance, Results UI, Excel/PDF, and stale-state controls pass |
-| G — release | regression, residual-risk acceptance, semantic/software version, schema-v1 statement, evidence bundle, and rollback plan approved |
+| G — release | regression, residual-risk acceptance, semantic/software version, declared schema/reader statement, evidence bundle, and rollback plan approved |
 
 Failure of a required gate blocks the affected accepted-result/released-report capability.
 
@@ -73,7 +73,7 @@ No calculation rule may exist only in UI code, a spreadsheet cell, a comment, or
 |---|---|---|
 | 1 | wording/style with no engineering meaning | documentation/link checks |
 | 2 | refactor/performance expected to be result-identical | affected unit/integration/regression and reproducibility checks |
-| 3 | numerical algorithm, tolerance, dependency, schema-v1, or pipeline behavior | kernel, convergence, structural matrix, schema-v1 round-trip, and differential suites |
+| 3 | numerical algorithm, tolerance, dependency, schema, or pipeline behavior | kernel, convergence, structural matrix, version-specific project round-trip, and differential suites |
 | 4 | mechanics, material, utilization, design-code rule, report classification | all affected gates plus new structural/code review and validation impact |
 
 Unexplained full-precision result drift is Class 4 until resolved.
@@ -96,10 +96,10 @@ draft profile cannot produce an accepted result.
 ## 8. Current repository release state
 
 Gate A has not received formal approval and Gate B remains incomplete. Geometry/material input,
-schema-v1 parsing, two mechanics pipelines, draft code profiles, worker execution, and preview Excel
+v1/v2/v3 project parsing, two mechanics pipelines, draft code profiles, worker execution, and preview Excel
 exports are implemented and tested, but their production validation matrices are incomplete. The
 former cross-kernel `My` mismatch is resolved by one tested convention. Parser defaults are
-documented behavior inside the sole current v1 contract. No design-code profile, analysis surface, accepted-result package,
+documented behavior of the explicit version-specific contracts. No design-code profile, analysis surface, accepted-result package,
 or report renderer is currently eligible for engineering acceptance.
 
 This statement changes only through evidence-backed change control, not when a menu or formula is

@@ -1892,6 +1892,16 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   color: var(--sp-text-2);
 }
 
+/* Layout only: plain native radio choices beside their caption. */
+.pm-check-basis-options,
+.pm-check-basis-options > label {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.pm-check-basis-options { flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-1) var(--sp-3); }
+.pm-check-basis-options > label { gap: var(--sp-2); white-space: nowrap; cursor: pointer; }
+
 /* Layout only: native radio choices share the heading row above the peak-strength value. */
 .pm-hardening-strength-options,
 .pm-hardening-strength-options > label {

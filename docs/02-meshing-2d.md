@@ -9,6 +9,12 @@ in the two instruction groups. The geometry subsystem has two outputs with diffe
 
 Do not replace exact section geometry with the fiber cloud.
 
+An integration mesh carries the collision-free serialized coordinate/ring definition of the
+section from which it was built. Preparation from an existing mesh compares that definition with
+the requested section before using any quadrature points. Identity excludes display names and
+entity IDs, but retains coordinates, ring order and hole ownership exactly; it is not a geometric
+equivalence or topology-repair operation. Missing or mismatched identity blocks preparation.
+
 ## 1. Geometry normalization pipeline
 
 Apply these steps in order and return typed issues with ring/bar IDs:
@@ -197,9 +203,8 @@ limits. If the requested verification tolerance is likely to exceed browser reso
 typed `RESOURCE_LIMIT` result with suggested actions; do not silently loosen tolerances.
 
 Long meshing operations run in a worker when available and the client accepts `AbortSignal`.
-When one request is outstanding, cancellation terminates the busy worker and the next request
-creates a fresh worker. If jobs are concurrently sharing the worker, cancellation stops awaiting
-only the selected request and discards its late result. Progress stages, cooperative inner-loop
+Cancellation terminates the busy worker. Other live requests are replayed on a fresh worker,
+including full-surface rehydration of stale handles. Late old-generation results are discarded. Progress stages, cooperative inner-loop
 checkpoints, and a worker pool remain release work.
 
 ## 8. Mesh sanity checks

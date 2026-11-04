@@ -29,7 +29,7 @@ filesystem/network APIs, project UI state, or report libraries.
 | `@pm/materials` | material DTOs, stores, model compilers, KDS helpers | definitions/validation/compilation only; no complete design-code claim in a material tag |
 | `@pm/project` | canonical project-v3 DTO and load-reference translation, explicit centroidal v1/v2 readers, JSON parse/serialize, warnings, round-trip | persistence envelope and profile/options registry; no numerical analysis or UI behavior; documented version-specific defaults and one-time legacy area materialization |
 | `@pm/design` | DesignBasis identity, resistance formats/factors, transition rules, and material-set preparation | generic resistance sequencing; no geometry solving or UI state |
-| `@pm/results` | mechanics-neutral adequacy status, utilization interval, and screening classification policy | no surface construction, material/resistance recomputation, React, or report formatting |
+| `@pm/results` | mechanics-neutral result/audit contracts, pure audit assembly, adequacy status, utilization interval and screening classification policy | no constitutive evaluation, surface construction, resistance-policy selection, React or report formatting; explicit subpaths keep contracts separate from runtime helpers |
 | `@pm/analysis` | stress-strain preparation, forward/inverse mechanics, adaptive surface, slices, demand checks, and field maps | stress-strain route only; no equivalent-block emulation |
 | `@pm/equivalent-block` | standard-independent block preparation, clipping, forward/inverse solvers, surfaces, topology, and admissibility | no project schema, UI, or KDS/ACI constants |
 | `@pm/code-kds142020` | KDS block law, endpoints, phi transition, and cap | KDS policy only; no generic clipping or project state |
@@ -61,12 +61,14 @@ contract is exercised by a real slice and movement from the current owners is ex
 | `@pm/analysis-core` | fibers/quadrature, forward mechanics, scaled algebra, service solver, surface numerical primitives | code selection, UI, report formatting |
 | `@pm/design-codes` | registry and versioned profile adapters with clause trace | global current standard, UI state, generic geometry editing |
 | `@pm/engine` | validate/normalize/compile/orchestrate/check/cancel/progress/cache protocol | presentation rendering |
-| `@pm/results` extension | grow the existing classification package into immutable result DTOs, query helpers, and plot/report-neutral view models | recomputation of material/resistance rules |
+| `@pm/results` extension | extend current preview contracts and audit helpers with immutable accepted-result DTOs and plot/report-neutral view models | recomputation of material/resistance rules |
 | `@pm/report` extension | accepted-result report model plus Excel/PDF adapters | acceptance decisions or hidden recalculation |
 
-In the current repository, `@pm/analysis` and `@pm/analysis-equivalent-block` provide most engine/
-result functions, `@pm/results` owns the shared three-state classification slice, and the web worker
-orchestrates them. `@pm/project` may depend on serializable
+In the current repository, `@pm/analysis` and `@pm/analysis-equivalent-block` own their mechanics,
+and `@pm/results` owns shared preview contracts, pure audit helpers and classification policy.
+`apps/web/application/analysis/execution.ts` provides one use-case implementation and bounded caches
+for the worker and fallback. Transport, worker handles and export I/O remain outside that module.
+`@pm/project` may depend on serializable
 definition types, but it does not depend on compiled evaluators or the analysis engine. The current
 `@pm/report` still accepts preview calculation inputs; the target dependency direction is for its
 release renderers to consume accepted result contracts, never the other way around.
@@ -83,7 +85,9 @@ release renderers to consume accepted result contracts, never the other way arou
 | `DEV-ARCH-006` | Results/report packages cannot mutate or reconstruct accepted engineering results. |
 | `DEV-ARCH-007` | Third-party numerical/geometry/report libraries are wrapped behind local interfaces. |
 
-Use a dependency check in CI once new packages are introduced.
+`npm run check:structure` checks the production-source dependency graph, declared direct imports,
+public export subpaths, cycles and the inward package boundaries in CI. It includes type imports,
+re-exports and static dynamic imports; computed module specifiers require separate review.
 
 ## 5. Public API policy
 
@@ -144,10 +148,10 @@ CPU-heavy meshing, surface generation, demand checks, field maps, and exports cu
 Worker when available. Worker messages contain serializable definitions and results; compiled
 material functions are rebuilt inside the worker. A main-thread fallback exists.
 
-Current abort behavior is boundary cancellation: the client stops waiting and drops a late worker
-result, but a synchronous job already executing in the worker or fallback is not cooperatively
-interrupted. Progress stages, time budgets, and inner-loop cancellation checkpoints remain release
-requirements rather than implemented behavior.
+Current worker cancellation terminates the executing worker and replays other live jobs, including
+full-surface rehydration when an old handle is no longer usable. Late responses from the terminated
+generation are ignored. The main-thread fallback only honors cancellation at request boundaries.
+Progress stages, time budgets and cooperative inner-loop checkpoints remain release requirements.
 
 All loops must ultimately have resource/time limits, cooperative cancellation, progress stages, and deterministic merge order.
 Single-thread and parallel paths must be tolerance-equivalent. Performance work follows profiling

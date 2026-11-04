@@ -488,10 +488,13 @@ const runCase = async (relativePath: string, label: string) => {
     `${mismatches} mismatch(es) over ${model.combinations.length} combinations`)
   if (isEquivalentBlockProfileId(profileId) && analysisOptions.samplingMode === 'fixed') {
     pass(
-      'Fixed equivalent-block reports remain indeterminate without a validated screening bound',
-      model.combinations.every((combination) =>
-        combination.verdict === 'indeterminate' &&
-        combination.utilizationInterval?.evidence === 'fixed-grid-no-validated-bound'),
+      'Fixed equivalent-block reports classify with the 2% screening margin',
+      model.combinations.every((combination) => {
+        const ratio = combination.utilization
+        const expected = ratio === null ? 'indeterminate' : ratio <= 0.98 ? 'adequate' : ratio > 1.02 ? 'inadequate' : 'indeterminate'
+        return combination.verdict === expected && (ratio === null ||
+          combination.utilizationInterval?.evidence === 'fixed-grid-screening-margin')
+      }),
       model.combinations.map((combination) =>
         `${combination.name}:${combination.verdict}/${combination.utilizationInterval?.evidence}`).join(' | ')
     )

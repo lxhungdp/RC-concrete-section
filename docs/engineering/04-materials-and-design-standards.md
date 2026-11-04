@@ -46,11 +46,21 @@ limits, factor fields, compression-positive convention, and derivation provenanc
 Do not independently edit contradictory values such as `fy`, `Es`, `epsY`, and curve yield points.
 One authoritative value derives the others, or semantic validation proves agreement.
 
+For elastic-perfectly-plastic and bilinear steel, `fy`, `Es` and the declared runtime strength
+factors own the effective yield point. A supplied `limits.epsY` is a derived snapshot and must equal
+`(fy / (gammaS ?? 1) * (resistanceScale ?? 1)) / Es` in the canonical binary64 contract. Stress,
+tangent and compiled yield evidence use that same point. Contradictory input is rejected rather
+than silently repaired. Endpoint-defined hardening and explicit user curves retain their separately
+declared construction rules. Public material compilers validate definitions before resolving law
+parameters, and a model-specific compiler rejects a different model discriminant. Invalid declared
+data cannot select fallback engineering values. Compiled strain limits and stress/tangent
+evaluations reject non-finite arithmetic with typed evidence.
+
 User curves require strictly increasing finite strain coordinates, explicit interpolation,
 extrapolation/rupture policy, and deterministic one-sided tangent behavior at kinks. Invalid curves
 do not fall back to a default law in an engineering calculation.
 
-The current schema-v1 user-curve implementation supports linear interpolation with explicit
+The current user-curve implementation supports linear interpolation with explicit
 `extrapolation: 'clamp'`. The parser normalizes a missing legacy field to that pre-existing policy;
 canonical definitions record it. Both validation and direct compilation reject non-increasing
 points instead of sorting them.
@@ -193,7 +203,7 @@ all-compression pivot between them) and `e_min = 15 + 0.03h` demand rule.
 
 ## 7. Persisted and reported evidence
 
-Project schema v1 stores the selected calculation profile, material definitions, model-specific
+Project schema v3 stores the selected calculation profile, material definitions, model-specific
 analysis options, and DesignBasis. The target accepted-result/report contract exposes:
 
 - characteristic/input and effective material values;
@@ -203,7 +213,8 @@ analysis options, and DesignBasis. The target accepted-result/report contract ex
 - phi classification, controlling tensile/yield strains, and tension-controlled limit;
 - axial-cap status and actual surface refinement evidence.
 
-The project document remains schema v1, while its embedded DesignBasis is version 3. The parser can
+The canonical project document is schema v3, with explicit v1/v2 readers, while its embedded
+DesignBasis is independently version 3. The parser can
 derive a missing basis and migrates legacy EN scalar partial factors to generic factor expressions;
 canonical exports write the current basis explicitly.
 

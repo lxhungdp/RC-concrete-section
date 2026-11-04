@@ -2,6 +2,7 @@ import polygonClipping from 'polygon-clipping'
 import type { MultiPolygon, Pair, Polygon, Ring } from 'polygon-clipping'
 export { triangulateIndexedLoop, type PlanarLoopPoint, type PlanarLoopTriangle } from './triangulate-indexed-loop'
 import { allocateIds, isValidEntityId, nextAvailableId } from './ids'
+export * from './resource-limits'
 
 export type Point2 = {
   id: number

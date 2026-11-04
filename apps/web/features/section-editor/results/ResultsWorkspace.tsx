@@ -17,6 +17,8 @@ import {
   axialCapExcludedPaths,
   contourStrainAngleSamples,
   intersectFixedPContourWithMomentRay,
+  fixedPContourPaths,
+  fixedPContourLinePoints,
   resolveLoadcaseField,
   sliceFixedPContour,
   sliceMomentPlane,
@@ -436,6 +438,9 @@ export function ResultsWorkspace({
   const sectionField = fieldEvidence?.status === 'available' ? fieldEvidence : null
   const isNgCase = requestedIsLoadcaseMode && inverseResult?.designCheck.evaluated === true &&
     inverseResult.designCheck.adequacy === 'inadequate'
+  const fieldCheckLabel = inverseResult?.designCheck.evaluated
+    ? inverseResult.designCheck.adequacy === 'adequate' ? 'OK' : isNgCase ? 'NG' : 'Indeterminate'
+    : 'Pending'
   const section = displayFieldSnapshot?.section ?? requestedSection
   const rebars = displayFieldSnapshot?.rebars ?? requestedRebars
   const materialStore = displayFieldSnapshot?.materialStore ?? requestedMaterialStore
@@ -619,6 +624,7 @@ export function ResultsWorkspace({
       name: checkedLoadcase.name
     }
   }, [displayUnits, activeAngle, isLoadcaseMode, checkedLoadcase])
+  const constantAxialCheck = inverseResult?.designCheck.evaluated === true && inverseResult.designCheck.definition === 'constantAxial'
   const capacityProjection = useMemo(() => {
     const point = inverseResult?.designCapacityPoint
     if (!isLoadcaseMode || !point || inverseResult?.utilization === 0) return null
@@ -762,16 +768,16 @@ export function ResultsWorkspace({
     [nominalContour]
   )
   const fixedPCapacityProjection = useMemo(() => {
-    if (!isLoadcaseMode || !checkedLoadcase || strainAngleSamples.length < 2) return null
+    if (!isLoadcaseMode || !checkedLoadcase || contour.length < 2) return null
     if (Math.hypot(checkedLoadcase.Mx, checkedLoadcase.My) < 1e-9) return null
     const point = intersectFixedPContourWithMomentRay(
-      strainAngleSamples,
+      contour,
       Math.atan2(checkedLoadcase.My, checkedLoadcase.Mx)
     )
     return point
       ? { mx: displayMoment(point.Mx), my: displayMoment(point.My), p: displayForce(point.P) }
       : null
-  }, [displayUnits, isLoadcaseMode, checkedLoadcase, strainAngleSamples])
+  }, [displayUnits, isLoadcaseMode, checkedLoadcase, contour])
   const surfacePoints3d = useMemo(
     () =>
       surface
@@ -789,8 +795,8 @@ export function ResultsWorkspace({
     return explicit && explicit.length > 0 ? explicit : buildClosedSurfaceTriangles(surfacePoints3d)
   }, [designDataset, nominalDataset, surfacePoints3d, view.surfaceResistanceMode])
   const surfaceContour3d = view.surfaceResistanceMode === 'design'
-    ? strainAngleSamples
-    : nominalStrainAngleSamples
+    ? contour
+    : nominalContour
 
   /** Drawing the opposite half already covers angles past 180°, so the slider range halves with it. */
   useEffect(() => {
@@ -845,9 +851,9 @@ export function ResultsWorkspace({
           type: 'scatter3d',
           name: 'Fixed-P ring',
           mode: 'lines',
-          x: [...surfaceContour3d.map((point) => displayMoment(point.Mx)), displayMoment(surfaceContour3d[0].Mx)],
-          y: [...surfaceContour3d.map((point) => displayMoment(point.My)), displayMoment(surfaceContour3d[0].My)],
-          z: [...surfaceContour3d.map(() => pPlane), pPlane],
+          x: fixedPContourLinePoints(surfaceContour3d).map(point => point ? displayMoment(point.Mx) : null),
+          y: fixedPContourLinePoints(surfaceContour3d).map(point => point ? displayMoment(point.My) : null),
+          z: fixedPContourLinePoints(surfaceContour3d).map(point => point ? pPlane : null),
           line: { color: plotPalette.primary, width: 7 },
           hoverinfo: 'skip'
         }
@@ -947,9 +953,9 @@ export function ResultsWorkspace({
             trace(excludedDirect, 'Direct β before Pmax cap', '#7c3aed', 7)]
         })() : []
 
-    const fixedPTopology = triangulatePlanarPolygon(
+    const fixedPTopology = fixedPContourPaths(surfaceContour3d).length === 1 && surfaceContour3d[0]?.pathClosed !== false ? triangulatePlanarPolygon(
       surfaceContour3d.map((point) => ({ u: point.Mx, v: point.My }))
-    )
+    ) : []
     const fixedPSectionFill = fixedPTopology.length > 0
       ? {
           type: 'mesh3d',
@@ -1074,18 +1080,10 @@ export function ResultsWorkspace({
   const contourData = useMemo(() => {
     const nominalOnly = view.showNominalReference && !view.showDesignResistance
     const activeSamples = nominalOnly ? nominalStrainAngleSamples : strainAngleSamples
-    const closedX = [...strainAngleSamples.map((point) => displayMoment(point.Mx))]
-    const closedY = [...strainAngleSamples.map((point) => displayMoment(point.My))]
-    if (strainAngleSamples[0]) {
-      closedX.push(displayMoment(strainAngleSamples[0].Mx))
-      closedY.push(displayMoment(strainAngleSamples[0].My))
-    }
-    const nominalClosedX = [...nominalStrainAngleSamples.map((point) => displayMoment(point.Mx))]
-    const nominalClosedY = [...nominalStrainAngleSamples.map((point) => displayMoment(point.My))]
-    if (nominalStrainAngleSamples[0]) {
-      nominalClosedX.push(displayMoment(nominalStrainAngleSamples[0].Mx))
-      nominalClosedY.push(displayMoment(nominalStrainAngleSamples[0].My))
-    }
+    const closedX = fixedPContourLinePoints(contour).map(point => point ? displayMoment(point.Mx) : null)
+    const closedY = fixedPContourLinePoints(contour).map(point => point ? displayMoment(point.My) : null)
+    const nominalClosedX = fixedPContourLinePoints(nominalContour).map(point => point ? displayMoment(point.Mx) : null)
+    const nominalClosedY = fixedPContourLinePoints(nominalContour).map(point => point ? displayMoment(point.My) : null)
     const rayRadius = Math.max(...activeSamples.map((point) => displayMoment(Math.hypot(point.Mx, point.My))), 1) * 1.18
     const radialX = activeSamples.flatMap((point) => [0, rayRadius * Math.cos(point.beta), null])
     const radialY = activeSamples.flatMap((point) => [0, rayRadius * Math.sin(point.beta), null])
@@ -1113,7 +1111,7 @@ export function ResultsWorkspace({
       ...(demandProjection
         ? [
             {
-              type: 'scatter', name: 'Fixed-P moment ray (secondary)', mode: 'lines',
+              type: 'scatter', name: constantAxialCheck ? 'Constant-P moment ray' : 'Fixed-P moment ray (secondary)', mode: 'lines',
               x: [0, ...(fixedPCapacityProjection ? [fixedPCapacityProjection.mx] : []), demandProjection.mx],
               y: [0, ...(fixedPCapacityProjection ? [fixedPCapacityProjection.my] : []), demandProjection.my],
               line: { color: '#ff1f3d', width: 1.8 }, hoverinfo: 'skip'
@@ -1208,8 +1206,8 @@ export function ResultsWorkspace({
       }] : []),
       ...(view.showDesignResistance && beforeCapContour.length ? [{
         type: 'scatter', name: 'Design before Pmax cap', mode: 'lines',
-        x: [...beforeCapContour.map(point => displayMoment(point.Mx)), displayMoment(beforeCapContour[0].Mx)],
-        y: [...beforeCapContour.map(point => displayMoment(point.My)), displayMoment(beforeCapContour[0].My)],
+        x: fixedPContourLinePoints(beforeCapContour).map(point => point ? displayMoment(point.Mx) : null),
+        y: fixedPContourLinePoints(beforeCapContour).map(point => point ? displayMoment(point.My) : null),
         line: { color: plotPalette.primary, width: 2.6, dash: 'dot', shape: 'linear', simplify: false },
         hovertemplate: `Mx=%{x:.1f} ${unit('moment')}<br>My=%{y:.1f} ${unit('moment')}<extra>Before Pmax cap · excluded from Design checks</extra>`
       }] : []),
@@ -1256,6 +1254,7 @@ export function ResultsWorkspace({
     activeDisplayP,
     demandProjection,
     fixedPCapacityProjection,
+    constantAxialCheck,
     nominalStrainAngleSamples,
     beforeCapContour,
     plotPalette,
@@ -1515,9 +1514,11 @@ export function ResultsWorkspace({
 
     return [
       ...(demandProjection ? [{
-        type: 'scatter', name: demandPlaneMode ? 'Proportional load path' : 'Projected proportional load path', mode: 'lines',
+        type: 'scatter',
+        name: `${demandPlaneMode ? '' : 'Projected '}${constantAxialCheck ? 'constant-P' : 'proportional'} load path`.replace(/^./, (letter) => letter.toUpperCase()),
+        mode: 'lines',
         x: [0, ...(capacityProjection ? [capacityProjection.m] : []), demandProjection.m],
-        y: [0, ...(capacityProjection ? [capacityProjection.p] : []), demandProjection.p],
+        y: [constantAxialCheck ? demandProjection.p : 0, ...(capacityProjection ? [capacityProjection.p] : []), demandProjection.p],
         line: { color: '#ff1f3d', width: 1.8 }, hoverinfo: 'skip'
       }] : []),
       {
@@ -1711,6 +1712,7 @@ export function ResultsWorkspace({
     beforeCapVerticalPaths,
     capCutMarkers,
     capacityProjection,
+    constantAxialCheck,
     demandExactCurve,
     demandPlaneMode,
     demandProjection,
@@ -1958,9 +1960,10 @@ export function ResultsWorkspace({
           {renderChartShell({
             id: 'heatmap',
             title: fieldEvidence?.basis === 'capacity' ? 'Field at capacity' : 'Field at demand',
-            meta: isNgCase
-              ? sectionField ? `NG · λfield = ${fmt(sectionField.loadFactor, 3)}` : 'NG · field unavailable'
-              : sectionField ? 'Checked entered demand' : 'Demand field unavailable',
+            meta: sectionField ? sectionField.basis === 'capacity'
+              ? `${fieldCheckLabel} · λfield = ${fmt(sectionField.loadFactor, 3)}`
+              : `${fieldCheckLabel} · Checked entered demand`
+              : `${fieldCheckLabel} · ${fieldEvidence?.basis ?? 'demand'} field unavailable`,
             primary: demandView.primaryChart === 'heatmap',
             visible: demandView.visibleCharts.heatmap,
             onMakePrimary: () => onDemandViewChange({ primaryChart: 'heatmap' }),
@@ -2280,7 +2283,9 @@ export function ResultsWorkspace({
               </>
             ),
             footer: strainAngleSamples.length === 0
-              ? <p className="pm-preview-hint" role="status">No Design contour exists at this Pu. Governing 3D UR remains available.</p> : null,
+              ? <p className="pm-preview-hint" role="status">{constantAxialCheck
+                ? 'No Design contour exists at this Pu, so no constant-P moment capacity exists.'
+                : 'No Design contour exists at this Pu. Governing 3D UR remains available.'}</p> : null,
             children: <PlotlyChart data={contourData} layout={contourLayout} config={plotConfig} />
           })}
 

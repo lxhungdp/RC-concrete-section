@@ -76,8 +76,10 @@ import {
   type LoadCombination,
   type CalculationAnalysisOptions,
   type CalculationProfileId,
+  demandCheckBasisOf,
   type LoadingsInput,
   type LoadReference,
+  type ParseProjectResult,
   type ProjectInformation
 } from '@pm/project'
 import {
@@ -104,6 +106,7 @@ import {
   RECENT_PROJECT_STORAGE_KEY,
   recentProjectsFromStorage,
   recentProjectFromRaw,
+  recentProjectFromValidatedDocument,
   serializeRecentProjects,
   upsertRecentProject,
   type RecentProject
@@ -605,6 +608,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
   const { selection: displayUnits } = useDisplayUnits()
   const svgRef = useRef<SVGSVGElement | null>(null)
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const projectImportAbortRef = useRef<AbortController | null>(null)
   const drawingImportInputRef = useRef<HTMLInputElement | null>(null)
   const projectMenuRef = useRef<HTMLDivElement | null>(null)
   const aboutMenuRef = useRef<HTMLDivElement | null>(null)
@@ -653,9 +657,11 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
   const [loadingsInput, setLoadingsInput] = useState<LoadingsInput>(() => createEmptyLoadingsInput())
   const [loadReferencePreview, setLoadReferencePreview] = useState<LoadReference | null>(null)
   const [loadReferenceEditorVersion, setLoadReferenceEditorVersion] = useState(0)
-  const loadcaseDemandRevision = loadingsInput.combinations
+  const checkBasis = demandCheckBasisOf(loadingsInput)
+  // The basis is part of this revision: changing it retires every check, inverse and field result.
+  const loadcaseDemandRevision = `${checkBasis}|${loadingsInput.combinations
     .map((item) => `${item.id}:${item.P}:${item.Mx}:${item.My}:${item.actionBasis}`)
-    .join('|')
+    .join('|')}`
   const [analysisOptions, setAnalysisOptions] = useState<CalculationAnalysisOptions>(() => createDefaultAnalysisOptions())
   const [designBasis, setDesignBasis] = useState<DesignBasis>(() =>
     createDefaultDesignBasis(createDefaultMaterialStore())
@@ -744,8 +750,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
     ]
   )
 
-  const publishRecentProject = useCallback((raw: unknown) => {
-    const recent = recentProjectFromRaw(raw)
+  const publishRecentEntry = useCallback((recent: RecentProject | null) => {
     if (!recent) return
     setRecentProjects((current) => {
       const next = upsertRecentProject(current, recent)
@@ -757,6 +762,9 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
       return next
     })
   }, [])
+
+  const publishRecentProject = useCallback((raw: unknown) =>
+    publishRecentEntry(recentProjectFromRaw(raw)), [publishRecentEntry])
 
   const finalSection = useMemo(
     () => sectionGeometryFromGeometryInput(appliedGeometryInput),
@@ -1156,7 +1164,8 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
       Object.fromEntries(
         Object.entries(current).filter(([id, result]) => {
           const loadcase = currentLoadcases.get(Number(id))
-          return Boolean(loadcase && sameLoadcaseDemand(result.demand, loadcase))
+          return Boolean(loadcase && sameLoadcaseDemand(result.demand, loadcase) &&
+            result.designCheck.evaluated && result.designCheck.definition === checkBasis)
         })
       )
     )
@@ -1176,7 +1185,9 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
     const retained = Object.fromEntries(
       loadingsInput.combinations.flatMap((loadcase) => {
         const result = cached[loadcase.id]
-        return result && sameLoadcaseDemand(result.demand, loadcase) ? [[loadcase.id, result]] : []
+        return result && sameLoadcaseDemand(result.demand, loadcase) && result.utilizationDefinition === checkBasis
+          ? [[loadcase.id, result]]
+          : []
       })
     ) as Record<number, LoadcaseQuickCheckResult>
     quickChecksRef.current = retained
@@ -1187,7 +1198,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
 
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
-      checkLoadcasesAsync({ surface: resultSurface, loadcases: pending }, controller.signal)
+      checkLoadcasesAsync({ surface: resultSurface, loadcases: pending, checkBasis }, controller.signal)
         .then((results) => {
           const next = { ...quickChecksRef.current }
           for (const result of results) next[result.loadcaseId] = result
@@ -1227,7 +1238,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
     const controller = new AbortController()
     inverseAbortRef.current.set(loadcase.id, controller)
     checkLoadcaseAsync(
-      { calculationProfileId, section: finalSection, rebars, materialStore, loadcase, surface: resultSurface, designBasis },
+      { calculationProfileId, section: finalSection, rebars, materialStore, loadcase, surface: resultSurface, checkBasis, designBasis },
       controller.signal
     )
       .then((result) => {
@@ -1284,6 +1295,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
         analysisOptions,
         surface: resultSurface,
         loadcases: loadingsInput.combinations,
+        checkBasis,
         detailLoadcaseIds: reportDetailIds
       })
       downloadBlob(blob, fileName)
@@ -1326,6 +1338,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
         analysisOptions: resultSurface.analysisOptions,
         surface: resultSurface,
         loadcases: loadingsInput.combinations,
+        checkBasis,
         detailLoadcaseIds: reportDetailIds
       }
       const blob = await exportDemandCheckWorkbookAsync(payload)
@@ -1368,6 +1381,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
         analysisOptions: resultSurface.analysisOptions,
         surface: resultSurface,
         loadcases: [calculationLoadcase],
+        checkBasis,
         detailLoadcaseIds: [calculationLoadcase.id]
       }
       const blob = await exportDemandCheckWorkbookAsync(payload)
@@ -2116,8 +2130,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
     }
   }
 
-  const applyImportedProject = (raw: unknown, workbookWarnings: string[] = []) => {
-    const result = parseProjectDocument(raw)
+  const applyValidatedProject = (result: ParseProjectResult, workbookWarnings: string[] = []) => {
     if (!result.ok) {
       window.alert(`Import failed:\n${result.error}`)
       return
@@ -2125,7 +2138,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
 
     const { document } = result
     const warnings = [...new Set([...workbookWarnings, ...result.warnings])]
-    publishRecentProject(document)
+    publishRecentEntry(recentProjectFromValidatedDocument(document))
     const geometry = document.inputs.geometry
     const hasGeometry = geometry.outers.some((outer) => outer.points.length >= 3)
 
@@ -2172,25 +2185,44 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
     }
   }
 
+  const applyImportedProject = (raw: unknown, workbookWarnings: string[] = []) =>
+    applyValidatedProject(parseProjectDocument(raw), workbookWarnings)
+
+  useEffect(() => () => {
+    projectImportAbortRef.current?.abort()
+    projectImportAbortRef.current = null
+  }, [])
+
   const handleImportFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
+    projectImportAbortRef.current?.abort()
+    const controller = new AbortController()
+    projectImportAbortRef.current = controller
     setProjectFileBusy(true)
     try {
       if (projectFileFormat === 'excel') {
         const { importProjectWorkbook, PROJECT_WORKBOOK_MAX_BYTES } = await import('./project/project-xlsx')
         if (file.size > PROJECT_WORKBOOK_MAX_BYTES) throw new Error('Project workbook exceeds 10 MiB.')
         const result = await importProjectWorkbook(await file.arrayBuffer())
+        if (controller.signal.aborted) return
         if (!result.ok) throw new Error(result.error)
         applyImportedProject(result.document, result.warnings)
       } else {
-        applyImportedProject(await file.text())
+        const { readProjectJsonText } = await import('./project/project-json')
+        const { importProjectJsonAsync } = await import('../../application/project/import')
+        const result = await importProjectJsonAsync(await readProjectJsonText(file), controller.signal)
+        if (!controller.signal.aborted) applyValidatedProject(result)
       }
     } catch (error) {
+      if (controller.signal.aborted) return
       window.alert(`Import failed:\n${error instanceof Error ? error.message : 'Could not read the selected file.'}`)
     } finally {
-      setProjectFileBusy(false)
+      if (projectImportAbortRef.current === controller) {
+        projectImportAbortRef.current = null
+        setProjectFileBusy(false)
+      }
     }
   }
 

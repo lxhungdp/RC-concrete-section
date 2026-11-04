@@ -128,20 +128,20 @@ strain, and adapter provenance.
 
 ## 5. Independent Fixed and Adaptive modes
 
-The finite endpoint-hardening domain has no qualified Fixed uncertainty bound. Its Fixed check
-reports the computed utilization with an indeterminate verdict. Adaptive must converge its
-direction and station estimates; those estimates are not a universal certified capacity error.
+The finite endpoint-hardening domain has no measured Fixed uncertainty bound; its Fixed check uses
+the project's 2% screening margin. Adaptive must converge its direction and station estimates; those
+estimates are not a universal certified capacity error.
 
 Fixed mode does not evaluate hidden midpoint probes. It calculates only the 27 × 36 requested
 states, so changing to Capacity does not pay for a second error-measurement grid.
 These counts describe physical states before geometric clipping. Applying Pmax retains the
 original permitted points and introduces exact geometric edge intersections, so the clipped
 Design vertex count and per-meridian point count need not equal the physical station count.
-Legacy fixed-mode stress-strain demand checks use that mechanics' 2% regression screening margin owned by
-`@pm/results`; cases whose resulting UR interval crosses 1.0 are visibly `indeterminate`, not
-silently passed or failed. Fixed equivalent-block checks currently have no validated screening
-bound and are therefore `indeterminate`. A consumer must not borrow the stress-strain margin or
-derive a verdict from raw UR.
+Fixed demand checks use the 2% screening margin owned by `@pm/results`; cases whose resulting UR
+interval crosses 1.0 are visibly `indeterminate`, not silently passed or failed. The margin is
+measured only for stress-strain proportional checks; [engineering/05](engineering/05-loadings-analysis-results-and-reports.md)
+§4 records the project decision for every other Fixed check. A consumer must not derive a verdict
+from raw UR.
 
 Adaptive mode is a separate calculation, not an overlay on Fixed. It measures true midpoint states
 against chords and inserts station or direction midpoints only when the error exceeds tolerance.
@@ -172,8 +172,16 @@ A fixed-P plot is the geometric intersection of the triangulated surface with th
 ordered closed paths. Plot markers are elements of those same paths, not results from a parallel
 interpolator.
 
-The contour is useful for visualization and for a secondary fixed-P diagnostic. It is built from
-`designSurface` or `nominalSurface`; it is not the governing utilization calculation.
+The transient contour retains path identity and closure on each point. Adjacency follows shared
+surface-edge/vertex identities, including coplanar patch perimeters. Separate components are
+rendered separately. An open or branched component cannot qualify a radial capacity query.
+Physical-station subsets are audit markers and cannot replace the complete segment chain in a
+capacity intersection. The [repair packet](task-packets/2026-11-04-fixed-p-adaptive-repair.md) owns
+the differential evidence.
+
+The contour is useful for visualization and for a fixed-P diagnostic. It is built from
+`designSurface` or `nominalSurface`. It is not the proportional governing calculation; the separate
+`constantAxial` check basis in §9 uses the same Design surface and is verified against this contour.
 
 ## 8. Direct vertical meridian and exact angles
 
@@ -200,6 +208,12 @@ lambda (Pu, Mux, Muy), lambda >= 0
 and reports utilization from the boundary intersection. Nominal capacity, Design capacity, and
 factored Demand remain distinct in the UI and report. No chart is allowed to relabel Nominal as
 Design or apply a resistance factor to factored Demand.
+
+That proportional ray is the default check basis. With `checkBasis = 'constantAxial'` the load path
+is instead the horizontal line `(Pu, t cos(thetaLoad), t sin(thetaLoad))`, `t >= 0`, from the
+`Pu` axis through the demand. Vertical charts draw that path horizontally at `Pu`, through the
+stored capacity point. The cap never governs this ray, because a cap face is parallel to it. A demand
+with `Pu` beyond the axial range has no crossing and shows no capacity point.
 
 The origin-to-demand ray and stored governing crossing remain visible for outside demands.
 Demand-plane plots use the checked demand direction, including any declared code adjustment;
@@ -238,17 +252,20 @@ Convert semantics are recorded in development/16.
 
 ## 10. Field display
 
-Demand Check selects its section field from the unchanged governing Design check. A case classified
-`inadequate` shows **Field at capacity**. Every other checked case shows **Field at demand** only
-when a converged, admissible equilibrium at the checked entered demand is available. An
-`indeterminate` classification remains indeterminate even when its diagnostic demand field exists.
-Failure of a demand inverse must not silently substitute a capacity field for a non-NG case.
-The stress-strain inverse supplies demand equilibrium. The equivalent-block inverse supplies a
-capacity-ray state, not demand equilibrium, so its non-NG demand field is explicitly unavailable;
-do not scale that boundary strain plane or introduce another constitutive law to manufacture one.
+Demand Check selects its field by mechanics and the governing Design classification.
+Stress-strain uses **Field at demand** for OK and other non-NG cases with qualified equilibrium
+at the checked entered demand; NG uses **Field at capacity**. Equivalent block uses
+**Field at capacity** for every checked classification because its inverse supplies a capacity
+state. The displayed capacity multiplier identifies the boundary state relative to the checked
+demand and selected check basis. Classification and NG tint come from the governing check.
+Missing qualified evidence remains explicitly unavailable without substituting the other basis.
+Indeterminate retains its classification. This user clarification supersedes the earlier all-case
+capacity display decision. See the [task packet](task-packets/2026-11-04-mechanics-specific-field-basis.md).
 
-For an NG capacity field, the field requires an admissible compatible state whose independently evaluated Design resultants
-are proportional to the checked demand. A faceted ray intersection is a seed, not a physical field.
+The capacity field requires an admissible compatible state whose independently evaluated Design
+resultants follow the selected check path. Proportional checks scale all three checked actions;
+constant-P checks hold the checked axial force and scale its moments. A faceted ray intersection is
+a seed, not a physical field.
 Stress-strain refines beta, the existing compatible station coordinate, and a positive load factor
 with bounded damped Newton; it reuses the same station-state and Design-resistance evaluators as
 the surface. At the final finite-state-to-tension-pole chord, a declared steel rupture limit uses

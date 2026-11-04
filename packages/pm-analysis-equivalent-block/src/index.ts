@@ -1,36 +1,37 @@
+import { AnalysisInputError } from '@pm/results/errors'
 import {
-  AnalysisInputError,
-  activeDesignSurfaceDataset,
-  activeNominalSurfaceDataset,
   buildCalculationAuditOriginStrainTrace,
   projectedBoundaryDepth,
   reconcileCalculationAuditResultant,
   sectionBoundaryPoints,
   stationDefinitionLabel,
   strainResistanceFactorAudit,
-  selectGoverningSteelStrainLimit,
-  type SteelStrainLimitEvidence,
-  type CalculationAuditResistanceFactor,
-  type AxialCapProjectionTrace,
-  type CapacityFieldResult,
-  type DesignResistanceTrace,
-  type CalculationAuditDepthProfile,
-  type CalculationAuditRebar,
-  type CalculationAuditStage,
-  type EquivalentBlockStateTrace,
-  type ExactDirectionCurve,
-  type InversePreviewResult,
-  type PreviewSurface,
-  type PreviewSurfaceDataset,
-  type PreviewSurfacePoint,
-  type PointCalculationAudit,
-  type ResultantLedger,
-  type SectionFieldMap,
-  type StrainAdmissibility,
-  type StrainState,
-  type StationDefinition,
-  type SurfaceStation
-} from '@pm/analysis'
+  selectGoverningSteelStrainLimit
+} from '@pm/results/audit'
+import { activeDesignSurfaceDataset, activeNominalSurfaceDataset } from '@pm/results/audit'
+import type {
+  SteelStrainLimitEvidence,
+  CalculationAuditResistanceFactor,
+  AxialCapProjectionTrace,
+  CapacityFieldResult,
+  DesignResistanceTrace,
+  CalculationAuditDepthProfile,
+  CalculationAuditRebar,
+  CalculationAuditStage,
+  EquivalentBlockStateTrace,
+  ExactDirectionCurve,
+  InversePreviewResult,
+  PreviewSurface,
+  PreviewSurfaceDataset,
+  PreviewSurfacePoint,
+  PointCalculationAudit,
+  ResultantLedger,
+  SectionFieldMap,
+  StrainAdmissibility,
+  StrainState,
+  StationDefinition,
+  SurfaceStation
+} from '@pm/results/contracts'
 import { ACI_318_19_PROVENANCE, createAci318Model } from '@pm/code-aci318'
 import { AS_3600_2018_PROVENANCE, AS3600_BENDING_FACTOR_EXPRESSION, as3600BendingPhi, createAs3600Model } from '@pm/code-as3600'
 import {
@@ -80,6 +81,7 @@ import {
   type CalculationProfileId,
   type EquivalentBlockProfileId,
   type EquivalentBlockAnalysisOptions,
+  type DemandCheckBasis,
   type LoadCombination
 } from '@pm/project'
 
@@ -879,6 +881,7 @@ export const buildEquivalentBlockPreviewSurfaceFromPrepared = (
       tolerance
     },
     stationError: {
+      ...(design.stationRefinementStalled ? { reason: 'state-stalled' as const } : {}),
       stations: design.maxStationsPerDirection ?? design.stations.length + 2,
       fixedStations: options.neutralAxisStations.values.length + 2,
       minStations: design.minStationsPerDirection ?? design.stations.length + 2,
@@ -1524,12 +1527,25 @@ const evaluateBlockAdmissibility = (
 }
 
 /** Diagnostic physical boundary query; capped solver/check outputs are not replaced. */
+const blockCapacityResidual = (
+  response: CapacityEvaluation['resultants'], demand: LoadCombination, multiplier: number, checkBasis: DemandCheckBasis
+): CapacityEvaluation['resultants'] => ({
+  P: response.P - (checkBasis === 'constantAxial' ? demand.P : multiplier * demand.P),
+  Mx: response.Mx - multiplier * demand.Mx,
+  My: response.My - multiplier * demand.My
+})
+
+const blockResidualNorm = (residual: CapacityEvaluation['resultants'], surface: EquivalentBlockDesignSurface) => Math.hypot(
+  residual.P / surface.normalization.P, residual.Mx / surface.normalization.Mx, residual.My / surface.normalization.My
+)
+
 const equivalentBlockCapacityField = (
   prepared: PreparedBlockAnalysis,
   designSurface: EquivalentBlockDesignSurface,
   demand: LoadCombination,
   evaluator: CapacityEvaluator,
-  governingSolve: ReturnType<typeof solveProportionalRayCapacity>
+  governingSolve: ReturnType<typeof solveProportionalRayCapacity>,
+  checkBasis: DemandCheckBasis
 ): CapacityFieldResult => {
   const onCap = governingSolve.status === 'cap-face-governed'
   if (onCap && !designSurface.beforeAxialCap) return {
@@ -1563,22 +1579,38 @@ const equivalentBlockCapacityField = (
         yieldStrain: null, axialCapApplied: false, stages: ['Nominal equivalent block', 'Code strength reduction'] }
   const limit = designSurface.axialCap
   const beforeCap = limit !== undefined && response.P > limit
+  const residual = blockCapacityResidual(response, demand, solved.loadFactor, checkBasis)
   return { status: 'available', boundary: beforeCap ? { kind: 'before-axial-cap', limit } : { kind: 'design' },
     state: strainState(prepared.section, solved.state, prepared.model.blockLaw), response,
     loadFactor: solved.loadFactor,
-    residual: { P: response.P - solved.loadFactor * demand.P, Mx: response.Mx - solved.loadFactor * demand.Mx,
-      My: response.My - solved.loadFactor * demand.My },
-    residualNorm: solved.residualNorm ?? 0, iterations: solved.iterations, admissibility, resistance, equivalentBlock,
+    residual,
+    residualNorm: checkBasis === 'constantAxial' ? blockResidualNorm(residual, designSurface) : solved.residualNorm ?? 0,
+    iterations: solved.iterations, admissibility, resistance, equivalentBlock,
     message: beforeCap
       ? 'Physical equivalent-block Design boundary before the axial cap on the same load ray; exceeds permitted Design resistance. Governing UR is unchanged.'
       : 'Compatible physical equivalent-block capacity state.' }
 }
 
+/** Express the exact constant-P solve in the ray-result shape shared by the block result fields. */
+const constantAxialCapacity = (
+  fixedAxial: ReturnType<typeof solveFixedAxialCapacity> | null
+): ReturnType<typeof solveProportionalRayCapacity> => fixedAxial?.status === 'converged' && fixedAxial.capacityFactor !== undefined
+  ? {
+      status: 'converged',
+      loadFactor: fixedAxial.capacityFactor,
+      utilization: fixedAxial.utilization,
+      capacity: fixedAxial.capacity,
+      state: fixedAxial.state,
+      iterations: fixedAxial.innerIterations
+    }
+  : { status: 'no-intersection', iterations: fixedAxial?.innerIterations ?? 0 }
+
 const solveEquivalentBlockDemandRaw = (
   prepared: PreparedBlockAnalysis,
   options: EquivalentBlockAnalysisOptions,
   loadcase: LoadCombination,
-  preparedDesignSurface?: EquivalentBlockDesignSurface
+  preparedDesignSurface: EquivalentBlockDesignSurface | undefined,
+  checkBasis: DemandCheckBasis
 ): InversePreviewResult => {
   if (loadcase.P === 0 && loadcase.Mx === 0 && loadcase.My === 0) {
     // The geometric check owns UR=0. A zero ray has no block capacity state; the legacy required
@@ -1597,7 +1629,7 @@ const solveEquivalentBlockDemandRaw = (
       ? prepared.designModel.bindNominalEvaluator(prepared.section)
       : prepared.designModel.bindDesignEvaluator(prepared.section)
   ) as CapacityEvaluator
-  const solved = solveProportionalRayCapacity(designSurface, loadcase, evaluator)
+  const proportional = solveProportionalRayCapacity(designSurface, loadcase, evaluator)
   const fixedAxial = Math.hypot(loadcase.Mx, loadcase.My) > 0
     ? solveFixedAxialCapacity(
         prepared.section,
@@ -1613,16 +1645,13 @@ const solveEquivalentBlockDemandRaw = (
         }
       )
     : null
+  const atConstantAxial = checkBasis === 'constantAxial'
+  const solved = atConstantAxial ? constantAxialCapacity(fixedAxial) : proportional
   const diagnostic = solved.refinement
   const state = diagnostic?.state ?? solved.state
   const response = diagnostic?.capacity ?? solved.capacity ?? { P: 0, Mx: 0, My: 0 }
   const lambda = diagnostic?.loadFactor ?? solved.loadFactor ?? 0
-  const target = { P: lambda * loadcase.P, Mx: lambda * loadcase.Mx, My: lambda * loadcase.My }
-  const residual = diagnostic?.residual ?? {
-    P: response.P - target.P,
-    Mx: response.Mx - target.Mx,
-    My: response.My - target.My
-  }
+  const residual = diagnostic?.residual ?? blockCapacityResidual(response, loadcase, lambda, checkBasis)
   const strain = strainState(prepared.section, state, prepared.model.blockLaw)
   const exact = state ? evaluator(state) : undefined
   const nominal = nominalEvaluationFrom(exact)
@@ -1678,10 +1707,10 @@ const solveEquivalentBlockDemandRaw = (
     state: strain,
     response,
     residual,
-    residualNorm: solved.residualNorm ?? 0,
+    residualNorm: atConstantAxial ? blockResidualNorm(residual, designSurface) : solved.residualNorm ?? 0,
     iterations: solved.iterations,
     utilization,
-    proportionalUtilization: utilization,
+    proportionalUtilization: proportional.utilization ?? null,
     inverseProportionalUtilization: utilization,
     fixedPUtilization: fixedAxial?.utilization ?? null,
     designCheck: { evaluated: false },
@@ -1689,14 +1718,18 @@ const solveEquivalentBlockDemandRaw = (
     resistance,
     equivalentBlock,
     contourPoint: null,
-    capacityField: equivalentBlockCapacityField(prepared, designSurface, loadcase, evaluator, solved),
+    capacityField: equivalentBlockCapacityField(prepared, designSurface, loadcase, evaluator, solved, checkBasis),
     message: solved.status === 'cap-face-governed'
       ? 'Factored ULS demand is governed by the code axial-cap face; no unique physical neutral-axis state exists on that face.'
       : solved.status === 'mesh-fallback'
         ? 'An approximate capacity was found on the faceted surface, but exact equilibrium refinement did not converge. The result is not accepted as an equilibrium state.'
       : converged
-        ? 'Factored ULS demand checked by the equivalent-block proportional-ray solver.'
-        : 'No intersection was found on the equivalent-block design surface.'
+        ? atConstantAxial
+          ? 'Factored ULS demand checked by the equivalent-block constant-P solver.'
+          : 'Factored ULS demand checked by the equivalent-block proportional-ray solver.'
+        : atConstantAxial
+          ? 'No unique constant-P equivalent-block capacity state was found.'
+          : 'No intersection was found on the equivalent-block design surface.'
   }
 }
 
@@ -1704,19 +1737,20 @@ export const solveEquivalentBlockDemandFromPrepared = (
   prepared: PreparedBlockAnalysis,
   options: EquivalentBlockAnalysisOptions,
   loadcase: LoadCombination,
-  preparedDesignSurface?: EquivalentBlockDesignSurface
+  preparedDesignSurface?: EquivalentBlockDesignSurface,
+  checkBasis: DemandCheckBasis = 'proportional3D'
 ): InversePreviewResult => {
   const designSurface = preparedDesignSurface ?? buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
   const boundary = sectionBoundaryPoints(prepared.section)
   const candidates = minimumEccentricityCandidates(prepared.designBasis, loadcase, (nx, ny) =>
     projectedBoundaryDepth(boundary, nx, ny))
   if (candidates.length === 0) {
-    return solveEquivalentBlockDemandRaw(prepared, options, loadcase, designSurface)
+    return solveEquivalentBlockDemandRaw(prepared, options, loadcase, designSurface, checkBasis)
   }
 
   const solved = candidates.map((candidate) => {
     const adjusted = { ...loadcase, Mx: candidate.Mx, My: candidate.My }
-    const result = solveEquivalentBlockDemandRaw(prepared, options, adjusted, designSurface)
+    const result = solveEquivalentBlockDemandRaw(prepared, options, adjusted, designSurface, checkBasis)
     return {
       ...result,
       demand: loadcase,
@@ -1726,8 +1760,8 @@ export const solveEquivalentBlockDemandFromPrepared = (
     }
   })
   return solved.reduce((governing, candidate) =>
-    (candidate.proportionalUtilization ?? Number.POSITIVE_INFINITY) >
-    (governing.proportionalUtilization ?? Number.POSITIVE_INFINITY)
+    (candidate.utilization ?? Number.POSITIVE_INFINITY) >
+    (governing.utilization ?? Number.POSITIVE_INFINITY)
       ? candidate
       : governing
   )
@@ -1742,13 +1776,14 @@ export const solveEquivalentBlockDemandsFromPrepared = (
   prepared: PreparedBlockAnalysis,
   options: EquivalentBlockAnalysisOptions,
   loadcases: readonly LoadCombination[],
-  preparedDesignSurface?: EquivalentBlockDesignSurface
+  preparedDesignSurface?: EquivalentBlockDesignSurface,
+  checkBasis: DemandCheckBasis = 'proportional3D'
 ): InversePreviewResult[] => {
   if (loadcases.length === 0) return []
   const designSurface =
     preparedDesignSurface ?? buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
   return loadcases.map((loadcase) =>
-    solveEquivalentBlockDemandFromPrepared(prepared, options, loadcase, designSurface)
+    solveEquivalentBlockDemandFromPrepared(prepared, options, loadcase, designSurface, checkBasis)
   )
 }
 

@@ -82,6 +82,19 @@ test('development/02 §10: every canonical JSON example is the independent exact
   }
 })
 
+test('development/02 §10: a declared check basis survives the workbook exactly, and an unknown one fails', async () => {
+  const seed = createEmptyProjectDocument({ name: 'Basis' })
+  seed.inputs.loadings.checkBasis = 'constantAxial'
+  const project = canonical(JSON.parse(JSON.stringify(seed)))
+  const workbook = await readBook(project)
+  const imported = await importBook(workbook)
+  assert.ok(imported.ok, imported.ok ? '' : imported.error)
+  assert.equal(imported.document.inputs.loadings.checkBasis, 'constantAxial')
+  assert.deepEqual(imported.document, project)
+  field(workbook, 'Analysis', 'inputs.loadCheckBasis').value = 'nearest-angle'
+  assert.equal((await importBook(workbook)).ok, false)
+})
+
 test('all profile families, empty inputs, optional bar references, Unicode and blank metadata retain their contracts', async () => {
   const empty = createEmptyProjectDocument({ name: '' })
   empty.meta.information.company = '구조 설계 – Công ty Á Châu'
@@ -124,7 +137,7 @@ test('compact v5 hides advanced sheets/technical IDs and shows concise project/d
   const projectSheet = book.getWorksheet('Project')!
   assert.equal(projectSheet.rowCount, 10)
   assert.equal(field(book, 'Project', 'Name').value, '=SUM(A1:A2)')
-  assert.equal(field(book, 'Analysis', 'workbookVersion').value, 7)
+  assert.equal(field(book, 'Analysis', 'workbookVersion').value, 8)
   assert.equal(book.getWorksheet('Section')!.getCell(marker(book, 'Section', 'OUTER'), 1).value, 'outer #1')
   assert.equal(book.getWorksheet('Section')!.getCell(marker(book, 'Section', 'HOLE'), 1).value, 'hole #1')
   const loadHeader = book.getWorksheet('Loadings')!.getRow(marker(book, 'Loadings', 'LOADINGS') + 1)

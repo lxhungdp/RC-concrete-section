@@ -1,0 +1,943 @@
+{
+  "schema": "pm-verification-traceability",
+  "version": 1,
+  "note": "A passing linkage check does not certify engineering correctness or close declared release gaps.",
+  "requirements": [
+    {
+      "id": "DEV-ARCH-001",
+      "authority": "docs/development/01-architecture-and-package-boundaries.md",
+      "coverage": "implemented-preview",
+      "implementation": [
+        {
+          "file": "tools/architecture/workspace-dependencies.ts",
+          "symbol": "inspectWorkspaceDependencies"
+        }
+      ],
+      "verification": [
+        {
+          "file": "tools/architecture/workspace-dependencies.test.ts",
+          "oracle": "Synthetic dependency DAG, public-export, relative-bypass and capability rejection cases."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "DEV-ARCH-002",
+      "authority": "docs/development/01-architecture-and-package-boundaries.md",
+      "coverage": "implemented-preview",
+      "implementation": [
+        {
+          "file": "tools/architecture/workspace-dependencies.ts",
+          "symbol": "inspectWorkspaceDependencies"
+        },
+        {
+          "file": "apps/web/application/analysis/execution.ts",
+          "symbol": "createAnalysisExecution"
+        }
+      ],
+      "verification": [
+        {
+          "file": "tools/architecture/workspace-dependencies.test.ts",
+          "oracle": "Synthetic dependency DAG, public-export, relative-bypass and capability rejection cases."
+        },
+        {
+          "file": "apps/web/test/analysis/execution.test.ts",
+          "oracle": "Both mechanics reproduce kernel checks, preserve cache invalidation and expose typed material failures."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "DEV-ARCH-003",
+      "authority": "docs/development/01-architecture-and-package-boundaries.md",
+      "coverage": "implemented-preview",
+      "implementation": [
+        {
+          "file": "tools/architecture/workspace-dependencies.ts",
+          "symbol": "inspectWorkspaceDependencies"
+        }
+      ],
+      "verification": [
+        {
+          "file": "tools/architecture/workspace-dependencies.test.ts",
+          "oracle": "Synthetic dependency DAG, public-export, relative-bypass and capability rejection cases."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "DEV-ARCH-004",
+      "authority": "docs/development/01-architecture-and-package-boundaries.md",
+      "coverage": "implemented-preview",
+      "implementation": [
+        {
+          "file": "tools/architecture/workspace-dependencies.ts",
+          "symbol": "inspectWorkspaceDependencies"
+        }
+      ],
+      "verification": [
+        {
+          "file": "tools/architecture/workspace-dependencies.test.ts",
+          "oracle": "Synthetic dependency DAG, public-export, relative-bypass and capability rejection cases."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "DEV-ARCH-005",
+      "authority": "docs/development/01-architecture-and-package-boundaries.md",
+      "coverage": "implemented-preview",
+      "implementation": [
+        {
+          "file": "tools/architecture/workspace-dependencies.ts",
+          "symbol": "inspectWorkspaceDependencies"
+        }
+      ],
+      "verification": [
+        {
+          "file": "tools/architecture/workspace-dependencies.test.ts",
+          "oracle": "Synthetic dependency DAG, public-export, relative-bypass and capability rejection cases."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "DEV-ARCH-006",
+      "authority": "docs/development/01-architecture-and-package-boundaries.md",
+      "coverage": "open",
+      "implementation": [],
+      "verification": [],
+      "evidence": [],
+      "reviewer": null,
+      "releaseGap": "The accepted-result/profile/normalization capability required by this gate is not implemented or independently approved."
+    },
+    {
+      "id": "DEV-ARCH-007",
+      "authority": "docs/development/01-architecture-and-package-boundaries.md",
+      "coverage": "implemented-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/mesh.ts",
+          "symbol": "buildConcreteMesh"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/mesh-spatial.test.ts",
+          "oracle": "Differential all-cell clipping and spatial classifier conservation invariants."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "UNITS-001",
+      "authority": "docs/engineering/02-data-conventions-and-terminology.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-units/src/index.ts",
+          "symbol": "CANONICAL_UNITS"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-units/test/units.test.ts",
+          "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "UNITS-002",
+      "authority": "docs/engineering/02-data-conventions-and-terminology.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-units/src/index.ts",
+          "symbol": "selectUnit"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-units/test/units.test.ts",
+          "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "UNITS-003",
+      "authority": "docs/engineering/02-data-conventions-and-terminology.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-units/src/index.ts",
+          "symbol": "commitQuantity"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-units/test/units.test.ts",
+          "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "UNITS-004",
+      "authority": "docs/engineering/02-data-conventions-and-terminology.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-units/src/index.ts",
+          "symbol": "quantityUnit"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-units/test/units.test.ts",
+          "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "UNITS-005",
+      "authority": "docs/engineering/02-data-conventions-and-terminology.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-units/src/index.ts",
+          "symbol": "parseQuantityUnitSelection"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-units/test/units.test.ts",
+          "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "UNITS-006",
+      "authority": "docs/engineering/02-data-conventions-and-terminology.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-units/src/index.ts",
+          "symbol": "fromCanonical"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-units/test/units.test.ts",
+          "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "REBAR-AS-001",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/rebar-area.ts",
+          "symbol": "rebarArea"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-geometry/test/rebar-area.test.ts",
+          "oracle": "Stored-area identity, explicit authoring and legacy-operation-order fixtures."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "REBAR-AS-002",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/rebar-area.ts",
+          "symbol": "equationRebarProperties"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-geometry/test/rebar-area.test.ts",
+          "oracle": "Stored-area identity, explicit authoring and legacy-operation-order fixtures."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "REBAR-AS-003",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/rebar-area.ts",
+          "symbol": "withStoredRebarArea"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-geometry/test/rebar-area.test.ts",
+          "oracle": "Stored-area identity, explicit authoring and legacy-operation-order fixtures."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "REBAR-AS-004",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/rebar-area.ts",
+          "symbol": "rebarAreaSourceLabel"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-geometry/test/rebar-area.test.ts",
+          "oracle": "Stored-area identity, explicit authoring and legacy-operation-order fixtures."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-GEO-001",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/validation.ts",
+          "symbol": "validateGeometryInput"
+        },
+        {
+          "file": "packages/pm-project/src/resource-limits.ts",
+          "symbol": "assertProjectInputResources"
+        },
+        {
+          "file": "apps/web/application/project/import.ts",
+          "symbol": "importProjectJsonAsync"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/api-boundaries.test.ts",
+          "oracle": "Finite/resource rejection and mismatched-mesh analytical rectangle oracle."
+        },
+        {
+          "file": "packages/pm-project/test/input-resources.test.ts",
+          "oracle": "Oversized raw arrays fail before reading coordinate getters or invoking quadratic topology work."
+        },
+        {
+          "file": "apps/web/test/project-import.test.ts",
+          "oracle": "Worker completion, abort, late-response suppression, failure and bounded fallback evidence."
+        },
+        {
+          "file": "apps/web/test/project-json.test.ts",
+          "oracle": "Oversized file rejection precedes text allocation."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-GEO-002",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/validation.ts",
+          "symbol": "validatePolygonSection"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-geometry/test/geometry-kernel.test.ts",
+          "oracle": "Analytical topology/containment and invalid ring fixtures."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-GEO-003",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-analysis/src/index.ts",
+          "symbol": "prepareAnalysisFromMesh"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/api-boundaries.test.ts",
+          "oracle": "Exact source-identity mismatch and same-geometry replay."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-GEO-004",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/mesh.ts",
+          "symbol": "netConcreteCentroid"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-geometry/test/geometry-kernel.test.ts",
+          "oracle": "Analytical rectangle/triangle properties and translated geometry."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-GEO-005",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/validation.ts",
+          "symbol": "validatePolygonSection"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-geometry/test/geometry-kernel.test.ts",
+          "oracle": "Circular disk, hole and overlap boundary fixtures."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Code-specific detailing and persisted region-parent acceptance remain incomplete."
+    },
+    {
+      "id": "ENG-GEO-006",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/mesh.ts",
+          "symbol": "buildConcreteMesh"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/mesh-spatial.test.ts",
+          "oracle": "Independent all-cell clipping and polynomial quadrature checks."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-GEO-007",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "open",
+      "implementation": [],
+      "verification": [],
+      "evidence": [],
+      "reviewer": null,
+      "releaseGap": "The accepted-result/profile/normalization capability required by this gate is not implemented or independently approved."
+    },
+    {
+      "id": "ENG-MAT-001",
+      "authority": "docs/engineering/04-materials-and-design-standards.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-materials/src/validation.ts",
+          "symbol": "materialStoreIssues"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-materials/test/api-validation.test.ts",
+          "oracle": "Invalid-parameter and contradictory-yield failure oracles."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-MAT-002",
+      "authority": "docs/engineering/04-materials-and-design-standards.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-materials/src/compile.ts",
+          "symbol": "compileMaterial"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/tangent.test.ts",
+          "oracle": "Independent central differences and section Jacobian invariants."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-MAT-003",
+      "authority": "docs/engineering/04-materials-and-design-standards.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-materials/src/support.ts",
+          "symbol": "concreteModelSupportIssue"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-project/test/calculation-profiles.test.ts",
+          "oracle": "Explicit cross-mechanics/profile rejection fixtures."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-MAT-004",
+      "authority": "docs/engineering/04-materials-and-design-standards.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-project/src/calculation-profiles.ts",
+          "symbol": "calculationProfile"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-project/test/calculation-profiles.test.ts",
+          "oracle": "Exact declared profile/method/material compatibility checks."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-MAT-005",
+      "authority": "docs/engineering/04-materials-and-design-standards.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-materials/src/compile.ts",
+          "symbol": "compileMaterial"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-materials/test/constitutive-laws.test.ts",
+          "oracle": "Independently written piecewise ordinate and derivative equations."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-MAT-006",
+      "authority": "docs/engineering/04-materials-and-design-standards.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-design/src/index.ts",
+          "symbol": "buildResistanceMaterialSets"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/design-resistance.test.ts",
+          "oracle": "Independent stage factors, ledger identities and anti-double-reduction."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-MAT-007",
+      "authority": "docs/engineering/04-materials-and-design-standards.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-analysis/src/index.ts",
+          "symbol": "buildDesignPreviewSurfaceFromPrepared"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/analysis-options.test.ts",
+          "oracle": "Sampling counts, resource limits and explicit convergence evidence."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-LOAD-001",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-project/src/load-reference.ts",
+          "symbol": "resultantAtCentroid"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-project/test/load-reference.test.ts",
+          "oracle": "Independent force-times-lever-arm and frame round trips."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-AN-001",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "open",
+      "implementation": [],
+      "verification": [],
+      "evidence": [],
+      "reviewer": null,
+      "releaseGap": "The accepted-result/profile/normalization capability required by this gate is not implemented or independently approved."
+    },
+    {
+      "id": "ENG-AN-002",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-analysis/src/index.ts",
+          "symbol": "buildDesignPreviewSurfaceFromPrepared"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/analysis-options.test.ts",
+          "oracle": "Independent dense sampling comparisons and explicit non-convergence."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Combined integration/utilization uncertainty and independent release qualification remain incomplete."
+    },
+    {
+      "id": "ENG-AN-003",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-analysis/src/index.ts",
+          "symbol": "intersectSurfaceAtConstantAxial"
+        },
+        {
+          "file": "packages/pm-analysis/src/surface-topology.ts",
+          "symbol": "IndexedSurfaceTopologyCache"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/constant-axial-intersection.test.ts",
+          "oracle": "Analytical polyhedra, solid-angle containment, tangency and exit-count cases."
+        },
+        {
+          "file": "packages/pm-analysis/test/batch-topology.test.ts",
+          "oracle": "Complete cold/cached result equality and topology/vertex/direction mutation invalidation."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-RES-001",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-results/src/index.ts",
+          "symbol": "classifyUtilization"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-results/test/classification.test.ts",
+          "oracle": "Independent uncertainty interval and classification boundaries."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-RES-002",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "open",
+      "implementation": [],
+      "verification": [],
+      "evidence": [],
+      "reviewer": null,
+      "releaseGap": "The accepted-result/profile/normalization capability required by this gate is not implemented or independently approved."
+    },
+    {
+      "id": "ENG-REP-001",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "open",
+      "implementation": [],
+      "verification": [],
+      "evidence": [],
+      "reviewer": null,
+      "releaseGap": "The accepted-result/profile/normalization capability required by this gate is not implemented or independently approved."
+    },
+    {
+      "id": "ENG-REP-002",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-report/src/model/report-model.ts",
+          "symbol": "buildColumnReportModel"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-report/test/integration/pdf-report.selftest.ts",
+          "oracle": "DTO-to-report agreement, deterministic bytes, Unicode and PDF structure."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:pdf-report",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    }
+  ]
+}

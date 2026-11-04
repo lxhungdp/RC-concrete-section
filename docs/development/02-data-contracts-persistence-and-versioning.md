@@ -62,6 +62,14 @@ stored-area fields. The isolated legacy adapter retains each mechanics' previous
 order; creating a v2 document materializes that selected route's area once. No general migration
 framework is introduced. See [stored-area contract](11-rebar-area-and-catalogs.md).
 
+JSON file import checks file bytes before reading and text/entity budgets before expensive parsing
+or topology work. In a browser with Worker support, the application parses and validates in a
+dedicated worker, terminates it on success/failure/cancellation, and applies only its successful
+validated document. Superseding/unmounting an import aborts that job. Worker startup/runtime failure
+blocks the import. Environments without Worker support retain the same bounded parser with
+request-boundary cancellation only. Recent/example definitions still use the bounded synchronous
+parser; these paths do not promise cooperative inner-loop cancellation.
+
 ## 2. Canonical project document
 
 ```ts
@@ -249,7 +257,27 @@ displayed numbers at the new origin. Code demand corrections and all numerical c
 centroidal. V1/v2 declare zero offset and reject a reference extension rather than silently dropping
 it. V3 rejects an omitted/unknown/non-finite reference. See [the task packet](16-load-reference-origin.md).
 
+### Check basis
+
+`loadings.checkBasis` is `'proportional3D'` or `'constantAxial'`, defined by engineering/05 §3.
+Canonical exports write it. A project document that omits it, at any version, reads as
+`proportional3D`, the only behaviour those files could have declared; this is a documented parser
+default, not a migration. An unknown value is rejected. It is a load-check input rather than an
+analysis option, so changing it reuses the resistance surface.
+
 ## 8. Parsing and validation
+
+### Input resource preflight
+
+Before JSON parsing, allocation of normalized arrays or topology validation, reject JSON above
+10 MiB UTF-8. The web file adapter checks bytes before reading the file. The geometry owner reuses
+the existing drawing-interchange safety envelope: at most 128 rings, 1,024 vertices per ring,
+4,096 vertices in total and 2,048 bars. Material input allows at most 2,048 steel definitions and
+4,096 curve points in total (and per individual curve). Project loadings allow at most 100,000
+combinations, matching the existing workbook row ceiling. These project-selected memory/work
+bounds are not engineering applicability limits or accuracy claims. They are checked on direct
+unknown-object input as well as text import, before quadratic edge-pair validation. Exceeding a
+bound returns a typed resource failure and leaves applied state unchanged.
 
 Parsing is a boundary operation:
 
@@ -279,12 +307,13 @@ input hash, kernel/profile versions, convergence evidence, and release policy.
 
 `Import Export` selects Excel (`.xlsx`, default) or JSON. Both export the same applied input
 snapshot and project metadata; unapplied geometry drafts are excluded. The web boundary adapter
-`features/section-editor/project/project-xlsx.ts` owns `pm-column-input-workbook`, version 6.
+`features/section-editor/project/project-xlsx.ts` owns `pm-column-input-workbook`, version 8.
 It retains the declared project version and adds editable As plus optional hidden source snapshots.
 Canonical v2/v3 rows require As. Explicit legacy v1 workbooks retain diameter-only rows until export
 through the canonical project creator.
 
-Version 6 includes a visible Load reference declaration. Loadings values are about that declared
+Version 8 adds the optional `loadCheckBasis` project field, written when the project declares a
+basis so that an undeclared document round-trips exactly. Readers of versions 5 to 7 omit it. Version 6 includes a visible Load reference declaration. Loadings values are about that declared
 origin and normalize once to centroid on import. The explicit workbook-v5 reader declares zero
 offset; earlier versions require re-export. JSON keeps centroidal actions. Nonzero-frame Excel
 round trips retain full binary64 cell values without display rounding; subtraction/addition of

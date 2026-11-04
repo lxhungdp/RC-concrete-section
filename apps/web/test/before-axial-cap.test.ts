@@ -30,7 +30,7 @@ for (const adaptive of [false, true]) for (const file of [
     P: cap * 1.5, Mx: cap * 30, My: cap * 10 } : loadings.combinations[1]
   const before = JSON.stringify(surface)
   const expected = checkLoadcaseUtilizationFromSurface(surface, loadcase)
-  const result = await checkLoadcaseFallback({ ...input, surface, loadcase })
+  const result = await checkLoadcaseFallback({ ...input, surface, checkBasis: 'proportional3D', loadcase })
   assert.equal(result.utilization, expected.utilization)
   assert.deepEqual(result.designCapacityPoint, expected.capacityPoint)
   assert.ok(expected.capacityPoint)
@@ -98,7 +98,7 @@ for (const adaptive of [false, true]) for (const file of [
       })()
       add(fiber.area * sigma, fiber.x, fiber.y)
     }
-    const first = await checkLoadcaseFallback({ ...input, surface, loadcase: loadings.combinations[0] })
+    const first = await checkLoadcaseFallback({ ...input, surface, checkBasis: 'proportional3D', loadcase: loadings.combinations[0] })
     assert.ok(first.capacityField?.status === 'available')
     assert.equal(first.capacityField.boundary.kind, 'design', 'ULS-1 retains its permitted physical boundary field')
   } else {
@@ -139,7 +139,7 @@ for (const adaptive of [false, true]) for (const file of [
   for (const key of ['P', 'Mx', 'My'] as const) assert.ok(
     Math.abs(phi * expectedNominal[key] - field.response[key]) / (key === 'P' ? forceScale : momentScale) <= 1e-10,
     `${key}: independent concrete/steel/displaced-concrete replay`)
-  const scaled = await checkLoadcaseFallback({ ...input, surface, loadcase: { ...loadcase,
+  const scaled = await checkLoadcaseFallback({ ...input, surface, checkBasis: 'proportional3D', loadcase: { ...loadcase,
     P: loadcase.P * 2, Mx: loadcase.Mx * 2, My: loadcase.My * 2 } })
   assert.ok(scaled.capacityField?.status === 'available')
   for (const key of ['e0', 'kx', 'ky'] as const) assert.ok(

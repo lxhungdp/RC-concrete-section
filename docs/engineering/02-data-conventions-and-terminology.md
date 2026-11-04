@@ -99,7 +99,7 @@ needed. Canonical v3 records the applied reference; v1/v2 readers declare zero o
 The section-coordinate direction associated with a resultant is `(My,Mx)` and its perpendicular
 reference line is `(-Mx,My)`. The section-angle UI implements this mapping for both mechanics.
 
-The project-v1 `LoadCombination`/result DTO stores the same canonical components. No
+The canonical `LoadCombination`/result DTO stores the same canonical components. No
 mechanics-specific sign conversion is permitted in the bridge, demand solvers, plots, report model,
 or exports. An asymmetric exact-block regression checks the concrete and reinforcing-steel `My`
 terms separately; this prevents symmetric geometry from masking a future sign error.
@@ -158,4 +158,4 @@ moduli, strengths, limits, and resource counts must satisfy model-specific range
 Validation returns issues with stable code, severity, path/entity ID, safe message, and technical
 context. A warning cannot override an error. Automatic repairs are allowed only in an explicit
 import-repair preview and must be disclosed; accepted analysis uses the repaired snapshot as a new
-v1 input snapshot, never an invisible mutation.
+canonical input snapshot, never an invisible mutation.

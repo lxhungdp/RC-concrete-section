@@ -28,12 +28,12 @@ for (const file of files) test(`ENG-AN-003: Convert preserves both-mechanics che
   assert.ok(hit)
   for (const scale of [0.5, 2, 5]) {
     const load: LoadCombination = { ...seed, P: hit.P * scale, Mx: hit.Mx * scale, My: hit.My * scale }
-    const before = await checkLoadcaseFallback({ ...input, surface, loadcase: load })
+    const before = await checkLoadcaseFallback({ ...input, surface, checkBasis: 'proportional3D', loadcase: load })
     const dataset = activeDesignSurfaceDataset(surface)
     const curvesBefore = { fixedP: sliceFixedPContour(dataset.points, load.P, dataset.triangles),
       vertical: sliceMomentPlane(dataset.points, Math.atan2(load.My, load.Mx), dataset.triangles) }
     const converted = applyLoadReference({ combinations: [load] }, reference, true)
-    const after = await checkLoadcaseFallback({ ...input, surface, loadcase: converted.combinations[0] })
+    const after = await checkLoadcaseFallback({ ...input, surface, checkBasis: 'proportional3D', loadcase: converted.combinations[0] })
     assert.deepEqual(after, before, 'canonical inverse, capacity field, UR and classification are unchanged')
     const sameLoad = converted.combinations[0]
     assert.deepEqual({ fixedP: sliceFixedPContour(dataset.points, sameLoad.P, dataset.triangles),

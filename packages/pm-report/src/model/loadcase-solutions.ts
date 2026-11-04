@@ -1,3 +1,4 @@
+import type { DemandCheckBasis } from '@pm/project'
 /**
  * One inverse solve per loadcase, shared by every output format.
  *
@@ -51,6 +52,7 @@ export type LoadcaseSolutionInput = {
   /** Governing surface already built by the application; never rebuilt here. */
   surface: PreviewSurface
   loadcases: readonly LoadCombination[]
+  checkBasis?: DemandCheckBasis
 }
 
 export type SolvedLoadcase = {
@@ -104,13 +106,13 @@ export const solveLoadcases = (input: LoadcaseSolutionInput): LoadcaseSolutions 
       designBasis
     )
     const options = input.analysisOptions as EquivalentBlockAnalysisOptions
-    const solved = solveEquivalentBlockDemandsFromPrepared(blockPrepared, options, input.loadcases)
+    const solved = solveEquivalentBlockDemandsFromPrepared(blockPrepared, options, input.loadcases, undefined, input.checkBasis)
     input.loadcases.forEach((loadcase, index) => {
       solutions.push(withBeta(
         loadcase,
         applyDesignCheckToInverse(
           solved[index],
-          checkLoadcaseUtilizationFromSurface(surface, loadcase)
+          checkLoadcaseUtilizationFromSurface(surface, loadcase, input.checkBasis)
         )
       ))
     })
@@ -120,7 +122,7 @@ export const solveLoadcases = (input: LoadcaseSolutionInput): LoadcaseSolutions 
     prepared = prepareAnalysis(section, rebars, stateMaterials, analysisMeshKernelOptions(options))
     for (const loadcase of input.loadcases) {
       const contour = sliceActiveDesignPContour(surface, loadcase.P)
-      const designCheck = checkLoadcaseUtilizationFromSurface(surface, loadcase)
+      const designCheck = checkLoadcaseUtilizationFromSurface(surface, loadcase, input.checkBasis)
       const result = applyDesignCheckToInverse(
         solveInversePreviewFromPrepared(
           prepared,

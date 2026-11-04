@@ -1,4 +1,4 @@
-# 10 — References, Traceability, and Current-v1 Decision Record
+# 10 — References, Traceability, and Versioned Decision Record
 
 Access review date: **2026-08-05**.
 
@@ -136,21 +136,21 @@ Pin actual package versions in the project lockfile and record them in result pr
 
 1. Governing law/adopted design code and project-specific design basis.
 2. Verified design-code adapter traceability and approved interpretations.
-3. This current schema-v1 engineering specification.
+3. The current engineering specification and version-specific input contracts.
 4. Architecture decision records and implementation documentation.
 5. Examples, notebooks, plots, and UI help.
 
 When a conflict is found, stop certification, record it, and resolve it at the highest applicable
 level. Do not silently change a formula to match an existing regression output.
 
-## 6. Legacy-preview decisions incorporated into current v1
+## 6. Legacy-preview decisions retained in the current architecture
 
-These are algorithm/product decisions inside the sole current project schema, v1. They do not
-introduce another schema version or a migration layer.
+These decisions describe the current algorithms. Canonical project exports are v3, explicit
+v1/v2 readers preserve their declared semantics, and nested contracts retain their own versions.
 
-| Historical preview problem | Current v1 resolution |
+| Historical preview problem | Current resolution |
 |---|---|
-| Multiple station schedules drifted between mechanics | Retired: every profile now uses `unified-27-v2`; production direction sampling is fixed at 36 directions. |
+| Multiple station schedules drifted between mechanics | Retired: every profile now uses `unified-27-v2`; Fixed defaults to 36 directions; Adaptive independently refines its own seed schedule. |
 | Strain direction `beta` or derived N.A. line angle reused as demand moment angle | Demand checks use `thetaLoad = atan2(Muy, Mux)` and geometric ray/plane intersections on the finished `P-Mx-My` surface. |
 | Extreme compression fiber taken from mesh centroid | Exact polygon support vertex defines the extreme edge. |
 | Universal `fy/Es` and hard-coded strain milestones | Adapter/material-derived breakpoints with monotonic validation. |
@@ -200,7 +200,7 @@ Engineering rationale:
 Expected numerical/result impact:
 Tests/evidence rerun:
 Independent reviewers:
-Schema-v1 parser/provenance implications (no current migration layer):
+Version-specific parser/provenance implications:
 Approval and release version:
 ```
 

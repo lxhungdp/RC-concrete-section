@@ -63,5 +63,5 @@ export const applyLoadReference = (input: LoadingsInput, next: LoadReference, co
     // Preserve the old displayed numbers: canonical moments gain P times the offset increment.
     translateResultant(load, reference, previous))
   for (const load of combinations) resultantAtLoadReference(load, reference)
-  return { reference, combinations }
+  return { ...input, reference, combinations }
 }

@@ -16,7 +16,7 @@ The current project model calls the region collection `outers[]`. The target ana
 `concreteRegions[]`. This naming difference is resolved by an explicit adapter, not by duplicating
 the data in application state.
 
-Current schema-v2 (and legacy v1) reinforcement is one flat `geometry.rebars[]` array and does not persist a parent
+Current schema-v3 (and explicit v1/v2 reader) reinforcement is one flat `geometry.rebars[]` array and does not persist a parent
 outer/region ID; the UI-only `solidIndex` view currently defaults to zero. Therefore the accepted
 multi-region bar-assignment requirement below is not yet satisfied even though preview kernels can
 evaluate disconnected concrete solids. This is a geometry-contract gap, not permission to infer a
@@ -41,6 +41,10 @@ Each arrow is a validation boundary. Downstream stages accept only the successfu
 preceding stage.
 
 ### Definition-stage checks
+
+The implementation safety bounds are owned by the geometry resource preflight and declared in
+development/02. They are checked before topology work for imports and direct analysis callers;
+they do not select mesh accuracy, cover, spacing or supported engineering scope.
 
 - coordinates and dimensions are finite;
 - entity IDs are valid and unique within their namespace;
@@ -99,7 +103,7 @@ Both inputs remain editable. Later diameter edits retain area, and later numeric
 original source claim to Manual. Generate copies the current values; it never derives area again.
 
 `REBAR-AS-003`: source snapshots are provenance only, never an override of edited numbers.
-Display-unit changes retain the canonical values and source. Project JSON v2 and area-aware
+Display-unit changes retain the canonical values and source. Project JSON v2/v3 and area-aware
 workbooks preserve both values. Diameter-only v1 documents and low-level reference fixtures retain
 their explicitly isolated legacy derivation until exported/authored as stored-area inputs.
 The existing stress-strain and block derivations have different binary64 operation orders;

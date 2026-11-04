@@ -32,6 +32,8 @@ import {
 } from '@pm/analysis'
 import type { DesignBasis } from '@pm/design'
 import type { NominalBlockEvaluation } from '@pm/equivalent-block'
+import type { DemandCheckBasis } from '@pm/project'
+import { checkBasisLabels, checkBasisOfResult } from '../model/check-basis'
 import { rebarArea, type GeometryInputRebarView, type SectionGeometry } from '@pm/geometry'
 import {
   compileConcreteMaterial,
@@ -84,6 +86,7 @@ export type DemandCheckExcelInput = {
   /** Governing surface already built by the application; never rebuilt here. */
   surface: PreviewSurface
   loadcases: readonly LoadCombination[]
+  checkBasis?: DemandCheckBasis
   /** Combinations to work through, one sheet group each. May be none, some, or all. */
   detailLoadcaseIds: readonly number[]
 }
@@ -582,9 +585,11 @@ const writeInverseSheet = (
   let closingOk: string
   let closingBad: string
   if (isBlock) {
-    // The block inverse does not balance the demand: it walks the demand ray to the surface and
+    // The block inverse does not balance the demand: it walks the checked ray to the surface and
     // returns the capacity point there. What can be checked by formula is that the two are indeed
-    // colinear — scale the capacity back by the utilization and the demand must reappear.
+    // colinear — scale the capacity back by the utilization and the demand must reappear. At
+    // constant axial force only the moments scale, so P is compared directly.
+    const constantAxial = checkBasisOfResult(result) === 'constantAxial'
     const utilization = result.inverseProportionalUtilization
     const urRow = row
     sheet.getCell(urRow, 1).value = 'Utilization UR'
@@ -596,7 +601,7 @@ const writeInverseSheet = (
     row += 1
     residualFirst = row
     ;([
-      ['Residual ΔP', `=$B$${responseFirst}*$B$${urRow}-${targetRefs.p}`, kn(target.P), 'kN'],
+      ['Residual ΔP', constantAxial ? `=$B$${responseFirst}-${targetRefs.p}` : `=$B$${responseFirst}*$B$${urRow}-${targetRefs.p}`, kn(target.P), 'kN'],
       ['Residual ΔMx', `=$B$${responseFirst + 1}*$B$${urRow}-${targetRefs.mx}`, knm(target.Mx), 'kN·m'],
       ['Residual ΔMy', `=$B$${responseFirst + 2}*$B$${urRow}-${targetRefs.my}`, knm(target.My), 'kN·m']
     ] as const).forEach(([label, formula, , unit], index) => {
@@ -608,8 +613,8 @@ const writeInverseSheet = (
     })
     row = residualFirst + 3
     closingLabel = 'Demand-ray verdict'
-    closingOk = 'capacity lies on the demand ray'
-    closingBad = 'CHECK - the capacity point is not on the demand ray'
+    closingOk = constantAxial ? 'capacity lies on the constant-P ray' : 'capacity lies on the demand ray'
+    closingBad = constantAxial ? 'CHECK - the capacity point is not on the constant-P ray' : 'CHECK - the capacity point is not on the demand ray'
   } else {
     residualFirst = row
     ;([
@@ -660,7 +665,7 @@ const writeInverseSheet = (
   row = keyValueBlock(sheet, row, 'Adequacy against the Design surface')
   const capacity = result.designCapacityPoint ?? null
   const adequacy: Array<[string, string | number, string, string]> = [
-    ['Utilization UR', result.utilization ?? '—', '–', 'Governing proportional 3D ray against the Design surface'],
+    ['Utilization UR', result.utilization ?? '—', '–', checkBasisLabels(checkBasisOfResult(result)).basis],
     ['UR interval lower', result.designCheck.evaluated
       ? result.designCheck.utilizationInterval.lower ?? '—'
       : '—', '–', 'Lower bound carried by the kernel check'],
@@ -676,7 +681,9 @@ const writeInverseSheet = (
     ['Kernel adequacy', result.designCheck.evaluated
       ? result.designCheck.adequacy.toUpperCase()
       : 'NOT CHECKED', '–', 'Three-state decision produced by the kernel'],
-    ['Fixed-P ratio', result.fixedPUtilization ?? '—', '–', 'Secondary diagnostic at constant axial force'],
+    ...(checkBasisOfResult(result) === 'constantAxial'
+      ? [['Proportional 3D UR', result.proportionalUtilization ?? '—', '–', 'Secondary diagnostic along the origin ray'] as [string, string | number, string, string]]
+      : [['Fixed-P ratio', result.fixedPUtilization ?? '—', '–', 'Secondary diagnostic at constant axial force'] as [string, string | number, string, string]]),
     ['φ', result.resistance?.factor ?? '—', '–', 'Resistance factor at the capacity point'],
     ['Classification', result.resistance?.classification ?? '—', '–', 'Resistance state at the capacity point'],
     ['Capacity P', capacity ? kn(capacity.P) : '—', 'kN', 'Design surface point on the demand ray'],
@@ -732,7 +739,8 @@ export const buildDemandCheckWorkbookParts = async (input: DemandCheckExcelInput
     designBasis: input.designBasis,
     analysisOptions: input.analysisOptions,
     surface: input.surface,
-    loadcases: input.loadcases
+    loadcases: input.loadcases,
+    checkBasis: input.checkBasis
   })
   const wanted = new Set(input.detailLoadcaseIds)
   const selected = solved.solutions.filter((solution) => wanted.has(solution.loadcase.id))
@@ -763,6 +771,7 @@ export const buildDemandCheckWorkbookParts = async (input: DemandCheckExcelInput
     ['Profile edition', input.designBasis.identity.edition],
     ['Verification status', input.designBasis.verificationStatus],
     ['Sampling mode', input.surface.analysisOptions.samplingMode],
+    ['Check basis', checkBasisLabels(input.checkBasis).title],
     ['Units', 'mm · N · MPa internally; forces reported in kN, moments in kN·m'],
     ['Sign convention', 'Compression positive; Mx = ΣF·(y−yc); My = ΣF·(x−xc)'],
     ['Client', input.projectInformation?.client ?? ''],
@@ -820,7 +829,7 @@ export const buildDemandCheckWorkbookParts = async (input: DemandCheckExcelInput
     summary,
     summaryRow,
     SUMMARY_SPAN,
-    'UR is the governing proportional utilization: the factored demand vector scaled until it meets the Design surface. The fixed-P ratio holds the axial force constant instead and is a secondary diagnostic only.'
+    checkBasisLabels(input.checkBasis).note
   )
   if (selected.length === 0) {
     sheetNote(

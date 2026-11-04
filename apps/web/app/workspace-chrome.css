@@ -315,7 +315,7 @@ body[data-jscad-theme='dark'] .pm-cad-surface { border-color: transparent; box-s
   background: var(--accent-muted);
   color: var(--accent);
 }
-.pm-shell .pm-field-basis-label[data-basis='capacity'] {
+.pm-shell .pm-results-plot.is-ng .pm-field-basis-label {
   border-color: var(--ui-danger-border);
   background: var(--ui-danger-bg);
   color: var(--danger);

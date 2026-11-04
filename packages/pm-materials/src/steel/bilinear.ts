@@ -1,3 +1,5 @@
+import { finiteCompiledMaterial } from '../compiled'
+import { assertValidSteelMaterial } from '../validation'
 import type { CompiledMaterial, SteelMaterial } from '../types'
 
 const designFy = (material: SteelMaterial) =>
@@ -21,7 +23,7 @@ const resolveBilinearParams = (material: SteelMaterial): BilinearParams => {
   return {
     elasticModulus: material.elasticModulus,
     fy,
-    epsY: material.limits?.epsY ?? fy / material.elasticModulus,
+    epsY: fy / material.elasticModulus,
     hardeningModulus: material.elasticModulus * hardeningRatio,
     hardeningRatio
   }
@@ -38,8 +40,9 @@ export const stressBilinearSteel = (material: SteelMaterial, strain: number) =>
   stressFrom(resolveBilinearParams(material), strain)
 
 export const compileBilinearSteel = (material: SteelMaterial): CompiledMaterial => {
+  assertValidSteelMaterial(material, 'bilinear')
   const params = resolveBilinearParams(material)
-  return {
+  return finiteCompiledMaterial({
     id: material.id,
     family: 'steel',
     stress: (strain) => stressFrom(params, strain),
@@ -49,5 +52,5 @@ export const compileBilinearSteel = (material: SteelMaterial): CompiledMaterial 
       epsCompressionUltimate: material.limits?.epsU,
       epsTensionUltimate: material.limits?.epsU
     }
-  }
+  })
 }

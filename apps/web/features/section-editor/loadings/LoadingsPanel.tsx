@@ -269,8 +269,8 @@ export function LoadingsPanel({
                             interval?.lower != null && interval.upper != null
                               ? `; screening interval ${formatUr(interval.lower)}–${formatUr(interval.upper)}`
                               : ''
-                          }${indeterminate ? '; rerun with Adaptive sampling for a decision' : ''}`
-                          : 'Run check by selecting this loadcase'
+                          }; ${check.message}`
+                          : check?.message ?? 'Run check by selecting this loadcase'
                       }
                     >
                       <span className="ws-num">{hasUr ? formatUr(ur) : '—'}</span>

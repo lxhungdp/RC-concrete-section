@@ -130,10 +130,23 @@ Use the smallest sufficient combination of:
 Each test names its requirement ID and oracle. Test tolerances are justified from the quantity and
 scale; they are not loosened until a failure disappears.
 
-CI runs `npm run check:security` and rejects every high or critical production advisory. The current
-ExcelJS 4.4 dependency retains a moderate `uuid` advisory for buffer-based v3/v5/v6 calls; this
-application does not call those APIs, and npm's proposed automatic fix is an unsafe ExcelJS
-downgrade. That exception remains documented and must be reevaluated on every ExcelJS update.
+`npm run lint` runs runtime, source-only structure/dependency checks, local documentation links and
+selected live-contract checks, requirement traceability, and strict TypeScript checks. It is a
+bounded static gate, not a formatter or proof of all documentary/engineering claims. `npm test`
+includes that gate, unit tests, ADSEC parser tests, CAD, project round trips, independently
+recalculated workbooks and PDF checks. CI also runs the numerical and sampling-mode benchmarks.
+
+The checked `verification-matrix.json` links every declared engineering/architecture requirement to
+its authority, existing implementation symbols, tests/oracles and an evidence record. Partial/open
+coverage declares its release gap; verified coverage requires an independent reviewer. Link
+existence does not establish engineering acceptance.
+
+CI runs `npm run check:security` and rejects every high or critical production advisory. The earlier
+dependency review recorded a moderate ExcelJS 4.4 transitive `uuid` advisory for buffer-based
+v3/v5/v6 calls, which this application did not call; the proposed automatic fix downgraded ExcelJS.
+That is historical evidence, not a current advisory assessment. The 2026-11-04 remediation could
+not refresh registry evidence because metadata egress was not approved. Reevaluate the exception
+with fresh advisory evidence before release and on every ExcelJS update.
 
 ## 6. Review checklist
 
@@ -148,8 +161,8 @@ Reviewers ask:
 - Are units/origin/sign/action basis explicit at every boundary?
 - Are strain-direction samples, derived N.A. line angles, and demand moment-direction angles kept
   explicitly separate?
-- Does the governing check use the adaptive 3D Design ray, fixed-P use only the fixed grid, and an
-  exact vertical meridian trigger a new calculation instead of nearest-angle interpolation?
+- Does the check use its declared basis on the 3D Design surface, fixed-P use only the fixed grid,
+  and an exact vertical meridian trigger a new calculation instead of nearest-angle interpolation?
 - Are preview/current/stale/accepted/released states impossible to confuse?
 - Do tests cover both sides of every changed branch and an independent oracle where required?
 - Does provenance/versioning make old and new results distinguishable?
@@ -162,7 +175,7 @@ Create an ADR/engineering decision record for choices involving:
 - geometry topology/tolerance/offset/triangulation algorithm;
 - material law or design-code interpretation;
 - utilization, convergence, uncertainty, or acceptance;
-- public schema-v1 contract or parser-v1 behavior;
+- public project schema or version-specific parser behavior;
 - numerically relevant dependency;
 - result/report integrity and release workflow.
 

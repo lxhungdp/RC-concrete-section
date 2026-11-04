@@ -86,7 +86,11 @@ try {
         .filter({ has: page.getByLabel(`Loadcase ${id} name`, { exact: true }) })
       await row.locator('td.pm-col-ur').click()
       await page.waitForFunction(id => window.__capAudit.results[id], id, { timeout: 60000 })
-      await page.waitForFunction(() => document.querySelector('.pm-results-stage')?.getAttribute('aria-busy') === 'false')
+      await page.waitForFunction(id => {
+        const stage = document.querySelector('.pm-results-stage')
+        return stage?.getAttribute('aria-busy') === 'false' && stage.dataset.fieldFrame === 'current' &&
+          Number(stage.dataset.displayedLoadcase) === id
+      }, id)
       return page.evaluate(id => window.__capAudit.results[id], id)
     }
     const metricUnits = UNIT_PRESETS.metric
@@ -99,11 +103,12 @@ try {
       assert.equal(result.utilization, expected.utilization)
       assert.deepEqual(result.designCapacityPoint, expected.capacityPoint)
       const isNg = expected.adequacy === 'inadequate'
-      const field = isNg ? result.capacityField?.status === 'available' ? result.capacityField : null
-        : mechanics === 'stress-strain' && result.ok ? result : null
-      const beforeCap = isNg && field?.boundary?.kind === 'before-axial-cap'
+      const atCapacity = mechanics === 'equivalent-block' || isNg
+      const field = atCapacity ? result.capacityField?.status === 'available' ? result.capacityField : null
+        : result.ok && result.admissibility.evaluated && result.admissibility.ok ? result : null
+      const beforeCap = atCapacity && field?.boundary?.kind === 'before-axial-cap'
       assert.equal(await page.locator('[data-chart="heatmap"] .pm-field-basis-label').innerText(),
-        isNg ? 'Field at capacity' : 'Field at demand')
+        atCapacity ? 'Field at capacity' : 'Field at demand')
       assert.equal(await page.locator('[data-before-cap-note]').count(), beforeCap ? 1 : 0)
       assert.equal(await page.locator('.pm-results-plot.is-ng').count(), isNg ? 3 : 0)
       if (field) {
@@ -201,7 +206,8 @@ try {
     assert.equal(grid.line.dash, 'dot')
     assert.ok(grid.z.every(z => z === null || z >= fromCanonical('force', cap, UNIT_PRESETS.us)))
     assert.equal(three.find(t => t.name === 'Direct β before Pmax cap').line.color, three.find(t => t.name === 'Direct β meridian').line.color)
-    assert.equal(three.find(t => t.name === 'Design ray crossing').z[0], fromCanonical('force', capResult.designCapacityPoint.P, UNIT_PRESETS.us))
+    assert.equal(three.find(t => t.name === 'Design ray crossing'), undefined,
+      'Capacity displays resistance geometry independently of demand selection')
     await page.screenshot({ path: `${out}/${mechanics}-3d.png` })
     await page.locator('[data-chart="vertical"]').screenshot({ path:`${out}/${mechanics}-capacity-cut.png` })
     await page.getByRole('row').filter({ hasText: 'Pmax intersection' }).first().waitFor()
@@ -222,8 +228,8 @@ try {
       })))
       assert.ok(panels.every(p => p.height >= 420 && p.canvas >= 240))
       assert.equal(await page.locator('[data-before-cap-note]').count(), 1)
-      assert.equal(await page.locator('.pm-field-basis-label').evaluate(el => getComputedStyle(el).whiteSpace), 'normal',
-        'the full before-Pmax qualifier must wrap instead of disappearing behind an ellipsis')
+      assert.equal(await page.locator('[data-before-cap-note]').evaluate(el => getComputedStyle(el).whiteSpace), 'normal',
+        'the reserved before-Pmax note wraps independently of the compact capacity label')
       await page.screenshot({ path: `${out}/${mechanics}-phone-${theme}.png`, fullPage: true })
       await page.getByRole('button', { name: 'Theme', exact: true }).click()
     }
@@ -234,13 +240,16 @@ try {
     await writeFile(uncappedFixture, serializeProjectDocument(project))
     await page.evaluate(() => { window.__capAudit.results = {} })
     await importFile(uncappedFixture)
-    await select(2)
+    const uncappedResult = await select(2)
     await page.getByText('Demand θ', { exact: true }).click()
     await page.waitForFunction(() => [...(document.querySelector('[data-chart="vertical"] .js-plotly-plot')?.data ?? [])]
       .some(t => t.name.startsWith('Design demand plane') && t.x.length > 3))
     assert.equal((await traces('vertical')).filter(t => t.name === 'Design before Pmax cap').length, 0)
     assert.equal(await page.locator('[data-before-cap-note]').count(), 0)
-    assert.equal(await page.locator('[data-chart="heatmap"] .pm-field-basis-label').innerText(), 'Field at capacity')
+    const uncappedAtCapacity = mechanics === 'equivalent-block' ||
+      (uncappedResult.designCheck.evaluated && uncappedResult.designCheck.adequacy === 'inadequate')
+    assert.equal(await page.locator('[data-chart="heatmap"] .pm-field-basis-label').innerText(),
+      uncappedAtCapacity ? 'Field at capacity' : 'Field at demand')
     assert.deepEqual(errors, [])
     assert.deepEqual(await page.evaluate(() => window.__capAudit.failures), [])
     evidence.push({ mechanics, cases, capDisabledClearsOverlay: true, unitsPreserveResults: true, errors })

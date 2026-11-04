@@ -68,7 +68,7 @@ test('abort interrupts the worker, replays live jobs, ignores late results, and 
 
   const firstController = new AbortController()
   const first = buildSectionMeshAsync(meshPayload, firstController.signal).catch((error: unknown) => error)
-  const second = checkLoadcasesAsync({ surface, loadcases: [] })
+  const second = checkLoadcasesAsync({ surface, checkBasis: 'proportional3D', loadcases: [] })
 
   assert.equal(interrupted.messages.length, 3)
   const originalCheck = interrupted.messages[2]
@@ -103,7 +103,7 @@ test('abort interrupts the worker, replays live jobs, ignores late results, and 
   }))
   assert.deepEqual(await second, [])
 
-  const staleHandleCheck = checkLoadcasesAsync({ surface, loadcases: [] })
+  const staleHandleCheck = checkLoadcasesAsync({ surface, checkBasis: 'proportional3D', loadcases: [] })
   const staleRequest = replacement.messages.at(-1)!
   assert.equal(staleRequest.type, 'checkLoadcases')
   if (staleRequest.type !== 'checkLoadcases') throw new Error('Expected a stale-handle checkLoadcases request.')

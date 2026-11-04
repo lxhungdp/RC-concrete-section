@@ -26,6 +26,7 @@ import type {
   AnalysisOptions,
   CalculationAnalysisOptions,
   CalculationProfileId,
+  DemandCheckBasis,
   LoadCombination
 } from '@pm/project'
 import type { SectionMeshView } from './section-mesh-view'
@@ -47,6 +48,7 @@ export type CheckLoadcasePayload = {
   loadcase: LoadCombination
   surface: PreviewSurface
   designBasis: DesignBasis
+  checkBasis: DemandCheckBasis
 }
 
 export type BuildExactDirectionPayload = BuildSurfacePayload & {
@@ -90,6 +92,7 @@ export type MeshAuditExportPayload = BuildSectionMeshPayload & {
 export type CheckLoadcasesPayload = {
   surface: PreviewSurface
   loadcases: LoadCombination[]
+  checkBasis: DemandCheckBasis
 }
 
 /** Worker-only handle. Public callers keep using the strongly typed payloads above. */
@@ -109,6 +112,7 @@ export type DemandCheckWorkerPayload = Omit<DemandCheckExcelInput, 'surface'> & 
 
 export type CheckLoadcasesWorkerPayload = WorkerSurfaceReference & {
   loadcases: LoadCombination[]
+  checkBasis: DemandCheckBasis
 }
 
 export type CheckLoadcaseWorkerPayload = Omit<CheckLoadcasePayload, 'surface'> & WorkerSurfaceReference & {

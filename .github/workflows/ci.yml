@@ -38,14 +38,14 @@ jobs:
       - name: Production dependency audit
         run: npm run check:security
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Repository structure
-        run: npm run check:structure
+      - name: Source, architecture, docs, traceability and types
+        run: npm run lint
 
       - name: Unit tests
         run: npm run test:unit
+
+      - name: ADSEC source/parser tests
+        run: npm run test:adsec
 
       - name: CAD drawing tests
         run: npm run test:cad
@@ -88,6 +88,9 @@ jobs:
 
       - name: Cross-model pipeline comparison
         run: npm run bench:pipelines
+
+      - name: Fixed and Adaptive sampling budgets
+        run: npm run bench:sampling-modes
 
       - name: Build
         run: npm run build

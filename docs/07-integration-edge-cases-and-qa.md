@@ -1,7 +1,7 @@
 # 07 — Demand Checks, Utilization, and End-to-End Orchestration
 
 This file defines the target authoritative ULS check. It replaces the historical preview's axial
-screen plus fixed-P radial moment ratio; both the current project format and options remain schema
+screen plus fixed-P radial moment ratio; the canonical project format is v3 with explicit v1/v2 readers, while analysis options retain
 version 1.
 
 Current preview status: proportional 3D ray utilization, fixed-grid triangle-based Fixed-P, and
@@ -117,6 +117,26 @@ A fixed-P radial moment ratio may be reported only when:
 
 It is not the default strength ratio and must never report zero utilization merely because moments
 are zero.
+
+A project may select this ratio as its declared check with `checkBasis = 'constantAxial'`.
+[engineering/05](engineering/05-loadings-analysis-results-and-reports.md) §3 owns its outcomes. The
+conditions above still apply: they become typed unavailable results, not numbers. The selected
+query intersects the ray from `(Pu, 0, 0)` directly with the oriented surface triangles and counts
+its exits, so an axis outside the domain and a non-unique exit are detected from the same geometry.
+
+Containment uses the normalized surface solid angle independently of that count. The Constant-P
+query reuses the existing normalized 1e-9 geometry criterion for boundary/duplicate checks and
+1e-12 triangle parallelism criterion. Shared-edge/vertex hits represent a transverse crossing only
+when incident crossed faces agree in direction; conflicting directions and unresolved coplanarity
+are typed geometric ambiguities. These checks do not alter the proportional query.
+
+Numerical source (accessed 2026-11-04): the signed solid-angle expression and winding-number
+interpretation are documented by the original authors' [libigl tutorial](https://libigl.github.io/tutorial/#generalized-winding-number)
+and [solid-angle implementation](https://github.com/libigl/libigl/blob/main/include/igl/solid_angle.cpp),
+following Jacobson, Kavan and Sorkine-Hornung, *Robust Inside-Outside Segmentation using Generalized
+Winding Numbers* (2013). For a closed consistently oriented surface, the total angle is 0 outside
+and ±4π inside. The existing normalized boundary test handles singular surface points first.
+This is a geometric query method, not a structural-code coefficient or release certification.
 
 ## 5. Boundary uncertainty and classification
 

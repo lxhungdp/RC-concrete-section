@@ -185,6 +185,14 @@ The permanent direction benchmark is `npm run bench:strain-sampling`; it holds t
 schedule constant while comparing the seed and refined direction surfaces. See `12` for the
 acceptance scope.
 
+The Adaptive block sampler also resolves a neighboring meridian when interpolation at a tested
+physical depth dominates a failed angular cell. It inserts that admissible depth under the same
+station/direction/pass budgets, protects the needed node from pruning and remeasures the combined
+facet error before accepting the surface. A depth midpoint clamped to an existing endpoint is
+excluded from redundant insertion. Its unresolved error remains in the station estimate and is
+reported as `state-stalled` when it prevents convergence. The repair and independent evidence are
+recorded in [the repair packet](task-packets/2026-11-04-fixed-p-adaptive-repair.md).
+
 ## 6. Error budget hierarchy
 
 Solver tolerances must be materially tighter than discretization tolerances. A recommended initial
@@ -266,8 +274,9 @@ coarse resultants as fine results. Reuse only topology/parameter scheduling wher
 valid.
 
 Run refinement in a worker with progress stages and cooperative cancellation before release.
-Currently an abort drops the client result but a running synchronous worker/fallback calculation may
-finish in the background. It still cannot be accepted or displayed after cancellation.
+A worker abort terminates that generation and replays remaining live requests. A synchronous
+main-thread fallback only checks cancellation at request boundaries. Neither path can publish
+a cancelled request as current or accepted.
 
 ## 10. Diagnosing non-convergence
 

@@ -654,8 +654,9 @@ test('ACI L-section Fixed grid fails closed on a reproduced unsafe ray over-pred
     `exact refined UR ${inverse.inverseProportionalUtilization} must expose the unsafe Fixed-grid over-prediction`
   )
   assert.ok(Math.abs((inverse.inverseProportionalUtilization ?? 0) - 1.001) < 5e-4)
-  assert.equal(check.adequacy, 'indeterminate')
-  assert.equal(check.utilizationInterval.evidence, 'fixed-grid-no-validated-bound')
+  assert.equal(check.adequacy, 'indeterminate', 'the known over-prediction stays inside the 2% CHECK band')
+  assert.equal(check.utilizationInterval.evidence, 'fixed-grid-screening-margin')
+  assert.match(check.message, /not a validated bound/)
 })
 
 test('an exact equivalent-block direction uses only fixed stations on the requested meridian', () => {
@@ -845,13 +846,10 @@ test('KDS Appendix block route reevaluates materials, uses eps_c0, omits phi/cap
     'the loadcase table and the inverse must resolve the same governing principal axis'
   )
   assert.deepEqual(check.codeAdjustedDemand, solved.codeAdjustedDemand)
-  assert.equal(
-    check.adequacy,
-    'indeterminate',
-    'Fixed equivalent-block checks fail closed until that mechanics has a validated screening bound'
-  )
-  assert.equal(check.utilizationInterval.evidence, 'fixed-grid-no-validated-bound')
-  assert.equal(check.utilizationInterval.relativeUncertainty, null)
+  const ratio = Number(check.utilization)
+  assert.equal(check.adequacy, ratio <= 0.98 ? 'adequate' : ratio > 1.02 ? 'inadequate' : 'indeterminate')
+  assert.equal(check.utilizationInterval.evidence, 'fixed-grid-screening-margin')
+  assert.equal(check.utilizationInterval.relativeUncertainty, 0.02)
 })
 
 /**

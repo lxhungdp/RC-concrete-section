@@ -101,6 +101,7 @@ export type CapacitySurface = {
   stationRefinementPasses: number
   directionRefinementConverged: boolean
   stationRefinementConverged: boolean
+  stationRefinementStalled?: boolean
   minStationsPerDirection?: number
   maxStationsPerDirection?: number
   averageStationsPerDirection?: number
@@ -859,6 +860,7 @@ type IndependentCapacityRow<TSource> = {
   meshNodes: IndependentCapacityNode<TSource>[]
   stationPasses: number
   maxStationError: number
+  stalled?: boolean
 }
 
 const buildIndependentCapacitySurface = <TSource>(
@@ -1011,8 +1013,12 @@ const buildIndependentCapacitySurface = <TSource>(
       return { station, evaluation, coordinate: coordinateOf(row.angle, evaluation), error }
     })
     while (row.stationPasses < maxStationPasses && row.nodes.length < maxStations) {
-      const selected = candidates()
+      const measured = candidates()
+      row.stalled = measured.some(candidate => candidate.error > stationTolerance &&
+        row.nodes.some(node => Math.abs(node.coordinate - candidate.coordinate) <= 1e-12))
+      const selected = measured
         .filter((candidate) => candidate.error > stationTolerance)
+        .filter(candidate => !row.nodes.some(node => Math.abs(node.coordinate - candidate.coordinate) <= 1e-12))
         .sort((left, right) => right.error - left.error || left.coordinate - right.coordinate)
         .slice(0, maxStations - row.nodes.length)
       if (selected.length === 0) break
@@ -1116,14 +1122,26 @@ const buildIndependentCapacitySurface = <TSource>(
       const left = rows.get(leftAngle)!
       const right = rows.get(rightKey)!
       let error = 0
+      const required: Array<{ row: IndependentCapacityRow<TSource>; coordinate: number }> = []
       for (const node of middle.meshNodes) {
-        error = Math.max(error, normalizedDistance(
+        const discrepancy = normalizedDistance(
           node.evaluation.resultants,
           midpointResultants(interpolate(left, node.coordinate), interpolate(right, node.coordinate)),
           scales
-        ))
+        )
+        error = Math.max(error, discrepancy)
+        if (discrepancy > (options.directionTolerance ?? 0.01)) {
+          for (const row of [left, right]) {
+            if (row.nodes.length >= maxStations || row.nodes.some(other => Math.abs(other.coordinate - node.coordinate) <= 1e-12)) continue
+            const station: CapacityStation = { type: 'depth-ratio', ratio: node.coordinate / (1 - node.coordinate) }
+            const evaluated = evaluateAt(row.angle, station)
+            if (normalizedDistance(evaluated.resultants, interpolate(row, node.coordinate), scales) > stationTolerance) {
+              required.push({ row, coordinate: node.coordinate })
+            }
+          }
+        }
       }
-      return { angle: middle.angle, row: middle, error }
+      return { angle: middle.angle, row: middle, error, required }
     })
   }
   const directionTolerance = Math.max(0, options.directionTolerance ?? 0.01)
@@ -1131,7 +1149,21 @@ const buildIndependentCapacitySurface = <TSource>(
   const maxDirections = Math.max(directionCount, Math.round(options.maxDirections ?? 360))
   let directionPasses = 0
   while (directionPasses < maxDirectionPasses && rows.size < maxDirections) {
-    const selected = measureDirections()
+    const measured = measureDirections()
+    let enriched = false
+    for (const { required } of measured) for (const { row, coordinate } of required) {
+      if (row.nodes.length >= maxStations || row.nodes.some(node => Math.abs(node.coordinate - coordinate) <= 1e-12)) continue
+      const station: CapacityStation = { type: 'depth-ratio', ratio: coordinate / (1 - coordinate) }
+      const evaluation = evaluateAt(row.angle, station)
+      if (Math.abs(coordinateOf(row.angle, evaluation) - coordinate) > 1e-12) continue
+      protectedStationKeys.add(JSON.stringify(station))
+      row.nodes.push({ station, evaluation, coordinate })
+      row.nodes.sort((left, right) => left.coordinate - right.coordinate)
+      const refined = refineRow(row)
+      Object.assign(row, refined)
+      enriched = true
+    }
+    const selected = (enriched ? measureDirections() : measured)
       .filter((candidate) => candidate.error > directionTolerance)
       .sort((left, right) => right.error - left.error || left.angle - right.angle)
       .slice(0, maxDirections - rows.size)
@@ -1224,6 +1256,7 @@ const buildIndependentCapacitySurface = <TSource>(
     stationRefinementPasses: Math.max(...finalRows.map((row) => row.stationPasses)),
     directionRefinementConverged: maxDirectionalInterpolationError <= directionTolerance,
     stationRefinementConverged: maxStationInterpolationError <= stationTolerance,
+    stationRefinementStalled: finalRows.some(row => row.stalled),
     minStationsPerDirection: Math.min(...stationCounts),
     maxStationsPerDirection: Math.max(...stationCounts),
     averageStationsPerDirection: stationCounts.reduce((sum, count) => sum + count, 0) / stationCounts.length,

@@ -27,6 +27,8 @@ import {
 } from '@pm/design'
 import { isValidEntityId } from './ids'
 import { parseLoadReference } from './load-reference'
+import { parseDemandCheckBasis } from './loadings'
+import { assertProjectInputResources } from './resource-limits'
 import {
   ANALYSIS_OPTIONS_VERSION,
   EQUIVALENT_BLOCK_SURFACE_METHOD,
@@ -460,6 +462,7 @@ const parseLoadings = (value: unknown | undefined, version: number): LoadingsInp
   assert(version === 3 || value.reference === undefined, 'Load reference requires project version 3')
   return {
     ...(version === 3 ? { reference: parseLoadReference(value.reference) } : {}),
+    ...(value.checkBasis === undefined ? {} : { checkBasis: parseDemandCheckBasis(value.checkBasis) }),
     combinations: value.combinations.map((item, index) =>
       parseLoadCombination(item, `inputs.loadings.combinations[${index}]`)
     )
@@ -1250,6 +1253,7 @@ export const collectProjectWarnings = (document: PmProjectDocument): string[] =>
 }
 
 export const parseProjectDocumentValue = (value: unknown): PmProjectDocument => {
+  assertProjectInputResources(value)
   assertRecord(value, 'Project JSON must be an object')
   assert(value.schema === PM_PROJECT_SCHEMA, `schema must be "${PM_PROJECT_SCHEMA}"`)
   assert(value.version === 1 || value.version === 2 || value.version === PM_PROJECT_VERSION, `Unsupported project version: ${String(value.version)}`)

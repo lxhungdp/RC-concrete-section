@@ -185,18 +185,28 @@ but it must not claim to predict physical failure beyond that model's scope.
 
 ## 9. Release gates
 
+Gate identities A–G are owned by engineering/06. The evidence below elaborates that same map;
+it does not define a second numbering system.
+
 ### Gate A — Specification baseline
 
 - scope, equations, conventions, result meanings, error budgets, and code edition approved;
 - unresolved engineering decisions recorded; no contradictory instruction remains.
 
-### Gate B — Kernel verification
+### Gate B — Input kernels
 
-- geometry, materials, forward evaluator, scaling, and linear algebra tests pass;
-- independent derivative and invariance tests pass;
-- dependency versions locked and audited.
+- geometry topology, exact properties, reinforcement and material definitions pass their gates;
+- canonical v3 and explicit legacy v1/v2 project readers preserve their declared input meaning;
+- semantic consistency, finite values, resource preflight and compilation boundaries pass;
+- dependency versions are locked and audited.
 
-### Gate C — Surface and checks
+### Gate C — Mechanics
+
+- forward resultants, contribution ledgers, consistent tangents, scaling and algebra pass;
+- independent derivative, analytical integration and transformation invariants pass;
+- no non-finite or out-of-domain state is accepted as an engineering response.
+
+### Gate D — Surface and checks
 
 - adaptive convergence and closed-mesh topology pass across the structural matrix;
 - pure axial utilization, cap faces, asymmetry, and non-monotone `P` cases pass;
@@ -206,7 +216,7 @@ but it must not claim to predict physical failure beyond that model's scope.
   thin-wall, and user-curve fixtures without angular interpolation;
 - production results agree with independent reference solver within approved tolerance.
 
-### Gate D — Design-code resistance profile and adapter
+### Gate E — Design-code resistance profile and adapter
 
 - clause traceability complete;
 - exact edition, national annex, and `methodId` locked;
@@ -215,18 +225,18 @@ but it must not claim to predict physical failure beyond that model's scope.
 - independent structural review signed;
 - applicability validations and report wording approved.
 
-### Gate E — System quality
+### Gate F — System quality
 
 - runtime schemas, failure handling, cancellation, resource limits, worker equivalence, security,
   performance, and reproducibility pass;
 - preview and certified types cannot be confused;
 - reports include all required provenance and warnings.
 
-### Gate F — Release approval
+### Gate G — Release approval
 
 - full regression on supported runtimes;
 - known limitations and residual risks accepted by named approver;
-- semantic/software version, statement that v1 is the sole schema, evidence bundle, and rollback
+- semantic/software version, statement of canonical-v3 exports and explicit v1/v2 readers, evidence bundle, and rollback
   plan published.
 
 Failure of any required gate blocks production certification.

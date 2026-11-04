@@ -67,8 +67,8 @@ const responseStatus = (inverse: InversePreviewResult) => {
 
 const uncertaintyLabel = (evidence: LoadcaseQuickCheckResult['utilizationInterval']['evidence']) => {
   if (evidence === 'fixed-grid-screening-margin') return 'Fixed-grid screening margin'
-  if (evidence === 'fixed-grid-no-validated-bound') return 'No validated Fixed-grid bound'
   if (evidence === 'adaptive-sampling-estimate') return 'Adaptive sampling estimate'
+  if (evidence === 'axial-outside-design-domain') return 'Pu outside the Design axial range'
   return 'Missing capacity intersection'
 }
 
@@ -95,6 +95,7 @@ export function LoadcaseCalculationDialog({
 
   const checkedDemand = check?.codeAdjustedDemand ?? loadcase
   const entered = loadReference ? resultantAtLoadReference(loadcase, loadReference) : loadcase
+  const constantAxial = check?.utilizationDefinition === 'constantAxial'
   const verdictTone = check?.adequacy === 'inadequate'
     ? 'is-error'
     : check?.adequacy === 'indeterminate'
@@ -170,8 +171,38 @@ export function LoadcaseCalculationDialog({
         </FormulaPanel>
       </Step>
 
-      <Step index={3} title="Governing proportional 3D Design-surface check">
-        {!check ? <div className="pm-calc-loading"><Loader2 size={17} className="pm-spin" /><span>Checking the current factored demand against the Design surface…</span></div> : <>
+      <Step index={3} title={constantAxial ? 'Constant-P Design-surface check' : 'Governing proportional 3D Design-surface check'}>
+        {!check ? <div className="pm-calc-loading"><Loader2 size={17} className="pm-spin" /><span>Checking the current factored demand against the Design surface…</span></div> : constantAxial ? <>
+          <FormulaPanel>
+            <Formula><span className="pm-calc-math">1. Hold the axial force at P = Pu and take the moment vector of Dcheck in that plane.</span></Formula>
+            <Formula id="equation-constant-axial-ray" numbered>
+              <TechnicalEquation
+                latex={String.raw`\mathbf{R}(t)=(P_u,\,t\cos\theta_{\mathrm{load}},\,t\sin\theta_{\mathrm{load}}),\quad t\ge 0`}
+                ariaLabel="Resistance ray at constant axial force through the checked demand"
+              />
+              <p>The ray starts on the Pu axis and passes through Dcheck. P stays fixed; only the moments grow.</p>
+            </Formula>
+            <Formula><span className="pm-calc-math">3. Mb is the value of t at the single exit of this ray from the Design surface. The point (Pu, 0, 0) must lie inside that surface.</span></Formula>
+            {check.utilization !== null && check.constantAxialCapacityMoment != null
+              ? <Formula id="equation-constant-axial-utilization" numbered>
+                  <TechnicalEquation
+                    latex={String.raw`UR=\frac{M_d}{M_b}=\frac{${momentValue(check.fixedPDemandMoment)}}{${momentValue(check.constantAxialCapacityMoment)}}=${utilizationValue(check.utilization)}`}
+                    ariaLabel={`Constant P utilization equals ${utilizationValue(check.utilization)}`}
+                  />
+                  <p>This is moment utilization at Pu, not total utilization.</p>
+                </Formula>
+              : <Formula><span className="pm-calc-math">4. No constant-P ratio is published for this combination.</span></Formula>}
+          </FormulaPanel>
+          <ResultantTable demand={checkedDemand} capacity={check.capacityPoint} />
+          <div className="pm-calc-facts">
+            <Fact label="Definition">{check.utilizationDefinition}</Fact>
+            <Fact label="Moment multiplier">{factorValue(check.capacityMultiplier)}</Fact>
+            <Fact label="Constant-P UR">{utilizationValue(check.utilization)}</Fact>
+            <Fact label="Resistance format">{resistance?.format ?? 'Unavailable'}</Fact>
+            <Fact label="Resistance classification">{resistance?.classification ?? 'Unavailable'}</Fact>
+          </div>
+          {check.utilization === null ? <div className="pm-calc-note is-error"><AlertTriangle size={16} /><p>{check.message}</p></div> : null}
+        </> : <>
           <FormulaPanel>
             <Formula><span className="pm-calc-math">1. Place Dcheck = (Pu, Mux, Muy) in the three-dimensional P–Mx–My action space.</span></Formula>
             <Formula id="equation-proportional-resistance-ray" numbered>
@@ -218,7 +249,7 @@ export function LoadcaseCalculationDialog({
           </div>
           <div className={`pm-calc-note ${verdictTone}`}>
             {check.adequacy === 'adequate' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
-            <p><b>{verdictLabel(check.adequacy)}.</b> {check.message}{check.adequacy === 'indeterminate' ? ' The uncertainty interval crosses the decision boundary; refine the sampling before making a decision.' : ''}</p>
+            <p><b>{verdictLabel(check.adequacy)}.</b> {check.message}</p>
           </div>
         </>}
       </Step>
@@ -227,7 +258,7 @@ export function LoadcaseCalculationDialog({
         {!inverseResult ? <div className="pm-calc-loading"><Loader2 size={17} className="pm-spin" /><span>Solving the diagnostic equilibrium state for this loadcase…</span></div> : <>
           <div className={`pm-calc-note ${inverseStatus?.tone ?? ''}`}>
             {inverseResult.ok ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
-            <p><b>{inverseStatus?.label}.</b> This state explains section response; adequacy remains governed by Step 3, not by inverse convergence or the fixed-P ratio.</p>
+            <p><b>{inverseStatus?.label}.</b> This state explains section response; adequacy remains governed by Step 3, not by inverse convergence{constantAxial ? '' : ' or the fixed-P ratio'}.</p>
           </div>
           <div className="pm-calc-facts">
             <Fact label="ε₀">{strain(inverseResult.state.e0)}</Fact>
@@ -259,7 +290,12 @@ export function LoadcaseCalculationDialog({
         </>}
       </Step>
 
-      <Step index={6} title="Secondary fixed-P moment diagnostic">
+      {constantAxial ? <Step index={6} title="Secondary proportional 3D ratio">
+        {!check ? <div className="pm-calc-note is-warning"><AlertTriangle size={16} /><p>Proportional evidence is pending.</p></div> : <div className="pm-calc-facts">
+          <Fact label="Proportional 3D UR">{utilizationValue(check.proportionalUtilization)}</Fact>
+          <Fact label="Status">Secondary diagnostic only</Fact>
+        </div>}
+      </Step> : <Step index={6} title="Secondary fixed-P moment diagnostic">
         {!check ? <div className="pm-calc-note is-warning"><AlertTriangle size={16} /><p>Fixed-P evidence is pending.</p></div> : check.fixedPUtilization === null || check.fixedPCapacityMoment === null ? (
           <div className="pm-calc-note is-warning"><AlertTriangle size={16} /><p>No unique fixed-P moment-ray ratio is available for this combination. This does not replace or invalidate the governing proportional 3D result above.</p></div>
         ) : <>
@@ -281,7 +317,7 @@ export function LoadcaseCalculationDialog({
           </table></div> : null}
           <p className="pm-calc-caption">The complete Excel action above reuses the Demand Check workbook and works this loadcase through inverse, exact vertical-meridian, and fixed-P bracket/interpolation sheets.</p>
         </>}
-      </Step>
+      </Step>}
     </CalculationDialogFrame>
   )
 }

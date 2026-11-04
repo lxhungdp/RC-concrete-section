@@ -92,7 +92,7 @@ It changes no existing material parameters, profile, resistance basis or analysi
 options. Material validation and geometry validation must both succeed before
 any import state is published. Invalid existing material definitions are not silently
 replaced. The default concrete remains the single concrete definition supported
-by project schema v2 and its legacy v1 reader.
+by canonical project schema v3 and its explicit v1/v2 readers.
 
 Autodesk format authorities, accessed 2026-10-08:
 [POLYLINE](https://help.autodesk.com/cloudhelp/2020/ENU/AutoCAD-DXF/files/GUID-ABF6B778-BE20-4B49-9B58-A94E64CEFFF3.htm),
@@ -266,16 +266,19 @@ and use `fy / gammaS` as the model yield stress. For EN these material fields ar
 snapshots; `DesignBasis.factors` is the canonical editable source. The Excel export must mirror these effective values
 in its named inputs (`alpha`, `fy`) while also displaying the characteristic/source values for audit.
 
-This is a useful package boundary, but the current compiler is not an analysis acceptance boundary:
+Public generic and model-specific compilers validate definitions and return typed failures for
+invalid declared parameters. They reject contradictory effective-yield snapshots, non-finite
+strains and non-finite stress/tangent arithmetic. Missing or unsupported model discriminants do not
+select another law. User curves preserve input order, require increasing finite ordinates and retain
+an explicit clamp policy. The compiled laws expose analytical piecewise tangents with model-specific,
+deterministic kink behavior; generic fallback parameter helpers do not bypass compilation validation.
 
-- unknown/default branches silently choose a model;
-- `positiveOr` substitutes fallback engineering values;
-- user curves now reject non-increasing breakpoints and record the supported clamp policy; broader
-  rupture/extrapolation families remain unimplemented;
-- tangents often use a fixed numerical difference;
-- admissibility, breakpoints, contribution components, model version, and typed issues are absent;
-- stress beyond concrete ultimate strain can silently become zero;
-- the current ACI Whitney implementation does not use `beta1` in integration.
+This is still Preview compilation, not an accepted-result boundary. The common compiled API does
+not yet expose a versioned breakpoint/component/admissibility interface. Analysis owns the existing
+concrete/full-steel/displaced-concrete contribution ledger and signed material-domain checks.
+Closed-form concrete zero stress beyond the ultimate strain is a finite diagnostic continuation;
+it cannot qualify an out-of-domain capacity state. ACI Whitney data cannot reach the fibre kernel:
+the separate block adapter evaluates its actual clipped depth `a = beta1 c`.
 
 ## 6. Target material package pipeline
 
@@ -328,12 +331,12 @@ precompute curve segments once; use binary search or indexed segment traversal.
 
 | Priority | Current behavior | Required change |
 |---|---|---|
-| blocking | material forms can create invalid/inconsistent combinations | strict discriminated validation and authoritative derivation |
-| blocking | silent fallback/default model selection | exhaustive switch and typed unsupported-model error |
+| implemented preview | invalid drafts/definitions are blocked by shared validators and public compilers | complete accepted-result and independent material qualification |
+| closed compilation hazard | invalid/unknown model data cannot choose a fallback law | retain exhaustive routing and failure tests |
 | partial | generic curve extrapolation/admissibility is incomplete | the equivalent-block EPP law now enforces declared rupture strain; finish equivalent policies for every generic curve family |
 | closed routing hazard | ACI Whitney `beta1` cannot be used as a local fiber law | local-law path rejects it; the ACI calculation profile routes to `@pm/code-aci318`, where `a = beta1 c` is evaluated by exact block clipping |
-| high | numerical tangents and unspecified kink side | analytical tangents and documented deterministic kink convention |
-| high | no stress contribution ledger | expose concrete/steel/displaced-concrete components |
+| implemented preview | analytical piecewise tangents and deterministic model-specific kink behavior | extend independent derivative/breakpoint coverage to the full release matrix |
+| partial | result ledgers expose concrete/full-steel/displaced-concrete terms | finish the uniform compiled component/breakpoint contract |
 | high | deleting steel can orphan bars | block deletion or require explicit reassignment command |
 | high | family label lacks exact edition/method | keep it as source/model family; add design profile outside material store |
 | future | one concrete material only | versioned multi-region material mapping when engineering scope requires it |

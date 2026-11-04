@@ -2,9 +2,9 @@ export type AdequacyStatus = 'adequate' | 'inadequate' | 'indeterminate'
 
 export type UtilizationEvidence =
   | 'fixed-grid-screening-margin'
-  | 'fixed-grid-no-validated-bound'
   | 'adaptive-sampling-estimate'
   | 'missing-capacity-intersection'
+  | 'axial-outside-design-domain'
 
 export type UtilizationInterval = {
   lower: number | null
@@ -20,12 +20,18 @@ export type UtilizationClassification = {
 
 /**
  * Stress-strain regression envelope for the fixed 27 x 36 preview grid against its denser audit
- * grid. Equivalent-block Fixed checks must not use this mechanics-specific value.
+ * grid. By project decision every Fixed check uses it, including domains where it is unvalidated.
  *
  * This is a screening margin, not a mathematical discretization bound. Any demand whose interval
  * crosses UR=1 is intentionally indeterminate and should be rerun with Adaptive sampling.
  */
 export const FIXED_GRID_SCREENING_RELATIVE_UNCERTAINTY = 0.02
+
+/** Pu beyond the Design axial range has no moment capacity, so no ratio exists to classify. */
+export const axialOutsideDomainClassification = (): UtilizationClassification => ({
+  status: 'inadequate',
+  interval: { lower: null, upper: null, relativeUncertainty: null, evidence: 'axial-outside-design-domain' }
+})
 
 export const classifyUtilization = (
   utilization: number | null,

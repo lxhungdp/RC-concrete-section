@@ -144,6 +144,10 @@ const runCase = (benchCase: BenchCase): CaseReport => {
 
   const origin = netConcreteCentroid(section)
   const points = surface.value.points
+  // The fingerprint records the contour point cloud in canonical polar order. Runtime adjacency
+  // is verified separately by the indexed-path tests and must not depend on this serialization.
+  const fingerprintContours = contour.value.map(level => [...level].sort((a, b) =>
+    Math.atan2(a.My, a.Mx) - Math.atan2(b.My, b.Mx)))
   const inverseResult = inverse.value
   // Path order and the repeated closing vertex are topology, not new capacity values. Normalize
   // the connected paths to the legacy point-set order so this fingerprint still catches any
@@ -182,8 +186,8 @@ const runCase = (benchCase: BenchCase): CaseReport => {
     surfaceStateKx: points.map((point) => point.state.kx),
     surfaceStateKy: points.map((point) => point.state.ky),
     surfaceWarnings: surface.value.warnings.join(' | '),
-    contourMx: contour.value.flatMap((level) => level.map((point) => point.Mx)),
-    contourMy: contour.value.flatMap((level) => level.map((point) => point.My)),
+    contourMx: fingerprintContours.flatMap((level) => level.map((point) => point.Mx)),
+    contourMy: fingerprintContours.flatMap((level) => level.map((point) => point.My)),
     contourSampleCount: contour.value.map((level) => contourStrainAngleSamples(level).length),
     momentPlaneP: momentPlanePoints.map((point) => point.P),
     momentPlaneM: momentPlanePoints.map((point) => point.M),

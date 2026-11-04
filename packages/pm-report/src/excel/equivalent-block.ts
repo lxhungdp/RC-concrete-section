@@ -1,3 +1,5 @@
+import { checkBasisLabels } from '../model/check-basis'
+import type { DemandCheckBasis } from '@pm/project'
 import type { UnitSelection } from '@pm/units'
 import { appendPresentationSummary } from './presentation-summary'
 /**
@@ -92,6 +94,7 @@ export type EquivalentBlockExcelInput = {
   /** Axial level for the Mx-My contour sheet, N. */
   fixedP: number
   loadcase: LoadCombination | null
+  checkBasis?: DemandCheckBasis
 }
 
 const TAU = 2 * Math.PI
@@ -233,8 +236,8 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   const engineBoundary = intersectFixedPContourWithMomentRay(engineContour, thetaLoad)
   const demand = input.loadcase
     ? applyDesignCheckToInverse(
-        solveEquivalentBlockDemandFromPrepared(prepared, input.analysisOptions, input.loadcase, designSurfaceCore),
-        checkLoadcaseUtilizationFromSurface(surface, input.loadcase)
+        solveEquivalentBlockDemandFromPrepared(prepared, input.analysisOptions, input.loadcase, designSurfaceCore, input.checkBasis),
+        checkLoadcaseUtilizationFromSurface(surface, input.loadcase, input.checkBasis)
       )
     : null
 
@@ -1042,7 +1045,9 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
   // ==========================================================================
   const eqSheet = workbook.addWorksheet('Equilibrium', { views: [{ showGridLines: false }] })
   eqSheet.columns = [{ width: 4 }, { width: 34 }, { width: 20 }, { width: 12 }, { width: 66 }]
-  title(eqSheet, 1, 'CONVERGED EQUIVALENT-BLOCK CAPACITY STATE ON THE DEMAND RAY', 4)
+  title(eqSheet, 1, input.checkBasis === 'constantAxial'
+    ? 'CONVERGED EQUIVALENT-BLOCK CAPACITY STATE ON THE CONSTANT-P RAY'
+    : 'CONVERGED EQUIVALENT-BLOCK CAPACITY STATE ON THE DEMAND RAY', 4)
   if (!demand || !demand.equivalentBlock) {
     eqSheet.getCell(3, 2).value = input.loadcase
       ? 'The solver did not converge on an equilibrium state for this demand.'
@@ -1051,6 +1056,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     if (demand) noteCell(eqSheet, 4, 2, demand.message)
   } else {
     const trace = demand.equivalentBlock
+    const constantAxial = input.checkBasis === 'constantAxial'
     const state = { neutralAxisAngle: trace.neutralAxisAngle, neutralAxisDepth: trace.neutralAxisDepth }
     const nominal = nominalEvaluator(state).source as NominalBlockEvaluation
     const designEval = designEvaluator(state)
@@ -1069,10 +1075,11 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
       ['εt,ctrl', nominal.controllingTensileStrain, '-', `controlling bar ${nominal.controllingBarId ?? 'n/a'}`],
       ['φ*', phi, '-', String(designEval.metadata?.classification ?? '')],
       [
-        'inverse proportional utilization',
+        constantAxial ? 'inverse constant-P moment utilization' : 'inverse proportional utilization',
         demand.inverseProportionalUtilization ?? 'not found',
         '-',
-        'exact capacity-ray diagnostic from the inverse solver; not the governing adequacy value'
+        constantAxial ? 'exact constant-P moment ratio from the inverse solver; not the governing adequacy value'
+          : 'exact capacity-ray diagnostic from the inverse solver; not the governing adequacy value'
       ],
       [
         'capacity load factor λ',
@@ -1082,7 +1089,8 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
           ? 1 / demand.inverseProportionalUtilization
           : 'not found',
         '-',
-        'boundary capacity = λ × factored demand; inverse proportional utilization = 1/λ'
+        constantAxial ? 'P capacity = Pu; moment capacity = λ × demand moments; inverse moment ratio = 1/λ'
+          : 'boundary capacity = λ × factored demand; inverse proportional utilization = 1/λ'
       ],
       ['axial cap governed', demand.resistance?.axialCapApplied ? 'yes' : 'no', '']
     ]
@@ -1101,12 +1109,12 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
       eqRow += 1
     }
     eqRow += 1
-    sectionHeading(eqSheet, eqRow, 'Residual against the scaled demand ray at capacity', 4)
+    sectionHeading(eqSheet, eqRow, constantAxial ? 'Residual against the constant-P ray at capacity' : 'Residual against the scaled demand ray at capacity', 4)
     eqRow += 1
     const phiRow = rowOf.get('φ*')!
     const lambdaRow = rowOf.get('capacity load factor λ')!
     const residuals: Array<[string, string, string]> = [
-      ['P capacity residual', `C${phiRow}*C${rowOf.get('Pn*')!}-C${lambdaRow}*Pu`, 'kN'],
+      ['P capacity residual', `C${phiRow}*C${rowOf.get('Pn*')!}-${constantAxial ? 'Pu' : `C${lambdaRow}*Pu`}`, 'kN'],
       ['Mx capacity residual', `C${phiRow}*C${rowOf.get('Mnx*')!}-C${lambdaRow}*Mux`, 'kN·m'],
       ['My capacity residual', `C${phiRow}*C${rowOf.get('Mny*')!}-C${lambdaRow}*Muy`, 'kN·m']
     ]
@@ -1124,15 +1132,18 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     const designRows = [rowOf.get('Pn*')!, rowOf.get('Mnx*')!, rowOf.get('Mny*')!]
     const demandNames = ['Pu', 'Mux', 'Muy']
     eqSheet.getCell(eqRow, 3).value = {
-      formula: `SQRT(${residualRows.map((r, index) => `(C${r}/MAX(1,ABS(C${phiRow}*C${designRows[index]}),ABS(C${lambdaRow}*${demandNames[index]})))^2`).join('+')})`
+      formula: `SQRT(${residualRows.map((r, index) => `(C${r}/MAX(1,ABS(C${phiRow}*C${designRows[index]}),ABS(${constantAxial && index === 0 ? '' : `C${lambdaRow}*`}${demandNames[index]})))^2`).join('+')})`
     }
     eqSheet.getCell(eqRow, 3).numFmt = '0.000E+00'
     eqSheet.getCell(eqRow, 5).value = {
-      formula: `IF(C${eqRow}<=0.0001,"capacity state reconciled with the scaled demand ray","CHECK - the stored state does not balance the scaled demand ray")`
+      formula: constantAxial
+        ? `IF(C${eqRow}<=0.0001,"capacity state reconciled with the constant-P ray","CHECK - the stored state does not balance the constant-P ray")`
+        : `IF(C${eqRow}<=0.0001,"capacity state reconciled with the scaled demand ray","CHECK - the stored state does not balance the scaled demand ray")`
     }
     eqSheet.getCell(eqRow, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
     noteCell(eqSheet, eqRow + 2, 2,
-      'A general demand does not lie on the design surface. The proportional solver scales it by λ to the boundary; this residual verifies that boundary state. It is not an independent check of the surface.')
+      constantAxial ? 'The constant-P solver holds P = Pu and scales only moments by λ to the boundary. This residual verifies that state; it is not an independent check of the surface.'
+        : 'A general demand does not lie on the design surface. The proportional solver scales it by λ to the boundary; this residual verifies that boundary state. It is not an independent check of the surface.')
   }
 
   // ==========================================================================
@@ -1174,7 +1185,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
       ['Pu', input.loadcase.P / 1e3, 'kN'],
       ['Mux', input.loadcase.Mx / 1e6, 'kN·m'],
       ['Muy', input.loadcase.My / 1e6, 'kN·m'],
-      ['governing utilization', demand?.utilization ?? 'no intersection', '-', 'proportional 3D ray against the design surface'],
+      ['governing utilization', demand?.utilization ?? 'no intersection', '-', checkBasisLabels(input.checkBasis).basis],
       ['kernel adequacy', demand?.designCheck.evaluated
         ? demand.designCheck.adequacy.toUpperCase()
         : 'NOT CHECKED', '', 'three-state decision copied from the kernel'],
@@ -1185,7 +1196,9 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
         : 'unavailable', '', demand?.designCheck.evaluated
           ? demand.designCheck.utilizationInterval.evidence
           : 'the governing Design-surface check was not composed'],
-      ['fixed-P utilization', demand?.fixedPUtilization ?? 'n/a', '-', 'secondary diagnostic at constant axial force'],
+      input.checkBasis === 'constantAxial'
+        ? ['proportional 3D utilization', demand?.proportionalUtilization ?? 'n/a', '-', 'secondary diagnostic along the origin ray']
+        : ['fixed-P utilization', demand?.fixedPUtilization ?? 'n/a', '-', 'secondary diagnostic at constant axial force'],
       ['solver converged', demand?.converged ? 'yes' : 'no', ''],
       [
         'strain admissible',

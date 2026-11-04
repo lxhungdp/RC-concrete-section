@@ -1,3 +1,5 @@
+import { finiteCompiledMaterial } from '../compiled'
+import { assertValidSteelMaterial } from '../validation'
 import type { CompiledMaterial, SteelMaterial } from '../types'
 import { clamp } from '../math'
 
@@ -10,11 +12,12 @@ export const stressElasticPerfectlyPlasticSteel = (material: SteelMaterial, stra
   clamp(material.elasticModulus * strain, -designFy(material), designFy(material))
 
 export const compileElasticPerfectlyPlasticSteel = (material: SteelMaterial): CompiledMaterial => {
+  assertValidSteelMaterial(material, 'elastic-perfectly-plastic')
   // Hoisted out of the fibre loop; the arithmetic per call is unchanged.
   const fyd = designFy(material)
   const elasticModulus = material.elasticModulus
-  const epsY = material.limits?.epsY ?? fyd / elasticModulus
-  return {
+  const epsY = fyd / elasticModulus
+  return finiteCompiledMaterial({
     id: material.id,
     family: 'steel',
     stress: (strain) => clamp(elasticModulus * strain, -fyd, fyd),
@@ -24,5 +27,5 @@ export const compileElasticPerfectlyPlasticSteel = (material: SteelMaterial): Co
       epsCompressionUltimate: material.limits?.epsU,
       epsTensionUltimate: material.limits?.epsU
     }
-  }
+  })
 }

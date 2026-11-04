@@ -1,3 +1,5 @@
+import { finiteCompiledMaterial } from '../compiled'
+import { assertValidConcreteMaterial } from '../validation'
 import type { CompiledMaterial, ConcreteMaterial } from '../types'
 
 export const DEFAULT_USER_BLOCK_ALPHA = 0.85
@@ -26,10 +28,11 @@ export const userBlockCompressionStress = (material: ConcreteMaterial) => {
  * compile route is guarded by `UNSUPPORTED_CONCRETE_MODELS`, exactly as for the Whitney block.
  */
 export const compileUserBlockConcrete = (material: ConcreteMaterial): CompiledMaterial => {
+  assertValidConcreteMaterial(material, 'user-block')
   const model = material.stressStrain.type === 'user-block' ? material.stressStrain : null
   const epsCu = model?.epsCu ?? material.limits.epsCu
   const peak = userBlockCompressionStress(material)
-  return {
+  return finiteCompiledMaterial({
     id: material.id,
     family: 'concrete',
     stress: (strain) => (strain <= 0 || strain > epsCu ? 0 : peak),
@@ -37,5 +40,5 @@ export const compileUserBlockConcrete = (material: ConcreteMaterial): CompiledMa
     limits: {
       epsCompressionUltimate: epsCu
     }
-  }
+  })
 }

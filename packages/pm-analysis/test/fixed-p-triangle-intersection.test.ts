@@ -73,7 +73,10 @@ test('fixed-P trace exposes the same-meridian interpolation evidence for every s
 
 test('the second interpolation uses the two triangle-cut chords, including the diagonal vertex', () => {
   const contour = [
-    ...sliceFixedPContour(points, 0, topology),
+    // This fixture authors a complete polygon around the two-triangle cut. Drop the open-cut
+    // topology flags explicitly; publishing the incomplete physical cut itself is rejected.
+    ...sliceFixedPContour(points, 0, topology).map(({ beta, P, Mx, My, onSampledDirection }) =>
+      ({ beta, P, Mx, My, onSampledDirection })),
     { beta: Math.PI, P: 0, Mx: -150, My: 0, onSampledDirection: true },
     { beta: 3 * Math.PI / 2, P: 0, Mx: 0, My: -200, onSampledDirection: true }
   ].sort((a, b) => Math.atan2(a.My, a.Mx) - Math.atan2(b.My, b.Mx))

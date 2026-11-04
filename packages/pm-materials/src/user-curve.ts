@@ -1,3 +1,5 @@
+import { finiteCompiledMaterial } from './compiled'
+import { assertValidConcreteMaterial, assertValidSteelMaterial } from './validation'
 import type { CompiledMaterial, ConcreteMaterial, SteelMaterial, StressStrainPoint } from './types'
 import { interpolateSorted, interpolateSortedTangent, type SortedCurve } from './math'
 
@@ -28,16 +30,17 @@ const compileUserCurve = (
     return interpolateSorted(sorted, strain)
   }
 
-  return {
+  return finiteCompiledMaterial({
     id,
     family,
     stress,
     tangent: (strain) => (zeroTension && strain <= 0 ? 0 : interpolateSortedTangent(sorted, strain)),
     limits
-  }
+  })
 }
 
 export const compileConcreteUserCurve = (material: ConcreteMaterial) => {
+  assertValidConcreteMaterial(material, 'user-curve')
   const model = material.stressStrain.type === 'user-curve' ? material.stressStrain : null
   if (model?.interpolation !== 'linear' || model.extrapolation !== 'clamp') {
     throw new Error('A concrete user curve requires linear interpolation and clamp extrapolation.')
@@ -53,6 +56,7 @@ export const compileConcreteUserCurve = (material: ConcreteMaterial) => {
 }
 
 export const compileSteelUserCurve = (material: SteelMaterial) => {
+  assertValidSteelMaterial(material, 'user-curve')
   const model = material.stressStrain.type === 'user-curve' ? material.stressStrain : null
   if (model?.interpolation !== 'linear' || model.extrapolation !== 'clamp') {
     throw new Error('A steel user curve requires linear interpolation and clamp extrapolation.')

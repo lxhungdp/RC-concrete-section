@@ -1,38 +1,9 @@
+import { createAnalysisExecution } from '../application/analysis/execution'
 import {
   AnalysisInputError,
-  analysisInputKey,
-  applyDesignCheckToInverse,
-  buildDesignPreviewSurfaceFromPrepared,
-  buildExactDirectionCurveFromPrepared,
-  buildStressStrainPointCalculationAudit,
-  buildSectionFieldMapFromPrepared,
-  checkLoadcaseUtilizationFromSurface,
-  checkLoadcasesUtilizationFromSurface,
-  codeAdjustedDemandOfCheck,
-  prepareAnalysis,
-  sliceActiveDesignPContour,
-  solveInversePreviewFromPrepared,
-  surfaceInputKey,
-  type PreparedAnalysis,
-  type CapacityFieldResult,
   type PreviewSurface
 } from '@pm/analysis'
-import {
-  buildEquivalentBlockDesignSurfaceFromPrepared,
-  buildEquivalentBlockExactDirectionCurveFromPrepared,
-  buildEquivalentBlockPreviewSurfaceFromPrepared,
-  buildEquivalentBlockFieldMapFromPrepared,
-  buildEquivalentBlockPointCalculationAudit,
-  prepareBlockAnalysis,
-  solveEquivalentBlockDemandFromPrepared,
-  type EquivalentBlockDesignSurface,
-  type PreparedBlockAnalysis
-} from '@pm/analysis-equivalent-block'
-import {
-  buildResistanceMaterialSets,
-  createDefaultDesignBasis,
-  type DesignBasis
-} from '@pm/design'
+
 import {
   buildChartAuditWorkbookBytes,
   buildCalculationTraceAuditWorkbookBytes,
@@ -41,15 +12,9 @@ import {
   exportEquivalentBlockWorkbook,
   exportMeshAuditDxf,
   exportMeshAuditWorkbook,
-  exportSectionWorkbook,
-  type EquivalentBlockExcelInput,
-  type ExcelExportInput
+  exportSectionWorkbook
 } from '@pm/report'
-import {
-  analysisMeshKernelOptions,
-  isEquivalentBlockAnalysisOptions,
-  type AnalysisOptions
-} from '@pm/project'
+
 import {
   packSectionMeshView,
   sectionMeshTransferList
@@ -57,9 +22,10 @@ import {
 import { BoundedLruCache } from '../application/analysis/bounded-lru'
 import type {
   AnalysisWorkerRequest,
-  AnalysisWorkerResponse,
-  BuildSurfacePayload
+  AnalysisWorkerResponse
 } from '../application/analysis/worker-contract'
+
+const execution = createAnalysisExecution()
 
 const serializeError = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
@@ -67,14 +33,6 @@ const workerSelf = self as unknown as {
   postMessage: (message: AnalysisWorkerResponse, transfer?: Transferable[]) => void
   onmessage: ((event: MessageEvent<AnalysisWorkerRequest>) => void) | null
 }
-
-const preparedCache = new BoundedLruCache<string, PreparedAnalysis>(2)
-const preparedBlockCache = new BoundedLruCache<string, PreparedBlockAnalysis>(2)
-const surfaceCache = new BoundedLruCache<string, PreviewSurface>(2)
-const blockSurfaceCache = new BoundedLruCache<string, {
-  core: EquivalentBlockDesignSurface
-  preview: PreviewSurface
-}>(2)
 const publishedSurfaceCache = new BoundedLruCache<string, PreviewSurface>(4)
 let publishedSurfaceSequence = 0
 let pdfUnicodeFontPromise: Promise<Uint8Array> | null = null
@@ -85,57 +43,6 @@ const pdfUnicodeFont = () => {
     return new Uint8Array(await response.arrayBuffer())
   })
   return pdfUnicodeFontPromise
-}
-
-const blockSurfaceInputKey = (payload: Pick<BuildSurfacePayload,
-  'calculationProfileId' | 'section' | 'rebars' | 'materialStore' | 'analysisOptions' | 'designBasis'>) => JSON.stringify({
-  calculationProfileId: payload.calculationProfileId,
-  section: payload.section,
-  rebars: payload.rebars,
-  materialStore: payload.materialStore,
-  analysisOptions: payload.analysisOptions,
-  designBasis: payload.designBasis
-})
-
-const stressSurfaceInputKey = (
-  payload: Omit<BuildSurfacePayload, 'analysisOptions'> & { analysisOptions: AnalysisOptions }
-) => `${payload.calculationProfileId}:${surfaceInputKey(
-  payload.section,
-  payload.rebars,
-  payload.materialStore,
-  payload.analysisOptions
-)}:${JSON.stringify(payload.designBasis)}`
-
-const preparedFor = (
-  payload: Pick<BuildSurfacePayload, 'section' | 'rebars' | 'materialStore'> & { analysisOptions: AnalysisOptions } & {
-    designBasis?: DesignBasis
-  }
-) => {
-  const meshOptions = analysisMeshKernelOptions(payload.analysisOptions)
-  const designBasis = payload.designBasis ?? createDefaultDesignBasis(payload.materialStore)
-  const stateMaterials = buildResistanceMaterialSets(payload.materialStore, designBasis).stateMaterials
-  const key = `${analysisInputKey(payload.section, payload.rebars, stateMaterials, meshOptions)}:${JSON.stringify(designBasis)}`
-  const cached = preparedCache.get(key)
-  if (cached) return cached
-  const value = prepareAnalysis(payload.section, payload.rebars, stateMaterials, meshOptions)
-  preparedCache.set(key, value)
-  return value
-}
-
-const preparedBlockFor = (payload: Pick<BuildSurfacePayload,
-  'calculationProfileId' | 'section' | 'rebars' | 'materialStore' | 'designBasis'>) => {
-  const key = JSON.stringify(payload)
-  const cached = preparedBlockCache.get(key)
-  if (cached) return cached
-  const value = prepareBlockAnalysis(
-    payload.calculationProfileId,
-    payload.section,
-    payload.rebars,
-    payload.materialStore,
-    payload.designBasis
-  )
-  preparedBlockCache.set(key, value)
-  return value
 }
 
 const publishSurface = (surface: PreviewSurface) => {
@@ -158,194 +65,37 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
 
   try {
     if (request.type === 'buildSurface') {
-      if (isEquivalentBlockAnalysisOptions(request.payload.analysisOptions)) {
-        const key = blockSurfaceInputKey(request.payload)
-        const cached = blockSurfaceCache.get(key)
-        if (cached) {
-          workerSelf.postMessage({
-            type: 'success',
-            jobId: request.jobId,
-            requestType: request.type,
-            result: publishSurface(cached.preview)
-          })
-          return
-        }
-        const prepared = preparedBlockFor(request.payload)
-        const core = buildEquivalentBlockDesignSurfaceFromPrepared(
-          prepared,
-          request.payload.analysisOptions
-        )
-        const result = buildEquivalentBlockPreviewSurfaceFromPrepared(
-          prepared,
-          request.payload.analysisOptions,
-          core
-        )
-        result.calculationProfileId = request.payload.calculationProfileId
-        blockSurfaceCache.set(key, { core, preview: result })
-        workerSelf.postMessage({
-          type: 'success',
-          jobId: request.jobId,
-          requestType: request.type,
-          result: publishSurface(result)
-        })
-        return
-      }
-      const analysisOptions = request.payload.analysisOptions
-      if (isEquivalentBlockAnalysisOptions(analysisOptions)) {
-        throw new Error('Equivalent-block surface request escaped its dedicated worker branch.')
-      }
-      const designKey = stressSurfaceInputKey({ ...request.payload, analysisOptions })
-      const cached = surfaceCache.get(designKey)
-      if (cached) {
-        workerSelf.postMessage({
-          type: 'success',
-          jobId: request.jobId,
-          requestType: request.type,
-          result: publishSurface(cached)
-        })
-        return
-      }
-      const result = buildDesignPreviewSurfaceFromPrepared(
-        preparedFor({ ...request.payload, analysisOptions: request.payload.analysisOptions }),
-        request.payload.materialStore,
-        request.payload.designBasis,
-        request.payload.analysisOptions
-      )
-      result.calculationProfileId = request.payload.calculationProfileId
-      // Keep the worker-owned points array. A surface sent to and then back from the UI is cloned,
-      // which would otherwise defeat the WeakMap topology cache on every inverse loadcase.
-      surfaceCache.set(designKey, result)
-      workerSelf.postMessage({
-        type: 'success',
-        jobId: request.jobId,
-        requestType: request.type,
-        result: publishSurface(result)
-      })
+      const result = publishSurface(execution.buildSurface(request.payload))
+      workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
       return
     }
 
     if (request.type === 'checkLoadcases') {
-      const surface = referencedSurface(request.payload)
-      const { loadcases } = request.payload
-      const result = checkLoadcasesUtilizationFromSurface(surface, loadcases)
+      const result = execution.checkLoadcases({ ...request.payload, surface: referencedSurface(request.payload) })
       workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
       return
     }
 
     if (request.type === 'buildExactDirection') {
-      const { analysisOptions, beta } = request.payload
-      const result = isEquivalentBlockAnalysisOptions(analysisOptions)
-        ? buildEquivalentBlockExactDirectionCurveFromPrepared(
-            preparedBlockFor(request.payload),
-            analysisOptions,
-            beta
-          )
-        : buildExactDirectionCurveFromPrepared(
-            preparedFor({ ...request.payload, analysisOptions }),
-            request.payload.materialStore,
-            request.payload.designBasis,
-            analysisOptions,
-            beta
-          )
+      const result = execution.buildExactDirection(request.payload)
       workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
       return
     }
 
     if (request.type === 'checkLoadcase') {
-      const { section, rebars, materialStore, loadcase, analysisOptions } = request.payload
-      const surface = referencedSurface(request.payload)
-      if (isEquivalentBlockAnalysisOptions(analysisOptions)) {
-        const key = blockSurfaceInputKey({
-          calculationProfileId: request.payload.calculationProfileId,
-          section,
-          rebars,
-          materialStore,
-          analysisOptions,
-          designBasis: request.payload.designBasis
-        })
-        const prepared = preparedBlockFor({
-          calculationProfileId: request.payload.calculationProfileId,
-          section,
-          rebars,
-          materialStore,
-          designBasis: request.payload.designBasis
-        })
-        const cached = blockSurfaceCache.get(key)
-        const core = cached?.core ?? buildEquivalentBlockDesignSurfaceFromPrepared(prepared, analysisOptions)
-        const inverse = solveEquivalentBlockDemandFromPrepared(
-          prepared,
-          analysisOptions,
-          loadcase,
-          core
-        )
-        const result = applyDesignCheckToInverse(
-          inverse,
-          checkLoadcaseUtilizationFromSurface(surface, loadcase)
-        )
-        workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
-        return
-      }
-      const key = stressSurfaceInputKey({
-        ...request.payload,
-        section,
-        rebars,
-        materialStore,
-        analysisOptions
-      })
-      const activeSurface = surfaceCache.get(key) ?? surface
-      const contour = sliceActiveDesignPContour(activeSurface, loadcase.P)
-      const designCheck = checkLoadcaseUtilizationFromSurface(
-        activeSurface,
-        loadcase
-      )
-      const prepared = preparedFor({
-          section,
-          rebars,
-          materialStore,
-          analysisOptions,
-          designBasis: request.payload.designBasis
-        })
-      const inverse = solveInversePreviewFromPrepared(
-        prepared,
-        loadcase,
-        contour,
-        codeAdjustedDemandOfCheck(designCheck)
-      )
-      let capacityField: CapacityFieldResult
-      try {
-        const { solveStressStrainCapacityFieldFromPrepared } = await import('@pm/analysis/capacity-field')
-        capacityField = solveStressStrainCapacityFieldFromPrepared(prepared, materialStore,
-          request.payload.designBasis, activeSurface, designCheck.codeAdjustedDemand ?? loadcase)
-      } catch {
-        capacityField = { status: 'unavailable', reason: 'evaluation-error', iterations: 0,
-          message: 'Capacity-field evaluation failed.' }
-      }
-      const result = { ...applyDesignCheckToInverse(inverse, designCheck), capacityField }
+      const result = await execution.checkLoadcase({ ...request.payload, surface: referencedSurface(request.payload) })
       workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
       return
     }
 
     if (request.type === 'buildFieldMap') {
-      if (isEquivalentBlockAnalysisOptions(request.payload.analysisOptions)) {
-        if (!request.payload.blockState) throw new Error('The axial-cap face has no unique equivalent-block field state.')
-        const result = buildEquivalentBlockFieldMapFromPrepared(
-          preparedBlockFor(request.payload),
-          request.payload.blockState
-        )
-        workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
-        return
-      }
-      const { state } = request.payload
-      const result = buildSectionFieldMapFromPrepared(
-        preparedFor({ ...request.payload, analysisOptions: request.payload.analysisOptions }),
-        state
-      )
+      const result = execution.buildFieldMap(request.payload)
       workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
       return
     }
 
     if (request.type === 'buildSectionMesh') {
-      const result = packSectionMeshView(preparedFor(request.payload).mesh)
+      const result = packSectionMeshView(execution.buildSectionMesh(request.payload))
       workerSelf.postMessage(
         { type: 'success', jobId: request.jobId, requestType: request.type, result },
         sectionMeshTransferList(result)
@@ -354,39 +104,13 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
     }
 
     if (request.type === 'buildPointAudits') {
-      const result = isEquivalentBlockAnalysisOptions(request.payload.analysisOptions)
-        ? (() => {
-            const prepared = preparedBlockFor(request.payload)
-            return request.payload.points.map(({ key, point, stationDefinition }) => ({
-              key,
-              audit: buildEquivalentBlockPointCalculationAudit(
-                prepared,
-                request.payload.stage,
-                point,
-                stationDefinition
-              )
-            }))
-          })()
-        : (() => {
-            const prepared = preparedFor({ ...request.payload, analysisOptions: request.payload.analysisOptions })
-            return request.payload.points.map(({ key, point, stationDefinition }) => ({
-              key,
-              audit: buildStressStrainPointCalculationAudit(
-                prepared,
-                request.payload.materialStore,
-                request.payload.designBasis,
-                request.payload.stage,
-                point,
-                stationDefinition
-              )
-            }))
-          })()
+      const result = execution.buildPointAudits(request.payload)
       workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
       return
     }
 
     if (request.type === 'exportMeshExcel' || request.type === 'exportMeshDxf') {
-      const mesh = preparedFor(request.payload).mesh
+      const mesh = execution.buildSectionMesh(request.payload)
       const exportInput = {
         presentationUnits: request.payload.presentationUnits,
         projectName: request.payload.projectName,
