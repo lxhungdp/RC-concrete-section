@@ -10,12 +10,49 @@ import { editableQuantity, fromCanonical, toCanonical, UNIT_PRESETS } from '@pm/
 const require = createRequire(import.meta.url)
 const { buildPreviewSurfaceFallback } = require('../../../apps/web/application/analysis/fallback.ts')
 const { chromium } = require(process.env.PM_PLAYWRIGHT_MODULE ?? 'playwright')
-const out = 'outputs/load-reference'
+const out = process.env.PM_EVIDENCE_DIR ?? 'outputs/load-reference'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
 const evidence = []
+const rowLayouts = []
+const checkOffsetRows = async (panel, label) => {
+  const rows = await panel.locator('.pm-load-reference-offsets > label').evaluateAll(elements => elements.map(element => {
+    const caption = element.firstElementChild
+    const field = element.querySelector('.ws-field-group')
+    const input = element.querySelector('input')
+    const bounds = element.getBoundingClientRect()
+    const text = document.createRange()
+    text.selectNodeContents(caption)
+    const textBounds = text.getBoundingClientRect()
+    const captionBounds = caption.getBoundingClientRect()
+    const fieldBounds = field.getBoundingClientRect()
+    const style = getComputedStyle(input)
+    const context = document.createElement('canvas').getContext('2d')
+    context.font = style.font
+    return { label: caption.textContent, captionCentre: captionBounds.y + captionBounds.height / 2,
+      fieldCentre: fieldBounds.y + fieldBounds.height / 2, labelRight: textBounds.right,
+      fieldLeft: fieldBounds.left, fieldRight: fieldBounds.right, fieldTop: fieldBounds.top, fieldBottom: fieldBounds.bottom,
+      fieldHeight: fieldBounds.height, fieldWidth: fieldBounds.width, rowHeight: bounds.height, rowRight: bounds.right,
+      inputWidth: input.getBoundingClientRect().width, textWidth: context.measureText(input.value).width +
+        parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) }
+  }))
+  assert.equal(rows.length, 2)
+  assert.deepEqual(rows.map(row => row.label), ['Offset X', 'Offset Y'])
+  for (const row of rows) {
+    assert.ok(Math.abs(row.captionCentre - row.fieldCentre) < 1, `${label}: label and input share a row`)
+    assert.ok(row.labelRight < row.fieldLeft, `${label}: label remains readable`)
+    assert.ok(row.fieldRight <= row.rowRight + 1, `${label}: field stays inside panel`)
+    assert.ok(row.rowHeight <= row.fieldHeight + 1, `${label}: one control-height row`)
+    assert.equal(row.fieldLeft, rows[0].fieldLeft)
+    assert.equal(row.fieldWidth, rows[0].fieldWidth)
+    assert.ok(row.inputWidth >= row.textWidth, `${label}: current numeric input remains readable`)
+  }
+  assert.ok(rows[1].fieldTop >= rows[0].fieldBottom, `${label}: each offset owns its row`)
+  rowLayouts.push({ label, rows })
+}
 let activePage
-const close = (actual, expected) => assert.ok(Math.abs(actual - expected) <= 16 * Number.EPSILON * Math.max(1, Math.abs(expected)), `${actual} != ${expected}`)
+const comparisonBound = expected => 16 * Number.EPSILON * Math.max(1, Math.abs(expected))
+const close = (actual, expected) => assert.ok(Math.abs(actual - expected) <= comparisonBound(expected), `${actual} != ${expected}`)
 const plots = page => page.evaluate(() => Object.fromEntries(['fixedP', 'vertical'].map(id => [id,
   [...(document.querySelector(`[data-chart="${id}"] .js-plotly-plot`)?.data ?? [])]
     .map(trace => ({ name: trace.name, x: Array.from(trace.x ?? []), y: Array.from(trace.y ?? []) }))])))
@@ -38,6 +75,18 @@ const importProject = async (page, file) => {
 const settled = async page => {
   await page.waitForFunction(() => document.querySelector('.pm-results-stage')?.getAttribute('aria-busy') === 'false')
   await page.waitForFunction(() => document.querySelector('[data-chart="vertical"] .js-plotly-plot')?.data?.some(trace => trace.x?.length > 3))
+}
+const settledForDemand = async (page, load, units = UNIT_PRESETS.metric) => {
+  await settled(page)
+  const x = fromCanonical('moment', load.Mx, units), y = fromCanonical('moment', load.My, units)
+  const p = fromCanonical('force', load.P, units)
+  // A completed outgoing chart can remain visible while the selected loadcase is replaced.
+  await page.waitForFunction(({ x, y, p, dx, dy, dp }) => {
+    const demand = id => document.querySelector(`[data-chart="${id}"] .js-plotly-plot`)?.data?.find(trace => trace.name === 'Demand point')
+    const fixed = demand('fixedP'), vertical = demand('vertical')
+    return fixed && vertical && Math.abs(fixed.x?.[0] - x) <= dx && Math.abs(fixed.y?.[0] - y) <= dy &&
+      Math.abs(vertical.y?.[0] - p) <= dp
+  }, { x, y, p, dx: comparisonBound(x), dy: comparisonBound(y), dp: comparisonBound(p) })
 }
 const axes = page => page.locator('.pm-section-moment-axes').evaluate(el => ({ x: Number(el.dataset.originX), y: Number(el.dataset.originY) }))
 try {
@@ -88,6 +137,7 @@ try {
     const convert = panel.getByRole('checkbox', { name: 'Convert existing loadcases' })
     await convert.waitFor(); assert.equal(await convert.isChecked(), false)
     assert.equal(await x.getAttribute('type'), 'number'); assert.equal(await y.getAttribute('type'), 'number')
+    await checkOffsetRows(panel, `${mechanics}-default-light`)
     await x.fill('125')
     console.log(`${mechanics}: offset draft ${await x.inputValue()}`)
     await page.waitForFunction(({ x, y }) => {
@@ -118,6 +168,7 @@ try {
       labelRight: el.getBoundingClientRect().right }))
     assert.equal(checkStyle.border, '0px'); assert.ok(checkStyle.buttonX >= checkStyle.labelRight)
     assert.deepEqual(await axes(page), { x: origin.x + 125, y: origin.y - 75 })
+    await checkOffsetRows(panel, `${mechanics}-converted-light`)
     await page.screenshot({ path: `${out}/${mechanics}-converted-light.png` })
     // Without Convert, the displayed old numbers acquire the new origin's lever arms.
     await x.fill('-40'); await x.press('Tab'); await y.fill('30'); await y.press('Tab')
@@ -140,13 +191,13 @@ try {
     assert.ok(newLoad); assert.deepEqual({ P: newLoad.P, Mx: newLoad.Mx, My: newLoad.My }, { P: 1e6, Mx: 30e6, My: -40e6 })
     await page.getByRole('table', { name: 'Loadcase demand table' }).locator('tr')
       .filter({ has: page.getByLabel('Loadcase 2 name', { exact: true }) }).locator('td.pm-col-ur').click()
-    await settled(page)
+    await settledForDemand(page, expected[1])
     const beforeUnitsPlots = await plots(page)
     const beforeUnitsResult = await page.evaluate(() => structuredClone(window.__referenceAudit.results[2]))
     await page.getByRole('button', { name: 'Options', exact: true }).click()
     await page.getByRole('tab', { name: 'Units', exact: true }).click()
-    await page.getByLabel('Display unit preset').selectOption('us')
-    await page.getByRole('button', { name: 'Demand Check', exact: true }).click(); await settled(page)
+    await page.getByRole('button', { name: 'US', exact: true }).click()
+    await page.getByRole('button', { name: 'Demand Check', exact: true }).click(); await settledForDemand(page, expected[1], UNIT_PRESETS.us)
     const usFixed = (await plots(page)).fixedP.find(trace => trace.name === 'Demand point')
     assert.ok(usFixed)
     close(usFixed.x[0], fromCanonical('moment', expected[1].Mx, UNIT_PRESETS.us))
@@ -176,17 +227,29 @@ try {
     assert.deepEqual(await page.evaluate(() => window.__referenceAudit.results[2]), beforeUnitsResult)
     await page.getByRole('button', { name: 'Options', exact: true }).click()
     await page.getByRole('tab', { name: 'Units', exact: true }).click()
-    await page.getByLabel('Display unit preset').selectOption('metric')
-    await page.getByRole('button', { name: 'Demand Check', exact: true }).click(); await settled(page)
+    await page.getByRole('button', { name: 'Metric', exact: true }).click()
+    await page.getByRole('button', { name: 'Demand Check', exact: true }).click(); await settledForDemand(page, expected[1])
     assert.deepEqual(await plots(page), beforeUnitsPlots, 'unit round trip and Convert preserve centroidal curves')
     console.log(`${mechanics}: US offset input and unit round trip`)
     await page.getByRole('button', { name: 'Theme', exact: true }).click()
+    await checkOffsetRows(panel, `${mechanics}-default-dark`)
     await page.screenshot({ path: `${out}/${mechanics}-dark.png` })
+    await page.getByRole('separator', { name: 'Resize side panel' }).press('Home')
+    await checkOffsetRows(panel, `${mechanics}-minimum-dark`)
+    await page.screenshot({ path: `${out}/${mechanics}-minimum-dark.png` })
+    await page.getByRole('button', { name: 'Theme', exact: true }).click()
+    await checkOffsetRows(panel, `${mechanics}-minimum-light`)
+    await page.screenshot({ path: `${out}/${mechanics}-minimum-light.png` })
+    await page.getByRole('button', { name: 'Theme', exact: true }).click()
     await page.setViewportSize({ width: 360, height: 900 })
     await panel.scrollIntoViewIfNeeded()
     const narrow = await panel.evaluate(el => ({ width: el.clientWidth, scrollWidth: el.scrollWidth }))
     assert.ok(narrow.scrollWidth <= narrow.width + 1)
+    await checkOffsetRows(panel, `${mechanics}-phone-dark`)
     await page.screenshot({ path: `${out}/${mechanics}-phone.png` })
+    await page.getByRole('button', { name: 'Theme', exact: true }).click()
+    await checkOffsetRows(panel, `${mechanics}-phone-light`)
+    await page.screenshot({ path: `${out}/${mechanics}-phone-light.png` })
     assert.deepEqual(errors, []); assert.deepEqual(await page.evaluate(() => window.__referenceAudit.failures), [])
     evidence.push({ mechanics, nativeMouseSpinners: true, draftOnlyPreview: true, convertPreservesCanonicalAndUR: true,
       centroidalCurvesUnchanged: true, uncheckedReinterpretsInputs: true, newLoadsUseAppliedOrigin: true,
@@ -209,6 +272,7 @@ try {
     await page.close()
   }
   await writeFile(`${out}/browser-evidence.json`, JSON.stringify(evidence, null, 2))
+  await writeFile(`${out}/row-layout-evidence.json`, JSON.stringify(rowLayouts, null, 2))
   console.log(JSON.stringify(evidence, null, 2))
 } catch (error) {
   if (activePage && !activePage.isClosed()) { await activePage.screenshot({ path: `${out}/failure.png` }); console.error((await activePage.locator('body').innerText()).slice(-6000)) }

@@ -280,7 +280,7 @@ function ConcreteAxialLimitFields({
     <div className="pm-material-stress-box pm-material-axial-limit">
       <div className="pm-material-stress-title">Axial compression limit</div>
       <div className="pm-material-form">
-        <label className="pm-field">
+        <label className="pm-field pm-option-field pm-option-field--wide">
           <span>Column type</span>
           <select
             value={basis.transverseReinforcement}
@@ -1039,11 +1039,12 @@ export function MaterialPanel({
                   </label>
                 </div>
                 <SteelStressStrainCurve material={activeSteel} store={store} basis={designBasis} stage={steelCurveStage} />
-                <label className="pm-inline-param"><span>Curve stage</span>
+                <label className="pm-material-param"><span>Curve stage</span>
                   <select aria-label="Curve stage" value={steelCurveStage}
+                    title={steelCurveStage === 'design' ? 'Design material' : 'Reference material'}
                     onChange={(event) => setSteelCurveStage(event.target.value === 'design' ? 'design' : 'reference')}>
-                    <option value="reference">Reference</option>
-                    <option value="design">Design material</option>
+                    <option value="reference" title="Reference material">Ref.</option>
+                    <option value="design" title="Design material">Design</option>
                   </select>
                 </label>
                 <div className="pm-material-form">

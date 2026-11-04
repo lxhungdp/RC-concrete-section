@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react'
-import { CANONICAL_UNITS, DISPLAY_UNITS_STORAGE_KEY, UNIT_OPTIONS, UNIT_PRESETS, commitQuantity, editableQuantity,
+import { CANONICAL_UNITS, DISPLAY_UNITS_STORAGE_KEY, RETIRED_DISPLAY_UNITS_STORAGE_KEY, UNIT_OPTIONS, UNIT_PRESETS, commitQuantity, editableQuantity,
   formatInputQuantity, formatQuantity, fromCanonical, parseUnitSelection, quantityUnit, selectUnit,
   type Quantity, type UnitGroup, type UnitGroups, type UnitSelection } from '@pm/units'
 
@@ -12,6 +12,7 @@ export function DisplayUnitsProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
   const [warning, setWarning] = useState('')
   useEffect(() => {
+    try { window.localStorage.removeItem(RETIRED_DISPLAY_UNITS_STORAGE_KEY) } catch { /* Stale browser data has no calculation role. */ }
     try {
       const raw = window.localStorage.getItem(DISPLAY_UNITS_STORAGE_KEY)
       if (raw) setSelection(parseUnitSelection(JSON.parse(raw)))
@@ -122,21 +123,21 @@ export function QuantitySlider({ quantity, label, value, min, max, disabled, onV
   </label>
 }
 
-const LABELS: Record<UnitGroup, string> = { length: 'Coordinates and dimensions', barDiameter: 'Bar diameter',
-  force: 'Force', moment: 'Moment', stress: 'Stress', modulus: 'Elastic modulus', density: 'Mass density' }
+const LABELS: Record<UnitGroup, string> = { length: 'Coordinates & dimensions',
+  force: 'Force', moment: 'Moment', stress: 'Stress & modulus', density: 'Mass density' }
 export function DisplayUnitsPanel() {
   const { selection, setSelection } = useDisplayUnits()
   return <section className="pm-panel-section">
-    <label className="pm-field"><span>Display units</span><select aria-label="Display unit preset" value={selection.preset}
-      onChange={event => { if (event.target.value === 'metric' || event.target.value === 'us') setSelection(UNIT_PRESETS[event.target.value])
-        else setSelection({ ...selection, preset: 'custom' }) }}>
-      <option value="metric">Metric</option><option value="us">US Customary</option><option value="custom">Custom</option>
-    </select></label>
-    {Object.entries(UNIT_OPTIONS).map(([group, options]) => <label className="pm-field" key={group}>
-      <span>{LABELS[group as UnitGroup]}</span><select aria-label={LABELS[group as UnitGroup]} value={selection.groups[group as UnitGroup]}
-        onChange={event => setSelection(selectUnit(selection, group as UnitGroup, event.target.value as UnitGroups[UnitGroup]))}>
-        {options.map(unit => <option key={unit} value={unit}>{unit}</option>)}
-      </select></label>)}
-    <p className="pm-preview-hint">Units apply to input and display. Calculation data remains mm, N, MPa and N·mm. JSON and DXF retain their declared units; Excel audit ledgers state their calculation units.</p>
+    <div className="pm-panel-actions" role="group" aria-label="Quick unit selection">
+      <button type="button" className="ws-action" onClick={() => setSelection(UNIT_PRESETS.metric)}>Metric</button>
+      <button type="button" className="ws-action" onClick={() => setSelection(UNIT_PRESETS.us)}>US</button>
+    </div>
+    <div className="pm-unit-fields">
+      {Object.entries(UNIT_OPTIONS).map(([group, options]) => <label className="pm-field pm-unit-field" key={group}>
+        <span>{LABELS[group as UnitGroup]}</span><select aria-label={LABELS[group as UnitGroup]} value={selection.groups[group as UnitGroup]}
+          onChange={event => setSelection(selectUnit(selection, group as UnitGroup, event.target.value as UnitGroups[UnitGroup]))}>
+          {options.map(unit => <option key={unit} value={unit}>{unit}</option>)}
+        </select></label>)}
+    </div>
   </section>
 }

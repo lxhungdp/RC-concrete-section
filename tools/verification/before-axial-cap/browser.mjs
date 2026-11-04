@@ -184,7 +184,7 @@ try {
     await page.getByRole('button', { name: 'Options', exact: true }).click()
     await page.getByRole('tab', { name: 'Units', exact: true }).click()
     const beforeUnits = await page.evaluate(() => structuredClone(window.__capAudit))
-    await page.getByLabel('Display unit preset').selectOption('us')
+    await page.getByRole('button', { name: 'US', exact: true }).click()
     await page.getByRole('button', { name: 'Demand Check', exact: true }).click()
     await page.waitForFunction(() => document.querySelector('.pm-results-stage')?.getAttribute('aria-busy') === 'false')
     assert.deepEqual(await page.evaluate(() => window.__capAudit.results[2]), capResult)

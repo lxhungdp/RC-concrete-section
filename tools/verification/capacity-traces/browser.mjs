@@ -142,7 +142,7 @@ try {
     const factorBranches = new Set()
     const trace = async (row, component, { keyboard = false, leaveOpen = false, checkNarrow = false } = {}) => {
       const label = chartValueLabel(component, row.evidence.stage)
-      console.log(`${mechanics}: ${presentation.preset} ${row.kind} ${label} row ${row.index}`)
+      console.log(`${mechanics}: ${quantityUnit('force', presentation)} ${row.kind} ${label} row ${row.index}`)
       await checkValueType()
       const action = table.getByRole('button', { name: `Trace ${label} for row ${row.index}`, exact: true })
       if (keyboard) { await action.focus(); await page.keyboard.press('Enter') } else await action.click()
@@ -172,11 +172,11 @@ try {
       await checkValueBounds()
       await checkModalType()
       if (checkNarrow) {
-        await page.screenshot({ path: `${out}/${mechanics}-P-${presentation.preset}-desktop.png` })
+        await page.screenshot({ path: `${out}/${mechanics}-P-${quantityUnit('force', presentation)}-desktop.png` })
         await page.setViewportSize({ width: 360, height: 900 })
         await checkValueBounds()
         await checkModalType()
-        await page.screenshot({ path: `${out}/${mechanics}-P-${presentation.preset}-phone.png` })
+        await page.screenshot({ path: `${out}/${mechanics}-P-${quantityUnit('force', presentation)}-phone.png` })
         await page.setViewportSize({ width: 1600, height: 1100 })
       }
       assert.equal(await dialog.locator('.pm-calc-formula .pm-calc-math').count(), 0, 'focused authored formulas use the standard math renderer')
@@ -347,7 +347,7 @@ try {
     const surfacesBefore = await page.evaluate(() => window.__traceAudit.jobs.filter(job => job.type === 'buildSurface').length)
     await page.getByRole('button', { name: 'Options', exact: true }).click()
     await page.getByRole('tab', { name: 'Units', exact: true }).click()
-    await page.getByLabel('Display unit preset').selectOption('us')
+    await page.getByRole('button', { name: 'US', exact: true }).click()
     presentation = UNIT_PRESETS.us
     await page.getByRole('button', { name: 'Capacity', exact: true }).click()
     await trace(physical, 'P', { checkNarrow: true })

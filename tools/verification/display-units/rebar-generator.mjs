@@ -53,7 +53,7 @@ try {
     const units = async preset => {
       await page.getByRole('button', { name: 'Options', exact: true }).click()
       await page.getByRole('tab', { name: 'Units', exact: true }).click()
-      await page.getByLabel('Display unit preset').selectOption(preset)
+      await page.getByRole('button', { name: preset === 'us' ? 'US' : 'Metric', exact: true }).click()
       await rebar()
     }
     const field = label => page.getByText(label, { exact: true }).locator('..').locator('input')

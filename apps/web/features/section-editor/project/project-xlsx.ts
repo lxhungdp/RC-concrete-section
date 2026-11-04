@@ -1,4 +1,4 @@
-import { CANONICAL_UNITS, fieldQuantity, fromCanonical, toCanonical, quantityUnit, type Quantity, type UnitSelection } from '@pm/units'
+import { CANONICAL_UNITS, fieldQuantity, fromCanonical, toCanonical, quantityUnit, type Quantity, type UnitContext } from '@pm/units'
 import { CANONICAL_WORKBOOK_UNITS, quantityCell, readQuantityCell, writeQuantityCell, readWorkbookUnits, writeWorkbookUnits, type QuantityCell } from '../shared/workbook-units'
 import { createDesignBasisForCalculationProfile, createLoadCombination, loadReferenceOf, resultantAtCentroid, resultantAtLoadReference, parseProjectDocument, projectDocumentFileName, type ParseProjectResult, type PmProjectDocument } from '@pm/project'
 import { readLoadReferenceSheet, writeLoadReferenceSheet } from '../loadings/loadcase-xlsx'
@@ -120,14 +120,14 @@ declare('resistance', 'number', ['basisVersion',
   'factors.concrete.components.#.value', 'factors.reinforcement.components.#.value'])
 declare('resistance', 'boolean', ['modified', 'materialModelModified', 'steelModelModified', 'axialCapEnabled'])
 declare('resistance', 'array', ['factors.concrete.components', 'factors.reinforcement.components'])
-const specFor = (scope: Scope, path: string, context: string, units: UnitSelection = CANONICAL_WORKBOOK_UNITS): FieldSpec => {
+const specFor = (scope: Scope, path: string, context: string, units: UnitContext = CANONICAL_WORKBOOK_UNITS): FieldSpec => {
   const type = specifications[scope].get(path.replace(/\.\d+(?=\.|$)/g, '.#'))
   if (!type) return fail('WORKBOOK_CELL', `${context}: unknown field "${path}" in ${scope}.`)
   const quantity = type === 'number' ? fieldQuantity(path) : null
   const unit = quantity ? quantityUnit(quantity, units) : type === 'number' ? unitFor(path) : ''
   return { path, type, label: scope === 'projectInformation' ? PROJECT_LABELS[path] : unit ? `${path} (${unit})` : path }
 }
-const flatten = (scope: Scope, value: unknown, prefix = '', units: UnitSelection = CANONICAL_WORKBOOK_UNITS): ExportCell[][] => {
+const flatten = (scope: Scope, value: unknown, prefix = '', units: UnitContext = CANONICAL_WORKBOOK_UNITS): ExportCell[][] => {
   if (value === undefined) return []
   if (value !== null && typeof value === 'object') {
     const entries = Object.entries(value).filter(([, child]) => child !== undefined)
@@ -168,7 +168,7 @@ const sheet = (book: Workbook, name: string, note: string, widths: number[]) => 
   widths.forEach((width, i) => { ws.getColumn(i + 1).width = width })
   return ws
 }
-const addBlock = (ws: Worksheet, keyword: string, args: Scalar[], data: ExportCell[][], units?: UnitSelection) => {
+const addBlock = (ws: Worksheet, keyword: string, args: Scalar[], data: ExportCell[][], units?: UnitContext) => {
   if (ws.rowCount > 1) ws.addRow([])
   ws.addRow(keyword === 'OUTER' || keyword === 'HOLE' ? [`${keyword.toLowerCase()} #${args[0]}`] : [keyword, ...args]).font = { bold: true }
   ws.addRow(units && keyword.endsWith('_CURVE') ? ['Strain (1)', `Stress (${quantityUnit('stress', units)})`] : blockHeaders[keyword]).font = { bold: true }
@@ -200,7 +200,7 @@ const assertInputStatus = (project: PmProjectDocument) => {
     return fail('WORKBOOK_CELL', `Resistance: input workbooks cannot grant reviewed/verified status. The selected profile declares ${declared}.`)
   }
 }
-export const buildProjectWorkbook = async (project: PmProjectDocument, units: UnitSelection = CANONICAL_WORKBOOK_UNITS): Promise<Uint8Array> => {
+export const buildProjectWorkbook = async (project: PmProjectDocument, units: UnitContext = CANONICAL_WORKBOOK_UNITS): Promise<Uint8Array> => {
   assertInputStatus(project)
   const ExcelJS = await excelModule()
   const book = new ExcelJS.Workbook()
@@ -282,7 +282,7 @@ export const buildProjectWorkbook = async (project: PmProjectDocument, units: Un
 type InputRow = { values: Scalar[]; notes: Array<import('exceljs').Cell['note'] | undefined>; context: string }
 type Block = { keyword: string; args: Scalar[]; rows: InputRow[]; context: string }
 // Scan populated rows and named headers. No absolute row/column location participates in import.
-const scanSheet = (book: Workbook, name: string, units: UnitSelection): Block[] => {
+const scanSheet = (book: Workbook, name: string, units: UnitContext): Block[] => {
   const ws = book.getWorksheet(name)
   if (!ws || (!['Analysis', 'Resistance'].includes(name) && ws.state !== 'visible')) return fail('WORKBOOK_FORMAT', `Missing worksheet: ${name}.`)
   if (ws.rowCount > MAX_ROWS || ws.columnCount > 64) return fail('WORKBOOK_RESOURCE_LIMIT', `${name}: worksheet exceeds the import size limit.`)
@@ -373,7 +373,7 @@ const setField = (target: Fields, path: string, value: unknown, context: string)
     }
   }
 }
-const readFields = (block: Block, scope: Scope, markerValues = 0, units: UnitSelection = CANONICAL_WORKBOOK_UNITS): Fields => {
+const readFields = (block: Block, scope: Scope, markerValues = 0, units: UnitContext = CANONICAL_WORKBOOK_UNITS): Fields => {
   args(block, markerValues)
   const result: Fields = {}
   for (const { values: [label, raw], notes, context } of block.rows) {
@@ -427,7 +427,7 @@ const rowIds = (rows: InputRow[], column: number, warnings: string[], label: str
   if (copies) warnings.push(`${label}: assigned new technical IDs to ${copies} copied row(s).`)
   return new Map(rows.map((row, i) => [row, unique[i] ?? fresh[next++]]))
 }
-const readSection = (blocks: Block[], identity: Fields, warnings: string[], units: UnitSelection) => {
+const readSection = (blocks: Block[], identity: Fields, warnings: string[], units: UnitContext) => {
   type Point = { id: number; x: number; y: number }
   type Outer = { id: number; points: Point[]; holes: Array<{ id: number; points: Point[] }> }
   const ids = rowIds(blocks.flatMap((b) => b.rows), 2, warnings, 'Section')

@@ -59,7 +59,7 @@ try {
     const preset = async value => {
       await page.getByRole('button', { name: 'Options', exact: true }).click()
       await page.getByRole('tab', { name: 'Units', exact: true }).click()
-      await page.getByLabel('Display unit preset').selectOption(value)
+      await page.getByRole('button', { name: value === 'us' ? 'US' : 'Metric', exact: true }).click()
       await rebar()
     }
     const dia = () => page.locator('[data-rebar-diameter]')

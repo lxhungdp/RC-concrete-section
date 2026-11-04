@@ -1,5 +1,6 @@
 import type { UnitSelection } from '@pm/units'
 import { appendPresentationSummary } from './presentation-summary'
+import { steelHardeningNames, writeSteelHardeningInputs } from './steel-hardening-inputs'
 import {
   activeDesignDirectionPoints,
   activeDesignSurfaceDataset,
@@ -682,14 +683,14 @@ export const prepareAuditContext = (
   concreteRow++
 
   const steelFirst = tableBlock(materials, concreteRow + 1, 'Reinforcing steel', [
-    'ID', 'Material', 'Standard', 'fy (MPa)', 'Eₛ (MPa)', 'εy', 'εu physical', 'Stress–strain law',
+    'ID', 'Material', 'Standard', 'fy,eff (MPa)', 'Eₛ (MPa)', 'εy', 'εu physical', 'Stress–strain law',
     'fu construction (MPa)', 'εuk', 'εlimit', 'Eh (MPa)'
   ])
-  const steelNames = new Map<number, { fy: string; Es: string; curvePrefix: string }>()
+  const steelNames = new Map<number, { fy: string; Es: string; curvePrefix: string; hardening: Record<string, string> }>()
   calculationMaterials.steel.forEach((steel, index) => {
     const row = steelFirst + index
     const prefix = `S_${steel.id}`
-    const names = { fy: `${prefix}_fy`, Es: `${prefix}_Es`, curvePrefix: `${prefix}_curve` }
+    const names = { fy: `${prefix}_fy`, Es: `${prefix}_Es`, curvePrefix: `${prefix}_curve`, hardening: steelHardeningNames(`${prefix}_`) }
     steelNames.set(steel.id, names)
     materials.getCell(row, 1).value = steel.id
     materials.getCell(row, 2).value = steel.name
@@ -702,8 +703,8 @@ export const prepareAuditContext = (
     if (steel.stressStrain.type === 'linear-hardening') {
       const parameters = resolveLinearHardeningSteel(steel)
       for (const [column, value] of [[9, parameters.ultimateStress], [10, parameters.epsUk], [11, parameters.epsUd], [12, parameters.hardeningModulus]]) {
-        materials.getCell(row, column).value = value
-        styleGenerated(materials.getCell(row, column))
+        const key = column === 9 ? 'steel_fu_model' : column === 10 ? 'steel_eps_uk' : column === 11 ? 'steel_eps_limit' : 'steel_Eh'
+        setFormula(materials.getCell(row, column), names.hardening[key], value, '0.000000000')
       }
     }
     for (const column of [4, 5]) styleInput(materials.getCell(row, column))
@@ -714,6 +715,10 @@ export const prepareAuditContext = (
   })
 
   let curveRow = steelFirst + calculationMaterials.steel.length + 1
+  for (const steel of calculationMaterials.steel) {
+    const names = steelNames.get(steel.id)!
+    curveRow = writeSteelHardeningInputs(materials, curveRow, steel, { ...names.hardening, fy: names.fy, Es: names.Es }, defineName)
+  }
   curveRow = addMaterialCurve(materials, defineName, curveRow, 'C_curve', 'Concrete tabulated law', cLaw, sheetNames.materials)
   for (const steel of calculationMaterials.steel) {
     curveRow = addMaterialCurve(
@@ -935,6 +940,7 @@ export const prepareAuditContext = (
     const law = steelLaws.get(steelId)
     if (!names || !law) return '0'
     return formulaNames(law.scalar(eps), {
+      ...names.hardening,
       Es: names.Es,
       fy: names.fy,
       Stl_eps: `${names.curvePrefix}_eps`,
@@ -1045,8 +1051,6 @@ export const prepareAuditContext = (
           `=${zcRef}-${ref(block.at('criterionValue'))}*${depthRef}`,
           source.criterion.controlProjection
         )
-      } else if (source.criterion.kind === 'uniform-strain') {
-        setFormula(sheet.getCell(row, block.at('controlProjection')), `=${zcRef}`, source.criterion.controlProjection)
       } else {
         setFormula(sheet.getCell(row, block.at('controlProjection')), `=${rebarControlFormula}`, source.criterion.controlProjection)
       }

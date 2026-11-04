@@ -472,7 +472,11 @@ the model-specific sampling controls and the applied resistance basis. Materials
 resistance-route selection independently from the concrete model; factor equations and exact
 clause/source links remain collapsed until the user requests details. Global-factor profiles expose
 transverse-reinforcement class and their code axial cap; design-material profiles expose factor
-components, strain endpoint, and minimum-eccentricity rule instead.
+components, strain endpoint, and minimum-eccentricity rule instead. Each editable value has one
+location: Materials owns material factors and the non-AS reinforcement-class/axial-cap inputs;
+Resistance exposes only the remaining active resistance inputs. The
+[UI ownership contract](development/07-design-resistance-implementation.md#4-ui-behavior) defines
+the AS exception, missing-reason entry, and preservation of hidden stored values.
 The single calculation-profile selection itself lives in Materials and updates these defaults atomically.
 Results does not edit that basis. The 3D plot uses a light Nominal/Design radio selector and renders
 only one surface at a time. The two-dimensional plots may show both curves; when both are visible,

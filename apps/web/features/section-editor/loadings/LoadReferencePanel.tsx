@@ -29,10 +29,10 @@ export function LoadReferencePanel({ input, onChange, onPreviewChange }: {
   return <section ref={host} className="pm-panel-section" aria-label="Load reference">
     <div className="pm-section-title"><h2>Load reference</h2></div>
     <div className="pm-load-reference-offsets">
-      <label className="pm-field"><span>Offset X</span><QuantityInput quantity="length" aria-label="Load reference offset X"
+      <label className="pm-field pm-option-field pm-option-field--wide"><span>Offset X</span><QuantityInput quantity="length" aria-label="Load reference offset X"
         spinButtons value={draft.offsetX} onDraftValueChange={offsetX => previewOffset({ offsetX })}
         onValueChange={offsetX => setDraft(current => ({ ...current, offsetX }))} /></label>
-      <label className="pm-field"><span>Offset Y</span><QuantityInput quantity="length" aria-label="Load reference offset Y"
+      <label className="pm-field pm-option-field pm-option-field--wide"><span>Offset Y</span><QuantityInput quantity="length" aria-label="Load reference offset Y"
         spinButtons value={draft.offsetY} onDraftValueChange={offsetY => previewOffset({ offsetY })}
         onValueChange={offsetY => setDraft(current => ({ ...current, offsetY }))} /></label>
     </div>

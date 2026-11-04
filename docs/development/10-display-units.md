@@ -25,7 +25,7 @@ https://www.nist.gov/pml/special-publication-811/nist-guide-si-footnotes
 Curvature derives from reciprocal length; density derives from mass/length cubed using the shared
 international inch/foot/pound definitions. They are not alternative engineering models.
 
-Preference: local browser storage only, version 1; opening a project retains the user's display
+Preference: local browser storage only, version 2; opening a project retains the user's display
 selection. No project JSON schema change. Display selection is absent from analysis payloads and
 surface/cache keys. Exports capture their presentation selection at request time.
 Editable workbooks declare source units and version; imports never read UI preference. Canonical
@@ -63,9 +63,15 @@ https://github.com/vercel/next.js/security/advisories/GHSA-p3m5-59mp-jv5r
 
 - `@pm/units` owns conversion and preference validation. Numerical packages cannot import it;
   the repository structure gate enforces that boundary. The core and code profiles are unchanged.
-- Options > Units provides Metric, US Customary and Custom. Length, bar diameter, force, moment,
-  stress, elastic modulus and mass density can be selected independently. Area, section modulus,
-  inertia and curvature derive from the selected length. Existing angular conventions remain fixed.
+- Options > Units provides Metric and US action buttons and five independent choices:
+  Coordinates & dimensions (including bar diameter), Force, Moment, Stress & modulus, and Mass
+  density. No preset or Custom mode is stored. Area, section modulus, inertia and curvature derive
+  from the selected length. Existing angular conventions remain fixed.
+- Browser preference v2 stores only its version and five groups, under `pm-column.display-units.v2`.
+  Previous browser preferences are not migrated, and the provider removes the retired v1 entry on
+  load. The existing Metric initial selection applies until a v2 selection is saved. Workbook Units v1 remains a separate quantity-specific transport
+  declaration, retaining independent source diameter/modulus units on import. New exports expand
+  the five choices to those seven declared quantities; no workbook or project revision is needed.
 - An editor captures the original canonical value and its unit selection on focus. An unchanged
   numeric edit returns that exact original binary64 value, even when conversion is not invertible.
   Actual edits convert once on commit; invalid text remains a draft. Resting fields show compact
@@ -115,9 +121,13 @@ changed to obtain a pass.
 The permanent browser harness is `tools/verification/display-units/browser.mjs`. Run against
 `npm run start` on port 3001 with `PM_PLAYWRIGHT_MODULE` pointing to an installed Playwright runtime
 and Edge available (`PM_BROWSER_CHANNEL` and `PM_TEST_URL` can select another installed target).
-It instruments actual worker requests/responses, cycles Metric/US/Custom, performs no-op material
-and demand edits, exports canonical JSON before/after, exercises an authored 100 kip demand and a
+It instruments actual worker requests/responses, cycles Metric/US actions and individual choices,
+performs no-op material and demand edits, exports canonical JSON before/after, exercises an authored 100 kip demand and a
 rejected blank edit, and exports populated custom-unit PDFs for both mechanics.
+
+The five-group control revision and its current verification evidence are recorded in
+[the 2026-11-04 task packet](../task-packets/2026-11-04-unit-controls.md). Evidence below belongs to
+the original units implementation and its subsequent dated corrections.
 
 Canonical inputs and retained worker surface responses remain identical through the display-only
 cycles; SHA-256 digests from the browser evidence are:

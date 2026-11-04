@@ -3,12 +3,12 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
 import { parseProjectDocument } from '@pm/project'
-import { UNIT_PRESETS, commitQuantity, editableQuantity, fromCanonical, selectUnit } from '@pm/units'
+import { UNIT_PRESETS, commitQuantity, editableQuantity, fromCanonical, quantityUnit, selectUnit } from '@pm/units'
 import { buildColumnReportModel } from '@pm/report/report-model'
 import { buildPreviewSurfaceFallback, checkLoadcasesFallback } from '../application/analysis/fallback'
 import { buildProjectWorkbook, importProjectWorkbook } from '../features/section-editor/project/project-xlsx'
 import { buildLoadcaseWorkbook, importLoadcaseWorkbook } from '../features/section-editor/loadings/loadcase-xlsx'
-import { quantityCell, readQuantityCell, writeQuantityCell } from '../features/section-editor/shared/workbook-units'
+import { quantityCell, readQuantityCell, writeQuantityCell, readWorkbookUnits, writeWorkbookUnits } from '../features/section-editor/shared/workbook-units'
 import { appendPresentationSummary } from '../../../packages/pm-report/src/excel/presentation-summary'
 
 for (const file of ['docs/examples/realistic-sections/KDS-REAL-05-complex-stress-strain.pm-project.json',
@@ -40,7 +40,7 @@ for (const file of ['docs/examples/realistic-sections/KDS-REAL-05-complex-stress
     for (const [label, value] of us.details[0].resultants.filter(([label]) => label.startsWith('Residual |Δ'))) {
       assert.ok(value.endsWith(label === 'Residual |ΔP|' ? ' kip' : ' kip·ft'))
     }
-    for (const selection of [UNIT_PRESETS.us, selectUnit(UNIT_PRESETS.metric, 'length', 'm'), UNIT_PRESETS.metric]) {
+    for (const selection of [UNIT_PRESETS.us, selectUnit(selectUnit(UNIT_PRESETS.metric, 'length', 'cm'), 'stress', 'GPa'), UNIT_PRESETS.metric]) {
       for (const point of surface.points) for (const [q, value] of [['force', point.P], ['moment', point.Mx], ['moment', point.My]] as const) {
         assert.equal(commitQuantity(q, editableQuantity(q, value, selection), value, selection), value)
       }
@@ -78,6 +78,33 @@ test('UNITS-005: unit-aware workbooks preserve IDs, read their declared units, a
   assert.equal(missing.ok, false)
 })
 
+test('UNITS-004/005: grouped exports declare diameter/modulus units while workbook v1 retains independent source units', async () => {
+  const ExcelJS = await import('exceljs')
+  const book = new (ExcelJS.default ?? ExcelJS).Workbook()
+  const grouped = selectUnit(selectUnit(UNIT_PRESETS.metric, 'length', 'cm'), 'stress', 'GPa')
+  writeWorkbookUnits(book, grouped, 'unit-boundary-test')
+  const units = book.getWorksheet('Units')!
+  assert.equal(units.getCell('B1').value, 1, 'workbook transport version remains unchanged')
+  const restored = readWorkbookUnits(book, 'unit-boundary-test')
+  assert.equal(quantityUnit('length', restored), 'cm')
+  assert.equal(quantityUnit('barDiameter', restored), 'cm')
+  assert.equal(quantityUnit('stress', restored), 'GPa')
+  assert.equal(quantityUnit('modulus', restored), 'GPa')
+  units.eachRow(row => {
+    if (row.getCell(1).value === 'barDiameter') row.getCell(2).value = 'in'
+    if (row.getCell(1).value === 'stress') row.getCell(2).value = 'MPa'
+  })
+  const source = readWorkbookUnits(book, 'unit-boundary-test')
+  assert.equal(readQuantityCell('length', 1, source, undefined), 10)
+  assert.equal(readQuantityCell('barDiameter', 1, source, undefined), 25.4)
+  assert.equal(readQuantityCell('stress', 1, source, undefined), 1)
+  assert.equal(readQuantityCell('modulus', 1, source, undefined), 1000)
+  units.eachRow(row => {
+    if (row.getCell(1).value === 'modulus') row.getCell(2).value = 'kip'
+  })
+  assert.throws(() => readWorkbookUnits(book, 'unit-boundary-test'), /Unsupported display unit group/)
+})
+
 test('UNITS-003/005: source precision records cannot override authored cells or inconsistent source values', async () => {
   const ExcelJS = await import('exceljs')
   const book = new (ExcelJS.default ?? ExcelJS).Workbook()
@@ -103,7 +130,8 @@ test('UNITS-006: selected-unit audit summary leaves every existing formula and c
     loadcases: [{ name: 'Signed demand', P: 4448.2216152605, Mx: -1355817.9483314004, My: 0 }] })
   assert.equal(JSON.stringify(ledger.model), before)
   const summary = book.getWorksheet('Display')!
-  const demand = summary.getRow(11)
+  const demand = summary.getRows(1, summary.rowCount)?.find(row => row.getCell(1).value === 'Demand · Signed demand · P')
+  assert.ok(demand)
   assert.equal(demand.getCell(3).value, 4448.2216152605)
   assert.equal(demand.getCell(5).value, 1)
   assert.equal(demand.getCell(6).value, 'kip')

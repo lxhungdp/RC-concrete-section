@@ -56,6 +56,7 @@ import {
   resolveEquivalentBlockExtremeCompressionStrain,
   solveFixedAxialCapacity,
   solveProportionalRayCapacity,
+  steelStrainLimitAt,
   type BlockSectionState,
   type CapacityEvaluation,
   type CapacityEvaluator,
@@ -1489,7 +1490,7 @@ const evaluateBlockAdmissibility = (
     maxSteelTension = Math.max(maxSteelTension, Math.max(0, -bar.strain))
     if (bar.ultimateStrain !== undefined) steelTensionLimit = steelTensionLimit === null
       ? bar.ultimateStrain : Math.min(steelTensionLimit, bar.ultimateStrain)
-    const limit = bar.strain < 0 ? bar.ultimateStrain : bar.compressionUltimateStrain
+    const limit = steelStrainLimitAt({ tension: bar.ultimateStrain, compression: bar.compressionUltimateStrain }, bar.strain)
     if (limit !== undefined) governingSteelLimit = selectGoverningSteelStrainLimit(governingSteelLimit, {
       steelMaterialId: Number(bar.steelLawId), rebarId: Number(bar.id),
       side: bar.strain < 0 ? 'tension' : 'compression', strain: bar.strain, limit
@@ -1607,6 +1608,7 @@ const solveEquivalentBlockDemandRaw = (
           axialCap: designSurface.axialCap,
           eventStations: designSurface.stations,
           extremeCompressionStrain: prepared.model.blockLaw.extremeCompressionStrain,
+          compressionPivotStrain: prepared.model.blockLaw.compressionPivotStrain,
           steelLaws: prepared.model.steelLaws
         }
       )

@@ -4,22 +4,12 @@ import { QuantityInput } from '../shared/DisplayUnits'
 import type { Quantity } from '@pm/units'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ExternalLink, Info, RotateCcw } from 'lucide-react'
+import { ChevronDown, ExternalLink, Info } from 'lucide-react'
 import {
-  createAci318DesignBasis,
-  createAs3600DesignBasis,
-  createCustomDesignBasis,
-  createEn1992DesignBasis,
-  createKdsAppendixDesignBasis,
-  createKdsBasicDesignBasis,
   designProfileGuidance,
-  resolveMaterialFactorExpression,
-  setMaterialFactorComponentValue,
   designBasisIssues,
   designBasisRequiresOverrideReason,
-  type DesignBasis,
-  type DesignProfileId,
-  type MaterialFactorComponent
+  type DesignBasis
 } from '@pm/design'
 
 type Props = {
@@ -29,15 +19,6 @@ type Props = {
 
 const clone = <T,>(value: T): T => structuredClone(value)
 
-const profileDefaults = (profileId: DesignProfileId): DesignBasis => {
-  if (profileId === 'aci-318-19-22') return createAci318DesignBasis()
-  if (profileId === 'en-1992-1-1-2004-default') return createEn1992DesignBasis()
-  if (profileId === 'kds-142020-2022-appendix-material-factors') return createKdsAppendixDesignBasis()
-  if (profileId === 'as-3600-2018-amd2') return createAs3600DesignBasis()
-  if (profileId === 'custom-user-defined') return createCustomDesignBasis()
-  return createKdsBasicDesignBasis()
-}
-
 const NumericFactor = ({
   label,
   quantity,
@@ -46,7 +27,6 @@ const NumericFactor = ({
   max,
   step,
   help,
-  readOnly = false,
   onChange
 }: {
   label: string
@@ -56,18 +36,16 @@ const NumericFactor = ({
   max: number
   step: number
   help?: string
-  readOnly?: boolean
   onChange: (value: number) => void
 }) => (
   <label className="pm-design-factor" title={help}>
     <span>{label}</span>
-    {quantity ? <QuantityInput quantity={quantity} value={value} min={min} max={max} step={step} readOnly={readOnly} onValueChange={onChange} /> : <input
+    {quantity ? <QuantityInput quantity={quantity} value={value} min={min} max={max} step={step} onValueChange={onChange} /> : <input
       type="number"
       value={value}
       min={min}
       max={max}
       step={step}
-      readOnly={readOnly}
       onChange={(event) => {
         const next = Number(event.target.value)
         if (Number.isFinite(next)) onChange(next)
@@ -78,19 +56,23 @@ const NumericFactor = ({
 
 const DesignSelect = ({
   label,
+  caption = label,
+  wide = false,
   value,
   onChange,
   children
 }: {
   label: string
+  caption?: string
+  wide?: boolean
   value: string
   onChange: (value: string) => void
   children: React.ReactNode
 }) => (
-  <label className="pm-design-field">
-    <span>{label}</span>
+  <label className={`pm-design-field pm-option-field${wide ? ' pm-option-field--wide' : ''}`} title={label}>
+    <span>{caption}</span>
     <span className="pm-design-select-wrap">
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
+      <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
         {children}
       </select>
       <ChevronDown size={14} aria-hidden="true" />
@@ -101,6 +83,8 @@ const DesignSelect = ({
 export function DesignBasisPanel({ value, onChange }: Props) {
   const [draft, setDraft] = useState<DesignBasis>(() => clone(value))
   const [showMethodInfo, setShowMethodInfo] = useState(false)
+  // Keep a newly started reason editable through canonical-state echoes in this panel session.
+  const [enteredReasonHere, setEnteredReasonHere] = useState(false)
   useEffect(() => setDraft(clone(value)), [value])
 
   const issues = useMemo(() => designBasisIssues(draft), [draft])
@@ -131,31 +115,10 @@ export function DesignBasisPanel({ value, onChange }: Props) {
     publishIfValid(next)
   }
 
-  const updateMaterialFactor = (id: MaterialFactorComponent['id'], factor: number) => {
-    if (draft.format !== 'designMaterialReevaluation') return
-    const next = setMaterialFactorComponentValue(draft, id, factor)
-    next.modified = true
-    next.verificationStatus = isUserDefinedProfile ? 'user-defined' : 'draft'
-    publishIfValid(next)
-  }
-
-  const useDefaults = () => publishIfValid(profileDefaults(draft.profileId))
-
   return (
     <section className="pm-panel-section pm-design-panel">
-      <div className="pm-section-title pm-section-title--with-action">
-        <div>
-          <h2>Design resistance</h2>
-          <p>Design resistance derived from nominal capacity for factored ULS demand checks</p>
-        </div>
-        <button
-          type="button"
-          className="ws-action ws-action--quiet ws-action--compact ws-action--icon pm-table-icon-btn"
-          title="Restore the selected profile defaults"
-          onClick={useDefaults}
-        >
-          <RotateCcw size={14} />
-        </button>
+      <div className="pm-section-title">
+        <h2>Design resistance</h2>
       </div>
 
       <div className="pm-design-basis-identity">
@@ -202,8 +165,10 @@ export function DesignBasisPanel({ value, onChange }: Props) {
 
       {draft.format === 'globalResultantFactor' ? (
         <>
-          <DesignSelect
-            label={isAs3600Profile ? 'AS compression-factor class' : 'Transverse reinforcement'}
+          {isAs3600Profile && <DesignSelect
+            label="AS compression-factor class"
+            caption="AS class"
+            wide
             value={draft.transverseReinforcement}
             onChange={(classification) =>
                 update((next) => {
@@ -213,36 +178,20 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                 })
               }
           >
-              <option value="other">
-                {isAs3600Profile ? 'Ordinary column (phi_o = 0.60)' : 'Ties / other'}
-              </option>
-              <option value="qualifying-spiral">
-                {isAs3600Profile ? 'Short column, Q/G >= 0.25 (phi_o = 0.65)' : 'Qualifying spiral'}
-              </option>
-          </DesignSelect>
-          <p className="pm-design-help">
-            {isAs3600Profile
-              ? 'AS 3600 Table 2.2.2 uses phi_o = 0.65 for the declared short-column high-permanent-load case; otherwise this preview uses 0.60.'
-              : draft.transverseReinforcement === 'qualifying-spiral'
-              ? 'Continuous helical reinforcement that satisfies every code requirement for a qualifying spiral. A circular section alone is not sufficient.'
-              : 'Closed hoops and crossties, or any transverse reinforcement that does not qualify as a code-compliant continuous spiral.'}
-          </p>
+              <option value="other">Ordinary column</option>
+              <option value="qualifying-spiral" title="Short column, Q/G ≥ 0.25">Short, Q/G ≥ 0.25</option>
+          </DesignSelect>}
 
           <div className="pm-design-group">
             <div className="pm-design-group-title">
               <strong>Strength reduction</strong>
               <span>Applied to the complete P-Mx-My resultant</span>
             </div>
-            {isAs3600Profile && (
-              <p className="pm-design-help">
-                The AS adapter evaluates bending phi from k_uo and interpolates combined axial
-                compression/tension using the balanced and pure-tension axial capacities.
-              </p>
-            )}
             {/* A code profile owns its transition shape; a user-defined profile chooses one. */}
             {isUserDefinedProfile && (
               <DesignSelect
                 label="Tension-controlled limit rule"
+                caption="Transition rule"
                 value={draft.transition.type}
                 onChange={(type) =>
                   update((next) => {
@@ -260,38 +209,25 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                   })
                 }
               >
-                <option value="yield-plus-strain">εt,limit = εy + Δεt</option>
-                <option value="fixed-or-yield-multiple">εt,limit = fixed, or a multiple of εy above a grade threshold</option>
+                <option value="yield-plus-strain" title="εt,limit = εy + Δεt">εy + Δεt</option>
+                <option value="fixed-or-yield-multiple" title="εt,limit = fixed, or a multiple of εy above a grade threshold">By grade</option>
               </DesignSelect>
             )}
             <div className="pm-design-factor-grid">
               <NumericFactor
-                label={isAs3600Profile ? 'φo · ordinary' : 'φc · ties'}
-                value={draft.factors.phiCompressionOther}
+                label={isAs3600Profile ? 'φo' : draft.transverseReinforcement === 'qualifying-spiral' ? 'φc · spiral' : 'φc · ties'}
+                value={draft.transverseReinforcement === 'qualifying-spiral' ? draft.factors.phiCompressionSpiral : draft.factors.phiCompressionOther}
                 min={0.1}
                 max={1}
                 step={0.01}
                 help={isAs3600Profile
-                  ? 'AS compression factor for ordinary reinforced-concrete sections.'
-                  : 'Compression-controlled strength-reduction factor for tied or other columns.'}
+                  ? 'Compression factor for the selected AS compression-factor class.'
+                  : 'Compression-controlled strength-reduction factor for the class selected in Materials.'}
                 onChange={(factor) =>
                   update((next) => {
-                    if (next.format === 'globalResultantFactor') next.factors.phiCompressionOther = factor
-                  })
-                }
-              />
-              <NumericFactor
-                label={isAs3600Profile ? 'φo · Q/G >= 0.25' : 'φc · spiral'}
-                value={draft.factors.phiCompressionSpiral}
-                min={0.1}
-                max={1}
-                step={0.01}
-                help={isAs3600Profile
-                  ? 'AS compression factor for a short column with Q/G at least 0.25.'
-                  : 'Compression-controlled factor available only to a code-qualifying spiral.'}
-                onChange={(factor) =>
-                  update((next) => {
-                    if (next.format === 'globalResultantFactor') next.factors.phiCompressionSpiral = factor
+                    if (next.format !== 'globalResultantFactor') return
+                    if (next.transverseReinforcement === 'qualifying-spiral') next.factors.phiCompressionSpiral = factor
+                    else next.factors.phiCompressionOther = factor
                   })
                 }
               />
@@ -308,7 +244,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                   })
                 }
               />
-              <NumericFactor
+              {!isAs3600Profile && <NumericFactor
                 label={draft.transition.type === 'yield-plus-strain' ? 'Δεt' : 'εt,limit'}
                 value={draft.transition.type === 'yield-plus-strain'
                   ? draft.transition.extraStrain
@@ -316,10 +252,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                 min={0.000001}
                 max={0.05}
                 step={0.0001}
-                readOnly={isAs3600Profile}
-                help={isAs3600Profile
-                  ? 'Compatibility field retained by the common design schema; the AS adapter derives phi from k_uo and does not use it.'
-                  : draft.transition.type === 'yield-plus-strain'
+                help={draft.transition.type === 'yield-plus-strain'
                     ? 'ACI: the tension-controlled limit is εy + Δεt.'
                     : 'KDS: fixed tension-controlled strain limit at or below the threshold grade.'}
                 onChange={(factor) =>
@@ -329,7 +262,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                     else next.transition.fixedStrainLimit = factor
                   })
                 }
-              />
+              />}
               {!isAs3600Profile && draft.transition.type === 'fixed-or-yield-multiple' && (
                 <>
                   <NumericFactor
@@ -361,153 +294,46 @@ export function DesignBasisPanel({ value, onChange }: Props) {
                 </>
               )}
             </div>
-            <dl className="pm-design-definitions">
-              <div>
-                <dt>φc</dt>
-                <dd>Factor for a compression-controlled section; the active value depends on ties or spiral.</dd>
-              </div>
-              <div>
-                <dt>φt</dt>
-                <dd>Factor for a tension-controlled section.</dd>
-              </div>
-              <div>
-                <dt>Δεt</dt>
-                <dd>Strain interval over which φ changes from φc to φt.</dd>
-              </div>
-            </dl>
           </div>
-
-          {!isAs3600Profile && <div className="pm-design-group">
-            <div className="pm-design-group-title">
-              <strong>Axial compression limit</strong>
-              <span>Creates the horizontal cap visible at the top of a P-M slice</span>
-            </div>
-            <div className="pm-design-factor-grid">
-              <NumericFactor
-                label="Pn,max · ties"
-                value={draft.factors.axialCapOther}
-                min={0.1}
-                max={1}
-                step={0.01}
-                help="Maximum axial-resistance ratio for tied or other columns."
-                onChange={(factor) =>
-                  update((next) => {
-                    if (next.format === 'globalResultantFactor') next.factors.axialCapOther = factor
-                  })
-                }
-              />
-              <NumericFactor
-                label="Pn,max · spiral"
-                value={draft.factors.axialCapSpiral}
-                min={0.1}
-                max={1}
-                step={0.01}
-                help="Maximum axial-resistance ratio for a code-qualifying spiral."
-                onChange={(factor) =>
-                  update((next) => {
-                    if (next.format === 'globalResultantFactor') next.factors.axialCapSpiral = factor
-                  })
-                }
-              />
-            </div>
-            <label className={`ws-check ws-check--wrap pm-field-check pm-design-cap-check${draft.axialCapEnabled ? ' is-on' : ''}`}>
-              <input
-                type="checkbox"
-                checked={draft.axialCapEnabled}
-                onChange={(event) =>
-                  update((next) => {
-                    if (next.format === 'globalResultantFactor') next.axialCapEnabled = event.target.checked
-                  })
-                }
-              />
-              Apply maximum axial-compression limit
-            </label>
-            <p className="pm-design-help">
-              Limits the usable design compression to the selected fraction of the factored
-              compression pole. This option is enabled by default; clearing it removes the cap
-              from charts and design checks. The default factors are 0.80 for ties/other and 0.85
-              for a qualifying spiral.
-            </p>
-          </div>}
         </>
-      ) : (
+      ) : draft.minimumEccentricity ? (
         <div className="pm-design-group">
           <div className="pm-design-group-title">
-            <strong>Design material strengths</strong>
-            <span>Materials are reevaluated at the same strain state</span>
+            <strong>Minimum eccentricity</strong>
+            <span>Demand-side rule</span>
           </div>
           <div className="pm-design-factor-grid">
-            {[...draft.factors.concrete.components, ...draft.factors.reinforcement.components].map((component) => (
-              <NumericFactor
-                key={component.id}
-                label={component.symbol}
-                value={component.value}
-                min={0.1}
-                max={3}
-                step={component.id.startsWith('gamma') ? 0.05 : 0.01}
-                help={`${component.label}. ${component.clauseRef}`}
-                onChange={(factor) => updateMaterialFactor(component.id, factor)}
-              />
-            ))}
+            <NumericFactor
+              label="e min · constant" quantity="length"
+              value={draft.minimumEccentricity.constantMm}
+              min={0}
+              max={100}
+              step={1}
+              help={draft.minimumEccentricity.clauseRef}
+              onChange={(factor) => update((next) => {
+                if (next.format === 'designMaterialReevaluation' && next.minimumEccentricity) {
+                  next.minimumEccentricity.constantMm = factor
+                }
+              })}
+            />
+            <NumericFactor
+              label="e min · depth factor"
+              value={draft.minimumEccentricity.depthFactor}
+              min={0}
+              max={1}
+              step={0.01}
+              help={draft.minimumEccentricity.clauseRef}
+              onChange={(factor) => update((next) => {
+                if (next.format === 'designMaterialReevaluation' && next.minimumEccentricity) {
+                  next.minimumEccentricity.depthFactor = factor
+                }
+              })}
+            />
           </div>
-          <dl className="pm-design-definitions">
-            <div>
-              <dt>Concrete multiplier</dt>
-              <dd>{resolveMaterialFactorExpression(draft.factors.concrete).toFixed(5)}</dd>
-            </div>
-            <div>
-              <dt>Steel multiplier</dt>
-              <dd>{resolveMaterialFactorExpression(draft.factors.reinforcement).toFixed(5)}</dd>
-            </div>
-            <div>
-              <dt>Resultant φ</dt>
-              <dd>Not applied</dd>
-            </div>
-          </dl>
-          {draft.minimumEccentricity && (
-            <>
-              <div className="pm-design-group-title">
-                <strong>Minimum eccentricity</strong>
-                <span>Demand-side rule; it does not create a horizontal capacity cap</span>
-              </div>
-              <div className="pm-design-factor-grid">
-                <NumericFactor
-                  label="e min · constant" quantity="length"
-                  value={draft.minimumEccentricity.constantMm}
-                  min={0}
-                  max={100}
-                  step={1}
-                  help={draft.minimumEccentricity.clauseRef}
-                  onChange={(factor) => update((next) => {
-                    if (next.format === 'designMaterialReevaluation' && next.minimumEccentricity) {
-                      next.minimumEccentricity.constantMm = factor
-                    }
-                  })}
-                />
-                <NumericFactor
-                  label="e min · depth factor"
-                  value={draft.minimumEccentricity.depthFactor}
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  help={draft.minimumEccentricity.clauseRef}
-                  onChange={(factor) => update((next) => {
-                    if (next.format === 'designMaterialReevaluation' && next.minimumEccentricity) {
-                      next.minimumEccentricity.depthFactor = factor
-                    }
-                  })}
-                />
-              </div>
-            </>
-          )}
-          <p className="pm-design-help">
-            Every editable value here belongs to the canonical resistance profile. Code-profile
-            deviations remain draft and require a recorded project basis before they are applied.
-          </p>
         </div>
-      )}
+      ) : <p className="pm-design-help">Material factors are entered in Materials.</p>}
 
-      {requiresOverrideReason && (
+      {requiresOverrideReason && (isAs3600Profile || enteredReasonHere || draft.overrideReason.trim().length === 0) && (
         <label className="pm-design-override">
           <span>Reason for modification</span>
           <textarea
@@ -515,6 +341,7 @@ export function DesignBasisPanel({ value, onChange }: Props) {
             value={draft.overrideReason}
             placeholder="State the approved project basis for changing the code defaults"
             onChange={(event) => {
+              setEnteredReasonHere(true)
               const next = clone(draft)
               next.overrideReason = event.target.value
               publishIfValid(next)

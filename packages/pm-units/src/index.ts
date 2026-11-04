@@ -5,55 +5,68 @@ import { convertQuantity, US_DEFINITIONS, UnitConversionError, type ConvertibleQ
 export type Quantity = 'length' | 'barDiameter' | 'area' | 'inertia' | 'sectionModulus' |
   'force' | 'moment' | 'stress' | 'modulus' | 'curvature' | 'density'
 export const UNIT_OPTIONS = {
-  length: ['mm', 'cm', 'm', 'in', 'ft'], barDiameter: ['mm', 'in'],
+  length: ['mm', 'cm', 'm', 'in', 'ft'],
   force: ['N', 'kN', 'lbf', 'kip'],
   moment: ['N·mm', 'N·m', 'kN·mm', 'kN·m', 'lbf·in', 'lbf·ft', 'kip·in', 'kip·ft'],
-  stress: ['MPa', 'psi', 'ksi'], modulus: ['MPa', 'GPa', 'psi', 'ksi'],
+  stress: ['MPa', 'GPa', 'psi', 'ksi'],
   density: ['kg/m³', 'lbm/ft³']
 } as const
 export type UnitGroup = keyof typeof UNIT_OPTIONS
 export type UnitGroups = { readonly [K in UnitGroup]: (typeof UNIT_OPTIONS)[K][number] }
-export type UnitSelection = Readonly<{ version: 1; preset: 'metric' | 'us' | 'custom'; groups: UnitGroups }>
+export type UnitSelection = Readonly<{ version: 2; groups: UnitGroups }>
+/** Explicit source units in editable workbooks remain independent of UI grouping. */
+export const QUANTITY_UNIT_OPTIONS = { ...UNIT_OPTIONS, barDiameter: UNIT_OPTIONS.length, modulus: UNIT_OPTIONS.stress } as const
+type QuantityUnitGroups = { readonly [K in keyof typeof QUANTITY_UNIT_OPTIONS]: (typeof QUANTITY_UNIT_OPTIONS)[K][number] }
+export type QuantityUnitSelection = Readonly<{ version: 1; groups: QuantityUnitGroups }>
+export type UnitContext = Readonly<{ groups: UnitGroups & Partial<Pick<QuantityUnitGroups, 'barDiameter' | 'modulus'>> }>
 export const UNIT_PRESETS: Readonly<Record<'metric' | 'us', UnitSelection>> = Object.freeze({
-  metric: Object.freeze({ version: 1, preset: 'metric', groups: Object.freeze({
-    length: 'mm', barDiameter: 'mm', force: 'kN', moment: 'kN·m', stress: 'MPa', modulus: 'MPa', density: 'kg/m³'
+  metric: Object.freeze({ version: 2, groups: Object.freeze({
+    length: 'mm', force: 'kN', moment: 'kN·m', stress: 'MPa', density: 'kg/m³'
   }) }),
-  us: Object.freeze({ version: 1, preset: 'us', groups: Object.freeze({
-    length: 'in', barDiameter: 'in', force: 'kip', moment: 'kip·ft', stress: 'ksi', modulus: 'ksi', density: 'lbm/ft³'
+  us: Object.freeze({ version: 2, groups: Object.freeze({
+    length: 'in', force: 'kip', moment: 'kip·ft', stress: 'ksi', density: 'lbm/ft³'
   }) })
 })
 export const CANONICAL_UNITS: Readonly<Record<Quantity, string>> = Object.freeze({
   length: 'mm', barDiameter: 'mm', area: 'mm²', inertia: 'mm⁴', sectionModulus: 'mm³',
   force: 'N', moment: 'N·mm', stress: 'MPa', modulus: 'MPa', curvature: 'mm⁻¹', density: 'kg/m³'
 })
-export const DISPLAY_UNITS_STORAGE_KEY = 'pm-column.display-units.v1'
+export const DISPLAY_UNITS_STORAGE_KEY = 'pm-column.display-units.v2'
+/** Unmigrated v1 preference, removed on load so no stale browser entry outlives its reader. */
+export const RETIRED_DISPLAY_UNITS_STORAGE_KEY = 'pm-column.display-units.v1'
 export const DISPLAY_UNIT_COMMAND_EFFECT = 'RETAIN' as const
 
 export function parseUnitSelection(raw: unknown): UnitSelection {
+  return parseSelection(raw, 2, UNIT_OPTIONS)
+}
+export function parseQuantityUnitSelection(raw: unknown): QuantityUnitSelection {
+  return parseSelection(raw, 1, QUANTITY_UNIT_OPTIONS)
+}
+function parseSelection<V extends number, T extends Record<string, readonly string[]>>(raw: unknown, version: V, options: T): Readonly<{
+  version: V; groups: { readonly [K in keyof T]: T[K][number] }
+}> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new UnitConversionError('E-UNIT-SYMBOL', 'Invalid display unit selection')
   const item = raw as Record<string, unknown>
-  if (Object.keys(item).sort().join() !== 'groups,preset,version' || item.version !== 1 ||
-      !['metric', 'us', 'custom'].includes(String(item.preset)) || !item.groups || typeof item.groups !== 'object' || Array.isArray(item.groups)) {
+  if (Object.keys(item).sort().join() !== 'groups,version' || item.version !== version ||
+      !item.groups || typeof item.groups !== 'object' || Array.isArray(item.groups)) {
     throw new UnitConversionError('E-UNIT-SYMBOL', 'Unsupported display unit preference')
   }
   const groups = item.groups as Record<string, unknown>
-  if (Object.keys(groups).sort().join() !== Object.keys(UNIT_OPTIONS).sort().join() ||
-      Object.entries(UNIT_OPTIONS).some(([key, options]) => !(options as readonly unknown[]).includes(groups[key]))) {
+  if (Object.keys(groups).sort().join() !== Object.keys(options).sort().join() ||
+      Object.entries(options).some(([key, choices]) => !(choices as readonly unknown[]).includes(groups[key]))) {
     throw new UnitConversionError('E-UNIT-SYMBOL', 'Unsupported display unit group')
   }
-  const selected = Object.freeze({ ...groups }) as UnitGroups
-  if (item.preset !== 'custom' && JSON.stringify(selected) !== JSON.stringify(UNIT_PRESETS[item.preset as 'metric' | 'us'].groups) &&
-      Object.keys(UNIT_OPTIONS).some(key => selected[key as UnitGroup] !== UNIT_PRESETS[item.preset as 'metric' | 'us'].groups[key as UnitGroup])) {
-    throw new UnitConversionError('E-UNIT-SYMBOL', 'Preset and selected units disagree')
-  }
-  return Object.freeze({ version: 1, preset: item.preset as UnitSelection['preset'], groups: selected })
+  const selected = Object.freeze({ ...groups }) as { readonly [K in keyof T]: T[K][number] }
+  return Object.freeze({ version, groups: selected })
 }
 export function selectUnit<K extends UnitGroup>(selection: UnitSelection, group: K, unit: UnitGroups[K]): UnitSelection {
-  return parseUnitSelection({ version: 1, preset: 'custom', groups: { ...selection.groups, [group]: unit } })
+  return parseUnitSelection({ version: 2, groups: { ...selection.groups, [group]: unit } })
 }
-export function quantityUnit(quantity: Quantity, selection: UnitSelection): string {
+export function quantityUnit(quantity: Quantity, selection: UnitContext): string {
   const length = selection.groups.length
   switch (quantity) {
+    case 'barDiameter': return selection.groups.barDiameter ?? length
+    case 'modulus': return selection.groups.modulus ?? selection.groups.stress
     case 'area': return `${length}²`
     case 'inertia': return `${length}⁴`
     case 'sectionModulus': return `${length}³`
@@ -83,10 +96,10 @@ export function convertUnit(quantity: Quantity, value: number, source: string, t
   }
   return convertQuantity(sharedRole(quantity), value, source, target)
 }
-export function fromCanonical(quantity: Quantity, value: number, selection: UnitSelection): number {
+export function fromCanonical(quantity: Quantity, value: number, selection: UnitContext): number {
   return convertUnit(quantity, value, CANONICAL_UNITS[quantity], quantityUnit(quantity, selection))
 }
-export function toCanonical(quantity: Quantity, value: number, selection: UnitSelection): number {
+export function toCanonical(quantity: Quantity, value: number, selection: UnitContext): number {
   return convertUnit(quantity, value, quantityUnit(quantity, selection), CANONICAL_UNITS[quantity])
 }
 export function parseNumericText(text: string): number {
@@ -96,7 +109,7 @@ export function parseNumericText(text: string): number {
   if (!Number.isFinite(number) || (number === 0 && /[1-9]/.test(raw.split(/e/i)[0]))) throw new UnitConversionError('E-UNIT-REPRESENTATION', 'Number is outside the supported range')
   return number
 }
-export function editableQuantity(quantity: Quantity, canonical: number, selection: UnitSelection): string {
+export function editableQuantity(quantity: Quantity, canonical: number, selection: UnitContext): string {
   const displayed = fromCanonical(quantity, canonical, selection)
   const raw = String(displayed)
   for (let digits = 1; digits <= 17; digits++) {
@@ -105,17 +118,17 @@ export function editableQuantity(quantity: Quantity, canonical: number, selectio
   }
   return raw
 }
-export function commitQuantity(quantity: Quantity, text: string, original: number, selection: UnitSelection): number {
+export function commitQuantity(quantity: Quantity, text: string, original: number, selection: UnitContext): number {
   const parsed = parseNumericText(text)
   return parsed === Number(editableQuantity(quantity, original, selection)) ? original : toCanonical(quantity, parsed, selection)
 }
-export function formatQuantity(quantity: Quantity, canonical: number, selection: UnitSelection, digits = 3): string {
+export function formatQuantity(quantity: Quantity, canonical: number, selection: UnitContext, digits = 3): string {
   const displayed = fromCanonical(quantity, canonical, selection)
   const rounded = displayed.toLocaleString('en-US', { maximumFractionDigits: digits })
   return displayed !== 0 && Number(rounded.replaceAll(',', '')) === 0 ? displayed.toExponential(digits) : rounded
 }
 /** Presentation only. Never seed an editing draft or no-op commit with this rounded text. */
-export function formatInputQuantity(quantity: Quantity, canonical: number, selection: UnitSelection): string {
+export function formatInputQuantity(quantity: Quantity, canonical: number, selection: UnitContext): string {
   return formatQuantity(quantity, canonical, selection, quantity === 'modulus' ? 1 : 3).replaceAll(',', '')
 }
 /** Unit-specific field adapters for declared material/project transport fields. */

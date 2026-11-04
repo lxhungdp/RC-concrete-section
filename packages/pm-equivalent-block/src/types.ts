@@ -76,6 +76,12 @@ export type SteelLaw = {
 
 export type SteelLawRegistry = Readonly<Record<string, SteelLaw>>
 
+/** Resolved magnitudes per sign; undefined declares no bound for that sign. */
+export type SteelStrainLimits = {
+  tension: number | undefined
+  compression: number | undefined
+}
+
 export type BlockSectionState = {
   neutralAxisAngle: number
   neutralAxisDepth: number

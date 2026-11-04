@@ -11,7 +11,8 @@ import {
   type NominalBlockEvaluation,
   type PreparedEquivalentBlockSection,
   type SteelLaw,
-  type SteelLawRegistry
+  type SteelLawRegistry,
+  type SteelStrainLimits
 } from './types'
 
 export const createElasticPerfectlyPlasticSteelLaw = (
@@ -143,8 +144,24 @@ const assertLaw = (law: EquivalentBlockLaw) => {
   }
 }
 
+/**
+ * Shared resolver of a steel law's signed admissibility bounds. Explicit `strainLimits` own each sign:
+ * an absent compression bound means unbounded in compression and never inherits the tensile cutoff.
+ * Only a legacy law without `strainLimits` applies `ultimateStrain` to both signs.
+ */
+export const resolveSteelStrainLimits = (
+  law: Pick<SteelLaw, 'ultimateStrain' | 'strainLimits'>
+): SteelStrainLimits => ({
+  tension: law.strainLimits?.tension ?? law.ultimateStrain,
+  compression: law.strainLimits ? law.strainLimits.compression : law.ultimateStrain
+})
+
+/** Compression-positive `strain` selects its bound; zero strain reads the compression side. */
+export const steelStrainLimitAt = (limits: SteelStrainLimits, strain: number) =>
+  strain < 0 ? limits.tension : limits.compression
+
 export const resolveEquivalentBlockExtremeCompressionStrain = (
-  law: EquivalentBlockLaw,
+  law: Pick<EquivalentBlockLaw, 'extremeCompressionStrain' | 'compressionPivotStrain'>,
   neutralAxisDepth: number,
   projectedSectionDepth: number
 ) => {
@@ -216,14 +233,15 @@ export const evaluateEquivalentBlock = (
     const displacedConcreteStress = insideBlock && law.subtractDisplacedConcrete ? law.compressionStress : 0
     const netStress = steelStress - displacedConcreteStress
     const force = bar.area * netStress
+    const strainLimits = resolveSteelStrainLimits(steelLaw)
     return {
       ...bar,
       projectedDepth,
       strain,
       tensileStrain: Math.max(0, -strain),
       yieldStrain: steelLaw.yieldStrain,
-      ultimateStrain: steelLaw.ultimateStrain,
-      compressionUltimateStrain: steelLaw.strainLimits ? steelLaw.strainLimits.compression : steelLaw.ultimateStrain,
+      ultimateStrain: strainLimits.tension,
+      compressionUltimateStrain: strainLimits.compression,
       steelStress,
       displacedConcreteStress,
       netStress,

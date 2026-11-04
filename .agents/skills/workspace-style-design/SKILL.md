@@ -1,6 +1,6 @@
 ---
 name: workspace-style-design
-description: Design, implement or review P-M workspace UI, toolbar menus, side panels, typography, controls, icons and light/dark themes using the Frame jscad design language. Use for presentation changes; not for structural calculations or changes to the CAD drawing palette.
+description: Design, implement or review P-M workspace UI, including compact engineering parameter forms, concise workflows, controls and light/dark themes using the Frame jscad design language. Use for presentation and form simplification; not for structural calculations or changes to the CAD drawing palette.
 ---
 
 # Workspace Style Design
@@ -9,6 +9,10 @@ Use the Frame jscad language with the approved P-M adaptation: blue/teal primary
 actions in both themes, existing drawing colours, text toolbar navigation and
 no engineering icon rail. The Section mesh canvas is the approved transparent
 background exception; mesh drawing colours remain unchanged.
+
+Keep the interface simple, complete and technical: a flat, clear hierarchy, ordinary controls and
+only task-relevant information. Minimise both input burden and visual/interaction clutter; do not
+trade essential engineering context or readable values for a smaller-looking form.
 
 ## Read the standard
 
@@ -26,6 +30,10 @@ presentation does not change validation, units, engineering states or data.
 
 ## Compose before customising
 
+Start with the standard's [engineering input composition](references/design-standard.md#engineering-input-composition):
+identify independent inputs, derived values and active choices before arranging controls. Make the
+routine engineering task short to scan and complete; correct styling alone is insufficient.
+
 1. Inspect the current shared primitive and its callers. Choose an existing role
    from the standard before editing feature CSS or markup.
 2. Implement tokens -> shared primitive -> role assignment -> feature layout.
@@ -40,6 +48,13 @@ presentation does not change validation, units, engineering states or data.
    exceptions with an owner. Update the thin Claude adapter in the same change.
 5. Preserve native events, input/commit/cancel behaviour, focus, accessible
    names/states, persistence, numerical results and drawing-role colours.
+
+Review the input burden before delivery: remove redundant entry and repeated explanation, use
+inline mathematical labels, align related fields and show derived values as read-only. Apply the
+standard's dependency review to select a minimal sufficient set of independent inputs; layout follows
+the relationships and available space, rather than a fixed form template.
+Reducing controls must preserve explicit units, governing limits, validation and engineering status;
+a change to those meanings belongs to the engineering workflow.
 
 ## Verify
 
@@ -64,5 +79,6 @@ schema; report unexecuted CLI invocation gates separately. Record visual
 evidence, failures and limitations in the task packet. Do not claim runtime
 skill discovery from schema validation or engineering verification from UI QA.
 
-A natural trigger is “make the Material labels match our workspace”. A solver
+A natural trigger is “make the Material labels match our workspace” or “simplify this engineering
+form so it asks only for necessary inputs”. A solver
 equation change uses the engineering workflow instead.

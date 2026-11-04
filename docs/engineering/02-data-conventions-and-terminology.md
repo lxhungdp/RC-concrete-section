@@ -31,6 +31,10 @@ changes shall not rerun or alter resistance calculations.
 `UNITS-001`: canonical project, worker and mechanics values retain the units above.
 `UNITS-002`: presentation selection is immutable, versioned UI preference outside engineering input.
 Changing it retains canonical inputs, results, surface handles and analysis cache identities.
+Metric and US are actions that fill the unit choices, never stored modes. The five presentation
+groups are coordinates/dimensions (including bar diameter), force, moment, stress/modulus, and mass
+density. Length powers and curvature follow the dimension unit. Workbook source-unit declarations
+remain quantity-specific so an existing file's declared diameter or modulus unit is never reinterpreted.
 `UNITS-003`: authored numeric text converts once using its captured quantity/unit context; an
 unchanged edit retains the original binary64 value exactly. Blank, unknown, incompatible,
 non-finite and unrepresentable input fails explicitly. Rounding is presentation only.

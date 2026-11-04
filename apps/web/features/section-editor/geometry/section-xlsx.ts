@@ -1,10 +1,10 @@
-import { UNIT_PRESETS, fromCanonical, toCanonical, parseNumericText, type UnitSelection } from '@pm/units'
+import { UNIT_PRESETS, fromCanonical, toCanonical, parseNumericText, type UnitContext } from '@pm/units'
 import { quantityCell, readQuantityCell, writeQuantityCell, readWorkbookUnits, writeWorkbookUnits } from '../shared/workbook-units'
 import { createSectionSolid, summarizeSection, rebarArea, rebarAreaSource, parseRebarAreaSource, type GeometryInputRebarView, type Point2 } from '@pm/geometry'
 import type { SteelMaterial } from '@pm/materials'
 
 export type SectionWorkbookInput = {
-  units?: UnitSelection
+  units?: UnitContext
   name: string
   outers: Point2[][][]
   rebars: GeometryInputRebarView[]
@@ -19,7 +19,7 @@ export type ImportedSectionWorkbook = {
 }
 
 export type RebarWorkbookInput = {
-  units?: UnitSelection
+  units?: UnitContext
   sectionName: string
   rebars: GeometryInputRebarView[]
   steelMaterials: SteelMaterial[]
@@ -81,7 +81,7 @@ const styleDataSheet = (sheet: import('exceljs').Worksheet, widths: number[]) =>
   styleHeader(sheet.getRow(1))
 }
 
-const addBoundarySheet = (workbook: import('exceljs').Workbook, outers: Point2[][][], units: UnitSelection) => {
+const addBoundarySheet = (workbook: import('exceljs').Workbook, outers: Point2[][][], units: UnitContext) => {
   const sheet = workbook.addWorksheet('Boundary')
   sheet.addRow(['Outer', 'Hole', 'id', 'X', 'Y'])
   outers.forEach((rings, outerIndex) => {
@@ -104,7 +104,7 @@ const addRebarSheet = (
   workbook: import('exceljs').Workbook,
   rebars: GeometryInputRebarView[],
   steelMaterials: SteelMaterial[],
-  units: UnitSelection
+  units: UnitContext
 ) => {
   const materialById = new Map(steelMaterials.map((material) => [material.id, material]))
   const sheet = workbook.addWorksheet('Rebars')
@@ -219,7 +219,7 @@ const parseRebarsSheet = (
   materials: SteelMaterial[],
   defaultMaterialId: number,
   warnings: string[],
-  units: UnitSelection
+  units: UnitContext
 ): GeometryInputRebarView[] => {
   if (!sheet) return []
   const headers = headerMap(sheet)
@@ -281,7 +281,7 @@ const toRing = (entries: RingEntry[], label: string) => {
   return ordered.map((entry) => entry.point)
 }
 
-const parseBoundarySheet = (sheet: import('exceljs').Worksheet, units: UnitSelection): Point2[][][] => {
+const parseBoundarySheet = (sheet: import('exceljs').Worksheet, units: UnitContext): Point2[][][] => {
   const headers = headerMap(sheet)
   for (const header of ['Outer', 'Hole', 'id', 'X', 'Y']) {
     if (!headers.has(normalizedHeader(header))) {

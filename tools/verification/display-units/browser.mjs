@@ -14,7 +14,76 @@ const cases = [
   ['equivalent-block', 'docs/examples/equivalent-block/ACI-EB-01-rectangle-8-bars.pm-project.json']
 ]
 const digest = text => createHash('sha256').update(text).digest('hex')
+const rowLayouts = []
+const checkUnitRows = async page => {
+  const layout = await page.locator('.pm-unit-field').evaluateAll(rows => rows.map(row => {
+    const label = row.querySelector('span')
+    const select = row.querySelector('select')
+    const text = label.getBoundingClientRect()
+    const field = select.getBoundingClientRect()
+    const bounds = row.getBoundingClientRect()
+    const style = getComputedStyle(select)
+    const context = document.createElement('canvas').getContext('2d')
+    context.font = style.font
+    const widestValue = Math.max(...[...select.options].map(option => context.measureText(option.textContent).width))
+    return { label: label.textContent, labelY: text.y + text.height / 2, fieldY: field.y + field.height / 2,
+      labelRight: text.right, fieldLeft: field.left, fieldRight: field.right, rowRight: bounds.right,
+      rowHeight: bounds.height, fieldHeight: field.height, fieldWidth: field.width,
+      requiredWidth: widestValue + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) +
+        parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth) }
+  }))
+  assert.equal(layout.length, 5)
+  for (const row of layout) {
+    assert.ok(Math.abs(row.labelY - row.fieldY) < 1, `${row.label}: label and field share a row`)
+    assert.ok(row.labelRight <= row.fieldLeft, `${row.label}: label does not overlap field`)
+    assert.ok(row.fieldRight <= row.rowRight + 1, `${row.label}: field remains inside sidebar`)
+    assert.ok(Math.abs(row.fieldLeft - layout[0].fieldLeft) < 1, `${row.label}: fields align in one column`)
+    assert.ok(row.rowHeight <= row.fieldHeight + 1, `${row.label}: one control-height row`)
+    assert.ok(row.fieldWidth + 1 >= row.requiredWidth, `${row.label}: longest unit remains readable: ${JSON.stringify(row)}`)
+  }
+  rowLayouts.push({ viewport: page.viewportSize(), layout })
+}
 try {
+  const preferences = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+  await preferences.goto(process.env.PM_TEST_URL ?? 'http://127.0.0.1:3001', { waitUntil: 'networkidle' })
+  const openUnits = async () => {
+    await preferences.getByRole('button', { name: 'Options', exact: true }).click()
+    await preferences.getByRole('tab', { name: 'Units', exact: true }).click()
+  }
+  await openUnits()
+  assert.equal(await preferences.getByLabel('Display unit preset').count(), 0)
+  const quick = preferences.getByRole('group', { name: 'Quick unit selection' })
+  assert.deepEqual(await quick.getByRole('button').allTextContents(), ['Metric', 'US'])
+  assert.equal(await quick.locator('[aria-pressed], [aria-selected]').count(), 0)
+  const fields = ['Coordinates & dimensions', 'Force', 'Moment', 'Stress & modulus', 'Mass density']
+  assert.deepEqual(await preferences.locator('.pm-panel-section select').evaluateAll(elements => elements.map(el => el.getAttribute('aria-label'))), fields)
+  await checkUnitRows(preferences)
+  await quick.getByRole('button', { name: 'US', exact: true }).click()
+  await preferences.getByLabel('Coordinates & dimensions').selectOption('ft')
+  await preferences.getByLabel('Stress & modulus').selectOption('GPa')
+  await preferences.waitForFunction(() => {
+    const raw = JSON.parse(localStorage.getItem('pm-column.display-units.v2') ?? 'null')
+    return raw?.version === 2 && !('preset' in raw) && Object.keys(raw).length === 2 &&
+      Object.keys(raw.groups).length === 5 && raw.groups.length === 'ft' && raw.groups.stress === 'GPa'
+  })
+  await preferences.reload({ waitUntil: 'networkidle' })
+  await openUnits()
+  assert.equal(await preferences.getByLabel('Coordinates & dimensions').inputValue(), 'ft')
+  assert.equal(await preferences.getByLabel('Stress & modulus').inputValue(), 'GPa')
+  assert.equal(await preferences.getByLabel('Force', { exact: true }).inputValue(), 'kip')
+  await preferences.getByRole('button', { name: 'Metric', exact: true }).click()
+  assert.deepEqual(await Promise.all(fields.map(label => preferences.getByLabel(label, { exact: true }).inputValue())),
+    ['mm', 'kN', 'kN·m', 'MPa', 'kg/m³'])
+  const resize = preferences.getByRole('separator', { name: 'Resize side panel' })
+  await resize.focus()
+  await resize.press('Home')
+  await quick.getByRole('button', { name: 'US', exact: true }).focus()
+  await preferences.keyboard.press('Enter')
+  assert.deepEqual(await Promise.all(fields.map(label => preferences.getByLabel(label, { exact: true }).inputValue())),
+    ['in', 'kip', 'kip·ft', 'ksi', 'lbm/ft³'])
+  await checkUnitRows(preferences)
+  await preferences.screenshot({ path: `${out}/unit-controls-minimum-width.png` })
+  await preferences.close()
   for (const [name, file] of cases) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
     const errors = []
@@ -59,14 +128,20 @@ try {
     await page.waitForTimeout(1500)
     const baseline = await page.evaluate(() => structuredClone(window.__unitAudit))
     assert.ok(baseline.surfaces.length)
-    for (const preset of ['us', 'metric', 'us']) await page.getByLabel('Display unit preset').selectOption(preset)
-    await page.getByLabel('Coordinates and dimensions').selectOption('cm')
-    await page.getByLabel('Elastic modulus', { exact: true }).selectOption('GPa')
+    for (const preset of ['us', 'metric', 'us']) await page.getByRole('button', { name: preset === 'us' ? 'US' : 'Metric', exact: true }).click()
+    await page.getByLabel('Coordinates & dimensions').selectOption('cm')
+    await page.getByLabel('Stress & modulus', { exact: true }).selectOption('GPa')
+    await page.getByLabel('Stress & modulus', { exact: true }).selectOption('ksi')
     await page.waitForTimeout(500)
     assert.deepEqual(await page.evaluate(() => window.__unitAudit), baseline, 'unit-only changes must not submit any worker job or modify surface responses')
+    await checkUnitRows(page)
     await page.screenshot({ path: `${out}/${name}-units-light.png` })
+    await page.getByRole('button', { name: 'Theme', exact: true }).click()
+    await checkUnitRows(page)
+    await page.screenshot({ path: `${out}/${name}-units-dark.png` })
+    await page.getByRole('button', { name: 'Theme', exact: true }).click()
     await page.getByRole('button', { name: 'Materials', exact: true }).click()
-    const fc = page.getByText('fc', { exact: true }).locator('..').locator('input')
+    const fc = page.getByRole('textbox', { name: /^fc \(/ })
     const displayedFc = await fc.inputValue()
     assert.equal(displayedFc, name === 'stress-strain' ? '4.351' : '5.802')
     await fc.focus()
@@ -125,7 +200,7 @@ try {
     await (await pdfDownload).saveAs(`${out}/${name}-custom-units.pdf`)
     await page.getByRole('button', { name: 'Options', exact: true }).click()
     await page.getByRole('tab', { name: 'Units', exact: true }).click()
-    await page.getByLabel('Display unit preset').selectOption('metric')
+    await page.getByRole('button', { name: 'Metric', exact: true }).click()
     // Native canonical JSON remains the oracle, including nonzero signed biaxial actions.
     const exported = await exportInputs()
     assert.deepEqual(exported, canonicalInputs, 'native input snapshot must be unchanged after unit cycles and no-op edits')
@@ -135,9 +210,13 @@ try {
     await page.setViewportSize({ width: 540, height: 850 })
     await page.getByRole('button', { name: 'Options', exact: true }).click()
     await page.getByRole('tab', { name: 'Units', exact: true }).click()
+    await checkUnitRows(page)
     await page.screenshot({ path: `${out}/${name}-units-narrow.png` })
+    await page.getByRole('button', { name: 'Theme', exact: true }).click()
+    await checkUnitRows(page)
+    await page.screenshot({ path: `${out}/${name}-units-narrow-light.png` })
     await page.setViewportSize({ width: 1440, height: 1000 })
-    await page.getByLabel('Display unit preset').selectOption('us')
+    await page.getByRole('button', { name: 'US', exact: true }).click()
     await page.getByRole('button', { name: 'Demand Check', exact: true }).click()
     const editedPu = page.getByRole('textbox', { name: /Loadcase .* Pu/ }).first()
     const authoredRoundedText = await editedPu.inputValue()
@@ -175,5 +254,6 @@ try {
     await page.close()
   }
   await writeFile(`${out}/browser-evidence.json`, JSON.stringify(evidence, null, 2))
+  await writeFile(`${out}/row-layout-evidence.json`, JSON.stringify(rowLayouts, null, 2))
   console.log(JSON.stringify(evidence, null, 2))
 } finally { await browser.close() }

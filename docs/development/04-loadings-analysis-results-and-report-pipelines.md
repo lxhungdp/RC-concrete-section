@@ -456,6 +456,11 @@ and reports that evidence as pending instead of showing stale values.
 
 ## 6. Report package
 
+Hardening report contract: chart, selected-point and shared demand workbooks bind the same resolved
+per-material/per-stage steel law. Their endpoint/tangent formulas must have declared, grade-specific
+names and survive independent recalculation. Optional physical strain and active tensile cutoff
+have separate labels; absence of a physical bound does not remove a declared design cutoff.
+
 This section separates current preview behavior from the target released-report architecture. The
 current `@pm/report` package builds one format-neutral `ReportModel`, formula-audited calculation
 workbooks for both mechanics, stress-strain mesh Excel/DXF audit files, and a deterministic

@@ -51,7 +51,7 @@ import {
   prepareBlockAnalysis,
   solveEquivalentBlockDemandFromPrepared
 } from '@pm/analysis-equivalent-block'
-import type { NominalBlockEvaluation } from '@pm/equivalent-block'
+import { resolveSteelStrainLimits, type NominalBlockEvaluation } from '@pm/equivalent-block'
 import {
   applyDesignCheckToInverse,
   activeDesignDirectionPoints,
@@ -150,6 +150,7 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     : steelDesignFy(barSteel)
   const epsY = designSteelLaw?.yieldStrain ?? barSteel.limits?.epsY ?? fyModel / barSteel.elasticModulus
   const epsU = barSteel.limits?.epsU
+  const activeTensionLimit = designSteelLaw && resolveSteelStrainLimits(designSteelLaw).tension
 
   const designSurfaceCore = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, input.analysisOptions)
   const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, input.analysisOptions, designSurfaceCore)
@@ -326,7 +327,13 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
     },
     { row: row++, label: 'εy = fy/Es', value: epsY, unit: '-', name: 'epsy', formula: 'fy/Es' },
     ...steelHardeningWorkbookInputs(stageDefinition).map((entry) => ({ ...entry, row: row++ })),
-    { row: row++, label: 'εu (declared)', value: epsU ?? 'not declared', unit: '-', name: epsU === undefined ? undefined : 'epsu', note: epsU === undefined ? 'rupture is not enforced' : 'tensile rupture limit enforced by the solver' },
+    { row: row++, label: 'εu physical (independent)', value: epsU ?? 'not declared', unit: '-', name: epsU === undefined ? undefined : 'epsu',
+      note: epsU === undefined ? 'No independent physical bound; a design cutoff can still apply.' : 'Physical bound restricts both tension and compression.' },
+    { row: row++, label: 'Active tensile strain limit', value: activeTensionLimit ?? 'not declared', unit: '-',
+      formula: activeTensionLimit === undefined ? undefined : stageDefinition.stressStrain.type === 'linear-hardening'
+        ? epsU === undefined ? 'steel_eps_limit' : 'MIN(steel_eps_limit,epsu)'
+        : 'epsu',
+      note: activeTensionLimit === undefined ? 'No finite tensile bound is declared.' : 'Design cutoff restricted by the independent physical bound, when declared. Named inputs describe the first used grade.' },
     { row: row++, label: 'law', value: sLaw.description, unit: '', note: '' }
   ]
 

@@ -45,6 +45,75 @@ Feature geometry, report content, numerical validation and project DTOs retain
 their current owners. Do not add panel-specific palettes for existing roles.
 
 
+## Engineering input composition
+
+P-M is an engineering workbench. Optimise routine work for a clear parameter set, few decisions and
+short scanning paths. A visually consistent form can still fail if it asks for redundant data or
+buries the calculation behind unnecessary controls and explanation.
+
+Prefer a flat layout with clear reading order, aligned fields and restrained spacing. Use ordinary
+controls and the minimum grouping needed to explain the task. Avoid nested cards, repeated borders,
+decorative badges/icons, prominent instructional banners, gratuitous animation and custom controls
+where standard controls suffice. Introduce tabs, popups, extra steps or disclosures only when they
+resolve a real task or information-density problem. Simplicity must retain completeness, readable
+quantities, accessible interaction and an apparent next action.
+
+- Identify independent inputs, derived values and genuinely alternative input representations from
+  the owning contract before laying out a form. Expose only the independent values required by the
+  active model as editable. A useful derived value may remain visible as read-only; do not ask the
+  engineer to maintain the same relationship in several editable fields. Where either member of a
+  linked pair can be entered, make the active basis explicit and derive the companion through the
+  existing owner. Preserve that owner's commit and persistence rules.
+- Use a plain checkbox for a binary feature. Use radios for a small set of visible alternative
+  representations, and a select when the choice set warrants it. Avoid a separate mode selector,
+  Advanced disclosure or Apply action when the existing controls already express the decision and
+  valid edits apply directly. Retain explicit Apply where it protects a real draft/commit boundary.
+- Put short symbols beside their inputs. Use proper Greek letters, subscripts, superscripts and
+  case, with explicit units at the field or its unambiguous shared heading. Keep related input
+  frames equal in size and align labels, choices and values by column. Preserve the shared field
+  density; do not obtain compactness by shrinking text, clipping values or hiding units.
+- Group parameters by the engineering relationship they describe. Keep the diagram that explains
+  a model in a stable location before conditional input groups when expansion would otherwise move
+  it. Editing data updates the existing evaluated view; do not introduce a separate display model.
+- Prefer a short functional caption and established symbols over instructional prose. Put definitions
+  or uncommon context in concise accessible help or a relevant detail view. Remove repeated labels,
+  repeated derived-value summaries, decorative boxes and empty groups. Keep invalid-input messages,
+  unsupported scope, units, source/design basis and result status visible where they affect a decision.
+- Initialise enabled features with the existing valid, traceable authoring defaults when the owning
+  contract supports this. Preserve saved edits and physical bounds. UI simplification never authorises
+  inventing a coefficient, silently changing a model, deleting required input or weakening validation.
+
+Before implementing a parameter group, perform a dependency review:
+
+1. Inventory the quantities required by the active calculation contract. For each, identify its
+   source, unit/basis, required condition, dependencies and validation owner. Classify it as an
+   independent input, derived quantity, alternative representation, profile value or result.
+2. Select a minimal sufficient set of independent inputs: every required quantity must be available
+   or derivable, and every editable quantity must serve the active calculation or a necessary user
+   decision. A profile-supplied default is not redundant if the contract allows a project override.
+3. Trace the dependency directions. Give each quantity one authoritative write source at a time;
+   prevent circular updates and independently editable duplicates of the same relationship. Changing
+   the input basis must update dependent values consistently through the owning adapter, including
+   its supported last-edited-basis behavior. Equal numeric values do not prove equal engineering roles.
+4. Check both completeness and redundancy. Remove orphan controls, repeated representations that
+   add no decision value and parameters irrelevant to the selected model. Do not remove a genuinely
+   independent limit, assumption or source choice just because a value can be suggested or displayed
+   elsewhere. Review mutually exclusive options and validate conflicting combinations before analysis.
+5. Choose the layout after these relationships are settled. Group related quantities, use matching
+   field frames and align their labels/choices. Reveal only applicable inputs, preserve useful derived
+   readouts, and keep the active basis apparent. Choose columns from content and task requirements;
+   no fixed column count or compound-field pattern applies to every engineering form.
+
+Before delivery, check whether an engineer can identify the required inputs, their units and the
+active basis without reading a paragraph. Each control and persistent line of text must support
+an actual input, decision, diagnosis or review task. Verify normal and narrow widths, both themes,
+enable/disable and alternate-input states, and that visible values remain readable and reachable.
+Verify dependency behavior as well as geometry: changing an independent input updates its dependents,
+switching a representation preserves the underlying quantity, disabled features do not contribute stale
+parameters, and invalid or contradictory inputs cannot silently reach a calculation. Review the actual
+runtime/persistence owner before removing state or changing activation semantics; route result-affecting
+changes through the engineering workflow.
+
 ## Composition contract
 
 A design starts with a shared role, never with the name of a feature. Implement
@@ -206,8 +275,9 @@ horizontal padding and one border; actions use 10px and a 6px icon gap. Textarea
 retain multiline height. Table editors use 24px height, a shared 4px radius and small
 gutters. Focus uses the one-pixel accent field border with no ring/shadow and
 wins over hover. Keyboard button/checkbox/radio focus remains visible.
-Resistance factors use one label/value row with a 96px editor, so strain limits
-and longer labels remain readable at the default sidebar width.
+Material-editor resistance factors share the inline parameter layout and field width of adjacent
+material inputs. Other resistance settings retain their label/value rows with a 96px editor so
+strain limits and longer labels remain readable at the default sidebar width.
 
 Single-select fields retain their native elements, values, events, labels and
 validation. A shared React portal renders the jscad popup language rather than

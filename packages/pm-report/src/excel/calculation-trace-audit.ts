@@ -1,4 +1,5 @@
 import { appendPresentationSummary } from './presentation-summary'
+import { bindSteelFormulaNames, steelHardeningNames, writeSteelHardeningInputs } from './steel-hardening-inputs'
 import {
   stationDefinitionLabel,
   type AxialCapPointCalculationAudit,
@@ -20,7 +21,8 @@ import {
   concreteModelParameters,
   createDefineName,
   createWorkbook,
-  steelLaw
+  steelLaw,
+  steelDesignFy
 } from './workbook-common'
 import {
   blockHeading,
@@ -116,7 +118,7 @@ const calculationMaterials = (input: CalculationTraceAuditWorkbookInput) => {
 const replaceFormulaNames = (
   formula: string,
   names: Readonly<Record<string, string>>
-) => formula.replace(/\b(Es|fy|Stl_eps|Stl_sig|Stl_n)\b/g, (token) => names[token] ?? token)
+) => bindSteelFormulaNames(formula, names)
 
 const addInputSheet = (
   workbook: import('exceljs').Workbook,
@@ -270,11 +272,11 @@ const addInputSheet = (
 
   const steelHeaderRow = nextRow
   const steelRow = tableBlock(sheet, steelHeaderRow, 'Steel calculation materials', [
-    'Material ID', 'Material', 'Es (MPa)', 'fy (MPa)', 'Law'
+    'Material ID', 'Material', 'Es (MPa)', 'fy,eff (MPa)', 'Law'
   ])
   materials.steel.forEach((material, index) => {
     const row = steelRow + index
-    const values: Array<string | number> = [material.id, material.name, material.elasticModulus, material.fy, steelLaw(material).description]
+    const values: Array<string | number> = [material.id, material.name, material.elasticModulus, steelDesignFy(material), steelLaw(material).description]
     values.forEach((value, column) => {
       const cell = sheet.getCell(row, column + 1)
       cell.value = value
@@ -288,6 +290,10 @@ const addInputSheet = (
     defineName(`${quotedSheetName(sheet.name)}!$D$${row}`, `${prefix}fy`)
   })
   nextRow = steelRow + materials.steel.length + 2
+  const hardeningNames = steelMaterialNames(input)
+  for (const material of materials.steel) {
+    nextRow = writeSteelHardeningInputs(sheet, nextRow, material, hardeningNames.get(material.id)!, defineName)
+  }
   for (const material of materials.steel) {
     const law = steelLaw(material)
     if (law.kind !== 'tabulated') continue
@@ -324,6 +330,7 @@ const steelMaterialNames = (input: CalculationTraceAuditWorkbookInput) => new Ma
   calculationMaterials(input).steel.map((material) => {
     const prefix = `stl_${material.id}_`
     return [material.id, {
+      ...steelHardeningNames(prefix),
       Es: `${prefix}Es`,
       fy: `${prefix}fy`,
       Stl_eps: `${prefix}Stl_eps`,

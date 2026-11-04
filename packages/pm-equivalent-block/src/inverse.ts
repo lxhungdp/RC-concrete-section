@@ -15,6 +15,7 @@ import {
 } from './surface'
 import { projectedOuterExtents } from './geometry'
 import { prepareSteelDepthSupports } from './steel-support'
+import { resolveEquivalentBlockExtremeCompressionStrain, resolveSteelStrainLimits, steelStrainLimitAt } from './evaluate'
 
 const TAU = Math.PI * 2
 
@@ -110,6 +111,8 @@ export type FixedAxialSolverOptions = {
   axialCap?: number
   eventStations?: CapacityStation[]
   extremeCompressionStrain?: number
+  compressionPivotStrain?: number
+  /** Supply every used law so retained roots enforce declared signed material bounds. */
   steelLaws?: SteelLawRegistry
 }
 
@@ -161,12 +164,26 @@ export const solveFixedAxialCapacity = (
   const angleTolerance = options.angleTolerance ?? 1e-10
   const residualTolerance = options.residualTolerance ?? 1e-8
   const extremeCompressionStrain = options.extremeCompressionStrain ?? 0.003
-  if (!(minDepthRatio > 0) || !(maxDepthRatio > minDepthRatio) || !(extremeCompressionStrain > 0)) {
+  if (!(minDepthRatio > 0) || !(maxDepthRatio > minDepthRatio) || !(extremeCompressionStrain > 0) || !Number.isFinite(extremeCompressionStrain)) {
     throw new EquivalentBlockInputError('SOLVER_INPUT', 'Fixed-axial depth bounds and extreme compression strain must be positive and ordered.')
   }
   const axialScale = Math.max(1, Math.abs(targetAxial), Math.abs(options.axialCap ?? 0))
   let totalInnerIterations = 0
   const steelDepths = prepareSteelDepthSupports(section, options.steelLaws)
+  if (options.steelLaws) {
+    for (const bar of section.rebars) {
+      const law = options.steelLaws[bar.steelLawId]
+      if (!law) throw new EquivalentBlockInputError('MISSING_STEEL_LAW', `Steel law ${bar.steelLawId} is not registered.`)
+      const limits = [law.ultimateStrain, law.strainLimits?.tension, law.strainLimits?.compression]
+      if (limits.some((limit) => limit !== undefined && (!Number.isFinite(limit) || limit <= 0))) {
+        throw new EquivalentBlockInputError('INVALID_BLOCK_LAW', `Steel law ${bar.steelLawId} has an invalid strain bound.`)
+      }
+    }
+  }
+  if (options.compressionPivotStrain !== undefined && (!Number.isFinite(options.compressionPivotStrain) ||
+    options.compressionPivotStrain <= 0 || options.compressionPivotStrain > extremeCompressionStrain)) {
+    throw new EquivalentBlockInputError('SOLVER_INPUT', 'The compression-pivot strain must be positive, finite and no greater than the extreme strain.')
+  }
 
   const rootsAt = (sourceAngle: number): AxialRoot[] => {
     const angle = wrapAngle(sourceAngle)
@@ -179,7 +196,8 @@ export const solveFixedAxialCapacity = (
     const eventDepths = (options.eventStations ?? []).map((station) =>
       capacityStationDepth(station, depth, extremeCompressionStrain, barDepths)
     )
-    const depths = [...ratios.map((ratio) => ratio * depth), ...eventDepths]
+    const tensileBoundary = capacityStationDepth({ type: 'depth-ratio', ratio: minDepthRatio }, depth, extremeCompressionStrain, barDepths)
+    const depths = [...ratios.map((ratio) => ratio * depth), ...eventDepths, tensileBoundary]
       .filter((value) => value > 0 && Number.isFinite(value))
       .sort((left, right) => left - right)
       .filter((value, index, values) => index === 0 || Math.abs(Math.log(value / values[index - 1])) > 1e-10)
@@ -189,6 +207,19 @@ export const solveFixedAxialCapacity = (
     const roots: AxialRoot[] = []
     const recordRoot = (rootDepth: number, iterations: number) => {
       if (roots.some((root) => Math.abs(Math.log(root.state.neutralAxisDepth / rootDepth)) < 1e-7)) return
+      // Trial stresses may continue outside the material domain; a retained capacity may not.
+      // Reuse the forward evaluator's pivot kinematics and the bridge's 1e-9 strain criterion.
+      if (options.steelLaws) {
+        const compressionStrain = resolveEquivalentBlockExtremeCompressionStrain({
+          extremeCompressionStrain, compressionPivotStrain: options.compressionPivotStrain
+        }, rootDepth, depth)
+        for (const bar of section.rebars) {
+          const projectedDepth = extents.maximum - (normalX * bar.x + normalY * bar.y)
+          const strain = compressionStrain * (1 - projectedDepth / rootDepth)
+          const limit = steelStrainLimitAt(resolveSteelStrainLimits(options.steelLaws[bar.steelLawId]!), strain)
+          if (!Number.isFinite(strain) || (limit !== undefined && Math.abs(strain) > limit * (1 + 1e-9))) return
+        }
+      }
       const evaluation = evaluator({ neutralAxisAngle: angle, neutralAxisDepth: rootDepth })
       roots.push({
         state: { neutralAxisAngle: angle, neutralAxisDepth: rootDepth },

@@ -135,6 +135,12 @@ declared physical `limits.epsU` can restrict tension and compression further. A 
 does not define physical rupture. Newton may evaluate a trial outside the domain, but a result is
 publishable only after the signed strain bounds pass.
 
+The equivalent-block Fixed-P solver must also reject retained roots outside each bar's signed
+domain. Trial evaluations may continue outside that domain, but convergence alone cannot create a
+capacity. Evaluate limits with the actual compression-pivot strain when that branch is active.
+Every recalculable workbook must bind the endpoint tangent separately for each material and
+resistance stage. Report optional physical rupture and the effective tensile design bound separately.
+
 KDS hardening is a user-selected project material modification under the existing KDS identity.
 Both KDS mechanics consume its resolved law. Existing code strength factors and axial-cap formulas
 retain their stated meanings, including the use of `fy` in a code axial cap. No bridge factor or

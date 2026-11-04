@@ -71,7 +71,7 @@ concrete region with holes. The editor and project format can support multiple r
 the analysis must reject unsupported topology with a typed blocking issue.
 
 The project schema and calculation kernels retain mm, MPa, N and N·mm. Options > Units selects
-Metric, US Customary or independent presentation groups for input, plots and report views. The
+five presentation groups for input, plots and report views, with Metric and US quick-fill actions. The
 versioned browser preference is outside engineering inputs; switching units retains canonical
 values and analysis results. Explicit input/import adapters convert declared units once. See
 [engineering/02](02-data-conventions-and-terminology.md) and the display-unit task packet.

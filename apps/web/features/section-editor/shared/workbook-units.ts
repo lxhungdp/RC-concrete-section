@@ -1,12 +1,12 @@
 import type { Cell, Workbook } from 'exceljs'
-import { UNIT_OPTIONS, UNIT_PRESETS, fromCanonical, toCanonical, quantityUnit, parseUnitSelection, type Quantity, type UnitSelection } from '@pm/units'
+import { QUANTITY_UNIT_OPTIONS, UNIT_PRESETS, fromCanonical, toCanonical, quantityUnit, parseQuantityUnitSelection, parseUnitSelection, type Quantity, type UnitContext, type UnitSelection, type QuantityUnitSelection } from '@pm/units'
 
 /** A declared transport context, independent of the active browser preference. */
-export const CANONICAL_WORKBOOK_UNITS: UnitSelection = parseUnitSelection({ version: 1, preset: 'custom',
+export const CANONICAL_WORKBOOK_UNITS: UnitSelection = parseUnitSelection({ version: 2,
   groups: { ...UNIT_PRESETS.metric.groups, force: 'N', moment: 'N·mm' } })
 
-export type QuantityCell = { readonly kind: 'quantity'; readonly quantity: Quantity; readonly canonical: number; readonly units: UnitSelection }
-export const quantityCell = (quantity: Quantity, canonical: number, units: UnitSelection): QuantityCell => ({ kind: 'quantity', quantity, canonical, units })
+export type QuantityCell = { readonly kind: 'quantity'; readonly quantity: Quantity; readonly canonical: number; readonly units: UnitContext }
+export const quantityCell = (quantity: Quantity, canonical: number, units: UnitContext): QuantityCell => ({ kind: 'quantity', quantity, canonical, units })
 const SOURCE_PREFIX = 'pm-unit-source/v1 '
 /** Exact no-op transport where binary64 display conversion is not invertible. The visible numeric
  * value stays authoritative: an authored change always converts using the declared source unit. */
@@ -18,7 +18,7 @@ export function writeQuantityCell(cell: Cell, source: QuantityCell) {
       canonical: source.canonical, displayed })
   }
 }
-export function readQuantityCell(quantity: Quantity, displayed: number, units: UnitSelection, note: Cell['note'] | undefined): number {
+export function readQuantityCell(quantity: Quantity, displayed: number, units: UnitContext, note: Cell['note'] | undefined): number {
   const plain = typeof note === 'string' ? note : note?.texts?.map(text => text.text ?? '').join('') ?? ''
   if (plain.startsWith(SOURCE_PREFIX)) {
     const source: unknown = JSON.parse(plain.slice(SOURCE_PREFIX.length))
@@ -34,8 +34,9 @@ export function readQuantityCell(quantity: Quantity, displayed: number, units: U
   }
   return toCanonical(quantity, displayed, units)
 }
-export function writeWorkbookUnits(book: Workbook, selection: UnitSelection, kind: string) {
-  const validated = parseUnitSelection(selection)
+export function writeWorkbookUnits(book: Workbook, selection: UnitContext, kind: string) {
+  const validated = parseQuantityUnitSelection({ version: 1, groups: Object.fromEntries(
+    (Object.keys(QUANTITY_UNIT_OPTIONS) as Array<keyof typeof QUANTITY_UNIT_OPTIONS>).map(quantity => [quantity, quantityUnit(quantity, selection)])) })
   const sheet = book.addWorksheet('Units')
   sheet.addRow(['pm-presentation-units', 1, kind])
   sheet.addRow(['Quantity', 'Unit'])
@@ -44,7 +45,7 @@ export function writeWorkbookUnits(book: Workbook, selection: UnitSelection, kin
   sheet.getColumn(2).width = 24
   sheet.state = 'hidden'
 }
-export function readWorkbookUnits(book: Workbook, kind: string): UnitSelection {
+export function readWorkbookUnits(book: Workbook, kind: string): QuantityUnitSelection {
   const sheet = book.getWorksheet('Units')
   if (!sheet || sheet.rowCount > 100 || sheet.columnCount > 64) throw Error('Missing or unsupported workbook unit declaration.')
   const rows: Array<Array<string | number>> = []
@@ -57,7 +58,7 @@ export function readWorkbookUnits(book: Workbook, kind: string): UnitSelection {
     })
     if (values.length && !(values.length === 1 && String(values[0]).trimStart().startsWith('#'))) rows.push(values)
   })
-  if (rows.length !== Object.keys(UNIT_OPTIONS).length + 2 || rows[0].length !== 3 ||
+  if (rows.length !== Object.keys(QUANTITY_UNIT_OPTIONS).length + 2 || rows[0].length !== 3 ||
       rows[0][0] !== 'pm-presentation-units' || rows[0][1] !== 1 || rows[0][2] !== kind ||
       rows[1].length !== 2 || rows[1][0] !== 'Quantity' || rows[1][1] !== 'Unit') throw Error('Missing or unsupported workbook unit declaration.')
   const groups: Record<string, string> = {}
@@ -66,5 +67,5 @@ export function readWorkbookUnits(book: Workbook, kind: string): UnitSelection {
     if (row.length !== 2 || typeof key !== 'string' || typeof value !== 'string' || Object.hasOwn(groups, key)) throw Error(`Units row ${index + 3}: invalid or duplicate unit declaration.`)
     groups[key] = value
   }
-  return parseUnitSelection({ version: 1, preset: 'custom', groups })
+  return parseQuantityUnitSelection({ version: 1, groups })
 }

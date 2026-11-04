@@ -2,7 +2,7 @@
 @layer pm-feature {
 .pm-side-panel .pm-load-reference-offsets {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: end;
   gap: var(--sp-2);
   margin-bottom: var(--sp-2);
@@ -320,6 +320,41 @@
   flex-direction: column;
   gap: var(--sp-1);
   min-width: 0;
+}
+
+.pm-side-panel .pm-unit-fields {
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, 96px);
+  gap: var(--sp-2);
+}
+
+.pm-side-panel .pm-unit-field,
+.pm-side-panel .pm-option-field {
+  display: grid;
+  align-items: center;
+  column-gap: var(--sp-2);
+}
+
+.pm-side-panel .pm-unit-field {
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+
+.pm-side-panel .pm-option-field {
+  grid-template-columns: minmax(0, 1fr) 96px;
+}
+
+.pm-side-panel .pm-option-field--wide {
+  grid-template-columns: minmax(0, 1fr) 144px;
+}
+
+.pm-side-panel .pm-option-field--list {
+  grid-template-columns: max-content minmax(0, 1fr);
+}
+
+.pm-side-panel .pm-unit-field > span,
+.pm-side-panel .pm-option-field > span:first-child {
+  white-space: nowrap;
 }
 
 .pm-side-panel .pm-field > span,
@@ -1623,7 +1658,7 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
   white-space: nowrap;
 }
 
-.pm-side-panel .pm-material-param > :is(input, .ws-field-group) {
+.pm-side-panel .pm-material-param > :is(input, select, .ws-field-group) {
   width: 100%;
   min-width: 0;
 }

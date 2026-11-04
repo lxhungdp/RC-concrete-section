@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { UNIT_PRESETS, commitQuantity, convertUnit, editableQuantity, formatInputQuantity, formatQuantity, fromCanonical,
+import { UNIT_OPTIONS, UNIT_PRESETS, commitQuantity, convertUnit, editableQuantity, formatInputQuantity, formatQuantity, fromCanonical,
   parseNumericText, parseUnitSelection, quantityUnit, selectUnit, toCanonical, type Quantity } from '../src/index'
 
 test('UNITS-001/004: independent NIST anchors and dimensional powers in the P-M canonical system', () => {
@@ -18,20 +18,27 @@ test('UNITS-001/004: independent NIST anchors and dimensional powers in the P-M 
   assert.ok(Math.abs(convertUnit('density', 1, 'lbm/ft³', 'kg/m³') - 16.01846337396014) < 1e-13)
 })
 
-test('UNITS-002: immutable independent groups and versioned strict preferences', () => {
-  const custom = selectUnit(selectUnit(UNIT_PRESETS.metric, 'length', 'ft'), 'modulus', 'GPa')
+test('UNITS-002: five immutable groups without a stored preset; dimensions and stress own related quantities', () => {
+  const custom = selectUnit(selectUnit(UNIT_PRESETS.metric, 'length', 'ft'), 'stress', 'GPa')
   assert.equal(quantityUnit('moment', custom), 'kN·m')
   assert.equal(quantityUnit('area', custom), 'ft²')
+  assert.equal(quantityUnit('barDiameter', custom), 'ft')
+  assert.equal(quantityUnit('stress', custom), 'GPa')
   assert.equal(quantityUnit('modulus', custom), 'GPa')
   assert.equal(UNIT_PRESETS.metric.groups.length, 'mm')
   assert.ok(Object.isFrozen(custom) && Object.isFrozen(custom.groups))
   assert.deepEqual(parseUnitSelection(JSON.parse(JSON.stringify(custom))), custom)
-  for (const invalid of [{ ...custom, version: 2 }, { ...custom, groups: { ...custom.groups, force: 'kg' } },
+  assert.deepEqual(Object.keys(custom), ['version', 'groups'])
+  assert.deepEqual(Object.keys(custom.groups), ['length', 'force', 'moment', 'stress', 'density'])
+  for (const length of UNIT_OPTIONS.length) assert.equal(quantityUnit('barDiameter', selectUnit(custom, 'length', length)), length)
+  for (const stress of UNIT_OPTIONS.stress) assert.equal(quantityUnit('modulus', selectUnit(custom, 'stress', stress)), stress)
+  for (const invalid of [{ ...custom, version: 1 }, { ...custom, groups: { ...custom.groups, force: 'kg' } },
+    { ...custom, groups: { ...custom.groups, barDiameter: 'in' } }, { ...custom, groups: { ...custom.groups, modulus: 'ksi' } },
     { ...custom, preset: 'metric' }, { ...custom, unexpected: true }]) assert.throws(() => parseUnitSelection(invalid))
 })
 
 test('UNITS-003: no-op edits retain exact binary64 values across all contexts, including non-invertible cases', () => {
-  const selections = [UNIT_PRESETS.metric, UNIT_PRESETS.us, selectUnit(UNIT_PRESETS.metric, 'modulus', 'GPa')]
+  const selections = [UNIT_PRESETS.metric, UNIT_PRESETS.us, selectUnit(selectUnit(UNIT_PRESETS.metric, 'stress', 'GPa'), 'length', 'cm')]
   const quantities: Quantity[] = ['length', 'barDiameter', 'area', 'inertia', 'sectionModulus', 'force', 'moment', 'stress', 'modulus', 'curvature', 'density']
   const values = [0, -0, 0.1, 15.000000000000002, -378.1234567890123, 1e-110, 1e110]
   for (const selection of selections) for (const quantity of quantities) for (const original of values) {

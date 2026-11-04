@@ -267,7 +267,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
 
       {view === 'points' && (
         <>
-      <label className="pm-field">
+      <label className="pm-field pm-option-field">
         <span>Sampling mode</span>
         <select
           value={options.samplingMode}
@@ -279,8 +279,8 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
             onChange(next)
           }}
         >
-          <option value="fixed">Fixed grid · 36 directions</option>
-          <option value="adaptive">Independent adaptive · 12 seeds + 2 poles × 12 directions</option>
+          <option value="fixed" title="Fixed station and direction grid">Fixed grid</option>
+          <option value="adaptive" title="Independent per-meridian station and direction refinement">Adaptive</option>
         </select>
       </label>
       <div className="pm-result-status-list">
@@ -416,7 +416,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
 
       {options.stations.refinement.type === 'adaptive' && (
         <>
-          <label className="pm-field">
+          <label className="pm-field pm-option-field">
             <span>Station tolerance</span>
             <NumericInput
               min={1e-6}
@@ -430,8 +430,8 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
               })}
             />
           </label>
-          <label className="pm-field">
-            <span>Maximum station passes</span>
+          <label className="pm-field pm-option-field">
+            <span>Max. station passes</span>
             <NumericInput
               min={0}
               max={12}
@@ -444,8 +444,8 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
               })}
             />
           </label>
-          <label className="pm-field">
-            <span>Maximum stations (poles included)</span>
+          <label className="pm-field pm-option-field">
+            <span title="Maximum station count, including both pure-compression and pure-tension poles">Maximum stations</span>
             <NumericInput
               min={stationCount}
               max={MAX_BLOCK_STATIONS}
@@ -470,7 +470,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
           <p>β is a strain-plane direction over the full 360°</p>
         </div>
       </div>
-      <label className="pm-field">
+      <label className="pm-field pm-option-field">
         <span>Seed type</span>
         <select
           value={options.directions.seed.type}
@@ -490,13 +490,13 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
           }
         >
           <option value="uniform">Uniform</option>
-          <option value="explicit">Custom angles</option>
+          <option value="explicit" title="Explicit list of custom strain-plane angles">Explicit</option>
         </select>
       </label>
 
       {options.directions.seed.type === 'uniform' ? (
         <>
-          <label className="pm-field">
+          <label className="pm-field pm-option-field">
             <span>Direction count</span>
             <NumericInput
               min={4}
@@ -518,7 +518,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
               }
             />
           </label>
-          <label className="pm-field">
+          <label className="pm-field pm-option-field">
             <span>Start angle (deg)</span>
             <NumericInput
               min={0}
@@ -569,7 +569,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
           >
             Add midpoint of largest gap
           </button>
-          <label className="pm-field">
+          <label className="pm-field pm-option-field pm-option-field--list">
             <span>Paste angles</span>
             <input
               value={angleDraft}
@@ -597,7 +597,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
 
       {options.directions.refinement.type === 'adaptive' && (
         <>
-          <label className="pm-field">
+          <label className="pm-field pm-option-field">
             <span>Relative tolerance</span>
             <NumericInput
               min={1e-6}
@@ -613,7 +613,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
               }
             />
           </label>
-          <label className="pm-field">
+          <label className="pm-field pm-option-field">
             <span>Maximum passes</span>
             <NumericInput
               min={0}
@@ -629,7 +629,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
               }
             />
           </label>
-          <label className="pm-field">
+          <label className="pm-field pm-option-field">
             <span>Maximum directions</span>
             <NumericInput
               min={seedCount}
@@ -660,7 +660,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
         </div>
       </div>
 
-      <label className="pm-field">
+      <label className="pm-field pm-option-field">
         <span>Mesh sizing</span>
         <select
           value={options.mesh.sizing.type}
@@ -673,13 +673,13 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
             })
           }
         >
-          <option value="automatic">Automatic (Dmin / divisions)</option>
-          <option value="fixed">Fixed cell size</option>
+          <option value="automatic" title="Automatic: Dmin / divisions">Automatic</option>
+          <option value="fixed" title="Fixed cell size">Fixed size</option>
         </select>
       </label>
 
       {options.mesh.sizing.type === 'automatic' ? (
-        <label className="pm-field">
+        <label className="pm-field pm-option-field">
           <span>Dmin divisions</span>
           <NumericInput
             min={4}
@@ -694,7 +694,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
           />
         </label>
       ) : (
-        <label className="pm-field">
+        <label className="pm-field pm-option-field">
           <span>Cell size</span>
           <QuantityInput quantity="length"
             min={0.000001}
@@ -709,7 +709,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
         </label>
       )}
 
-      <label className="pm-field">
+      <label className="pm-field pm-option-field">
         <span>Maximum cells</span>
         <NumericInput
           min={1}
@@ -724,7 +724,7 @@ function StrainAnalysisOptionsPanel({ options, onChange, view }: StrainProps) {
         />
       </label>
 
-      <label className="pm-field">
+      <label className="pm-field pm-option-field">
         <span>Maximum subdivision</span>
         <NumericInput
           min={0}
@@ -800,7 +800,7 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
         </div>
       ) : (
         <>
-          <label className="pm-field">
+          <label className="pm-field pm-option-field">
             <span>Sampling mode</span>
             <select
               value={options.samplingMode}
@@ -808,8 +808,8 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
                 ? createAdaptiveEquivalentBlockAnalysisOptions()
                 : createDefaultEquivalentBlockAnalysisOptions())}
             >
-              <option value="fixed">Fixed grid · 36 directions</option>
-              <option value="adaptive">Independent adaptive · 12 seeds + 2 poles × 12 directions</option>
+              <option value="fixed" title="Fixed station and direction grid">Fixed grid</option>
+              <option value="adaptive" title="Independent per-meridian station and direction refinement">Adaptive</option>
             </select>
           </label>
           <div className="pm-result-status-list">
@@ -926,37 +926,37 @@ function EquivalentBlockOptionsPanel({ options, onChange, view }: Props & { opti
           </div>
           {options.neutralAxisStations.refinement.type === 'adaptive' && (
             <>
-              <label className="pm-field"><span>Station tolerance</span><NumericInput min={1e-6} max={0.25} step={0.001} value={options.neutralAxisStations.refinement.tolerance} onCommit={(value) => commit((draft) => {
+              <label className="pm-field pm-option-field"><span>Station tolerance</span><NumericInput min={1e-6} max={0.25} step={0.001} value={options.neutralAxisStations.refinement.tolerance} onCommit={(value) => commit((draft) => {
                 if (draft.neutralAxisStations.refinement.type === 'adaptive') draft.neutralAxisStations.refinement.tolerance = value
               })} /></label>
-              <label className="pm-field"><span>Maximum station passes</span><NumericInput min={0} max={12} integer value={options.neutralAxisStations.refinement.maxPasses} onCommit={(value) => commit((draft) => {
+              <label className="pm-field pm-option-field"><span>Max. station passes</span><NumericInput min={0} max={12} integer value={options.neutralAxisStations.refinement.maxPasses} onCommit={(value) => commit((draft) => {
                 if (draft.neutralAxisStations.refinement.type === 'adaptive') draft.neutralAxisStations.refinement.maxPasses = value
               })} /></label>
-              <label className="pm-field"><span>Maximum stations (poles included)</span><NumericInput min={stationCount} max={MAX_BLOCK_STATIONS} integer value={options.neutralAxisStations.refinement.maxStations} onCommit={(value) => commit((draft) => {
+              <label className="pm-field pm-option-field"><span title="Maximum station count, including both pure-compression and pure-tension poles">Maximum stations</span><NumericInput min={stationCount} max={MAX_BLOCK_STATIONS} integer value={options.neutralAxisStations.refinement.maxStations} onCommit={(value) => commit((draft) => {
                 if (draft.neutralAxisStations.refinement.type === 'adaptive') draft.neutralAxisStations.refinement.maxStations = value
               })} /></label>
             </>
           )}
 
           <div className="pm-section-title"><div><h3>Neutral-axis directions</h3><p>θ is the compression-block normal over the full 360°.</p></div></div>
-          <label className="pm-field"><span>Seed direction count</span><NumericInput min={4} max={MAX_SEED_DIRECTIONS} integer value={options.directions.seedCount} onCommit={(value) => commit((draft) => {
+          <label className="pm-field pm-option-field"><span>Seed direction count</span><NumericInput min={4} max={MAX_SEED_DIRECTIONS} integer value={options.directions.seedCount} onCommit={(value) => commit((draft) => {
             draft.directions.seedCount = value
             if (draft.directions.refinement.type === 'adaptive') draft.directions.refinement.maxDirections = Math.max(value, draft.directions.refinement.maxDirections)
           })} /></label>
-          <label className="pm-field"><span>Start angle (deg)</span><NumericInput min={0} max={359.999999} value={options.directions.startDeg} onCommit={(value) => commit((draft) => { draft.directions.startDeg = value })} /></label>
+          <label className="pm-field pm-option-field"><span>Start angle (deg)</span><NumericInput min={0} max={359.999999} value={options.directions.startDeg} onCommit={(value) => commit((draft) => { draft.directions.startDeg = value })} /></label>
           <div className="pm-result-status-list">
             <span>Direction behavior</span>
             <strong>{options.samplingMode === 'adaptive' ? 'Adaptive midpoint meridians' : 'Fixed directions only'}</strong>
           </div>
           {options.directions.refinement.type === 'adaptive' && (
             <>
-              <label className="pm-field"><span>Direction tolerance</span><NumericInput min={1e-6} max={0.25} step={0.001} value={options.directions.refinement.tolerance} onCommit={(value) => commit((draft) => {
+              <label className="pm-field pm-option-field"><span>Direction tolerance</span><NumericInput min={1e-6} max={0.25} step={0.001} value={options.directions.refinement.tolerance} onCommit={(value) => commit((draft) => {
                 if (draft.directions.refinement.type === 'adaptive') draft.directions.refinement.tolerance = value
               })} /></label>
-              <label className="pm-field"><span>Maximum direction passes</span><NumericInput min={0} max={12} integer value={options.directions.refinement.maxPasses} onCommit={(value) => commit((draft) => {
+              <label className="pm-field pm-option-field"><span>Max. direction passes</span><NumericInput min={0} max={12} integer value={options.directions.refinement.maxPasses} onCommit={(value) => commit((draft) => {
                 if (draft.directions.refinement.type === 'adaptive') draft.directions.refinement.maxPasses = value
               })} /></label>
-              <label className="pm-field"><span>Maximum directions</span><NumericInput min={options.directions.seedCount} max={MAX_REFINED_DIRECTIONS} integer value={options.directions.refinement.maxDirections} onCommit={(value) => commit((draft) => {
+              <label className="pm-field pm-option-field"><span>Maximum directions</span><NumericInput min={options.directions.seedCount} max={MAX_REFINED_DIRECTIONS} integer value={options.directions.refinement.maxDirections} onCommit={(value) => commit((draft) => {
                 if (draft.directions.refinement.type === 'adaptive') draft.directions.refinement.maxDirections = value
               })} /></label>
             </>

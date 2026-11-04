@@ -139,6 +139,17 @@ stability, load generation, accidental eccentricity, seismic detailing, or servi
 duplicated in Capacity.
 
 - Selecting a profile restores its declared defaults.
+- Materials is the sole editor for concrete/reinforcement material factors and, for non-AS
+  global-factor profiles, transverse-reinforcement class and the axial-compression cap. Resistance
+  does not repeat these fields or provide a full-profile reset that could overwrite them.
+- Resistance edits the active compression factor, tension factor and applicable transition rule.
+  It retains the AS compression-factor class because Materials has no AS class input; AS does not
+  display the unused common-schema strain transition. An inactive compression-class coefficient
+  remains stored but is not another editable field. Design-material routes expose only their
+  declared minimum-eccentricity inputs here, when present.
+- A missing required override reason remains enterable in Resistance. A reason already entered in
+  Materials is retained without another populated editor. AS retains its reason editor here as its
+  sole input location. A reason started in Resistance remains editable for that panel session.
 - Editing any factor marks the profile `modified` and `draft`.
 - A modified code coefficient is not published to canonical state until an override reason makes it
   valid. Reinforcement classification and disabling only the optional axial cap are explicit
@@ -217,8 +228,9 @@ also runs through `npm run bench:equivalent-block` and `npm run bench:pipelines`
 
 ## 8. UI ownership and display contract
 
-- `Options` owns the persisted design-code profile, factors, transverse-reinforcement
-  classification, and the optional maximum axial-compression limit.
+- `@pm/design` owns the persisted resistance basis. Materials edits material factors and the
+  non-AS reinforcement-class/axial-cap inputs. Options > Resistance edits only the remaining active
+  resultant-factor/transition or minimum-eccentricity inputs, plus the AS compression-factor class.
 - The sidebar separates `Points`, `Mesh`/`Block`, and `Resistance` into tabs. All three groups update
   their canonical project inputs directly; Resistance has no separate Apply button.
 - Reinforcement classification and disabling only the maximum axial limit are analysis options and

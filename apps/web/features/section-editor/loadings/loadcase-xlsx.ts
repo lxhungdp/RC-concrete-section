@@ -1,9 +1,9 @@
-import { UNIT_PRESETS, fromCanonical, toCanonical, quantityUnit, parseNumericText, type UnitSelection } from '@pm/units'
+import { UNIT_PRESETS, fromCanonical, toCanonical, quantityUnit, parseNumericText, type UnitContext } from '@pm/units'
 import { quantityCell, readQuantityCell, writeQuantityCell, readWorkbookUnits, writeWorkbookUnits } from '../shared/workbook-units'
 import { CENTROID_LOAD_REFERENCE, createLoadCombination, parseLoadReference, resultantAtCentroid, resultantAtLoadReference, type LoadCombination, type LoadReference } from '@pm/project'
 
 /** Explicit frame transport. Older workbooks without this sheet contain centroidal moments. */
-export const writeLoadReferenceSheet = (book: import('exceljs').Workbook, reference: LoadReference, units: UnitSelection) => {
+export const writeLoadReferenceSheet = (book: import('exceljs').Workbook, reference: LoadReference, units: UnitContext) => {
   const frame = parseLoadReference(reference)
   const sheet = book.addWorksheet('Load reference')
   sheet.addRow(['LOAD_REFERENCE', 1])
@@ -15,7 +15,7 @@ export const writeLoadReferenceSheet = (book: import('exceljs').Workbook, refere
   }
   sheet.getColumn(1).width = 25; sheet.getColumn(2).width = 25
 }
-export const readLoadReferenceSheet = (book: import('exceljs').Workbook, units: UnitSelection, required = false): LoadReference => {
+export const readLoadReferenceSheet = (book: import('exceljs').Workbook, units: UnitContext, required = false): LoadReference => {
   const sheet = book.getWorksheet('Load reference')
   if (!sheet) {
     if (required) throw Error('The load-reference declaration is required.')
@@ -45,7 +45,7 @@ export const readLoadReferenceSheet = (book: import('exceljs').Workbook, units: 
     offsetY: readQuantityCell('length', readNumber(y.value, 'Load reference Y'), units, y.note) })
 }
 
-const headersFor = (units: UnitSelection) => ['ID', 'Name', `Pu (${quantityUnit('force', units)})`, `Mux (${quantityUnit('moment', units)})`, `Muy (${quantityUnit('moment', units)})`]
+const headersFor = (units: UnitContext) => ['ID', 'Name', `Pu (${quantityUnit('force', units)})`, `Mux (${quantityUnit('moment', units)})`, `Muy (${quantityUnit('moment', units)})`]
 
 const excelModule = async () => {
   const imported = await import('exceljs')
@@ -97,7 +97,7 @@ const readNumber = (value: unknown, label: string) => {
 
 export const loadcaseWorkbookFileName = 'loadcases.xlsx'
 
-export const buildLoadcaseWorkbook = async (loadcases: LoadCombination[], units: UnitSelection = UNIT_PRESETS.metric, reference: LoadReference = CENTROID_LOAD_REFERENCE): Promise<Uint8Array> => {
+export const buildLoadcaseWorkbook = async (loadcases: LoadCombination[], units: UnitContext = UNIT_PRESETS.metric, reference: LoadReference = CENTROID_LOAD_REFERENCE): Promise<Uint8Array> => {
   const ExcelJS = await excelModule()
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet('Loadcases')
@@ -130,7 +130,7 @@ export const buildLoadcaseWorkbook = async (loadcases: LoadCombination[], units:
   return toBytes(await workbook.xlsx.writeBuffer())
 }
 
-export const downloadLoadcaseWorkbook = async (loadcases: LoadCombination[], units: UnitSelection = UNIT_PRESETS.metric, reference: LoadReference = CENTROID_LOAD_REFERENCE) => {
+export const downloadLoadcaseWorkbook = async (loadcases: LoadCombination[], units: UnitContext = UNIT_PRESETS.metric, reference: LoadReference = CENTROID_LOAD_REFERENCE) => {
   const bytes = await buildLoadcaseWorkbook(loadcases, units, reference)
   const copy = new Uint8Array(bytes.byteLength)
   copy.set(bytes)
