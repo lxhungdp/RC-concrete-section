@@ -21,6 +21,14 @@ Files in this directory are evidence fixtures, not declarations of current defau
   that run. Its pure-compression entry decomposes the compatible engine pole and the UMD
   saturated-steel endpoint separately; ad hoc spreadsheet renderings are disposable outputs and
   are not tracked.
+- The current default fibre schedule is checked against
+  [`expected/P16_umd-vs-engine-unified-28.json`](expected/P16_umd-vs-engine-unified-28.json).
+  `expected/P16_umd-vs-engine.json` remains the unmodified historical 27-station record.
+  The reviewed addition of `Pure tens 50%` changes only the resolved station counts and the
+  tension-band P–M polylines in this comparison. All six UMD records, sampled/exact flexural
+  capacities, ratios, point stresses/strains, mesh, poles and scalar anchors are bit-identical.
+  Removing only the added midpoint recovers the complete historical JSON values exactly.
+  See [the synchronization review](../../task-packets/2026-11-05-complex-fixture-ci.md).
 - The twelve-report AdSec calculation-value audit is recorded in
   [`expected/adsec/calculation-value-audit.md`](expected/adsec/calculation-value-audit.md) with the
   full machine-readable evidence beside it. Run `npm run verify:adsec` to check the committed
@@ -28,7 +36,9 @@ Files in this directory are evidence fixtures, not declarations of current defau
   excludes UR and compares `P/Mnx/Mny` only when the printed deformation state is preserved.
 - Generated Excel workbooks are disposable audit artifacts and are not source or regression oracles.
 
-Both mechanics share the `unified-27-v2` criteria and the same 36-direction fixed default. Projects
+Both mechanics share the `unified-27-v2` base criteria and the same 36-direction fixed default.
+The default fibre schedule additionally resolves the explicit `Pure tens 50%` state (28 total);
+the block schedule retains 27. Projects
 may instead select the independent Adaptive mode, whose refined meridians and directions are stored
 as their own authoritative surface rather than overlaid on a hidden fixed calculation. See
 [`../../12-calculation-models-defaults-and-workflows.md`](../../12-calculation-models-defaults-and-workflows.md).

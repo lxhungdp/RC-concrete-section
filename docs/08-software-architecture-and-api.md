@@ -111,6 +111,10 @@ No `console.warn` determines engineering acceptance.
   expanded accuracy options.
 - Results and active regression fingerprints record the platform, architecture, Node.js, npm, and
   V8 identities needed to investigate numeric differences.
+- The current fibre schedule uses `bench/baselines/capacity-unified-28-baseline.json` in the
+  analysis package. Its predecessor `capacity-baseline.json` is retained as historical evidence
+  for the 27-station schedule. The [baseline record](../packages/pm-analysis/bench/baselines/README.md)
+  documents the retained-state and derived-query review; neither file is an accuracy certificate.
 - A fingerprint recorded and replayed on the same declared environment is bit-identical. A
   cross-platform regression may use the reviewed `capacity-fingerprint-v2` portability policy:
   geometry, topology, hashes, sampled strain states, warnings, flags, counts, and unclassified

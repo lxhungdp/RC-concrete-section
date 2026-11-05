@@ -13,9 +13,9 @@ export type ProjectExample = {
 }
 
 /**
- * Version-1 project documents used by both the engineering verification suite and the UI examples.
- * Keeping the menu pointed at the canonical fixtures prevents an example from silently diverging
- * from the solver and project parser.
+ * Project documents shared by regression tests and the importable UI examples.
+ * The generated complex example uses the current canonical version; the other fixtures retain
+ * their explicit legacy-reader contracts. Keep the menu pointed at these maintained definitions.
  */
 export const PROJECT_EXAMPLES: readonly ProjectExample[] = [
   {

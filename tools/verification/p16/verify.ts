@@ -60,7 +60,7 @@ import { canonicalVerificationProject, verificationInputMismatch } from '../proj
 const ROOT = process.cwd()
 const SOURCE = resolve(ROOT, 'docs/examples/reference-case/source/P16_Column_ULS_R _260730_콘크리트 커브 추가수정.md')
 const PROJECT_OUT = resolve(ROOT, 'docs/examples/reference-case/projects/P16_Column_ULS.pm-project.json')
-const RESULT_OUT = resolve(ROOT, 'docs/examples/reference-case/expected/P16_umd-vs-engine.json')
+const RESULT_OUT = resolve(ROOT, 'docs/examples/reference-case/expected/P16_umd-vs-engine-unified-28.json')
 const UPDATE_EXPECTED = process.argv.includes('--update')
 
 /**
@@ -916,7 +916,7 @@ console.log(`origin         : (${ORIGIN.x}, ${ORIGIN.y})  fyd = ${FYD.toFixed(3)
 for (const surface of result.surfaces) {
   console.log(
     `${surface.label.padEnd(24)} P0 = ${surface.poles.pureCompression.P.toFixed(0).padStart(8)} kN   ` +
-      `P${UNIFIED_STATIONS.length - 1} = ${surface.poles.pureTension.P.toFixed(0).padStart(8)} kN`
+      `P${surface.stations - 1} = ${surface.poles.pureTension.P.toFixed(0).padStart(8)} kN`
   )
 }
 console.log()

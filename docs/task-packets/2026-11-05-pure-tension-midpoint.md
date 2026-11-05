@@ -136,3 +136,11 @@ Code and solution evidence support the declared sampling behavior and retained-s
 The coarser Fixed hardening interpolation remains a recorded limitation. There is no dependency,
 project schema, material-law, code-factor, unit/sign or accepted-result classification change.
 Author review is Codex; independent structural/software and release approval are not claimed.
+
+## Later CI reference synchronization
+
+The [fixture/CI follow-up](2026-11-05-complex-fixture-ci.md) selects versioned 28-station capacity
+and P16 regression records after recovering the historical 27-station evidence by removing only
+the added midpoint and rerunning its queries. The original historical files and the gate outcomes
+above remain unchanged. Current exact/portable and external-comparison gates pass as recorded in
+that follow-up; the compact Fixed hardening uncertainty and independent release gates remain open.

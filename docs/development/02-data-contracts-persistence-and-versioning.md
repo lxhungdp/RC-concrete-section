@@ -62,6 +62,12 @@ stored-area fields. The isolated legacy adapter retains each mechanics' previous
 order; creating a v2 document materializes that selected route's area once. No general migration
 framework is introduced. See [stored-area contract](11-rebar-area-and-catalogs.md).
 
+The generated complex-section example follows the current canonical export version. Its checked-in
+JSON must match `npm run fixture:complex-section-json` byte for byte, including the pinned timestamp,
+stored rebar areas and explicit load-reference/check-basis defaults. Other examples may retain
+declared legacy versions for reader coverage; menu-example tests must distinguish those contracts
+instead of requiring every example to remain v1. The CI fixture-diff gate remains strict.
+
 JSON file import checks file bytes before reading and text/entity budgets before expensive parsing
 or topology work. In a browser with Worker support, the application parses and validates in a
 dedicated worker, terminates it on success/failure/cancellation, and applies only its successful

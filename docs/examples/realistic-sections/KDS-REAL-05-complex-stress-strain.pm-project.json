@@ -1,6 +1,6 @@
 {
   "schema": "pm-column-project",
-  "version": 1,
+  "version": 3,
   "meta": {
     "id": 1,
     "name": "KDS complex stress-strain regression example",
@@ -165,126 +165,234 @@
           "steelMaterialId": 1,
           "dia": 32,
           "x": -400,
-          "y": 530
+          "y": 530,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 2,
           "steelMaterialId": 1,
           "dia": 32,
           "x": -200,
-          "y": 530
+          "y": 530,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 3,
           "steelMaterialId": 1,
           "dia": 32,
           "x": 0,
-          "y": 530
+          "y": 530,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 4,
           "steelMaterialId": 1,
           "dia": 32,
           "x": 200,
-          "y": 530
+          "y": 530,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 5,
           "steelMaterialId": 1,
           "dia": 32,
           "x": 400,
-          "y": 530
+          "y": 530,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 6,
           "steelMaterialId": 1,
           "dia": 32,
           "x": -400,
-          "y": -530
+          "y": -530,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 7,
           "steelMaterialId": 1,
           "dia": 32,
           "x": -200,
-          "y": -530
+          "y": -530,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 8,
           "steelMaterialId": 1,
           "dia": 32,
           "x": 0,
-          "y": -530
+          "y": -530,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 9,
           "steelMaterialId": 1,
           "dia": 32,
           "x": 200,
-          "y": -530
+          "y": -530,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 10,
           "steelMaterialId": 1,
           "dia": 32,
           "x": 400,
-          "y": -530
+          "y": -530,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 11,
           "steelMaterialId": 1,
           "dia": 32,
           "x": -680,
-          "y": 300
+          "y": 300,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 12,
           "steelMaterialId": 1,
           "dia": 32,
           "x": -680,
-          "y": 100
+          "y": 100,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 13,
           "steelMaterialId": 1,
           "dia": 32,
           "x": -680,
-          "y": -100
+          "y": -100,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 14,
           "steelMaterialId": 1,
           "dia": 32,
           "x": -680,
-          "y": -300
+          "y": -300,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 15,
           "steelMaterialId": 1,
           "dia": 32,
           "x": 680,
-          "y": 300
+          "y": 300,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 16,
           "steelMaterialId": 1,
           "dia": 32,
           "x": 680,
-          "y": 100
+          "y": 100,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 17,
           "steelMaterialId": 1,
           "dia": 32,
           "x": 680,
-          "y": -100
+          "y": -100,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         },
         {
           "id": 18,
           "steelMaterialId": 1,
           "dia": 32,
           "x": 680,
-          "y": -300
+          "y": -300,
+          "area": 804.247719318987,
+          "areaSource": {
+            "type": "equation",
+            "dia": 32,
+            "area": 804.247719318987
+          }
         }
       ]
     },
@@ -333,6 +441,12 @@
       }
     },
     "loadings": {
+      "reference": {
+        "kind": "centroid-offset",
+        "offsetX": 0,
+        "offsetY": 0
+      },
+      "checkBasis": "proportional3D",
       "combinations": [
         {
           "id": 1,

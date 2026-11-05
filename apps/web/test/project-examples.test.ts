@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { parseProjectDocument } from '@pm/project'
+import { PM_PROJECT_VERSION, parseProjectDocument } from '@pm/project'
 import { PROJECT_EXAMPLES } from '../features/section-editor/project-examples'
 import {
   MAX_RECENT_PROJECTS,
@@ -11,14 +11,15 @@ import {
   type RecentProject
 } from '../features/section-editor/recent-project'
 
-test('every project-menu example is a valid version-1 project document', () => {
+test('project-menu examples retain canonical generated and explicit legacy-reader versions', () => {
   assert.ok(PROJECT_EXAMPLES.length >= 5)
   assert.equal(new Set(PROJECT_EXAMPLES.map((example) => example.id)).size, PROJECT_EXAMPLES.length)
 
   for (const example of PROJECT_EXAMPLES) {
     const parsed = parseProjectDocument(example.document)
     assert.equal(parsed.ok, true, parsed.ok ? example.label : `${example.label}: ${parsed.error}`)
-    if (parsed.ok) assert.equal(parsed.document.version, 1)
+    if (parsed.ok) assert.equal(parsed.document.version,
+      example.id === 'kds-stress-strain-complex' ? PM_PROJECT_VERSION : 1, example.id)
   }
 })
 
@@ -57,7 +58,7 @@ test('realistic reinforced sections replace the four simplified equivalent-stres
   }
 })
 
-test('Recent accepts current version-1 projects and rejects invalid local data', () => {
+test('Recent accepts the current canonical example and rejects invalid local data', () => {
   const recent = recentProjectFromRaw(PROJECT_EXAMPLES[0]!.document)
   assert.ok(recent)
   assert.equal(recentProjectFromRaw('{"version":0}'), null)

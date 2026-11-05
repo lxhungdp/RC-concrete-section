@@ -169,7 +169,7 @@ test('visible value edits and new rows need no technical ID or demand-basis inpu
   field(book, 'Material', 'fck (MPa)').value = 35
   dataCell(book, 'Section', 'OUTER', 1).value = -560
   dataCell(book, 'Rebar', 'REBAR', 1).value = 25
-  book.getWorksheet('Rebar')!.addRow([16, 100, 530])
+  book.getWorksheet('Rebar')!.addRow([16, 100, 530, null, null, 200])
   dataCell(book, 'Loadings', 'LOADINGS', 2).value = -1234567.891234567
   const loads = book.getWorksheet('Loadings')!
   loads.spliceRows(marker(book, 'Loadings', 'LOADINGS') + 3, 1)
@@ -180,7 +180,9 @@ test('visible value edits and new rows need no technical ID or demand-basis inpu
   assert.equal(imported.inputs.materials.concrete.elasticModulus, project.inputs.materials.concrete.elasticModulus)
   assert.equal(imported.inputs.geometry.outers[0].points[0].x, -560)
   assert.equal(imported.inputs.geometry.rebars[0].dia, 25)
+  assert.equal(imported.inputs.geometry.rebars[0].area, project.inputs.geometry.rebars[0].area)
   assert.equal(imported.inputs.geometry.rebars.at(-1)!.dia, 16)
+  assert.equal(imported.inputs.geometry.rebars.at(-1)!.area, 200)
   assert.equal(imported.inputs.geometry.rebars.at(-1)!.steelMaterialId, undefined)
   assert.equal(imported.inputs.loadings.combinations[0].P, -1234567.891234567)
   assert.equal(imported.inputs.loadings.combinations.length, 3)
@@ -317,10 +319,11 @@ test('copied material fields and separate custom curve tables preserve all indep
   material.addRow([])
   material.addRows(copy)
   field(gradeBook, 'Material', 'name', 'STEEL', 3).value = 'Copied grade'
-  gradeBook.getWorksheet('Rebar')!.addRow([20, 100, 530, 3])
+  gradeBook.getWorksheet('Rebar')!.addRow([20, 100, 530, 3, null, 300])
   const grade = await assertImported(gradeBook)
   assert.equal(grade.inputs.materials.steel[1].name, 'Copied grade')
   assert.equal(grade.inputs.geometry.rebars.at(-1)!.steelMaterialId, 3)
+  assert.equal(grade.inputs.geometry.rebars.at(-1)!.area, 300)
 })
 
 test('hidden advanced settings remain editable and cannot grant verification status', async () => {
@@ -351,6 +354,7 @@ test('malformed keywords/cells/references and missing hidden settings fail close
     ['hole before outer', (b) => { b.getWorksheet('Section')!.getCell(marker(b, 'Section', 'OUTER'), 1).value = 'hole #100' }, 'WORKBOOK_CELL'],
     ['old long marker', (b) => { b.getWorksheet('Section')!.getRow(marker(b, 'Section', 'OUTER')).values = ['OUTER', 1] }, 'WORKBOOK_FORMAT'],
     ['partial row', (b) => { b.getWorksheet('Rebar')!.addRow([20, 0]) }, 'WORKBOOK_CELL'],
+    ['missing stored As', (b) => { b.getWorksheet('Rebar')!.addRow([16, 100, 530]) }, 'PROJECT_INPUT'],
     ['malformed technical ID', (b) => { dataCell(b, 'Rebar', 'REBAR', 5).value = -1 }, 'WORKBOOK_CELL'],
     ['extra column', (b) => { dataCell(b, 'Rebar', 'REBAR', 8).value = 'unowned input' }, 'WORKBOOK_FORMAT'],
     ['duplicate field', (b) => { b.getWorksheet('Material')!.spliceRows(marker(b, 'Material', 'CONCRETE') + 2, 0, ['fck (MPa)', 35]) }, 'WORKBOOK_CELL'],
