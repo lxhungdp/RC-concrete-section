@@ -6,6 +6,7 @@ import {
   activeNominalSurfaceDataset,
   buildDirectMeridianSection,
   isMeridianAuditPoint,
+  resultantMomentCoordinate,
   stationDefinitionLabel,
   traceFixedPContourSamples,
   type ExactDirectionCurve,
@@ -15,7 +16,6 @@ import {
   type PreviewSurface,
   type PreviewSurfacePoint,
   type Resultant,
-  type ResultantLedger,
   type SurfaceStation
 } from '@pm/analysis'
 import type {
@@ -36,7 +36,7 @@ export type ChartValueComponent = 'P' | 'M' | 'Mx' | 'My'
 export type ChartTableForces = {
   /** Axial force, N. */
   P: number
-  /** Moment projected on the direct vertical meridian, N·mm. */
+  /** Resultant moment magnitude, N·mm; take the norm after assembling Mx and My. */
   M: number
 }
 
@@ -118,14 +118,9 @@ const knm = (value: number) => fromCanonical('moment', value, UNIT_PRESETS.metri
 
 const normalizeAngleDeg = (degrees: number) => ((degrees % 360) + 360) % 360
 
-const momentAlong = (point: Pick<Resultant, 'Mx' | 'My'>, angleDeg: number) => {
-  const theta = (normalizeAngleDeg(angleDeg) * Math.PI) / 180
-  return point.Mx * Math.cos(theta) + point.My * Math.sin(theta)
-}
-
-/** Select an existing component; projected M uses the same adapter as the table itself. */
-export const chartResultantValue = (value: Resultant, component: ChartValueComponent, angleDeg: number) =>
-  component === 'M' ? momentAlong(value, angleDeg) : value[component]
+/** Signed components remain unchanged. M selects the shared resultant-magnitude coordinate. */
+export const chartResultantValue = (value: Resultant, component: ChartValueComponent, _angleDeg: number) =>
+  component === 'M' ? resultantMomentCoordinate(value).M : value[component]
 
 export const chartValueLabel = (component: ChartValueComponent, stage: ChartTableResistanceStage) => {
   if (component === 'Mx') return stage === 'design' ? 'Mrx' : 'Mnx'
@@ -151,13 +146,10 @@ export const isReconciledPointAudit = (audit: PointCalculationAudit | undefined)
   return audit.nominalReferenceReconciliation.ok
 }
 
-const forcesFromLedger = (
-  ledger: ResultantLedger,
-  momentOf: (part: Resultant) => number
-): ChartTableStageForces => ({
-  total: { P: ledger.total.P, M: momentOf(ledger.total) },
-  concrete: { P: ledger.concrete.P, M: momentOf(ledger.concrete) },
-  steel: { P: ledger.steel.P, M: momentOf(ledger.steel) }
+const forcesFromPoint = (point: PreviewSurfacePoint): ChartTableStageForces => ({
+  total: { P: point.P, M: resultantMomentCoordinate(point).M },
+  concrete: { P: point.ledger.concrete.P, M: resultantMomentCoordinate(point.ledger.concrete).M },
+  steel: { P: point.ledger.steel.P, M: resultantMomentCoordinate(point.ledger.steel).M }
 })
 
 type VerticalDraft = {
@@ -190,10 +182,10 @@ const collectVertical = (
   drafts: Map<string, VerticalDraft>
 ) => {
   const primary = buildDirectMeridianSection(points, angleDeg, false).primary.filter(isMeridianAuditPoint)
-  const momentOf = (part: Resultant) => momentAlong(part, angleDeg)
+  // Concrete/steel magnitudes are individual values, never scalar contributions to total M_R.
   for (const point of primary) {
     const key = `vertical-${point.stationId ?? `cap-${point.id}`}`
-    const forces = forcesFromLedger(point.ledger, momentOf)
+    const forces = forcesFromPoint(point)
     const station = descriptors.find((descriptor) => descriptor.id === point.stationId) ?? null
     const evidence: ChartTableVerticalRow['evidence'] = { stage, angleDeg, point, station }
     const existing = drafts.get(key)

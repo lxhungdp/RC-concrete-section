@@ -323,7 +323,6 @@ export function SectionFieldChart({
       const themeStyle = getComputedStyle(host)
       const foreground = themeStyle.getPropertyValue('--foreground').trim() || '#0a0a0a'
       const foregroundMuted = themeStyle.getPropertyValue('--foreground-muted').trim() || '#6b7280'
-      const background = themeStyle.getPropertyValue('--background').trim() || '#ffffff'
       const border = themeStyle.getPropertyValue('--border').trim() || '#ededee'
 
       ctx.setTransform(1, 0, 0, 1, 0, 0)
@@ -362,6 +361,7 @@ export function SectionFieldChart({
       setAxesFrame({
         width: cssWidth, height: cssHeight,
         origin: { x: toCssX(axesOrigin.x), y: toCssY(axesOrigin.y) },
+        centroid: { x: toCssX(fieldMap.origin.x), y: toCssY(fieldMap.origin.y) },
         bounds: { left: toCssX(minX), right: toCssX(maxX), top: toCssY(maxY), bottom: toCssY(minY) },
         worldOrigin: axesOrigin
       })
@@ -624,21 +624,8 @@ export function SectionFieldChart({
         }
       }
 
-      // Centroid marker
-      ctx.beginPath()
-      ctx.arc(toPixelX(ox), toPixelY(oy), 3.5 * dpr, 0, Math.PI * 2)
-      ctx.fillStyle = foreground
-      ctx.fill()
-      ctx.strokeStyle = background
-      ctx.lineWidth = 1.2 * dpr
-      ctx.stroke()
-
       ctx.fillStyle = foregroundMuted
       ctx.font = `${11 * dpr}px "IBM Plex Sans", system-ui, sans-serif`
-      if (axesOrigin.x !== fieldMap.origin.x || axesOrigin.y !== fieldMap.origin.y) {
-        ctx.textAlign = 'left'
-        ctx.fillText('C', toPixelX(fieldMap.origin.x) + 6 * dpr, toPixelY(fieldMap.origin.y) + 14 * dpr)
-      }
       ctx.textAlign = 'center'
       ctx.fillText(`x (${unit('length')})`, padL + plotW / 2, height - 10 * dpr)
       ctx.save()

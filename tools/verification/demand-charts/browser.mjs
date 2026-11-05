@@ -203,7 +203,7 @@ try {
         await page.screenshot({ path: `${out}/${mechanics}-${modeName}-dark.png` })
         await page.getByRole('button', { name: 'Theme', exact: true }).click()
       }
-      if (demand.id === 4) assert.ok(await page.getByText('No Design contour exists at this Pu.', { exact: false }).count())
+      if (demand.id === 4) assert.ok(await page.getByText('No Design contour at Pu', { exact: false }).count())
     }
     // A selection round trip cannot leave a previous case's field or failed-case placeholder behind.
     const ngRow = page.getByRole('table', { name: 'Loadcase demand table' }).locator('tr')

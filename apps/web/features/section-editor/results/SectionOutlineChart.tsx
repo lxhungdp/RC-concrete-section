@@ -22,7 +22,8 @@ export function SectionOutlineChart({ section, rebars, loadReference = CENTROID_
     const minY = Math.min(...points.map(point => point.y))
     const maxY = Math.max(...points.map(point => point.y))
     if (maxX <= minX || maxY <= minY) return
-    const worldOrigin = resolveLoadOrigin(netConcreteCentroid(section), loadReference)
+    const centroid = netConcreteCentroid(section)
+    const worldOrigin = resolveLoadOrigin(centroid, loadReference)
     const resize = () => {
       const width = Math.max(1, host.clientWidth)
       const height = Math.max(1, host.clientHeight)
@@ -33,6 +34,7 @@ export function SectionOutlineChart({ section, rebars, loadReference = CENTROID_
       const y = (value: number) => offsetY + (worldMaxY - value) * scale
       setFrame({ width, height, worldOrigin,
         origin: { x: x(worldOrigin.x), y: y(worldOrigin.y) },
+        centroid: { x: x(centroid.x), y: y(centroid.y) },
         bounds: { left: x(minX), right: x(maxX), top: y(maxY), bottom: y(minY) } })
     }
     resize()

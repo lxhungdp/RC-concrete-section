@@ -232,6 +232,26 @@ test('fixed direction tables use the direct fixed meridian, not a nearby adaptiv
   assert.equal(middle?.evidence.point.ledger.total.Mx, middle?.design?.total.M)
 })
 
+test('ENG-AN-003: Envelope M_R uses the assembled vector, not beta projection or a sum of magnitudes', () => {
+  const selected = point(0, 1, 0, 5, 'station-1')
+  const concrete = { P: 0, Mx: 6, My: -8 }, steel = { P: 0, Mx: -3, My: 4 }
+  selected.Mx = 3; selected.My = -4
+  selected.ledger = { concrete, steel, steelGross: steel, displacedConcrete: { P: 0, Mx: 0, My: 0 }, total: { P: 0, Mx: 3, My: -4 } }
+  const points = [point(0, 0, 1, 0, 'pure-compression'), selected, point(0, 2, -1, 0, 'pure-tension')]
+  const source = { ...surface, designFixed: { points, directions: [0], stations }, nominalFixed: { points, directions: [0], stations } }
+  for (const resistanceStage of ['design', 'nominal'] as const) {
+    const table = buildChartTableRows({ surface: source, source: 'vertical', resistanceStage, sliceAngleDeg: 0, fixedP: 0 })
+    const row = table.find(value => value.kind === 'vertical' && value.evidence.point.id === selected.id)
+    assert.ok(row?.kind === 'vertical')
+    const values = row[resistanceStage]
+    assert.ok(values)
+    assert.equal(values.total.M, 5)
+    assert.equal(values.concrete.M, 10)
+    assert.equal(values.steel.M, 5)
+    assert.notEqual(values.total.M, values.concrete.M + values.steel.M)
+  }
+})
+
 test('an exact direction table selects Design or Nominal without merging their rows', () => {
   const beta = 17.35 * Math.PI / 180
   const designFixed = rows([beta], 10)

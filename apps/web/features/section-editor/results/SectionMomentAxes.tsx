@@ -2,6 +2,7 @@ export type SectionAxesFrame = {
   width: number
   height: number
   origin: { x: number; y: number }
+  centroid: { x: number; y: number }
   bounds: { left: number; right: number; top: number; bottom: number }
   worldOrigin: { x: number; y: number }
 }
@@ -21,7 +22,8 @@ const loopPath = (cx: number, cy: number, rx: number, ry: number, start: number)
 
 /** engineering/02 §2: applied input axes; the calculation origin remains the exact centroid. */
 export function SectionMomentAxes({ frame }: { frame: SectionAxesFrame }) {
-  const { width, height, origin, bounds, worldOrigin } = frame
+  const { width, height, origin, centroid, bounds, worldOrigin } = frame
+  const offset = origin.x !== centroid.x || origin.y !== centroid.y
   const xEnd = Math.max(bounds.right, origin.x) + 66
   const yEnd = Math.min(bounds.top, origin.y) - 66
   const mx = { x: Math.max(bounds.right, origin.x) + 40, y: origin.y }
@@ -29,7 +31,7 @@ export function SectionMomentAxes({ frame }: { frame: SectionAxesFrame }) {
   const s = MOMENT_LOOP_SCALE
   return (
     <svg className="pm-section-moment-axes" viewBox={`0 0 ${width} ${height}`}
-      role="img" aria-label="Load reference X and Y axes with positive Mux and Muy rotation arrows"
+      role="img" aria-label="Section centroid C and load reference X and Y axes with positive Mux and Muy rotation arrows"
       data-origin-x={worldOrigin.x} data-origin-y={worldOrigin.y}>
       <title>O is the applied load reference: centroid plus the applied X/Y offsets. Mux and Muy are entered about O. Positive Mux follows ΣF(y−yO), and positive Muy follows ΣF(x−xO); compression is positive.</title>
       <g className="pm-section-centroid-axes" fill="none" stroke="currentColor" strokeWidth="1">
@@ -42,7 +44,7 @@ export function SectionMomentAxes({ frame }: { frame: SectionAxesFrame }) {
         <text x={xEnd + 5} y={origin.y + 4}>X</text>
         <text x={origin.x + 7} y={yEnd + 3}>Y</text>
         <circle data-axis-origin="true" cx={origin.x} cy={origin.y} r="3" />
-        <text x={origin.x + 6} y={origin.y + 14}>O</text>
+        {offset && <text x={origin.x + 6} y={origin.y + 14}>O</text>}
       </g>
       <g className="pm-section-moment-loop pm-section-moment-loop--x" role="img" aria-label="Positive Mux rotation about X">
         <title>+Mux = ΣF(y−yO), compression positive.</title>
@@ -57,6 +59,13 @@ export function SectionMomentAxes({ frame }: { frame: SectionAxesFrame }) {
         <path d={loopPath(my.x, my.y, 18, 6, Math.PI)} />
         <path className="pm-section-moment-arrow" d={`M${my.x + 3 * s},${my.y + 6 * s}l${-6 * s},${-3 * s}v${6 * s}Z`} />
         <text x={my.x + 25 * s} y={my.y + 4}>+Muy</text>
+      </g>
+      <g className="pm-section-axis-labels" data-section-centroid="true"
+        role="img" aria-label="Section centroid C">
+        <title>C is the exact net-concrete centroid of the section.</title>
+        <circle cx={centroid.x} cy={centroid.y} r="3.5"
+          stroke="var(--menu-surface)" strokeWidth="1.2" />
+        <text x={centroid.x + 6} y={centroid.y - 8}>{offset ? 'C' : 'C = O'}</text>
       </g>
     </svg>
   )

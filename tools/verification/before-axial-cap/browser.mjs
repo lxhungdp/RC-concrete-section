@@ -165,7 +165,7 @@ try {
         const dashed = fixed.find(t => t.name === 'Design before Pmax cap')
         assert.ok(dashed?.x.length > 3)
         assert.equal(dashed.line.dash, 'dot')
-        assert.ok(await page.getByText('No Design contour exists at this Pu.', { exact: false }).count())
+        assert.ok(await page.getByText('No Design contour at Pu', { exact: false }).count())
       }
       if (demand.id === 2) {
         assert.equal(beforeCap, true)

@@ -322,6 +322,45 @@ body[data-jscad-theme='dark'] .pm-cad-surface { border-color: transparent; box-s
 }
 
 /* Demand changes replace content within stable chart slots. */
+.pm-data-dialog {
+  inline-size: min(960px, calc(100vw - var(--sp-7)));
+  block-size: min(760px, calc(100dvh - var(--sp-7)));
+  min-inline-size: min(320px, calc(100vw - var(--sp-7)));
+  min-block-size: min(240px, calc(100dvh - var(--sp-7)));
+  max-inline-size: calc(100vw - var(--sp-7));
+  max-block-size: calc(100dvh - var(--sp-7));
+  resize: both;
+  margin: auto;
+  padding: 0;
+  color: var(--foreground);
+}
+.pm-data-dialog:not([open]) { display: none; }
+.pm-data-dialog::backdrop { background: var(--overlay-scrim); }
+.pm-data-dialog-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border-bottom: 1px solid var(--group-separator);
+  cursor: move;
+  touch-action: none;
+}
+.pm-data-dialog-toolbar h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-lg);
+  font-weight: var(--weight-strong);
+}
+.pm-data-dialog-toolbar > button { flex-shrink: 0; }
+.pm-data-dialog-toolbar > [role='status'] { max-inline-size: 14ch; color: var(--foreground-muted); font-size: var(--fs-sm); }
+.pm-data-dialog-toolbar > [role='status']:empty { display: none; }
+.pm-data-dialog textarea { flex: 1; min-height: 0; margin: var(--sp-3); resize: none; }
 .pm-results-frame-status {
   position: absolute;
   inset-block-start: var(--sp-1);

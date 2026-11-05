@@ -36,12 +36,13 @@ test('a source mismatch or missing resistance stage cannot substitute another re
   assert.equal(chartTableValue({ ...fixedP, design: null }, 'My'), null)
 })
 
-test('resultant selection retains canonical signs and the existing direct-meridian projection', () => {
+test('resultant selection retains signed components and the Direct-beta resultant magnitude', () => {
   const resultant = { P: -10, Mx: 30, My: -40 }
   assert.equal(chartResultantValue(resultant, 'P', 90), -10)
   assert.equal(chartResultantValue(resultant, 'Mx', 90), 30)
   assert.equal(chartResultantValue(resultant, 'My', 90), -40)
-  assert.ok(Math.abs(chartResultantValue(resultant, 'M', 90) + 40) < 1e-12)
+  assert.equal(chartResultantValue(resultant, 'M', 90), 50, 'the 3-4-5 magnitude is independent of the selected angle')
+  assert.equal(chartResultantValue(resultant, 'M', 0), 50)
   assert.equal(chartValueLabel('Mx', 'design'), 'Mrx')
   assert.equal(chartValueLabel('My', 'nominal'), 'Mny')
 })

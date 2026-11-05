@@ -593,13 +593,13 @@ export function SectionResultsPanel({
                   {includeDesign ? (
                     <>
                       <th title="Design sum P">P <span className="pm-table-unit">({unit('force')})</span></th>
-                      <th title="Design sum M">M <span className="pm-table-unit">({unit('moment')})</span></th>
+                      <th title="Design resultant moment magnitude √(Mx² + My²)">M_R <span className="pm-table-unit">({unit('moment')})</span></th>
                     </>
                   ) : null}
                   {includeNominal ? (
                     <>
                       <th title="Nominal sum P">Pn <span className="pm-table-unit">({unit('force')})</span></th>
-                      <th title="Nominal sum M">Mn <span className="pm-table-unit">({unit('moment')})</span></th>
+                      <th title="Nominal resultant moment magnitude √(Mx² + My²)">Mn_R <span className="pm-table-unit">({unit('moment')})</span></th>
                     </>
                   ) : null}
                 </tr>

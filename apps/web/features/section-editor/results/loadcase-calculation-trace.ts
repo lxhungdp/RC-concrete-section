@@ -1,5 +1,18 @@
 import type { LoadCombination } from '@pm/project'
 
+type LoadcaseAnalysisInputs = Readonly<{
+  surface: unknown
+  section: unknown
+  rebars: unknown
+  materialStore: unknown
+  designBasis: unknown
+}>
+
+/** Immutable applied-input identity, independent of menu and presentation preferences. */
+export const sameLoadcaseAnalysisInputs = (left: LoadcaseAnalysisInputs, right: LoadcaseAnalysisInputs) =>
+  left.surface === right.surface && left.section === right.section && left.rebars === right.rebars &&
+  left.materialStore === right.materialStore && left.designBasis === right.designBasis
+
 export const sameLoadcaseDemand = (left: LoadCombination, right: LoadCombination) =>
   left.id === right.id &&
   left.P === right.P &&

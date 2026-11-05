@@ -193,7 +193,8 @@ import {
 import {
   currentLoadcaseEvidence,
   currentLoadcaseEvidenceMap,
-  sameLoadcaseDemand
+  sameLoadcaseDemand,
+  sameLoadcaseAnalysisInputs
 } from './results/loadcase-calculation-trace'
 import {
   downloadRebarWorkbook,
@@ -1414,6 +1415,14 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
   useEffect(() => {
     if (!resultSurface || !demandChartsVisible || selectedLoadcaseId == null) return
     const loadcase = loadingsInput.combinations.find((item) => item.id === selectedLoadcaseId)
+    // A menu return is not a new analysis revision. Preserve the completed detail only when
+    // its demand, check basis and every immutable applied input still belong to this request.
+    if (selectedResolvedChartSnapshot &&
+      selectedResolvedChartSnapshot.result.designCheck.evaluated &&
+      selectedResolvedChartSnapshot.result.designCheck.definition === checkBasis &&
+      sameLoadcaseAnalysisInputs(selectedResolvedChartSnapshot, {
+        surface: resultSurface, section: finalSection, rebars, materialStore, designBasis
+      })) return
     if (loadcase) calculateInverseForLoadcase(loadcase, true)
   }, [demandChartsVisible, loadcaseDemandRevision, resultSurface, selectedLoadcaseId])
 

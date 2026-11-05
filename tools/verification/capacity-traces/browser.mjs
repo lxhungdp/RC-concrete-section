@@ -150,6 +150,10 @@ try {
       const final = dialog.locator(`[data-result-component="${component}"]`)
       await final.waitFor()
       assert.equal(await final.getAttribute('data-canonical-value'), String(chartTableValue(row, component)))
+      if (row.kind === 'vertical' && component === 'M') {
+        assert.equal(Number(await final.getAttribute('data-canonical-value')), Math.hypot(row.evidence.point.Mx, row.evidence.point.My),
+          'M_R is the norm of the stored point components, independent of the selected beta')
+      }
       assert.equal(await final.getAttribute('data-stage'), row.evidence.stage)
       const quantity = component === 'P' ? 'force' : 'moment'
       const expectedText = `${formatQuantity(quantity, chartTableValue(row, component), presentation, 2)} ${quantityUnit(quantity, presentation)}`

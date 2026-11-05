@@ -40,6 +40,8 @@ type PhysicalPointCalculationAudit = Exclude<
   PointCalculationAudit,
   { kind: 'unavailable' } | { kind: 'axial-cap' }
 >
+/** A magnitude is derived from two assembled components, never from additive scalar terms. */
+type ScalarLedgerComponent = Exclude<ChartValueComponent, 'M'>
 
 type Summary = { concreteArea: number; steelArea: number; rebarCount: number }
 type Props = {
@@ -84,13 +86,13 @@ const texStrain = (value: number) => texNumber(strain(value))
 const texUnit = (value: string) => String.raw`\mathrm{${value.replace('·', String.raw`\,`).replace('⁻¹', '^{-1}').replace('²', '^2').replace('³', '^3')}}`
 const scalarSymbol = (component: ChartValueComponent, part: string) => component === 'P'
   ? String.raw`P_{${part}}`
-  : String.raw`M_{${component === 'M' ? '\\beta' : component === 'Mx' ? 'x' : 'y'},${part}}`
+  : String.raw`M_{${component === 'M' ? 'R' : component === 'Mx' ? 'x' : 'y'},${part}}`
 const stageSymbol = (component: ChartValueComponent, stage: ChartTableResistanceStage) => component === 'P'
   ? stage === 'design' ? 'P' : 'P_n'
-  : component === 'M' ? stage === 'design' ? String.raw`M_{\beta}` : String.raw`M_{n,\beta}`
+  : component === 'M' ? stage === 'design' ? String.raw`M_R` : String.raw`M_{n,R}`
     : String.raw`M_{${stage === 'design' ? 'r' : 'n'}${component === 'Mx' ? 'x' : 'y'}}`
-const componentWeight = (component: ChartValueComponent) => component === 'P' ? ''
-  : component === 'Mx' ? 'y' : component === 'My' ? 'x' : String.raw`(y\cos\beta+x\sin\beta)`
+const componentWeight = (component: ScalarLedgerComponent) => component === 'P' ? ''
+  : component === 'Mx' ? 'y' : 'x'
 
 const ResultantComparisonTable = ({ nominal, factored }: {
   nominal: ResultantLedger
@@ -123,7 +125,7 @@ const ResultantComparisonTable = ({ nominal, factored }: {
 
 const ConcreteSummary = ({ audit, component, angleDeg = 0 }: {
   audit: PhysicalPointCalculationAudit
-  component?: ChartValueComponent
+  component?: ScalarLedgerComponent
   angleDeg?: number
 }) => {
   const { qfmt, unit, forceValue, momentValue, force, moment } = useQuantityFormatters()
@@ -147,7 +149,7 @@ const ConcreteSummary = ({ audit, component, angleDeg = 0 }: {
       </> : <>
         <FormulaPanel><Formula><TechnicalEquation latex={String.raw`P_c=\sigma_b A_c,\quad \sigma_b=${texNumber(qfmt('stress', audit.block.compressionStress))}\,${texUnit(unit('stress'))},\quad A_c=${texNumber(qfmt('area', audit.block.area))}\,${texUnit(unit('area'))}`}
           ariaLabel="Concrete force from the exact clipped block area and block stress" /></Formula>
-          <Formula><TechnicalEquation latex={String.raw`${scalarSymbol(component, 'c')}=${component === 'P' ? '\\sigma_b A_c' : `P_c ${component === 'Mx' ? '(y_b-y_0)' : component === 'My' ? '(x_b-x_0)' : '[(y_b-y_0)\\cos\\beta+(x_b-x_0)\\sin\\beta]'}`}=\text{${value(audit.mechanicalLedger.concrete)}}`}
+          <Formula><TechnicalEquation latex={String.raw`${scalarSymbol(component, 'c')}=${component === 'P' ? '\\sigma_b A_c' : `P_c ${component === 'Mx' ? '(y_b-y_0)' : '(x_b-x_0)'}`}=\text{${value(audit.mechanicalLedger.concrete)}}`}
             ariaLabel="Selected exact block concrete component" /></Formula>
           {component !== 'P' && <Formula><TechnicalEquation latex={String.raw`(x_b,y_b)=(${texNumber(qfmt('length', audit.block.centroidX))},${texNumber(qfmt('length', audit.block.centroidY))})\,${texUnit(unit('length'))},\quad (x_0,y_0)=(${texNumber(qfmt('length', audit.origin.x))},${texNumber(qfmt('length', audit.origin.y))})\,${texUnit(unit('length'))}`}
             ariaLabel="Block centroid and analysis origin for the selected moment arm" /></Formula>}
@@ -377,7 +379,7 @@ const OriginStrainTrace = ({ audit }: { audit: PhysicalPointCalculationAudit }) 
   </div>
 }
 
-const RebarLedger = ({ bars, total, component, angleDeg = 0 }: { bars: CalculationAuditRebar[]; total: Resultant; component?: ChartValueComponent; angleDeg?: number }) => {
+const RebarLedger = ({ bars, total, component, angleDeg = 0 }: { bars: CalculationAuditRebar[]; total: Resultant; component?: ScalarLedgerComponent; angleDeg?: number }) => {
   const { qfmt, unit, forceValue, momentValue, force, moment } = useQuantityFormatters()
   if (component) {
     const result = (value: Resultant) => component === 'P' ? force(chartResultantValue(value, component, angleDeg)) : moment(chartResultantValue(value, component, angleDeg))
@@ -501,7 +503,7 @@ const ResistanceTrace = ({ audit, point, designBasis, component, angleDeg = 0 }:
   audit: PhysicalPointCalculationAudit
   point: PreviewSurfacePoint
   designBasis: DesignBasis
-  component?: ChartValueComponent
+  component?: ScalarLedgerComponent
   angleDeg?: number
 }) => {
   const { force, moment } = useQuantityFormatters()
@@ -539,9 +541,12 @@ const ResistanceTrace = ({ audit, point, designBasis, component, angleDeg = 0 }:
         ariaLabel="Selected resistance component assembled with its declared resistance route" /></Formula>
         {audit.stage === 'design' && (materialReevaluation || audit.resistanceFactor === null) && <p className="pm-calc-caption">Contributions use the selected Design material laws; no global φ is applied.</p>}
       </FormulaPanel> : materialReevaluation ? (
-        <FormulaPanel><Formula><span className="pm-calc-math">RDesign = ΣR evaluated at the same compatible state with the declared Design material laws</span></Formula></FormulaPanel>
+        <FormulaPanel><Formula><TechnicalEquation latex={String.raw`\mathbf R_{\mathrm{Design}}=\sum_i\mathbf R_i\bigl(\text{declared Design material laws}\bigr)`}
+          ariaLabel="Design components evaluated at the same compatible state with the declared Design material laws" /></Formula></FormulaPanel>
       ) : audit.resistanceFactor === null ? (
-        <FormulaPanel><Formula><span className="pm-calc-math">Rshown = Rintegration (the active material laws already represent the selected {audit.stage} stage; no global φ is applied)</span></Formula></FormulaPanel>
+        <FormulaPanel><Formula><TechnicalEquation latex={String.raw`\mathbf R_{\mathrm{shown}}=\mathbf R_{\mathrm{integration}}`}
+          ariaLabel="The active material laws already represent the selected resistance stage without an additional global factor" /></Formula>
+          <p className="pm-calc-caption">The active material laws already represent the selected {audit.stage} stage; no global φ is applied.</p></FormulaPanel>
       ) : (
         <FormulaPanel><Formula numbered>
           <TechnicalEquation
@@ -586,7 +591,7 @@ const AxialCapAudit = ({
   stationDefinition: StationDefinition | null
   title: string
   startIndex: number
-  component?: ChartValueComponent
+  component?: ScalarLedgerComponent
   angleDeg?: number
 }) => {
   const { unit, forceValue, momentValue, force, moment } = useQuantityFormatters()
@@ -639,22 +644,26 @@ const AxialCapAudit = ({
         <Fact label="Construction">{trace.projection.kind === 'radial' ? 'Edge crossing + radial projection' : source.kind === 'edge-interpolation' ? 'Edge crossing' : 'Exact source vertex'}</Fact>
       </div>
       <FormulaPanel>
-        <Formula><span className="pm-calc-math">
-          {trace.capRatio === null
-            ? <>Pmax = {force(trace.cap)} (the source surface has no nonzero scalar reference for a ratio)</>
-            : <>Pmax = αcap·Puncapped,max = {capRatio}·{force(trace.maximumAxialResistance)} = {force(trace.cap)}</>}
-        </span></Formula>
-        {comparison ? <Formula><span className="pm-calc-math">
-          Pselected = min(Pcalculated, Pmax) = min({force(comparison.calculatedAxialResistance)}, {force(comparison.maximumAxialResistance)}) = {force(comparison.selectedAxialResistance)}; {comparison.capGoverns ? 'Pmax governs' : 'Pcalculated is retained'}
-        </span></Formula> : null}
+        <Formula><TechnicalEquation latex={trace.capRatio === null
+          ? String.raw`P_{\max}=\text{${force(trace.cap)}}`
+          : String.raw`P_{\max}=\alpha_{\mathrm{cap}}P_{\mathrm{uncapped,max}}=${texNumber(capRatio)}\,(\text{${force(trace.maximumAxialResistance)}})=\text{${force(trace.cap)}}`}
+          ariaLabel="Stored maximum axial resistance and its declared cap ratio" /></Formula>
+        {comparison ? <Formula><TechnicalEquation latex={String.raw`P_{\mathrm{selected}}=\min(P_{\mathrm{calculated}},P_{\max})=\min(\text{${force(comparison.calculatedAxialResistance)}},\text{${force(comparison.maximumAxialResistance)}})=\text{${force(comparison.selectedAxialResistance)}}`}
+          ariaLabel="Selected axial resistance after applying the maximum axial limit" /></Formula> : null}
         {source.kind === 'edge-interpolation' ? <>
-          <Formula><span className="pm-calc-math">t = (Pmax − Pcompression)/(Padmissible − Pcompression) = {fmt(source.interpolationRatio, 8)}</span></Formula>
-          <Formula><span className="pm-calc-math">Rcross = Rcompression + t(Radmissible − Rcompression) = ({force(crossing.P)}, {moment(crossing.Mx)}, {moment(crossing.My)})</span></Formula>
-        </> : <Formula><span className="pm-calc-math">Rcross = Rsource = ({force(crossing.P)}, {moment(crossing.Mx)}, {moment(crossing.My)})</span></Formula>}
+          <Formula><TechnicalEquation latex={String.raw`t=\frac{P_{\max}-P_{\mathrm{compression}}}{P_{\mathrm{admissible}}-P_{\mathrm{compression}}}=${texNumber(fmt(source.interpolationRatio, 8))}`}
+            ariaLabel="Stored axial-cap edge interpolation ratio" /></Formula>
+          <Formula><TechnicalEquation latex={String.raw`\mathbf R_{\mathrm{cross}}=\mathbf R_{\mathrm{compression}}+t(\mathbf R_{\mathrm{admissible}}-\mathbf R_{\mathrm{compression}})=(\text{${force(crossing.P)}},\text{${moment(crossing.Mx)}},\text{${moment(crossing.My)}})`}
+            ariaLabel="Cap crossing interpolates the axial force and both moment components" /></Formula>
+        </> : <Formula><TechnicalEquation latex={String.raw`\mathbf R_{\mathrm{cross}}=\mathbf R_{\mathrm{source}}=(\text{${force(crossing.P)}},\text{${moment(crossing.Mx)}},\text{${moment(crossing.My)}})`}
+          ariaLabel="Cap crossing from its stored source vertex" /></Formula>}
         {trace.projection.kind === 'radial' ? <>
-          <Formula><span className="pm-calc-math">q = sring / scross = {fmt(trace.projection.sourceStationCoordinate, 6)} / {fmt(trace.projection.crossingStationCoordinate, 6)} = {fmt(trace.projection.factor, 8)}</span></Formula>
-          <Formula><span className="pm-calc-math">Rcap = (Pcap, q·Mx,cross, q·My,cross) = ({force(audit.displayedLedger.total.P)}, {moment(audit.displayedLedger.total.Mx)}, {moment(audit.displayedLedger.total.My)})</span></Formula>
-        </> : <Formula><span className="pm-calc-math">Rcap = Rcross = ({force(audit.displayedLedger.total.P)}, {moment(audit.displayedLedger.total.Mx)}, {moment(audit.displayedLedger.total.My)})</span></Formula>}
+          <Formula><TechnicalEquation latex={String.raw`q=\frac{s_{\mathrm{ring}}}{s_{\mathrm{cross}}}=\frac{${texNumber(fmt(trace.projection.sourceStationCoordinate, 6))}}{${texNumber(fmt(trace.projection.crossingStationCoordinate, 6))}}=${texNumber(fmt(trace.projection.factor, 8))}`}
+            ariaLabel="Stored cap radial projection factor" /></Formula>
+          <Formula><TechnicalEquation latex={String.raw`\mathbf R_{\mathrm{cap}}=(P_{\mathrm{cap}},qM_{x,\mathrm{cross}},qM_{y,\mathrm{cross}})=(\text{${force(audit.displayedLedger.total.P)}},\text{${moment(audit.displayedLedger.total.Mx)}},\text{${moment(audit.displayedLedger.total.My)}})`}
+            ariaLabel="Cap components after the stored radial projection" /></Formula>
+        </> : <Formula><TechnicalEquation latex={String.raw`\mathbf R_{\mathrm{cap}}=\mathbf R_{\mathrm{cross}}=(\text{${force(audit.displayedLedger.total.P)}},\text{${moment(audit.displayedLedger.total.Mx)}},\text{${moment(audit.displayedLedger.total.My)}})`}
+          ariaLabel="Stored final cap components equal the source crossing" /></Formula>}
       </FormulaPanel>
       <div className="pm-calc-table-wrap"><table>
         <thead><tr><th>Cap source</th><th>P ({unit('force')})</th><th>Mx ({unit('moment')})</th><th>My ({unit('moment')})</th></tr></thead>
@@ -695,6 +704,7 @@ const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, sect
 }) => {
   const { qfmt, unit, force, moment } = useQuantityFormatters()
 
+  const scalarComponent = component === 'M' ? undefined : component
   if (audit.kind === 'unavailable') return (
     <Step index={startIndex} title={`${title}: physical calculation evidence`}>
       <div className="pm-calc-note is-error"><AlertTriangle size={16} /><p>{audit.message}</p></div>
@@ -720,7 +730,7 @@ const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, sect
       /> : null}
       <AxialCapAudit
         audit={audit}
-        component={component}
+        component={scalarComponent}
         angleDeg={angleDeg}
         stationDefinition={stationDefinition}
         title={title}
@@ -732,18 +742,21 @@ const PhysicalAudit = ({ audit, point, stationDefinition, exportKey, title, sect
     const selected = (value: Resultant) => component === 'P'
       ? force(chartResultantValue(value, component, angleDeg))
       : moment(chartResultantValue(value, component, angleDeg))
-    const weight = componentWeight(component)
+    const weight = scalarComponent ? componentWeight(scalarComponent) : ''
     return <Step index={startIndex} title={title}>
       <OriginStrainTrace audit={audit} />
       <FormulaPanel><Formula><TechnicalEquation latex={String.raw`\varepsilon(x,y)=\varepsilon_0+\kappa_x y+\kappa_y x`}
         ariaLabel="Compatible strain plane in centroid relative coordinates" /></Formula></FormulaPanel>
-      <ConcreteSummary audit={audit} component={component} angleDeg={angleDeg} />
+      <ConcreteSummary audit={audit} component={scalarComponent} angleDeg={angleDeg} />
       <FormulaPanel><Formula><TechnicalEquation latex={String.raw`F_{i,\mathrm{net}}=(\sigma_{s,i}-\sigma_{c,\mathrm{disp},i})A_{s,i}`}
         ariaLabel="Net reinforcement force uses stored bar area" /></Formula>
-        <Formula><TechnicalEquation latex={String.raw`${scalarSymbol(component, 's')}=\sum_i F_{i,\mathrm{net}}\,${weight}=\text{${selected(audit.mechanicalLedger.steel)}}`}
-          ariaLabel="Selected reinforcement contribution" /></Formula></FormulaPanel>
-      <details className="pm-calc-details"><summary data-detail-label="Calculation terms">Reinforcement terms ({audit.rebars.length} bars)</summary><RebarLedger bars={audit.rebars} total={audit.mechanicalLedger.steel} component={component} angleDeg={angleDeg} /></details>
-      <ResistanceTrace audit={audit} point={point} designBasis={designBasis} component={component} angleDeg={angleDeg} />
+        <Formula><TechnicalEquation latex={component === 'M'
+          ? String.raw`M_{x,s}=\sum_i F_{i,\mathrm{net}}y_i,\qquad M_{y,s}=\sum_i F_{i,\mathrm{net}}x_i`
+          : String.raw`${scalarSymbol(component, 's')}=\sum_i F_{i,\mathrm{net}}\,${weight}=\text{${selected(audit.mechanicalLedger.steel)}}`}
+          ariaLabel={component === 'M' ? 'Both reinforcement moment components are assembled before taking the magnitude' : 'Selected reinforcement contribution'} /></Formula></FormulaPanel>
+      <details className="pm-calc-details"><summary data-detail-label="Calculation terms">Reinforcement terms ({audit.rebars.length} bars)</summary><RebarLedger bars={audit.rebars} total={audit.mechanicalLedger.steel} component={scalarComponent} angleDeg={angleDeg} /></details>
+      <ResistanceTrace audit={audit} point={point} designBasis={designBasis} component={scalarComponent} angleDeg={angleDeg} />
+      {component === 'M' && <p className="pm-calc-caption">Assemble concrete and net-steel Mx/My components before taking the resultant magnitude. Individual moment magnitudes do not add.</p>}
     </Step>
   }
   return (
@@ -858,22 +871,22 @@ const VerticalResult = ({ row, index, component }: { row: ChartTableVerticalRow;
     const label = chartValueLabel(component, row.evidence.stage)
     return <Step index={index} title={`Value shown in the table: ${label}`}>
       {component === 'M' && <FormulaPanel>
-        <Formula><TechnicalEquation latex={String.raw`M_{\beta}=M_x\cos\beta+M_y\sin\beta,\qquad \beta=${texNumber(fmt(row.evidence.angleDeg))}^{\circ}`}
-          ariaLabel="Selected moment projection onto the direct meridian" /></Formula>
-        <Formula><TechnicalEquation latex={String.raw`M_{\beta}=(\text{${moment(row.evidence.point.Mx)}})\cos(${texNumber(fmt(row.evidence.angleDeg))}^{\circ})+(\text{${moment(row.evidence.point.My)}})\sin(${texNumber(fmt(row.evidence.angleDeg))}^{\circ})=\text{${moment(value)}}`}
-          ariaLabel="Projected moment with the stored component values substituted" /></Formula>
+        <Formula><TechnicalEquation latex={String.raw`M_R=\sqrt{M_x^2+M_y^2},\qquad \beta=${texNumber(fmt(row.evidence.angleDeg))}^{\circ}`}
+          ariaLabel="Resultant moment magnitude at the fixed strain direction" /></Formula>
+        <Formula><TechnicalEquation latex={String.raw`M_R=\sqrt{(\text{${moment(row.evidence.point.Mx)}})^2+(\text{${moment(row.evidence.point.My)}})^2}=\text{${moment(value)}}`}
+          ariaLabel="Resultant moment with the stored components substituted" /></Formula>
       </FormulaPanel>}
       <div className="pm-calc-final" data-result-component={component} data-canonical-value={value} data-stage={row.evidence.stage}><Fact label={label}>{component === 'P' ? force(value) : moment(value)}</Fact></div>
     </Step>
   }
   return <Step index={index} title="Value shown in the Vertical table">
-    <FormulaPanel><Formula id="equation-projected-moment" numbered>
+    <FormulaPanel><Formula id="equation-resultant-moment" numbered>
       <TechnicalEquation
-        latex={String.raw`M_{\beta}=M_x\cos\beta+M_y\sin\beta,\qquad \beta=${fmt(row.evidence.angleDeg)}^{\circ}`}
-        ariaLabel={`Projected moment at beta ${fmt(row.evidence.angleDeg)} degrees`}
+        latex={String.raw`M_R=\sqrt{M_x^2+M_y^2},\qquad \beta=${fmt(row.evidence.angleDeg)}^{\circ}`}
+        ariaLabel={`Resultant moment magnitude at beta ${fmt(row.evidence.angleDeg)} degrees`}
       />
     </Formula></FormulaPanel>
-    <div className="pm-calc-final"><Fact label={`${row.evidence.stage} P`}>{force(selected.total.P)}</Fact><Fact label={`${row.evidence.stage} Mβ`}>{moment(selected.total.M)}</Fact></div>
+    <div className="pm-calc-final"><Fact label={`${row.evidence.stage} P`}>{force(selected.total.P)}</Fact><Fact label={`${row.evidence.stage} M_R`}>{moment(selected.total.M)}</Fact></div>
   </Step>
 }
 

@@ -5,9 +5,18 @@ import {
   currentLoadcaseEvidence,
   currentLoadcaseEvidenceMap,
   currentLoadcaseFrame,
+  sameLoadcaseAnalysisInputs,
   loadcaseFrameForTransition,
   sameLoadcaseDemand
 } from '../../features/section-editor/results/loadcase-calculation-trace'
+
+test('menu-only navigation retains applied-input identity; every replaced analysis input invalidates reuse', () => {
+  const inputs = { surface: {}, section: {}, rebars: [], materialStore: {}, designBasis: {} }
+  assert.equal(sameLoadcaseAnalysisInputs(inputs, { ...inputs }), true)
+  for (const key of ['surface', 'section', 'rebars', 'materialStore', 'designBasis'] as const) {
+    assert.equal(sameLoadcaseAnalysisInputs(inputs, { ...inputs, [key]: {} }), false, key)
+  }
+})
 
 test('loadcase calculation trace uses stable ID and the complete demand revision', () => {
   const selected = createLoadCombination({ id: 7, name: 'ULS-7', P: 1_200_000, Mx: 80_000_000, My: -35_000_000 })

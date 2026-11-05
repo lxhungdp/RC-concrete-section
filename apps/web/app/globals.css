@@ -1764,6 +1764,10 @@ body[data-jscad-theme="dark"] .pm-rebar-params select {
   stroke-linejoin: round;
 }
 
+.pm-material-curve circle {
+  color: var(--accent);
+}
+
 .pm-material-curve text {
   fill: var(--foreground-muted);
   font-size: var(--fs-xs);
