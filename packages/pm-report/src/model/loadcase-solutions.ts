@@ -18,6 +18,7 @@ import {
   codeAdjustedDemandOfCheck,
   prepareAnalysis,
   sliceActiveDesignPContour,
+  solveDirect2DLoadcase,
   solveInversePreviewFromPrepared,
   strainGradientDirection,
   type ExactDirectionCurve,
@@ -26,9 +27,12 @@ import {
 } from '@pm/analysis'
 import {
   buildEquivalentBlockExactDirectionCurveFromPrepared,
+  buildEquivalentBlockDesignSurfaceFromPrepared,
   prepareBlockAnalysis,
+  solveEquivalentBlockDemandRaw,
   solveEquivalentBlockDemandsFromPrepared
 } from '@pm/analysis-equivalent-block'
+import { solveStressStrainDirect2DFromPrepared } from '@pm/analysis/capacity-field'
 import { buildResistanceMaterialSets, type DesignBasis } from '@pm/design'
 import type { GeometryInputRebarView, SectionGeometry } from '@pm/geometry'
 import type { MaterialStore } from '@pm/materials'
@@ -91,7 +95,8 @@ export const solveLoadcases = (input: LoadcaseSolutionInput): LoadcaseSolutions 
   const withBeta = (loadcase: LoadCombination, result: InversePreviewResult): SolvedLoadcase => ({
     loadcase,
     result,
-    beta: result.ok && result.admissibility.evaluated ? strainGradientDirection(result.state) : null
+    beta: result.direct2D ? result.direct2D.beta
+      : result.ok && result.admissibility.evaluated ? strainGradientDirection(result.state) : null
   })
 
   let prepared: ReturnType<typeof prepareAnalysis> | null = null
@@ -106,6 +111,16 @@ export const solveLoadcases = (input: LoadcaseSolutionInput): LoadcaseSolutions 
       designBasis
     )
     const options = input.analysisOptions as EquivalentBlockAnalysisOptions
+    if (input.checkBasis === 'direct2D') {
+      const model = blockPrepared
+      const core = buildEquivalentBlockDesignSurfaceFromPrepared(model, options)
+      for (const loadcase of input.loadcases) {
+        const { result } = solveDirect2DLoadcase(surface, loadcase,
+          demand => solveEquivalentBlockDemandRaw(model, options, demand, core, 'proportional3D'),
+          beta => buildEquivalentBlockExactDirectionCurveFromPrepared(model, options, beta))
+        solutions.push(withBeta(loadcase, result))
+      }
+    } else {
     const solved = solveEquivalentBlockDemandsFromPrepared(blockPrepared, options, input.loadcases, undefined, input.checkBasis)
     input.loadcases.forEach((loadcase, index) => {
       solutions.push(withBeta(
@@ -116,11 +131,16 @@ export const solveLoadcases = (input: LoadcaseSolutionInput): LoadcaseSolutions 
         )
       ))
     })
+    }
   } else {
     const options = input.analysisOptions as AnalysisOptions
     const stateMaterials = buildResistanceMaterialSets(materialStore, designBasis).stateMaterials
     prepared = prepareAnalysis(section, rebars, stateMaterials, analysisMeshKernelOptions(options))
     for (const loadcase of input.loadcases) {
+      if (input.checkBasis === 'direct2D') {
+        solutions.push(withBeta(loadcase, solveStressStrainDirect2DFromPrepared(prepared, materialStore, designBasis, surface, loadcase).result))
+        continue
+      }
       const contour = sliceActiveDesignPContour(surface, loadcase.P)
       const designCheck = checkLoadcaseUtilizationFromSurface(surface, loadcase, input.checkBasis)
       const result = applyDesignCheckToInverse(

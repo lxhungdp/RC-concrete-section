@@ -63,9 +63,12 @@ https://github.com/vercel/next.js/security/advisories/GHSA-p3m5-59mp-jv5r
 
 - `@pm/units` owns conversion and preference validation. Numerical packages cannot import it;
   the repository structure gate enforces that boundary. The core and code profiles are unchanged.
-- Options > Units provides Metric and US action buttons and five independent choices:
-  Coordinates & dimensions (including bar diameter), Force, Moment, Stress & modulus, and Mass
-  density. No preset or Custom mode is stored. Area, section modulus, inertia and curvature derive
+- Options > Units provides Metric and US action buttons and four visible independent choices:
+  Coordinates & dimensions (including bar diameter), Force, Moment, and Stress & modulus.
+  The 2026-11-05 [active-input audit](17-active-inputs-and-audit.md) removes the unused Mass density
+  selector together with concrete mc/Ec authoring. The density group remains in existing preference
+  and workbook contracts for exact compatibility; it has no current visible quantity consumer.
+  No preset or Custom mode is stored. Area, section modulus, inertia and curvature derive
   from the selected length. Existing angular conventions remain fixed.
 - Browser preference v2 stores only its version and five groups, under `pm-column.display-units.v2`.
   Previous browser preferences are not migrated, and the provider removes the retired v1 entry on
@@ -76,12 +79,12 @@ https://github.com/vercel/next.js/security/advisories/GHSA-p3m5-59mp-jv5r
   numeric edit returns that exact original binary64 value, even when conversion is not invertible.
   Actual edits convert once on commit; invalid text remains a draft. Resting fields show compact
   presentation text; focused drafts start from the full-precision editing representation. Rounded
-  resting text never enters a no-op commit. Optional Ec retains its existing clear contract.
-- In the original units slice, Project JSON remained schema v1 and canonical, and Project Excel
-  moved from format v3 to v4. The subsequent [stored-area slice](11-rebar-area-and-catalogs.md)
-  writes project v2 and workbook v5 with independent As; earlier
-  project templates must be re-exported. Section, rebar and loadcase workbooks require a versioned
-  Units declaration. Imports use this declaration and reject missing/inconsistent metadata.
+  resting text never enters a no-op commit. Optional quantity clearing remains an explicit authoring
+  action; the former Ec editor is removed by the active-input audit.
+- Project JSON uses its canonical v3 and explicit v1/v2 readers, independently of the first
+  external Project XLSX format v1. The [stored-area contract](11-rebar-area-and-catalogs.md)
+  keeps As independent of diameter. Project, section, rebar and loadcase workbooks require an
+  explicit Units declaration. Imports use it and reject missing/inconsistent metadata.
   IDs, order and references are never quantity-scaled.
 - Excel cells remain editable numeric display values. Where conversion cannot round-trip exactly,
   a validated `pm-unit-source/v1` cell comment retains the original canonical value. It is used only

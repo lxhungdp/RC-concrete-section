@@ -25,7 +25,7 @@ async function snapshot() {
       event.data.ok ? resolve(event.data.data) : reject(Error(event.data.error))
     }
     addEventListener('message', listen)
-    iframe.contentWindow.postMessage({ type: 'pm-gridcraft', version: 2, session, id, action: 'values' }, location.origin)
+    iframe.contentWindow.postMessage({ type: 'pm-gridcraft', version: 4, session, id, action: 'values' }, location.origin)
   }))
 }
 async function open(title) {
@@ -160,7 +160,7 @@ try {
   await page.waitForFunction(({ id, text }) => document.querySelector(`input[aria-label^="Bar ${id} diameter"]`)?.value !== text,
     { id: final.geometry.rebars[0].id, text: previousText })
   await dialog.getByRole('button', { name: 'Update', exact: true }).click()
-  await dialog.getByRole('alert').filter({ hasText: 'The table changed' }).waitFor()
+  await dialog.getByRole('alert').filter({ hasText: 'changed. Close and reopen the spreadsheet.' }).waitFor()
   await close(dialog, 'Rebars')
   assert.deepEqual((await project()).inputs.geometry, before.geometry)
   dialog = await open('Rebars'); await pasteFirstRow('=16+2'); await close(dialog, 'Rebars')

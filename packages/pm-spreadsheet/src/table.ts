@@ -3,11 +3,13 @@ import type { Quantity, UnitContext } from '@pm/units'
 import { readQuantityCell } from './workbook-units'
 import { inspectWorkbookArchive } from './workbook-archive'
 
-export const SPREADSHEET_PROTOCOL = { type: 'pm-gridcraft', version: 2 } as const
-export const SPREADSHEET_LIMITS = Object.freeze({ rows: 100_001, columns: 64, cells: 1_000_000 })
+export const SPREADSHEET_PROTOCOL = { type: 'pm-gridcraft', version: 4 } as const
+export const SPREADSHEET_LIMITS = Object.freeze({ rows: 100_001, columns: 64, cells: 1_000_000, sheets: 256 })
 export type SheetMapping = Readonly<{ sheet: string; columns: number }>
+export type WorkbookMapping = Readonly<{ kind: 'workbook'; sheet: string }>
+export type GridcraftMapping = SheetMapping | WorkbookMapping
 export type SheetCell = Readonly<{ value: unknown; formula: boolean; note: string | null; date: boolean }>
-export type PreparedSheet<C> = Readonly<{ bytes: ArrayBuffer; mapping: SheetMapping; context: C }>
+export type PreparedSheet<C, M extends GridcraftMapping = SheetMapping> = Readonly<{ bytes: ArrayBuffer; mapping: M; context: C }>
 export type SheetSchema = Readonly<{ sheet: string; headers: readonly string[]; hiddenColumns?: readonly number[] }>
 export class SheetError extends Error {
   constructor(readonly code: 'SHEET_CELL' | 'SHEET_FORMAT' | 'SHEET_RESOURCE_LIMIT' | 'SHEET_TARGET', message: string) {
@@ -26,12 +28,23 @@ export function validateSheetMapping(value: unknown): SheetMapping {
   return { sheet: value.sheet, columns: value.columns }
 }
 
+export function validateGridcraftMapping(value: unknown): GridcraftMapping {
+  if (record(value) && value.kind === 'workbook' && Object.keys(value).sort().join('|') === 'kind|sheet') {
+    const checked = validateSheetMapping({ sheet: value.sheet, columns: 2 })
+    return { kind: 'workbook', sheet: checked.sheet }
+  }
+  if (!record(value) || Object.keys(value).sort().join('|') !== 'columns|sheet') return failSheet('SHEET_FORMAT', 'Invalid spreadsheet mapping.')
+  return validateSheetMapping(value)
+}
+
 export async function readSheetWorkbook(bytes: ArrayBuffer): Promise<Workbook> {
   const archive = inspectWorkbookArchive(bytes, 'Spreadsheet workbook')
   if (archive) failSheet(archive.code === 'WORKBOOK_RESOURCE_LIMIT' ? 'SHEET_RESOURCE_LIMIT' : 'SHEET_FORMAT', archive.message)
   const imported = await import('exceljs'), ExcelJS = imported.default ?? imported
   const book = new ExcelJS.Workbook()
-  await book.xlsx.load(bytes)
+  // A native child-window File returns its own ArrayBuffer realm; JSZip expects this realm.
+  await book.xlsx.load(new Uint8Array(new Uint8Array(bytes)).buffer)
+  if (!book.worksheets.length || book.worksheets.length > SPREADSHEET_LIMITS.sheets) failSheet('SHEET_RESOURCE_LIMIT', 'Spreadsheet sheet count exceeds the supported limits.')
   let count = 0
   for (const sheet of book.worksheets) {
     if (sheet.rowCount > SPREADSHEET_LIMITS.rows || sheet.columnCount > SPREADSHEET_LIMITS.columns) failSheet('SHEET_RESOURCE_LIMIT', 'Spreadsheet dimensions exceed the supported limits.')
@@ -39,6 +52,13 @@ export async function readSheetWorkbook(bytes: ArrayBuffer): Promise<Workbook> {
   }
   if (count > SPREADSHEET_LIMITS.cells) failSheet('SHEET_RESOURCE_LIMIT', 'Spreadsheet exceeds 1,000,000 populated cells.')
   return book
+}
+
+/** Original workbook bytes/styles for the native editor; project validation belongs to Update. */
+export async function prepareWorkbookEditor(bytes: ArrayBuffer): Promise<PreparedSheet<null, WorkbookMapping>> {
+  const book = await readSheetWorkbook(bytes)
+  const sheet = book.worksheets[book.views?.[0]?.activeTab ?? 0] ?? book.worksheets[0]
+  return { bytes, mapping: { kind: 'workbook', sheet: sheet.name }, context: null }
 }
 
 /** One template policy for every mapped table. Helpers and future body cells stay editable. */

@@ -34,7 +34,7 @@ catch {
   else {
     const script = join(cache, 'expand-source.ps1')
     await writeFile(script, 'param([string]$ArchivePath, [string]$DestinationPath)\nExpand-Archive -LiteralPath $ArchivePath -DestinationPath $DestinationPath -Force\n')
-    run('powershell.exe', ['-NoProfile', '-File', script, join(cache, 'source.zip'), extracted], root)
+    run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, join(cache, 'source.zip'), extracted], root)
   }
   await patchGridcraft(source)
   await writeFile(join(extracted, '.patched'), patchId)

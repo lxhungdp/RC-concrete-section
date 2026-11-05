@@ -2,9 +2,97 @@ import type { MaterialStore } from '@pm/materials'
 import type { DesignBasis } from '@pm/design'
 import type { DemandCheckBasis, LoadCombination } from '@pm/project'
 import { analysisStations, intersectSurfaceAtConstantAxial, intersectSurfaceWithDemandRay, createCapacityFieldEvaluator,
-  type CapacityFieldResult, type PreparedAnalysis, type PreviewSurface, type StationDefinition } from './index'
+  solveDirect2DLoadcase, solveInversePreviewFromPrepared, buildExactDirectionCurveFromPrepared, sliceActiveDesignPContour,
+  activeDesignDirectionPoints, buildDemandPmGeometry, strainGradientDirection,
+  type CapacityFieldResult, type ExactDirectionCurve, type PreparedAnalysis, type PreviewSurface, type StationDefinition } from './index'
 import { solve3 } from './linear-solve'
 import { NEWTON_RESIDUAL_TOL, NEWTON_MAX_ITERATIONS } from './inverse-options'
+
+export const solveStressStrainDirect2DFromPrepared = (
+  prepared: PreparedAnalysis, materials: MaterialStore, basis: DesignBasis, surface: PreviewSurface, loadcase: LoadCombination
+) => {
+  const options = surface.analysisOptions
+  if (options.methodId !== 'strain-domain-surface-v1') throw new TypeError('Expected stress-strain analysis options.')
+  return solveDirect2DLoadcase(surface, loadcase, demand => {
+    const inverse = solveInversePreviewFromPrepared(prepared, demand, sliceActiveDesignPContour(surface, demand.P))
+    if (inverse.ok && inverse.admissibility.evaluated && inverse.admissibility.ok &&
+      strainGradientDirection(inverse.state) !== null) return inverse
+    try {
+      return { ...inverse, capacityField: solveStressStrainCapacityFieldFromPrepared(prepared, materials, basis, surface, demand) }
+    } catch {
+      return inverse
+    }
+  }, beta => buildExactDirectionCurveFromPrepared(prepared, materials, basis, options, beta),
+  (demand, curve) => solveDirect2DPhysicalField(prepared, materials, basis, surface, demand, curve))
+}
+
+/** Refine the physical station coordinate with beta fixed and residual in P–MR. */
+const solveDirect2DPhysicalField = (
+  prepared: PreparedAnalysis, materials: MaterialStore, basis: DesignBasis,
+  surface: PreviewSurface, demand: LoadCombination, curve: ExactDirectionCurve
+): CapacityFieldResult => {
+  const unavailable = (message: string, iterations = 0): CapacityFieldResult =>
+    ({ status: 'unavailable', reason: 'non-converged', iterations, message })
+  const query = (exact: ExactDirectionCurve) => buildDemandPmGeometry({
+    surface, exact, inspectionBeta: exact.beta, demand, governingPoint: null, basis: 'direct2D', showTheta: false
+  })
+  let exact = curve, geometry = query(exact)
+  const cap = curve.beforeAxialCap ? surface.bounds.P[1] : null
+  const onCap = cap !== null && geometry.summary.status === 'available' && geometry.summary.resistance.P >= cap
+  if (onCap && curve.beforeAxialCap) {
+    exact = { ...curve, designCurve: curve.beforeAxialCap }
+    geometry = query(exact)
+  }
+  const source = geometry.diagnostic.points[0]?.sources[0]
+  if (geometry.summary.status !== 'available' || !source) return unavailable('No unique physical station bracket is available.')
+  const path = geometry.design[source.path]
+  const points = activeDesignDirectionPoints(exact)
+  const definition = (id: string | null) => {
+    const point = points.find(item => item.id === id)
+    if (!point || point.surfaceRole !== 'physical-state') return undefined
+    return exact.stations.find(station => station.id === point.stationId)?.definition
+  }
+  const left = definition(path[source.segment].sourceId), right = definition(path[source.segment + 1].sourceId)
+  const pole = exact.nominalFixed.find(point => point.surfaceRole === 'pure-tension')
+  if (!left || !right || !pole) return unavailable('The 2D crossing has no admissible physical station bracket.')
+  const evaluate = createCapacityFieldEvaluator(prepared, materials, basis, pole.state.e0)
+  const pScale = Math.max(1, ...surface.bounds.P.map(Math.abs))
+  const mScale = Math.max(1, ...surface.bounds.Mx.map(Math.abs), ...surface.bounds.My.map(Math.abs))
+  const dp = demand.P / pScale, dm = Math.hypot(demand.Mx, demand.My) / mScale
+  const length = Math.hypot(dp, dm)
+  if (!(length > 0) || !Number.isFinite(length)) return unavailable('The physical 2D ray is undefined.')
+  const up = dp / length, um = dm / length
+  const trial = (ratio: number) => {
+    const { point, admissibility } = evaluate(exact.beta, ratio === 0 ? left : ratio === 1 ? right
+      : { kind: 'adaptive-state-interpolation', left, right, ratio }, ratio)
+    const p = point.P / pScale, m = Math.hypot(point.Mx, point.My) / mScale
+    return { point, admissibility, distance: p * um - m * up, lambda: (p * up + m * um) / length }
+  }
+  let lo = 0, hi = 1
+  let a = trial(lo), b = trial(hi)
+  for (let iteration = 0; iteration <= NEWTON_MAX_ITERATIONS; iteration++) {
+    const hit = Math.abs(a.distance) <= NEWTON_RESIDUAL_TOL ? a : Math.abs(b.distance) <= NEWTON_RESIDUAL_TOL ? b : null
+    if (hit) {
+      const { point, admissibility, lambda, distance } = hit
+      if (!admissibility.evaluated || !admissibility.ok || !Number.isFinite(lambda) || lambda <= 0 ||
+        (onCap && cap !== null && point.P <= cap)) break
+      const mr = Math.hypot(point.Mx, point.My)
+      const targetMr = lambda * Math.hypot(demand.Mx, demand.My)
+      const mrResidual = mr - targetMr
+      return { status: 'available', state: point.state, response: { P: point.P, Mx: point.Mx, My: point.My },
+        boundary: cap !== null && point.P > cap ? { kind: 'before-axial-cap', limit: cap } : { kind: 'design' },
+        // The 2D residual is radial in the capacity moment direction.
+        loadFactor: lambda, residual: { P: point.P - lambda * demand.P,
+          Mx: mr ? mrResidual * (point.Mx / mr) : 0, My: mr ? mrResidual * (point.My / mr) : 0 },
+        residualNorm: Math.abs(distance), iterations: iteration, admissibility, resistance: point.resistance ?? null,
+        message: 'Compatible physical capacity on the fixed neutral-axis P–MR ray.' }
+    }
+    if (!Number.isFinite(a.distance) || !Number.isFinite(b.distance) || Math.sign(a.distance) === Math.sign(b.distance)) break
+    const mid = (lo + hi) / 2, c = trial(mid)
+    if (Math.sign(c.distance) === Math.sign(a.distance)) { lo = mid; a = c } else { hi = mid; b = c }
+  }
+  return unavailable('A compatible physical state on the fixed neutral-axis 2D ray did not converge.')
+}
 
 /**
  * docs/04 §10: refine a physical Design boundary state for display only. The triangulated crossing
@@ -20,6 +108,7 @@ export const solveStressStrainCapacityFieldFromPrepared = (
 ): CapacityFieldResult => {
   const unavailable = (reason: Extract<CapacityFieldResult, { status: 'unavailable' }>['reason'],
     message: string, iterations = 0): CapacityFieldResult => ({ status: 'unavailable', reason, message, iterations })
+  if (checkBasis === 'direct2D') return unavailable('invalid-input', 'Use the fixed neutral-axis capacity resolver.')
   if (![checkedDemand.P, checkedDemand.Mx, checkedDemand.My].every(Number.isFinite)) {
     return unavailable('invalid-input', 'Capacity-field demand components must be finite.')
   }

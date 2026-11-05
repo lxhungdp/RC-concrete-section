@@ -1,5 +1,5 @@
 import { checkBasisLabels } from '../model/check-basis'
-import type { DemandCheckBasis } from '@pm/project'
+import { createDefaultProjectInformation, type DemandCheckBasis } from '@pm/project'
 import type { UnitSelection } from '@pm/units'
 import { appendPresentationSummary } from './presentation-summary'
 /**
@@ -157,6 +157,14 @@ export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelIn
 
   const designSurfaceCore = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, input.analysisOptions)
   const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, input.analysisOptions, designSurfaceCore)
+  if (input.checkBasis === 'direct2D' && input.loadcase) {
+    const { buildDemandCheckWorkbookParts } = await import('./demand-check')
+    const { workbook } = await buildDemandCheckWorkbookParts({
+      ...input, designBasis: basis, surface, projectInformation: createDefaultProjectInformation(),
+      loadcases: [input.loadcase], detailLoadcaseIds: [input.loadcase.id]
+    })
+    return workbook
+  }
   const fixedOptions = structuredClone(input.analysisOptions)
   fixedOptions.neutralAxisStations.refinement = { type: 'fixed' }
   fixedOptions.directions.refinement = { type: 'fixed' }

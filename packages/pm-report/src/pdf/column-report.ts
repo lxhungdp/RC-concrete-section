@@ -792,8 +792,16 @@ const render = (
     doc.title(`4.${index + 1}  ${detail.row.name}`, combinationSubtitle(detail))
     verdictLine(detail)
     doc.paragraph(detail.message)
+    const direct = detail.row.direct2D
+    if (direct?.beta != null) {
+      const hit = direct.crossing
+      doc.paragraph(`2D Load Ray · β = ${num(direct.beta * 180 / Math.PI, 3)}° · ${direct.angleSource} · λ = ${hit ? num(hit.lambda, 4) : '—'}`)
+      if (hit && detail.interaction.capacity) doc.paragraph(
+        `Pr = ${num(detail.interaction.capacity.p, 1)} ${unit('force')} · Plotted MR = ${num(detail.interaction.capacity.m, 1)} ${unit('moment')}`
+      )
+    }
 
-    doc.heading('Resistance curves through the load point')
+    doc.heading(direct ? 'Fixed neutral-axis Design meridian and secondary Fixed-P contour' : 'Resistance curves through the load point')
     const curveHeight = 240
     const verticalBounds = curveBounds(
       [detail.interaction.design, detail.interaction.nominal],

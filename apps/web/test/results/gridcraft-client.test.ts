@@ -11,7 +11,7 @@ function harness() {
   let closed = 0
   const client = new GridcraftClient(frame, 'session', host, () => { closed++ })
   const deliver = (data: Record<string, unknown>, origin = host.location.origin, source = frame) => {
-    for (const listener of listeners) listener({ data: { type: 'pm-gridcraft', version: 2, session: 'session', ...data }, origin, source } as MessageEvent<unknown>)
+    for (const listener of listeners) listener({ data: { type: 'pm-gridcraft', version: 4, session: 'session', ...data }, origin, source } as MessageEvent<unknown>)
   }
   return { client, sent, deliver, listeners, closed: () => closed }
 }
@@ -22,6 +22,8 @@ test('bridge accepts only the matching frame, origin, protocol version and sessi
   h.deliver({ event: 'ready' }, 'https://example.com')
   h.deliver({ event: 'ready' }, undefined, {} as Window)
   h.deliver({ event: 'ready', version: 1 })
+  h.deliver({ event: 'ready', version: 2 })
+  h.deliver({ event: 'ready', version: 3 })
   h.deliver({ event: 'ready', session: 'old' })
   await Promise.resolve(); assert.equal(ready, false)
   h.deliver({ event: 'ready' }); await h.client.ready
@@ -64,8 +66,46 @@ test('generic open carries a validated sheet mapping and rejects malformed descr
   assert.equal(h.sent.length, 0)
   const opening = h.client.open(new ArrayBuffer(8), { sheet: 'Rebars', columns: 6 })
   await Promise.resolve(); await Promise.resolve()
-  assert.equal(h.sent[0].version, 2)
+  assert.equal(h.sent[0].version, 4)
   assert.deepEqual(h.sent[0].mapping, { sheet: 'Rebars', columns: 6 })
   h.deliver({ id: h.sent[0].id, ok: true, data: {} })
   await opening; h.client.dispose()
+})
+
+test('project mode opens an explicit workbook without a general command bridge', async () => {
+  const h = harness(); h.deliver({ event: 'ready' })
+  await assert.rejects(h.client.open(new ArrayBuffer(8), { kind: 'workbook', sheet: 'Bad/name' }))
+  assert.equal(h.sent.length, 0)
+  const opened = h.client.open(new ArrayBuffer(8), { kind: 'workbook', sheet: 'Project' })
+  await Promise.resolve(); await Promise.resolve()
+  assert.deepEqual(h.sent[0].mapping, { kind: 'workbook', sheet: 'Project' })
+  h.deliver({ id: h.sent[0].id, ok: true, data: {} }); await opened
+  h.client.dispose()
+})
+
+test('native actions keep source/origin/session/version checks and expose only original file actions', () => {
+  const h = harness(), actions: string[] = []
+  const stop = h.client.onAction(action => actions.push(action))
+  h.deliver({ event: 'action', action: 'save' }, 'https://example.com')
+  h.deliver({ event: 'action', action: 'save', session: 'old' })
+  h.deliver({ event: 'action', action: 'save', version: 3 })
+  h.deliver({ event: 'action', action: 'command' })
+  h.deliver({ event: 'action', action: { toString: () => 'update' } })
+  h.deliver({ event: 'action', action: 'update' })
+  assert.deepEqual(actions, [])
+  for (const action of ['open', 'save', 'saveAs']) h.deliver({ event: 'action', action })
+  assert.deepEqual(actions, ['open', 'save', 'saveAs'])
+  stop(); h.deliver({ event: 'action', action: 'save' }); assert.equal(actions.length, 3)
+  h.client.dispose(); h.deliver({ event: 'action', action: 'save' }); assert.equal(actions.length, 3)
+})
+
+test('native file names and feedback are bounded independently of project values', async () => {
+  const h = harness(); h.deliver({ event: 'ready' })
+  await assert.rejects(h.client.open(new ArrayBuffer(1), { kind: 'workbook', sheet: 'Project' }, '../bad.xlsx'))
+  assert.equal(h.sent.length, 0)
+  const pending = h.client.status(false, 'x'.repeat(5000), true, false)
+  await Promise.resolve(); await Promise.resolve()
+  assert.equal(h.sent[0].action, 'status'); assert.equal(h.sent[0].message, 'x'.repeat(4000))
+  assert.equal(h.sent[0].busy, false); assert.equal(h.sent[0].failed, true); assert.equal(h.sent[0].saved, false)
+  h.deliver({ id: h.sent[0].id, ok: true, data: {} }); await pending; h.client.dispose()
 })

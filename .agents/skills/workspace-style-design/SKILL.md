@@ -55,8 +55,18 @@ standard's dependency review to select a minimal sufficient set of independent i
 the relationships and available space, rather than a fixed form template.
 Reducing controls must preserve explicit units, governing limits, validation and engineering status;
 a change to those meanings belongs to the engineering workflow.
+Use the standard's current-consumer rule and linked active-input inventory for every editable
+panel, dialog and workbook field; update the inventory when adding or changing an input.
+Apply its routine-form text rule as well: completed audit text and generic instructions do not
+belong in the normal input flow.
 
 ## Verify
+
+The standard also covers the Project spreadsheet and plain XLSX presentation.
+Place text-only Open in the same Project menu row as Import and Export. The Project editor has one title row: native Open, Save, Undo and
+Redo icons only on the left, filename centred, Update to Project / Minimize / Maximize / Close on the right in
+place of Search/Share/Comments/theme. Keep the native ribbon below and add no extra header row.
+Native Open/Save own file actions. Check drag and minimize/restore preserve the draft.
 
 Inspect populated Section/Rebar, Materials, Capacity, Demand Check, Options,
 project menus/dialogs and calculation dialogs in both themes. Measure actual

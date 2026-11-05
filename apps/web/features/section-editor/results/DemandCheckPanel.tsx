@@ -1,6 +1,8 @@
 'use client'
 
 import { Eye, EyeOff } from 'lucide-react'
+import { useState } from 'react'
+import { CheckBasisHelpDialog } from './CheckBasisHelpDialog'
 import { demandCheckBasisOf, type DemandCheckBasis, type LoadingsInput, type LoadReference } from '@pm/project'
 import dynamic from 'next/dynamic'
 const LoadReferencePanel = dynamic(() => import('../loadings/LoadReferencePanel').then(module => module.LoadReferencePanel), { ssr: false })
@@ -20,7 +22,8 @@ type Props = {
 }
 
 const CHECK_BASIS_OPTIONS: ReadonlyArray<{ value: DemandCheckBasis; label: string; title: string }> = [
-  { value: 'proportional3D', label: '3D load ray', title: 'Scales P, Mx and My together from the origin.' },
+  { value: 'proportional3D', label: '3D Load Ray', title: 'Scales P, Mx and My together from the origin.' },
+  { value: 'direct2D', label: '2D Load Ray', title: 'Scales P and MR at a fixed neutral-axis direction.' },
   { value: 'constantAxial', label: 'Constant P', title: 'Holds P = Pu and scales only the moments.' }
 ]
 
@@ -34,6 +37,7 @@ export function DemandCheckPanel({
   onLoadingsChange,
   onReferencePreviewChange
 }: Props) {
+  const [helpOpen, setHelpOpen] = useState(false)
   return (
     <>
       <section className="pm-panel-section pm-chart-toggle-section">
@@ -74,9 +78,13 @@ export function DemandCheckPanel({
             ))}
           </div>
         </div>
+        <button type="button" className="ws-action" aria-haspopup="dialog" onClick={() => setHelpOpen(true)}>
+          ? 계산 방법
+        </button>
       </section>
 
       <LoadReferencePanel key={`${loadingsInput.reference?.offsetX ?? 0}:${loadingsInput.reference?.offsetY ?? 0}`} input={loadingsInput} onChange={onLoadingsChange} onPreviewChange={onReferencePreviewChange} />
+      {helpOpen && <CheckBasisHelpDialog onClose={() => setHelpOpen(false)} />}
     </>
   )
 }

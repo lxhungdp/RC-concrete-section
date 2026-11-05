@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { intersectPmLoadPath, resultantMomentCoordinate } from '../src/index'
-import { forwardMomentPaths, type DemandPmPoint } from '../src/demand-pm'
+import { forwardMomentPaths, summarizeDemandPmCrossing, type DemandPmPoint } from '../src/demand-pm'
 
 const cutPoint = (M: number, P: number): DemandPmPoint => ({ M, P, Mx: M, My: 0,
   beta: null, theta: M === 0 ? null : M > 0 ? 0 : Math.PI, station: null,
@@ -61,6 +61,36 @@ test('ENG-AN-003: shared vertex crossing and tangency retain distinct contact ev
     assert.equal(query.points.length, 1)
     assert.equal(query.points[0]?.kind, kind)
     assert.equal(query.points[0]?.sources.length, 2)
+  }
+})
+
+test('ENG-AN-003: fixed-N.A. summary agrees with the independent P + M = 10 line solution', () => {
+  const path = [{ ...cutPoint(5, 5), Mx: -3, My: 4 }, { ...cutPoint(10, 0), Mx: 6, My: 8 }]
+  for (const [basis, P] of [['proportional3D', 2], ['constantAxial', 4]] as const) {
+    const query = intersectPmLoadPath([path], { P, Mx: 0, My: 3 }, basis)
+    const summary = summarizeDemandPmCrossing([path], query)
+    assert.equal(summary.status, 'available')
+    if (summary.status !== 'available') continue
+    // At Pr=4, plotted Mr=6: one fifth of the way from the first endpoint to the second.
+    for (const [value, expected] of [[summary.resistance.P, 4], [summary.resistance.M, 6],
+      [summary.resistance.Mx, -1.2], [summary.resistance.My, 4.8], [summary.lambda, 2], [summary.utilization, 0.5]]) {
+      assert.ok(Math.abs(value - expected) < 1e-12)
+    }
+  }
+})
+
+test('ENG-AN-003: 2D summary rejects tangency, multiple hits, overlap and conflicting components', () => {
+  const demand = { P: 0, Mx: 1, My: 0 }
+  const reversed = (P: number): DemandPmPoint => ({ ...cutPoint(2, P), Mx: -2 })
+  for (const [paths, reason] of [
+    [[[cutPoint(1, 1), cutPoint(2, 0), cutPoint(3, 1)]], 'contact'],
+    [[[cutPoint(2, 1), cutPoint(2, -1)], [cutPoint(3, 1), cutPoint(3, -1)]], 'multiple-intersections'],
+    [[[cutPoint(2, 0), cutPoint(3, 0)]], 'overlap'],
+    [[[cutPoint(2, 1), cutPoint(2, -1)], [reversed(1), reversed(-1)]], 'ambiguous-components'],
+    [[], 'missing-curve']
+  ] as const) {
+    const query = intersectPmLoadPath(paths, demand, 'constantAxial')
+    assert.deepEqual(summarizeDemandPmCrossing(paths, query), { status: 'unavailable', reason })
   }
 })
 

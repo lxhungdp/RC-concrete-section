@@ -56,7 +56,6 @@ export function appendPresentationSummary(book: Workbook, input: Input) {
   })
   if (input.materialStore) {
     add('Concrete · fck', 'stress', input.materialStore.concrete.fck)
-    if (input.materialStore.concrete.elasticModulus !== undefined) add('Concrete · Ec', 'modulus', input.materialStore.concrete.elasticModulus)
     input.materialStore.steel.forEach(steel => { add(`${steel.name} · fy`, 'stress', steel.fy); add(`${steel.name} · Es`, 'modulus', steel.elasticModulus) })
   }
   for (const load of input.loadcases ?? (input.loadcase ? [input.loadcase] : [])) vector(`Demand · ${load.name}`, load)

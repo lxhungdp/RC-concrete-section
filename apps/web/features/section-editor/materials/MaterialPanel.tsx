@@ -4,6 +4,8 @@ import { QuantityInput, QuantityValue, UnitLabel, useDisplayUnits } from '../sha
 import { SteelHardeningFields, SteelStressStrainCurve } from './SteelHardeningFields'
 import { MaterialFactorSymbol, MaterialSymbol } from './MaterialSymbol'
 import { MaterialCurveFrame, MATERIAL_CURVE_FRAME } from './MaterialCurveFrame'
+import { withConcreteCompressionStrain, withConcreteTensionPolicy } from './material-inputs'
+import { ModificationReasonField } from '../design/ModificationReasonField'
 
 import { AddIcon } from '../shared/WorkspaceIcons'
 import { useMemo, useState } from 'react'
@@ -19,6 +21,7 @@ import {
 } from '@pm/design'
 import {
   aciBeta1,
+  ACI318_CONCRETE_EPS_CU,
   applyAci318ConcreteDerived,
   applyAs3600ConcreteDerived,
   applyAs3600SteelDerived,
@@ -241,14 +244,7 @@ function ConcreteMaterialFactorFields({
         </label>
       </div>
       {designBasisRequiresOverrideReason(basis) && (
-        <label className="pm-field">
-          <span>Reason for partial-factor modification</span>
-          <input
-            value={basis.overrideReason}
-            placeholder="State the approved project or National Annex basis"
-            onChange={(event) => onOverrideReasonChange(event.target.value)}
-          />
-        </label>
+        <ModificationReasonField key={basis.profileId} value={basis.overrideReason} onChange={onOverrideReasonChange} />
       )}
     </>
   )
@@ -294,7 +290,7 @@ function ConcreteAxialLimitFields({
             <option value="qualifying-spiral">Qualifying spiral</option>
           </select>
         </label>
-        <label className="pm-material-param" title="Maximum design compression as a fraction of the uncapped compression pole.">
+        {basis.axialCapEnabled && <label className="pm-material-param" title="Maximum design compression as a fraction of the uncapped compression pole.">
           <span><MaterialSymbol symbol="Pmax" /> factor</span>
           <input
             type="number"
@@ -310,7 +306,7 @@ function ConcreteAxialLimitFields({
               })
             }}
           />
-        </label>
+        </label>}
       </div>
       <label className="pm-material-toggle">
         <input
@@ -322,19 +318,9 @@ function ConcreteAxialLimitFields({
         />
         <span>Apply Pmax limit</span>
       </label>
-      <p className="pm-field-note">
-        Enabled by default. Clear this option to use the uncapped design compression pole in all
-        charts and design checks.
-      </p>
       {designBasisRequiresOverrideReason(basis) && (
-        <label className="pm-field">
-          <span>Reason for design modification</span>
-          <input
-            value={basis.overrideReason}
-            placeholder="State the approved project basis"
-            onChange={(event) => onChange({ ...basis, overrideReason: event.target.value })}
-          />
-        </label>
+        <ModificationReasonField key={basis.profileId} value={basis.overrideReason}
+          onChange={(overrideReason) => onChange({ ...basis, overrideReason })} />
       )}
     </div>
   )
@@ -590,59 +576,22 @@ export function MaterialPanel({
                   }
                 />
               </label>
-              <label className="pm-material-param">
-                <span><MaterialSymbol symbol="mc" /></span>
-                <QuantityInput aria-label="mc" quantity="density"
-                  type="number"
-                  min={1}
-                  value={store.concrete.mc ?? DEFAULT_CONCRETE_DENSITY}
-                  onValueChange={(canonical) =>
-                    updateConcrete((material) => {
-                      const mc = canonical
-                      const next = { ...material, mc }
-                      return next.standard === 'KDS' ? applyKdsConcreteDerived(next) : next
-                    })
-                  }
-                />
-              </label>
-            </div>
-
-            <div className="pm-material-parameters">
-              <label className="pm-material-param">
-                <span><MaterialSymbol symbol="Ec" /></span>
-                <QuantityInput aria-label="Ec" quantity="modulus"
-                  type="number"
-                  min={0}
-                  step="1"
-                  value={store.concrete.elasticModulus}
-                  onValueChange={(canonical) => updateConcrete(material => ({ ...material, elasticModulus: canonical }))} onClear={() => updateConcrete(material => ({ ...material, elasticModulus: undefined }))}
-                />
-              </label>
-              <label className="pm-material-param">
+              {!isBlockMechanics && <label className="pm-material-param">
                 <span><MaterialSymbol symbol="epsCu" /></span>
-                <input
+                <input aria-label="Ultimate concrete strain εcu"
                   type="number"
                   step="0.0001"
                   min={0}
-                  value={store.concrete.limits.epsCu}
+                  value={store.concrete.stressStrain.type === 'ec2-parabolic-rectangular'
+                    ? store.concrete.stressStrain.epsCu2
+                    : store.concrete.stressStrain.type === 'kds-parabolic'
+                      ? store.concrete.stressStrain.epsCu : store.concrete.limits.epsCu}
                   onChange={(event) =>
-                    updateConcrete((material) => {
-                      const epsCu = numberValue(event.target.value, material.limits.epsCu)
-                      if (material.stressStrain.type === 'kds-parabolic') {
-                        return {
-                          ...material,
-                          limits: { ...material.limits, epsCu },
-                          stressStrain: { ...material.stressStrain, epsCu }
-                        }
-                      }
-                      return {
-                        ...material,
-                        limits: { ...material.limits, epsCu }
-                      }
-                    })
+                    updateConcrete((material) => withConcreteCompressionStrain(material, 'ultimate',
+                      numberValue(event.target.value, material.limits.epsCu)))
                   }
                 />
-              </label>
+              </label>}
             </div>
 
             {isBlockMechanics && (
@@ -711,11 +660,7 @@ export function MaterialPanel({
                             updateConcrete((material) => {
                               if (material.stressStrain.type !== 'user-block') return material
                               const epsCu = numberValue(event.target.value, material.stressStrain.epsCu)
-                              return {
-                                ...material,
-                                stressStrain: { ...material.stressStrain, epsCu },
-                                limits: { ...material.limits, epsCu }
-                              }
+                              return withConcreteCompressionStrain(material, 'ultimate', epsCu)
                             })
                           }
                         />
@@ -727,10 +672,6 @@ export function MaterialPanel({
                         <QuantityInput quantity="stress" readOnly value={Number(userBlockCompressionStress(store.concrete).toFixed(3))} onValueChange={() => {}} />
                       </label>
                     </div>
-                    <p className="pm-field-note">
-                      No code table is applied. <MaterialSymbol symbol="beta1" />, <MaterialSymbol symbol="alpha" /> and <MaterialSymbol symbol="epsCu" /> are the values this project declares; the surface,
-                      the <var>φ</var> transition follows the selected code basis, and the <MaterialSymbol symbol="Pmax" /> limit is set below.
-                    </p>
                   </>
                 ) : store.concrete.stressStrain.type === 'as3600-equivalent-block' ? (
                   <>
@@ -739,16 +680,15 @@ export function MaterialPanel({
                       <label className="pm-material-param"><span><MaterialSymbol symbol="alpha2" /></span><input readOnly value={Number(store.concrete.stressStrain.alpha2.toFixed(4))} /></label>
                       <label className="pm-material-param"><span><MaterialSymbol symbol="epsCu" /></span><input readOnly value={store.concrete.stressStrain.epsCu} /></label>
                     </div>
-                    <p className="pm-field-note">AS 3600 preview block: concrete stress is <MaterialSymbol symbol="alpha2" />·<MaterialSymbol symbol="fcPrime" /> over <var>a</var> = <MaterialSymbol symbol="gamma" />·<var>c</var>; stress is zero outside the compression block.</p>
                   </>
                 ) : (
                   <>
                     <div className="pm-material-parameters">
                       <label className="pm-material-param"><span><MaterialSymbol symbol="beta1" /></span><input readOnly value={Number((kdsBlockParameters?.beta1 ?? (store.concrete.stressStrain.type === 'aci-whitney-block' ? store.concrete.stressStrain.beta1 : 0)).toFixed(4))} /></label>
-                      <label className="pm-material-param"><span><MaterialSymbol symbol="eta" /></span><input readOnly value={Number((kdsBlockParameters?.eta ?? 1).toFixed(4))} /></label>
-                      <label className="pm-material-param"><span><MaterialSymbol symbol="epsCu" /></span><input readOnly value={kdsBlockParameters?.extremeCompressionStrain ?? store.concrete.limits.epsCu} /></label>
+                      {kdsBlockParameters && <label className="pm-material-param"><span><MaterialSymbol symbol="eta" /></span><input readOnly value={Number(kdsBlockParameters.eta.toFixed(4))} /></label>}
+                      <label className="pm-material-param"><span><MaterialSymbol symbol="epsCu" /></span><input readOnly value={kdsBlockParameters?.extremeCompressionStrain ??
+                        (store.concrete.stressStrain.type === 'aci-whitney-block' ? ACI318_CONCRETE_EPS_CU : store.concrete.limits.epsCu)} /></label>
                     </div>
-                    <p className="pm-field-note">Concrete stress is uniform only over <var>a</var> = <MaterialSymbol symbol="beta1" />·<var>c</var>. Stress is zero between <var>a</var> and <var>c</var> and over the tension region.</p>
                     {kdsBlockResolution.error && <p className="pm-field-error">{kdsBlockResolution.error}</p>}
                   </>
                 )}
@@ -768,44 +708,32 @@ export function MaterialPanel({
             <div className="pm-material-stress-box">
               <div className="pm-material-stress-head">
                 <div className="pm-material-stress-title">Stress–strain</div>
-                <label className="pm-material-toggle">
+                {store.concrete.stressStrain.type === 'user-curve' && <label className="pm-material-toggle">
                   <input
                     type="checkbox"
-                    checked={store.concrete.limits.ignoreTension}
+                    checked={store.concrete.stressStrain.zeroTension ?? store.concrete.limits.ignoreTension}
                     onChange={(event) =>
-                      updateConcrete((material) => ({
-                        ...material,
-                        limits: { ...material.limits, ignoreTension: event.target.checked }
-                      }))
+                      updateConcrete((material) => withConcreteTensionPolicy(material, event.target.checked))
                     }
                   />
                   <span>Ignore concrete tension</span>
-                </label>
+                </label>}
               </div>
               {store.concrete.stressStrain.type !== 'user-curve' && (
               <div className="pm-material-parameters">
                 <label className="pm-material-param">
                   <span><MaterialSymbol symbol={store.concrete.stressStrain.type === 'ec2-parabolic-rectangular' ? 'epsC2' : 'epsC0'} /></span>
-                  <input
+                  <input aria-label="Peak concrete strain"
                     type="number"
                     step="0.0001"
                     min={0}
-                    value={store.concrete.limits.eps0 ?? ''}
+                    value={store.concrete.stressStrain.type === 'ec2-parabolic-rectangular'
+                      ? store.concrete.stressStrain.epsC2
+                      : store.concrete.stressStrain.type === 'kds-parabolic'
+                        ? store.concrete.stressStrain.eps0 : ''}
                     onChange={(event) =>
-                      updateConcrete((material) => {
-                        const eps0 = numberValue(event.target.value, material.limits.eps0 ?? 0.002)
-                        if (material.stressStrain.type === 'kds-parabolic') {
-                          return {
-                            ...material,
-                            limits: { ...material.limits, eps0 },
-                            stressStrain: { ...material.stressStrain, eps0 }
-                          }
-                        }
-                        return {
-                          ...material,
-                          limits: { ...material.limits, eps0 }
-                        }
-                      })
+                      updateConcrete((material) => withConcreteCompressionStrain(material, 'peak',
+                        numberValue(event.target.value, material.limits.eps0 ?? 0.002)))
                     }
                   />
                 </label>
@@ -1009,6 +937,7 @@ export function MaterialPanel({
                   <QuantityInput quantity="modulus"
                     type="number"
                     min={1}
+                    readOnly={activeSteel.standard === 'EC2' || activeSteel.standard === 'AS3600'}
                     value={activeSteel.elasticModulus}
                     onValueChange={(canonical) =>
                       updateSteel(activeSteel.id, (material) => {
@@ -1051,7 +980,6 @@ export function MaterialPanel({
                         event.target.checked ? 'linear-hardening' : 'elastic-perfectly-plastic', calculationProfileId, designBasis))} />
                     <span>Post-yield hardening</span>
                   </label>} />
-                  {activeSteel.stressStrain.type === 'user-curve' && <p className="pm-field-note">Imported tabulated steel law.</p>}
                 </div>
 
                 {activeSteel.stressStrain.type !== 'linear-hardening' && <div className="pm-material-parameters">

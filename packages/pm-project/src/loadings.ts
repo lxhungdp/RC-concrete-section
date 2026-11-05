@@ -5,8 +5,8 @@ import { loadReferenceOf } from './load-reference'
 export const DEFAULT_DEMAND_CHECK_BASIS: DemandCheckBasis = 'proportional3D'
 
 export const parseDemandCheckBasis = (value: unknown): DemandCheckBasis => {
-  if (value !== 'proportional3D' && value !== 'constantAxial') {
-    throw new RangeError('Demand check basis must be proportional3D or constantAxial.')
+  if (value !== 'proportional3D' && value !== 'direct2D' && value !== 'constantAxial') {
+    throw new RangeError('Demand check basis must be proportional3D, direct2D or constantAxial.')
   }
   return value
 }

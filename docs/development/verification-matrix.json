@@ -52,6 +52,18 @@
         {
           "file": "apps/web/application/analysis/execution.ts",
           "symbol": "createAnalysisExecution"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromSpreadsheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromWorkbookEditor"
         }
       ],
       "verification": [
@@ -62,12 +74,36 @@
         {
           "file": "apps/web/test/analysis/execution.test.ts",
           "oracle": "Both mechanics reproduce kernel checks, preserve cache invalidation and expose typed material failures."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-spreadsheet.test.ts",
+          "oracle": "Complete all-profile/source-unit project equality; simultaneous numeric/option/reference edits; formula precision-note rejection and invalid/error/resource snapshots fail without partial inputs."
+        },
+        {
+          "file": "tools/verification/project-spreadsheet/browser.mjs",
+          "oracle": "Actual single native filename row with Open/Save/Undo/Redo icons only at left, shared Update/window controls right, no extra header, native ribbon below and pointer title drag, no separate address bar, min/max/restore preserves draft, original Open/Save, fresh formulas/helper fill, formatted Save, atomic repeated nine-sheet Update, invalid/stale/generic workbook rejection and values-only reopening."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-project-spreadsheet-dialog.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-native-project-spreadsheet-window.md"
         }
       ],
       "reviewer": null,
@@ -81,18 +117,54 @@
         {
           "file": "tools/architecture/workspace-dependencies.ts",
           "symbol": "inspectWorkspaceDependencies"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromSpreadsheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromWorkbookEditor"
         }
       ],
       "verification": [
         {
           "file": "tools/architecture/workspace-dependencies.test.ts",
           "oracle": "Synthetic dependency DAG, public-export, relative-bypass and capability rejection cases."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-spreadsheet.test.ts",
+          "oracle": "Complete all-profile/source-unit project equality; simultaneous numeric/option/reference edits; formula precision-note rejection and invalid/error/resource snapshots fail without partial inputs."
+        },
+        {
+          "file": "tools/verification/project-spreadsheet/browser.mjs",
+          "oracle": "Actual single native filename row with Open/Save/Undo/Redo icons only at left, shared Update/window controls right, no extra header, native ribbon below and pointer title drag, no separate address bar, min/max/restore preserves draft, original Open/Save, fresh formulas/helper fill, formatted Save, atomic repeated nine-sheet Update, invalid/stale/generic workbook rejection and values-only reopening."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-project-spreadsheet-dialog.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-native-project-spreadsheet-window.md"
         }
       ],
       "reviewer": null,
@@ -181,18 +253,70 @@
         {
           "file": "packages/pm-geometry/src/mesh.ts",
           "symbol": "buildConcreteMesh"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromSpreadsheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromWorkbookEditor"
+        },
+        {
+          "file": "apps/web/application/spreadsheets/gridcraft-window.ts",
+          "symbol": "connectGridcraftWindow"
         }
       ],
       "verification": [
         {
           "file": "packages/pm-analysis/test/mesh-spatial.test.ts",
           "oracle": "Differential all-cell clipping and spatial classifier conservation invariants."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-spreadsheet.test.ts",
+          "oracle": "Complete all-profile/source-unit project equality; simultaneous numeric/option/reference edits; formula precision-note rejection and invalid/error/resource snapshots fail without partial inputs."
+        },
+        {
+          "file": "tools/verification/project-spreadsheet/browser.mjs",
+          "oracle": "Actual single native filename row with Open/Save/Undo/Redo icons only at left, shared Update/window controls right, no extra header, native ribbon below and pointer title drag, no separate address bar, min/max/restore preserves draft, original Open/Save, fresh formulas/helper fill, formatted Save, atomic repeated nine-sheet Update, invalid/stale/generic workbook rejection and values-only reopening."
+        },
+        {
+          "file": "apps/web/test/gridcraft-window.test.ts",
+          "oracle": "Fresh origin/source/session registration before frame navigation, paint readiness/cancellation and owner-window file picker/save/cross-realm cancellation."
+        },
+        {
+          "file": "apps/web/test/project-spreadsheet-state.test.ts",
+          "oracle": "Applied input changes invalidate a draft; unchanged metadata clones do not; every editable identity field invalidates it."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-project-spreadsheet-dialog.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-native-project-spreadsheet-window.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-project-spreadsheet-title-bar.md"
         }
       ],
       "reviewer": null,
@@ -206,18 +330,30 @@
         {
           "file": "packages/pm-units/src/index.ts",
           "symbol": "CANONICAL_UNITS"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
         }
       ],
       "verification": [
         {
           "file": "packages/pm-units/test/units.test.ts",
           "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
         }
       ],
       "reviewer": null,
@@ -231,18 +367,30 @@
         {
           "file": "packages/pm-units/src/index.ts",
           "symbol": "selectUnit"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
         }
       ],
       "verification": [
         {
           "file": "packages/pm-units/test/units.test.ts",
           "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
         }
       ],
       "reviewer": null,
@@ -260,6 +408,18 @@
         {
           "file": "packages/pm-spreadsheet/src/geometry.ts",
           "symbol": "coordinatesFromSheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromSpreadsheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromWorkbookEditor"
         }
       ],
       "verification": [
@@ -270,6 +430,18 @@
         {
           "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
           "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-spreadsheet.test.ts",
+          "oracle": "Complete all-profile/source-unit project equality; simultaneous numeric/option/reference edits; formula precision-note rejection and invalid/error/resource snapshots fail without partial inputs."
+        },
+        {
+          "file": "tools/verification/project-spreadsheet/browser.mjs",
+          "oracle": "Actual single native filename row with Open/Save/Undo/Redo icons only at left, shared Update/window controls right, no extra header, native ribbon below and pointer title drag, no separate address bar, min/max/restore preserves draft, original Open/Save, fresh formulas/helper fill, formatted Save, atomic repeated nine-sheet Update, invalid/stale/generic workbook rejection and values-only reopening."
         }
       ],
       "evidence": [
@@ -280,6 +452,18 @@
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-project-spreadsheet-dialog.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-native-project-spreadsheet-window.md"
         }
       ],
       "reviewer": null,
@@ -293,18 +477,30 @@
         {
           "file": "packages/pm-units/src/index.ts",
           "symbol": "quantityUnit"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
         }
       ],
       "verification": [
         {
           "file": "packages/pm-units/test/units.test.ts",
           "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
         }
       ],
       "reviewer": null,
@@ -322,6 +518,18 @@
         {
           "file": "packages/pm-spreadsheet/src/geometry.ts",
           "symbol": "coordinatesFromSheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromSpreadsheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromWorkbookEditor"
         }
       ],
       "verification": [
@@ -332,6 +540,18 @@
         {
           "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
           "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-spreadsheet.test.ts",
+          "oracle": "Complete all-profile/source-unit project equality; simultaneous numeric/option/reference edits; formula precision-note rejection and invalid/error/resource snapshots fail without partial inputs."
+        },
+        {
+          "file": "tools/verification/project-spreadsheet/browser.mjs",
+          "oracle": "Actual single native filename row with Open/Save/Undo/Redo icons only at left, shared Update/window controls right, no extra header, native ribbon below and pointer title drag, no separate address bar, min/max/restore preserves draft, original Open/Save, fresh formulas/helper fill, formatted Save, atomic repeated nine-sheet Update, invalid/stale/generic workbook rejection and values-only reopening."
         }
       ],
       "evidence": [
@@ -342,6 +562,18 @@
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-project-spreadsheet-dialog.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-native-project-spreadsheet-window.md"
         }
       ],
       "reviewer": null,
@@ -355,18 +587,30 @@
         {
           "file": "packages/pm-units/src/index.ts",
           "symbol": "fromCanonical"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
         }
       ],
       "verification": [
         {
           "file": "packages/pm-units/test/units.test.ts",
           "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
         }
       ],
       "reviewer": null,
@@ -763,12 +1007,20 @@
         {
           "file": "packages/pm-analysis/test/tangent.test.ts",
           "oracle": "Independent central differences and section Jacobian invariants."
+        },
+        {
+          "file": "apps/web/test/material-inputs.test.ts",
+          "oracle": "Independent quadratic half-peak stress/tangent, declared ultimate cutoff and signed tabulated interpolation after authoring edits."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-active-inputs.md"
         }
       ],
       "reviewer": null,
@@ -907,18 +1159,62 @@
         {
           "file": "packages/pm-project/src/load-reference.ts",
           "symbol": "resultantAtCentroid"
+        },
+        {
+          "file": "packages/pm-project/src/validate.ts",
+          "symbol": "parseProjectDocumentValue"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromSpreadsheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromWorkbookEditor"
         }
       ],
       "verification": [
         {
           "file": "packages/pm-project/test/load-reference.test.ts",
           "oracle": "Independent force-times-lever-arm and frame round trips."
+        },
+        {
+          "file": "packages/pm-project/test/calculation-profiles.test.ts",
+          "oracle": "Explicit nondefault Appendix eccentricity constant/depth factor survive parsing for both mechanics; malformed/range/unsupported declarations fail and omitted-rule defaults remain explicit."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-spreadsheet.test.ts",
+          "oracle": "Complete all-profile/source-unit project equality; simultaneous numeric/option/reference edits; formula precision-note rejection and invalid/error/resource snapshots fail without partial inputs."
+        },
+        {
+          "file": "tools/verification/project-spreadsheet/browser.mjs",
+          "oracle": "Actual single native filename row with Open/Save/Undo/Redo icons only at left, shared Update/window controls right, no extra header, native ribbon below and pointer title drag, no separate address bar, min/max/restore preserves draft, original Open/Save, fresh formulas/helper fill, formatted Save, atomic repeated nine-sheet Update, invalid/stale/generic workbook rejection and values-only reopening."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-project-spreadsheet-dialog.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-native-project-spreadsheet-window.md"
         }
       ],
       "reviewer": null,
@@ -982,6 +1278,10 @@
         },
         {
           "file": "packages/pm-analysis/src/index.ts",
+          "symbol": "solveDirect2DLoadcase"
+        },
+        {
+          "file": "packages/pm-analysis/src/index.ts",
           "symbol": "buildDirectMomentSection"
         },
         {
@@ -1005,6 +1305,10 @@
         {
           "file": "packages/pm-analysis/test/demand-pm.test.ts",
           "oracle": "Analytical flattened polyline crossings, tangency, overlap, path breaks and force/moment scaling."
+        },
+        {
+          "file": "apps/web/test/analysis/execution.test.ts",
+          "oracle": "Independent line-intersection fraction and identical selected 2D check evidence across worker batch, detail and PDF model for fibre and block."
         },
         {
           "file": "packages/pm-analysis/test/direct-moment.test.ts",
@@ -1116,6 +1420,10 @@
         {
           "file": "apps/web/features/section-editor/results/demand-chart-text.ts",
           "symbol": "plottedPointsText"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
         }
       ],
       "verification": [
@@ -1126,6 +1434,10 @@
         {
           "file": "tools/verification/demand-data/counts.mjs",
           "oracle": "Every plotted coordinate matches the SVG path or marker and the Data snapshot; magnitude mapping and unchanged table UR are checked."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
         }
       ],
       "evidence": [
@@ -1140,6 +1452,10 @@
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-05-capacity-resultant-moment.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
         }
       ],
       "reviewer": null,

@@ -11,10 +11,14 @@
     "./archive": "./src/workbook-archive.ts",
     "./loadcases": "./src/loadcases.ts",
     "./loadcase-xlsx": "./src/loadcase-xlsx.ts",
-    "./geometry": "./src/geometry.ts"
+    "./geometry": "./src/geometry.ts",
+    "./project-xlsx": "./src/project-xlsx.ts",
+    "./project": "./src/project-spreadsheet.ts"
   },
   "dependencies": {
+    "@pm/design": "0.1.0",
     "@pm/geometry": "0.1.0",
+    "@pm/materials": "0.1.0",
     "@pm/project": "0.1.0",
     "@pm/units": "0.1.0",
     "exceljs": "4.4.0"

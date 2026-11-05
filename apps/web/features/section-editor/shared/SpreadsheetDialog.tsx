@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import type { PreparedSheet } from '@pm/spreadsheet'
+import type { PreparedSheet, GridcraftMapping } from '@pm/spreadsheet'
 import { GridcraftClient } from '../../../application/spreadsheets/gridcraft-client'
 import { saveSpreadsheetXlsx } from '../../../application/files/xlsx-file'
 import { MovableDialog } from './MovableDialog'
@@ -9,14 +9,16 @@ import { WORKBOOK_MAX_BYTES } from '@pm/spreadsheet/archive'
 
 export type SpreadsheetAdapter<C, V> = Readonly<{
   title: string; frameTitle: string; fileName: string
-  create(): Promise<PreparedSheet<C>>
-  open(bytes: ArrayBuffer): Promise<PreparedSheet<C>>
-  read(value: unknown, context: C): V
+  create(): Promise<PreparedSheet<C, GridcraftMapping>>
+  open(bytes: ArrayBuffer): Promise<PreparedSheet<C, GridcraftMapping>>
+  read(value: unknown, context: C): V | Promise<V>
+  save?(bytes: ArrayBuffer): Promise<ArrayBuffer>
   caption?(context: C): string
 }>
 
-export function SpreadsheetDialog<C, V>({ adapter, target, updateDisabled = false, onUpdate, onClose }: {
-  adapter: SpreadsheetAdapter<C, V>; target: unknown; updateDisabled?: boolean; onUpdate(values: V): unknown; onClose(): void
+export function SpreadsheetDialog<C, V>({ adapter, target, updateDisabled = false, className = '', saveLabel = 'Save as…', matchesTarget = Object.is, onUpdate, onClose }: {
+  adapter: SpreadsheetAdapter<C, V>; target: unknown; updateDisabled?: boolean; className?: string; saveLabel?: string
+  matchesTarget?(actual: unknown, expected: unknown): boolean; onUpdate(values: V): unknown; onClose(): void
 }) {
   const [session] = useState(() => crypto.randomUUID())
   const [busy, setBusy] = useState(true), [error, setError] = useState(''), [status, setStatus] = useState('')
@@ -60,7 +62,10 @@ export function SpreadsheetDialog<C, V>({ adapter, target, updateDisabled = fals
         await connection.theme(darkTheme())
         if (!active) return
         await painted()
-        if (active) { context.current = prepared.context; setCaption(adapter.caption?.(prepared.context) ?? ''); setPresented(true) }
+        if (active) {
+          context.current = prepared.context; setCaption(adapter.caption?.(prepared.context) ?? '')
+          setPresented(true)
+        }
       } catch (failure) { if (active) { setError(failure instanceof Error ? failure.message : String(failure)); setStatus('') } }
       finally { if (active) { operationPending.current = false; setBusy(false) } }
     })()
@@ -78,11 +83,13 @@ export function SpreadsheetDialog<C, V>({ adapter, target, updateDisabled = fals
   const update = () => perform(async () => {
     const connection = client.current, declared = context.current, captured = latest.current.target
     if (!connection || !declared) throw new Error('Open the spreadsheet first.')
-    if (captured !== expected.current) throw new Error('The table changed. Close and reopen the spreadsheet.')
+    if (!matchesTarget(captured, expected.current)) throw new Error('The project or table changed. Close and reopen the spreadsheet.')
     const snapshot = await connection.values()
     if (!mounted.current) return
-    if (latest.current.target !== captured) throw new Error('The table changed. Close and reopen the spreadsheet.')
-    const values = adapter.read(snapshot, declared)
+    if (!matchesTarget(latest.current.target, captured)) throw new Error('The project or table changed. Close and reopen the spreadsheet.')
+    const values = await adapter.read(snapshot, declared)
+    if (!mounted.current) return
+    if (!matchesTarget(latest.current.target, captured)) throw new Error('The project or table changed. Close and reopen the spreadsheet.')
     expected.current = latest.current.onUpdate(values)
     setStatus('Updated.')
   })
@@ -94,19 +101,24 @@ export function SpreadsheetDialog<C, V>({ adapter, target, updateDisabled = fals
       const prepared = await adapter.open(await selected.arrayBuffer())
       if (!mounted.current || !client.current) return
       await client.current.open(prepared.bytes, prepared.mapping)
-      if (mounted.current) { context.current = prepared.context; setCaption(adapter.caption?.(prepared.context) ?? '') }
+      if (mounted.current) {
+        context.current = prepared.context; setCaption(adapter.caption?.(prepared.context) ?? '')
+      }
     })
   }
   const save = () => perform(async () => {
     const connection = client.current
     if (!connection || !context.current) throw new Error('Open the spreadsheet first.')
-    const result = await saveSpreadsheetXlsx(adapter.fileName, () => connection.export())
+    const result = await saveSpreadsheetXlsx(adapter.fileName, async () => {
+      const bytes = await connection.export()
+      return adapter.save ? adapter.save(bytes) : bytes
+    })
     if (mounted.current && result !== 'cancelled') setStatus(result === 'saved' ? 'Saved.' : 'Download started.')
   })
-  return <MovableDialog title={adapter.title} caption={caption} className="pm-spreadsheet-dialog" onClose={onClose} actions={<>
+  return <MovableDialog title={adapter.title} caption={caption} className={`pm-spreadsheet-dialog ${className}`} onClose={onClose} actions={<>
     <span role="status">{status}</span>
     <button type="button" className="ws-action" disabled={busy} onClick={() => file.current?.click()}>Open file</button>
-    <button type="button" className="ws-action" disabled={busy || !context.current} onClick={() => void save()}>Save as…</button>
+    <button type="button" className="ws-action" disabled={busy || !context.current} onClick={() => void save()}>{saveLabel}</button>
     <button type="button" className="ws-action ws-action--primary" disabled={busy || updateDisabled || !context.current} onClick={() => void update()}>Update</button>
   </>}>
     {error && <p className="pm-spreadsheet-error" role="alert">{error}</p>}

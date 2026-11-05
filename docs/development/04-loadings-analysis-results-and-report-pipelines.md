@@ -56,8 +56,8 @@ The ordinary table still supports add/edit/delete in the dedicated `Demand Check
 The reusable owner is now `@pm/spreadsheet`: its loadcase adapter consumes the generic XLSX and
 evaluated-snapshot pipeline; `shared/SpreadsheetDialog` owns the one web session/modal. Concrete
 coordinates and Rebar use that same package/modal with their own checked mappings, as described in
-[development/03](03-geometry-and-material-pipelines.md). The host protocol v2 carries a bounded
-worksheet name and mapped column count; it exposes no general engine commands.
+[development/03](03-geometry-and-material-pipelines.md). Host protocol v3 carries either a bounded
+worksheet/column table mapping or explicit whole-workbook mode; it exposes no general engine commands.
 
 The modal header contains Loadcases, a concise input-origin caption, Open file, Save as, Update
 and Close. The grid retains row/column headings, in-cell formulas and fill; its ribbon, formula
@@ -86,6 +86,22 @@ acknowledgments complete and its rendering frames have run. The populated grid a
 appear together, without exposing the renderer's black/empty startup frames. Closing cancels the
 pending presentation callbacks; errors remain visible. See the
 [opening-transition evidence](../task-packets/2026-11-05-loadcase-opening-flash.md).
+
+Open in the Project menu reuses this pipeline for the complete applied project. Its
+1280 × 840 CSS-pixel modeless app window is viewport-clamped and has no separate browser address
+bar. Its single native title row has only Open/Save/Undo/Redo icons on the left and the centred filename.
+Shared Update to Project, Minimize, Maximize/Restore and Close controls replace Search/Share/Comments/
+theme in a reserved slot at the right. No extra header row consumes grid space. The native File
+menu, ribbon, formula bar, bottom tabs and status remain below. Minimize retains the draft and
+restore bounds; the filename region remains draggable. Native Open/Save use the bounded file adapter. Generated project
+cells are editable and unfrozen, including headings. Native Open stages a bounded XLSX independently,
+Save preserves the formula-bearing draft, user formatting and helper sheets, and Update selects
+the nine required input sheets with the current document properties and validates them through
+`@pm/spreadsheet/project` and the existing project validator before applying once. Invalid
+headings, missing input groups, formula errors or stale applied inputs leave the project unchanged.
+Repeated Updates retain formulas in the open draft; reopening starts from numeric P-M inputs.
+Generated files stay text-like: input text dark blue, no cell fills or bold headings. Existing
+table modal sizes/header protection are unchanged. See the [title-row evidence](../task-packets/2026-11-05-project-spreadsheet-title-bar.md).
 The current persistence helpers live in `@pm/project`; a future
 `@pm/loadings` extraction will own richer source-case validation and transformations. Demand Check
 retains input order while using stable IDs.
@@ -423,14 +439,17 @@ field point on the excluded curve above Pmax uses a hollow circle. Both use the 
 green governing Design diamond retain their existing meaning.
 Capacity and Demand P-M/Mx-My charts mark their coordinate origin with a small neutral dot and
 the label O at (0,0). This is a display guide, not a resistance state or an additional Data row.
-The compact `θ cut` checkbox uses the shared chart check
+The compact `θ (Load Angle)` checkbox shows the checked direction and uses the shared chart check
 role and adds the red dotted geometric
 forward Demand-theta half-section without rebuilding the surface or exact curve. The analysis
-query clips paths at Mtheta = 0; Data consumes those same plotted arrays. A permanent footer note
-explains the option independently of its checked state. Theta uses the checked moment
+query clips paths at Mtheta = 0; Data consumes those same plotted arrays. The control tooltip
+explains the option. Theta uses the checked moment
 vector; beta uses the qualified selected demand/capacity state or an explicitly selected inspection
 angle. The analysis owner supplies magnitude mapping and a separately typed 2D intersection
-diagnostic; the stored governing check is unchanged. Data reads the same plotted arrays and uses
+query per root 05 section 9. For the declared 2D Load Ray basis, batch and selected loadcase
+jobs use the same prepared check as report assembly. The result carries the frozen angle
+source, plotted magnitude, signed components and segment fraction. The footer consumes the
+selected check from the same displayed loadcase frame as the plot. Data reads the metric cards and the same plotted arrays and uses
 internal curve/action/role bindings to publish the compact point/criterion tables. Its row counts do not imply
 physical-station counts. Zero moments identify the theta plane as inspection rather than a unique
 demand direction. Refit coordinate/layer/unit changes while preserving a theme-only viewport.
@@ -708,8 +727,9 @@ neutral-axis and resultant overlays retain their centroidal state; the separatel
 axes may preview an unapplied input origin. A no-loadcase view can show geometry and load axes
 without manufacturing a physical field. Neither offset nor Convert rebuilds the capacity surface.
 
-Project workbook v6 and standalone loadcase sheets declare their reference and convert authored
-values once at import/export. Existing centroidal workbook readers retain their explicit contracts.
+Project input workbook v1 and standalone loadcase sheets declare their reference and convert
+authored values once at import/export. The Project menu uses the single first-format reader in
+`@pm/spreadsheet/project-xlsx`; native centroidal JSON v1/v2 readers retain their separate contracts.
 Calculation trace dialogs identify entered values at O and converted values at C. PDF identity and
 Excel Load reference evidence keep those inputs separate from unchanged centroidal ledgers/curves.
 Report results and adequacy rules are not redefined by this input-reference feature.
@@ -760,6 +780,8 @@ The section-field footer retains its status area in every layout. Its four metri
 only when the field is the primary (large) chart, across demand, capacity, before-Pmax and
 unavailable states; secondary field charts omit the cards to leave space for the drawing.
 Missing physical fields display unavailable values in the expanded cards.
+The Demand P–M result footer also appears only when P–M is the primary chart.
+Data includes the loadcase summary in both chart sizes.
 The drawing fit uses exact section bounds and the visible LOAD-axis origin, identically in field
 and outline views. Applying an already previewed origin therefore cannot change that fit.
 See [the presentation task packet](17-stable-demand-field-layout.md) for evidence and limits.

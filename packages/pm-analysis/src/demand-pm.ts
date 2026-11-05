@@ -25,6 +25,48 @@ export type PmLoadPathIntersections =
   | { status: 'unavailable'; reason: 'missing-curve' | 'missing-demand' | 'zero-path' | 'invalid-arithmetic'; points: [] }
   | { status: 'no-intersection'; points: [] }
 
+type PmSummaryUnavailableReason = Extract<PmLoadPathIntersections, { status: 'unavailable' }>['reason']
+  | 'no-intersection' | 'multiple-intersections' | 'overlap' | 'contact' | 'ambiguous-components'
+
+export type DemandPmSummary =
+  | { status: 'available'; resistance: PmCoordinate & Resultant; lambda: number; utilization: number }
+  | { status: 'unavailable'; reason: PmSummaryUnavailableReason }
+
+/** Root 05 §9: summarize the drawn crossing and its signed source components. */
+export const summarizeDemandPmCrossing = (
+  paths: readonly (readonly DemandPmPoint[])[], query: PmLoadPathIntersections
+): DemandPmSummary => {
+  if (query.status === 'unavailable') return { status: 'unavailable', reason: query.reason }
+  if (query.status !== 'intersections') return { status: 'unavailable', reason: query.status }
+  const [hit] = query.points
+  if (!hit) return { status: 'unavailable', reason: 'no-intersection' }
+  if (query.points.length > 1) return { status: 'unavailable', reason: 'multiple-intersections' }
+  if (hit.kind !== 'crossing' || hit.lambda <= 0) return { status: 'unavailable', reason: 'contact' }
+
+  const utilization = 1 / hit.lambda
+  if (![hit.P, hit.M, hit.lambda, utilization].every(Number.isFinite)) {
+    return { status: 'unavailable', reason: 'invalid-arithmetic' }
+  }
+  let components: Pick<Resultant, 'Mx' | 'My'> | undefined
+  for (const { path, segment, fraction } of hit.sources) {
+    const a = paths[path]?.[segment], b = paths[path]?.[segment + 1]
+    if (!a || !b || !Number.isFinite(fraction) || fraction < 0 || fraction > 1) {
+      return { status: 'unavailable', reason: 'invalid-arithmetic' }
+    }
+    const Mx = (1 - fraction) * a.Mx + fraction * b.Mx
+    const My = (1 - fraction) * a.My + fraction * b.My
+    if (![Mx, My].every(Number.isFinite)) return { status: 'unavailable', reason: 'invalid-arithmetic' }
+    if (components) {
+      const scale = Math.max(1, hit.M, Math.abs(Mx), Math.abs(My), Math.abs(components.Mx), Math.abs(components.My))
+      if (Math.hypot(Mx / scale - components.Mx / scale, My / scale - components.My / scale) > PREVIEW_GEOMETRY_TOL) {
+        return { status: 'unavailable', reason: 'ambiguous-components' }
+      }
+    } else components = { Mx, My }
+  }
+  if (!components) return { status: 'unavailable', reason: 'ambiguous-components' }
+  return { status: 'available', resistance: { P: hit.P, M: hit.M, ...components }, lambda: hit.lambda, utilization }
+}
+
 /** Root 05 §8: map the endpoint first, then join the mapped endpoints in P-M. */
 export const resultantMomentCoordinate = (point: Resultant): PmCoordinate => ({
   M: Math.hypot(point.Mx, point.My), P: point.P

@@ -100,6 +100,42 @@ test('both KDS mechanics round-trip the independently selected Appendix material
   }
 })
 
+test('explicit Appendix minimum-eccentricity inputs survive JSON parsing and invalid declarations fail', () => {
+  for (const profileId of ['kds-2024-stress-strain', 'kds-142020-equivalent-block'] as const) {
+    const design = createKdsAppendixDesignBasis()
+    design.modified = true
+    design.overrideReason = 'Project-specific eccentricity inputs for review'
+    assert.ok(design.minimumEccentricity)
+    design.minimumEccentricity = { ...design.minimumEccentricity, constantMm: 23.5, depthFactor: .04 }
+    const document = createProjectDocument({ calculationProfileId: profileId,
+      geometry: createEmptyGeometryInput({ id: 1, name: 'Explicit eccentricity inputs' }),
+      materials: applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId), design })
+    const parsed = parseProjectDocument(document)
+    assert.ok(parsed.ok, parsed.ok ? '' : parsed.error)
+    assert.equal(parsed.document.inputs.design.format, 'designMaterialReevaluation')
+    if (parsed.document.inputs.design.format === 'designMaterialReevaluation') assert.deepEqual(parsed.document.inputs.design.minimumEccentricity, design.minimumEccentricity)
+    assert.equal(parsed.document.inputs.design.modified, true)
+    assert.equal(parsed.document.inputs.design.overrideReason, design.overrideReason)
+    for (const rule of [{ ...design.minimumEccentricity, constantMm: NaN },
+      { ...design.minimumEccentricity, constantMm: -1 }, { ...design.minimumEccentricity, depthFactor: 1.1 },
+      { ...design.minimumEccentricity, depthFactor: '0.04' }, { constantMm: 23.5, depthFactor: .04 }]) {
+      const invalid = structuredClone(document)
+      Reflect.set(invalid.inputs.design, 'minimumEccentricity', rule)
+      assert.equal(parseProjectDocument(invalid).ok, false)
+    }
+    const omitted = structuredClone(document)
+    Reflect.deleteProperty(omitted.inputs.design, 'minimumEccentricity')
+    const defaulted = parseProjectDocument(omitted)
+    assert.ok(defaulted.ok, defaulted.ok ? '' : defaulted.error)
+    if (defaulted.document.inputs.design.format === 'designMaterialReevaluation') assert.deepEqual(defaulted.document.inputs.design.minimumEccentricity, createKdsAppendixDesignBasis().minimumEccentricity)
+  }
+  const en = createProjectDocument({ calculationProfileId: 'en-1992-1-1-2004-stress-strain',
+    geometry: createEmptyGeometryInput({ id: 1, name: 'Unsupported eccentricity rule' }),
+    materials: applyCalculationProfileToMaterials(createDefaultMaterialStore(), 'en-1992-1-1-2004-stress-strain') })
+  Reflect.set(en.inputs.design, 'minimumEccentricity', { constantMm: 23.5, depthFactor: .04, clauseRef: 'Unsupported input' })
+  assert.equal(parseProjectDocument(en).ok, false)
+})
+
 test('project parser rejects nonphysical material ordinates and rebar diameter', () => {
   const base = createProjectDocument({
     geometry: createEmptyGeometryInput({ id: 1, name: 'Invalid input gate' }),

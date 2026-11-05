@@ -133,7 +133,7 @@ export function DisplayUnitsPanel() {
       <button type="button" className="ws-action" onClick={() => setSelection(UNIT_PRESETS.us)}>US</button>
     </div>
     <div className="pm-unit-fields">
-      {Object.entries(UNIT_OPTIONS).map(([group, options]) => <label className="pm-field pm-unit-field" key={group}>
+      {Object.entries(UNIT_OPTIONS).filter(([group]) => group !== 'density').map(([group, options]) => <label className="pm-field pm-unit-field" key={group}>
         <span>{LABELS[group as UnitGroup]}</span><select aria-label={LABELS[group as UnitGroup]} value={selection.groups[group as UnitGroup]}
           onChange={event => setSelection(selectUnit(selection, group as UnitGroup, event.target.value as UnitGroups[UnitGroup]))}>
           {options.map(unit => <option key={unit} value={unit}>{unit}</option>)}

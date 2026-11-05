@@ -171,8 +171,24 @@ export function LoadcaseCalculationDialog({
         </FormulaPanel>
       </Step>
 
-      <Step index={3} title={constantAxial ? 'Constant-P Design-surface check' : 'Governing proportional 3D Design-surface check'}>
-        {!check ? <div className="pm-calc-loading"><Loader2 size={17} className="pm-spin" /><span>Checking the current factored demand against the Design surface…</span></div> : constantAxial ? <>
+      <Step index={3} title={check?.utilizationDefinition === 'direct2D' ? '2D Load Ray · fixed neutral axis'
+        : constantAxial ? 'Constant-P Design-surface check' : 'Governing proportional 3D Design-surface check'}>
+        {!check ? <div className="pm-calc-loading"><Loader2 size={17} className="pm-spin" /><span>Checking the current factored demand…</span></div>
+          : check.utilizationDefinition === 'direct2D' ? <>
+          <FormulaPanel>
+            <Formula><span className="pm-calc-math">Intersect λ(Pu, Mu) with the fixed neutral-axis Design curve on P–MR.</span></Formula>
+            <Formula><span className="pm-calc-math">λ = {factorValue(check.capacityMultiplier)} · UR = {utilizationValue(check.utilization)}</span></Formula>
+          </FormulaPanel>
+          <ResultantTable demand={checkedDemand} capacity={check.capacityPoint} />
+          <div className="pm-calc-facts">
+            <Fact label="Direction source">{check.direct2D?.angleSource ?? 'Unavailable'}</Fact>
+            <Fact label="Strain direction β">{check.direct2D?.beta == null ? '—' : `${(check.direct2D.beta * 180 / Math.PI).toFixed(3)}°`}</Fact>
+            <Fact label="Plotted MR">{check.direct2D?.crossing ? momentValue(check.direct2D.crossing.M) : '—'}</Fact>
+            <Fact label="Design segment">{check.direct2D?.crossing ? check.direct2D.crossing.segment.segment + 1 : '—'}</Fact>
+            <Fact label="Segment fraction">{factorValue(check.direct2D?.crossing?.segment.fraction ?? null)}</Fact>
+          </div>
+          <p>{check.message}</p>
+        </> : constantAxial ? <>
           <FormulaPanel>
             <Formula><span className="pm-calc-math">1. Hold the axial force at P = Pu and take the moment vector of Dcheck in that plane.</span></Formula>
             <Formula id="equation-constant-axial-ray" numbered>
@@ -254,7 +270,7 @@ export function LoadcaseCalculationDialog({
         </>}
       </Step>
 
-      <Step index={5} title="Inverse equilibrium diagnostic">
+      <Step index={5} title={check?.utilizationDefinition === 'direct2D' ? 'Neutral-axis reference state' : 'Inverse equilibrium diagnostic'}>
         {!inverseResult ? <div className="pm-calc-loading"><Loader2 size={17} className="pm-spin" /><span>Solving the diagnostic equilibrium state for this loadcase…</span></div> : <>
           <div className={`pm-calc-note ${inverseStatus?.tone ?? ''}`}>
             {inverseResult.ok ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
@@ -297,7 +313,7 @@ export function LoadcaseCalculationDialog({
         </div>}
       </Step> : <Step index={6} title="Secondary fixed-P moment diagnostic">
         {!check ? <div className="pm-calc-note is-warning"><AlertTriangle size={16} /><p>Fixed-P evidence is pending.</p></div> : check.fixedPUtilization === null || check.fixedPCapacityMoment === null ? (
-          <div className="pm-calc-note is-warning"><AlertTriangle size={16} /><p>No unique fixed-P moment-ray ratio is available for this combination. This does not replace or invalidate the governing proportional 3D result above.</p></div>
+          <div className="pm-calc-note is-warning"><AlertTriangle size={16} /><p>No unique secondary fixed-P moment-ray ratio is available for this combination.</p></div>
         ) : <>
           <FormulaPanel><Formula id="equation-fixed-p-utilization" numbered>
             <TechnicalEquation

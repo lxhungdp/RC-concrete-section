@@ -26,7 +26,7 @@ async function values() {
       event.data.ok ? resolve(event.data.data) : reject(Error(event.data.error))
     }
     addEventListener('message', listen)
-    iframe.contentWindow.postMessage({ type: 'pm-gridcraft', version: 2, session, id, action: 'values' }, location.origin)
+    iframe.contentWindow.postMessage({ type: 'pm-gridcraft', version: 4, session, id, action: 'values' }, location.origin)
   }))
 }
 

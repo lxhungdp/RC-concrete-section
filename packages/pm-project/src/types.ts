@@ -33,7 +33,7 @@ export type LoadCombination = {
 }
 
 /** engineering/05 section 3: the query that supplies UR and the verdict for every combination. */
-export type DemandCheckBasis = 'proportional3D' | 'constantAxial'
+export type DemandCheckBasis = 'proportional3D' | 'direct2D' | 'constantAxial'
 
 export type LoadingsInput = {
   /** Explicit in canonical v3. Omitted only by centroidal v1/v2 inputs and programmatic seeds. */

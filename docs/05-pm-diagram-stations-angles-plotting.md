@@ -210,14 +210,16 @@ at the selected demand/capacity field angle. Its horizontal coordinate is result
 `M_R = hypot(Mx, My)`, with `P` unchanged. Preserve the one-sided exact-beta station order and
 geometric point roles. The plotted polyline joins the magnitude-mapped endpoints; taking the
 magnitude after interpolating a 3D segment defines a different curve.
-An independent, initially off `θ cut` checkbox (accessible name `Load-angle section θ`) adds the
+Demand Check displays the resolved `β (N.A.)` as a read-only value. The initially off
+`θ (Load Angle)` checkbox (accessible name `Load-angle section θ`) displays the checked
+load angle even when unchecked. Both readouts use three decimals in degrees. The checkbox adds the
 geometric demand-moment plane cut as a red dotted overlay. It uses the checked demand direction and the original active
 Nominal/Design triangulations. Display only the forward half-plane `Mθ >= 0`, where its coordinate
 equals `M_R`, to match the one-sided Direct-beta presentation. Clip straddling source segments at
 `Mθ = 0` by affine interpolation, retaining geometric boundary points and disconnected paths.
 Do not fold the opposite half-plane onto this branch. Apply the same selection to pre-cap theta
-paths. A permanent chart note explains that theta is the checked load-moment direction and that
-the red dotted curve is the forward surface section. This supersedes the earlier full signed-cut
+paths. The theta control tooltip explains the checked load-moment direction and the forward
+surface section. This supersedes the earlier full signed-cut
 display decision. See the [task packet](task-packets/2026-11-05-demand-theta-forward-branch.md).
 Beta and demand theta remain separate quantities. Hover/Data retain source components, angle,
 station identity and point role. Capacity uses the same resultant-magnitude coordinate for its
@@ -261,8 +263,17 @@ Demand-plane plots use the checked demand direction, including any declared code
 In Demand P-M, the load path uses resultant demand magnitude. A Direct-beta 2D diagnostic
 intersects that path with exactly the displayed magnitude-mapped Design segments. Preserve
 all distinct forward hits and source segment/fraction evidence; distinguish tangency, overlap,
-missing/invalid geometry and zero-length paths. It supplies no compatible physical field and
-never replaces the governing crossing or UR. Show the stored governing crossing with the
+missing/invalid geometry and zero-length paths. For a unique transverse crossing with finite
+positive multiplier, report the plotted P and M_R as Pr and plotted Mr, the signed centroidal
+Mrx and Mry by affine interpolation of the Design endpoints at the same segment fraction, and
+the diagnostic UR 2D = 1 / λ2D. The plotted Mr is the interpolation of endpoint magnitudes.
+It can differ from hypot(Mrx, Mry). At welded hits the component pairs must agree within the
+existing normalized geometric criterion. Unresolved components, non-finite ratios or ambiguous
+crossings leave the summary unavailable. Under Constant P this ratio describes moment only.
+Under the selected 2D Load Ray basis, this crossing supplies the preview check ratio. The
+geometric evidence supplies no compatible physical field. A separate admissible reference on
+the same projected ray and at the same angle or a bracketed physical station refinement supplies
+the field. Keep the pre-cap physical state separate when the cap limits the 2D ratio. Show the stored governing crossing with the
 optional theta layer. Under Constant P the diagnostic path remains horizontal at Pu.
 Fixed-P retains the actual Pu; a plane outside the axial range has no contour and must not be
 silently clamped. The governing UR still comes only from the unchanged Design-surface query.

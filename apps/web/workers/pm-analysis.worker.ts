@@ -71,7 +71,7 @@ workerSelf.onmessage = async (event: MessageEvent<AnalysisWorkerRequest>) => {
     }
 
     if (request.type === 'checkLoadcases') {
-      const result = execution.checkLoadcases({ ...request.payload, surface: referencedSurface(request.payload) })
+      const result = await execution.checkLoadcases({ ...request.payload, surface: referencedSurface(request.payload) })
       workerSelf.postMessage({ type: 'success', jobId: request.jobId, requestType: request.type, result })
       return
     }

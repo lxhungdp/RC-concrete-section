@@ -1,6 +1,6 @@
 import { activeDesignSurfaceDataset, activeNominalSurfaceDataset } from '@pm/results/audit'
 import { PREVIEW_GEOMETRY_TOL } from './geometry-criteria'
-import { directMomentCoordinate, forwardMomentPaths, intersectPmLoadPath, resultantMomentCoordinate, type DemandPmPoint } from './demand-pm'
+import { directMomentCoordinate, forwardMomentPaths, intersectPmLoadPath, resultantMomentCoordinate, summarizeDemandPmCrossing, type DemandPmPoint } from './demand-pm'
 import { axialCapExcludedPaths } from './axial-cap-display'
 export { directMomentCoordinate, intersectPmLoadPath, resultantMomentCoordinate } from './demand-pm'
 export type { DemandPmPoint, PmLoadPathIntersections, PmPathIntersection } from './demand-pm'
@@ -45,6 +45,7 @@ import type {
   AdmissibilityViolation,
   StrainAdmissibility,
   CapacityFieldResult,
+  Direct2DCheckEvidence,
   InversePreviewResult,
   LoadcaseQuickCheckResult,
   StationDefinition,
@@ -397,6 +398,7 @@ export const buildDemandPmGeometry = (input: {
   demand: Resultant | null
   governingPoint: Resultant | null
   basis: DemandCheckBasis
+  stored2D?: Direct2DCheckEvidence
   showTheta: boolean
 }) => {
   const { surface, exact, demand, governingPoint, basis, showTheta } = input
@@ -439,16 +441,16 @@ export const buildDemandPmGeometry = (input: {
   const loadPath: Array<{ M: number; P: number }> = []
   if (demand && [demand.P, demand.Mx, demand.My].every(Number.isFinite)) {
     const md = Math.hypot(demand.Mx, demand.My)
-    const governingLambda = governingPoint ? md > 0 ? Math.hypot(governingPoint.Mx, governingPoint.My) / md
-      : basis === 'proportional3D' && demand.P !== 0 ? governingPoint.P / demand.P : 0 : 0
+    const governingLambda = input.stored2D?.crossing?.lambda ?? (governingPoint ? md > 0 ? Math.hypot(governingPoint.Mx, governingPoint.My) / md
+      : basis !== 'constantAxial' && demand.P !== 0 ? governingPoint.P / demand.P : 0 : 0)
     let extent = Number.isFinite(governingLambda) ? Math.max(1, governingLambda) : 1
     for (const point of diagnostic.points) extent = Math.max(extent, point.lambda)
     const end = { M: extent * md, P: basis === 'constantAxial' ? demand.P : extent * demand.P }
     if ([end.M, end.P].every(Number.isFinite)) loadPath.push({ M: 0, P: basis === 'constantAxial' ? demand.P : 0 }, end)
   }
-  return { beta, theta, directStatus, nominal, design, nominalTheta, designTheta, beforeDirect, beforeTheta,
-    diagnostic, loadPath, demand: demand ? resultantMomentCoordinate(demand) : null,
-    governing: governingPoint ? resultantMomentCoordinate(governingPoint) : null }
+  return { beta, theta, basis, directStatus, nominal, design, nominalTheta, designTheta, beforeDirect, beforeTheta,
+    diagnostic, summary: summarizeDemandPmCrossing(design, diagnostic), loadPath, demand: demand ? resultantMomentCoordinate(demand) : null,
+    governing: input.stored2D ? input.stored2D.crossing : governingPoint ? resultantMomentCoordinate(governingPoint) : null }
 }
 
 /**
@@ -4426,13 +4428,14 @@ const checkRawLoadcaseUtilizationFromSurface = (
   const selected = constantAxial
     ? constantAxial.status === 'crossing' ? constantAxial.intersection : null
     : proportional
-  const utilization = constantAxial
+  const utilization = checkBasis === 'direct2D' ? null : constantAxial
     ? selected && 1 / selected.lambda
     : proportionalUtilization
   const classification = constantAxial?.status === 'axial-outside-domain'
     ? axialOutsideDomainClassification()
     : classifyUtilization(utilization, relativeUncertainty, evidence)
-  let message = constantAxial && constantAxial.status !== 'crossing'
+  let message = checkBasis === 'direct2D' ? '2D Load Ray requires a prepared loadcase and a fixed neutral-axis meridian.'
+    : constantAxial && constantAxial.status !== 'crossing'
     ? CONSTANT_AXIAL_MESSAGES[constantAxial.status]
     : !constantAxial && proportionalUtilization == null
       ? 'No proportional demand-ray crossing was found on the design-resistance surface.'
@@ -4468,7 +4471,7 @@ const checkRawLoadcaseUtilizationFromSurface = (
       constantAxialCapacityMoment: selected ? demandMoment * selected.lambda : null
     } : {}),
     capacityMultiplier:
-      selected && Number.isFinite(selected.lambda) ? selected.lambda : null,
+      checkBasis !== 'direct2D' && selected && Number.isFinite(selected.lambda) ? selected.lambda : null,
     demandMomentDirection: demandMoment > 1e-9 ? Math.atan2(loadcase.My, loadcase.Mx) : null,
     utilization,
     proportionalUtilization,
@@ -4478,8 +4481,8 @@ const checkRawLoadcaseUtilizationFromSurface = (
     adequate: classification.status === 'indeterminate' ? null : classification.status === 'adequate',
     adequacy: classification.status,
     utilizationInterval: classification.interval,
-    capacityPoint: selected?.point ?? null,
-    resistance: selected?.resistance ?? null,
+    capacityPoint: checkBasis === 'direct2D' ? null : selected?.point ?? null,
+    resistance: checkBasis === 'direct2D' ? null : selected?.resistance ?? null,
     contourPoint: fixedP.point,
     message
   }
@@ -4526,6 +4529,104 @@ export const checkLoadcasesUtilizationFromSurface = (
   checkBasis: DemandCheckBasis = 'proportional3D'
 ): LoadcaseQuickCheckResult[] => loadcases.map((loadcase) => checkLoadcaseUtilizationFromSurface(surface, loadcase, checkBasis))
 
+/** The same prepared 2D query serves the table, selected detail and report adapters. */
+export const solveDirect2DLoadcase = (
+  surface: PreviewSurface,
+  loadcase: LoadCombination,
+  resolveReference: (demand: LoadCombination) => InversePreviewResult,
+  exactDirection: (beta: number) => ExactDirectionCurve,
+  resolvePhysicalField?: (demand: LoadCombination, curve: ExactDirectionCurve) => CapacityFieldResult
+): { check: LoadcaseQuickCheckResult; result: InversePreviewResult } => {
+  const boundary = surface.sectionBoundaryPoints ?? []
+  const adjustments = boundary.length ? minimumEccentricityCandidates(surface.designBasis, loadcase, (nx, ny) =>
+    projectedBoundaryDepth(boundary, nx, ny)) : []
+  const candidates = adjustments.length ? adjustments.map(candidate => ({
+    demand: { ...loadcase, Mx: candidate.Mx, My: candidate.My }, eccentricity: candidate.eccentricityMm
+  })) : [{ demand: loadcase, eccentricity: undefined }]
+  const solve = ({ demand, eccentricity }: (typeof candidates)[number]) => {
+    const comparison = checkRawLoadcaseUtilizationFromSurface(surface, demand, 'proportional3D')
+    const inverse = resolveReference(demand)
+    const capacity = inverse.capacityField
+    const qualifiedCapacity = capacity?.status === 'available' && capacity.admissibility.evaluated && capacity.admissibility.ok
+      ? capacity : null
+    const fibre = surface.analysisOptions.methodId === 'strain-domain-surface-v1'
+    const demandBeta = fibre && inverse.ok && inverse.converged && inverse.admissibility.evaluated && inverse.admissibility.ok
+      ? strainGradientDirection(inverse.state) : null
+    const capacityBeta = qualifiedCapacity ? strainGradientDirection(qualifiedCapacity.state) : null
+    const beta = demandBeta ?? capacityBeta
+    const zero = demand.P === 0 && demand.Mx === 0 && demand.My === 0
+    const evidence: Direct2DCheckEvidence = {
+      beta, angleSource: demandBeta !== null ? 'demand-equilibrium' : capacityBeta !== null ? 'proportional-capacity' : null,
+      crossing: null, status: zero ? 'zero-demand' : 'missing-angle',
+      message: zero ? 'Zero demand has UR = 0 and no unique neutral-axis direction.'
+        : 'A qualified neutral-axis direction is unavailable for 2D Load Ray.'
+    }
+    let curve: ExactDirectionCurve | undefined
+    if (!zero && beta !== null && Number.isFinite(beta)) {
+      try {
+        curve = exactDirection(beta)
+        const geometry = buildDemandPmGeometry({ surface, exact: curve, inspectionBeta: beta,
+          demand, governingPoint: null, basis: 'direct2D', showTheta: false })
+        const { summary, diagnostic } = geometry
+        const segment = diagnostic.points[0]?.sources[0]
+        if (summary.status === 'available' && segment) {
+          evidence.status = 'crossing'
+          evidence.crossing = { ...summary.resistance, lambda: summary.lambda, segment }
+          evidence.message = 'Fixed neutral-axis Design meridian intersected by the 2D load ray.'
+        } else {
+          evidence.status = 'unresolved-crossing'
+          evidence.message = `2D Load Ray has no qualified crossing (${summary.status === 'unavailable' ? summary.reason : 'missing-segment'}).`
+        }
+      } catch {
+        evidence.status = 'evaluation-error'
+        evidence.message = 'The fixed neutral-axis Design meridian could not be evaluated.'
+      }
+    }
+    const crossing = evidence.crossing
+    const utilization = zero ? 0 : crossing ? 1 / crossing.lambda : null
+    const adaptive = surface.analysisOptions.samplingMode === 'adaptive'
+    const uncertainty = adaptive ? curve?.stationError.withinTolerance ? curve.stationError.maxRelative : null
+      : FIXED_GRID_SCREENING_RELATIVE_UNCERTAINTY
+    const classification = classifyUtilization(utilization, uncertainty,
+      adaptive ? 'adaptive-sampling-estimate' : 'fixed-grid-screening-margin')
+    if (crossing && !adaptive) evidence.message += ' Fixed-grid screening margin is a preview estimate.'
+    if (crossing && adaptive && uncertainty === null) evidence.message += ' Exact meridian refinement did not qualify an uncertainty estimate.'
+    const check: LoadcaseQuickCheckResult = {
+      ...comparison, demand: loadcase, utilizationDefinition: 'direct2D', direct2D: evidence,
+      ...(eccentricity !== undefined ? { codeAdjustedDemand: demand, minimumEccentricityMm: eccentricity } : {}),
+      utilization, capacityMultiplier: crossing?.lambda ?? null,
+      capacityPoint: crossing ? { P: crossing.P, Mx: crossing.Mx, My: crossing.My } : null,
+      resistance: null, adequacy: classification.status,
+      adequate: classification.status === 'indeterminate' ? null : classification.status === 'adequate',
+      utilizationInterval: classification.interval,
+      message: evidence.message + (eccentricity !== undefined ? ` ${minimumEccentricityMessage(eccentricity)}` : '')
+    }
+    // A qualified proportional reference at the frozen angle also lies on the projected ray.
+    // An independent demand angle does not qualify that capacity field.
+    let capacityField: CapacityFieldResult = crossing && qualifiedCapacity &&
+      (demandBeta === null || demandBeta === capacityBeta) ? qualifiedCapacity : {
+        status: 'unavailable', reason: 'no-crossing', iterations: 0,
+        message: 'A compatible physical field at the selected 2D capacity is unavailable.'
+      }
+    if (crossing && curve && fibre && classification.status === 'inadequate' &&
+      capacityField.status === 'unavailable' && resolvePhysicalField) {
+      try {
+        capacityField = resolvePhysicalField(demand, curve)
+      } catch {
+        capacityField = { status: 'unavailable', reason: 'evaluation-error', iterations: 0,
+          message: 'The fixed neutral-axis physical field could not be evaluated.' }
+      }
+    }
+    const result = applyDesignCheckToInverse({
+      ...inverse, demand: loadcase, codeAdjustedDemand: check.codeAdjustedDemand,
+      minimumEccentricityMm: eccentricity, capacityField, direct2DCurve: curve
+    }, check)
+    return { check, result }
+  }
+  return candidates.map(solve).reduce((governing, candidate) =>
+    (candidate.check.utilization ?? Infinity) > (governing.check.utilization ?? Infinity) ? candidate : governing)
+}
+
 /**
  * Attach the governing design check to a converged inverse state.
  *
@@ -4550,6 +4651,8 @@ export const applyDesignCheckToInverse = (
     utilizationInterval: check.utilizationInterval
   },
   designCapacityPoint: check.capacityPoint,
+  designCapacityMultiplier: check.capacityMultiplier,
+  ...(check.direct2D ? { direct2D: check.direct2D } : {}),
   resistance: inverse.resistance ?? check.resistance
 })
 

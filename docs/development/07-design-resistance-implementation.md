@@ -147,9 +147,13 @@ duplicated in Capacity.
   display the unused common-schema strain transition. An inactive compression-class coefficient
   remains stored but is not another editable field. Design-material routes expose only their
   declared minimum-eccentricity inputs here, when present.
-- A missing required override reason remains enterable in Resistance. A reason already entered in
-  Materials is retained without another populated editor. AS retains its reason editor here as its
-  sole input location. A reason started in Resistance remains editable for that panel session.
+- A missing required override reason remains enterable in Materials/Resistance through one shared
+  field behavior. A reason started here remains editable for that panel session. Completed or
+  generated reasons are stored without a routine populated editor, including AS. Opening Resistance
+  Details explicitly exposes an existing required reason for review/editing. Required-reason
+  validation and canonical provenance are unchanged. Routine forms have no default-cap reminder,
+  automatic-save notice or repeated block/factor explanations; units, active equations and errors
+  remain visible.
 - Editing any factor marks the profile `modified` and `draft`.
 - A modified code coefficient is not published to canonical state until an override reason makes it
   valid. Reinforcement classification and disabling only the optional axial cap are explicit

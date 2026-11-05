@@ -45,6 +45,7 @@ for (const route of [...verdictRoutes, ...finiteSteelRoutes]) for (const mode of
           }
         }
         assert.deepEqual(hidden.diagnostic, shown.diagnostic)
+        assert.deepEqual(hidden.summary, shown.summary)
         assert.deepEqual(hidden.designTheta, [])
         for (const paths of [shown.design, shown.nominal]) for (const path of paths) for (const point of path) {
           assert.equal(point.M, Math.hypot(point.Mx, point.My))

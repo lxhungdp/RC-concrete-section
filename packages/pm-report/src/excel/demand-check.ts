@@ -805,8 +805,8 @@ export const buildDemandCheckWorkbookParts = async (input: DemandCheckExcelInput
     summary.getCell(r, 4).value = knm(loadcase.Mx)
     summary.getCell(r, 5).value = knm(loadcase.My)
     summary.getCell(r, 6).value = loadcaseAngleDeg(loadcase)
-    summary.getCell(r, 7).value = result.resistance?.factor ?? '—'
-    summary.getCell(r, 8).value = result.resistance?.classification ?? '—'
+    summary.getCell(r, 7).value = result.direct2D ? '—' : result.resistance?.factor ?? '—'
+    summary.getCell(r, 8).value = result.direct2D ? 'Geometric 2D check' : result.resistance?.classification ?? '—'
     summary.getCell(r, 9).value = result.utilization ?? '—'
     summary.getCell(r, 10).value = result.fixedPUtilization ?? '—'
     const verdict = verdictOf(result)
@@ -870,11 +870,40 @@ export const buildDemandCheckWorkbookParts = async (input: DemandCheckExcelInput
   selected.forEach((solution, index) => {
     const tag = `LC${index + 1}`
     const { loadcase } = solution
+    const checked = solution.result.codeAdjustedDemand ?? loadcase
+    const direct = solution.result.direct2D
     const contextRows: Array<readonly [string, string | number]> = [
       ['Loadcase', loadcase.name],
-      ['Pu (kN)', kn(loadcase.P)],
-      ['Mux / Muy (kN·m)', `${knm(loadcase.Mx).toFixed(3)} / ${knm(loadcase.My).toFixed(3)}`]
+      ['Pu (kN)', kn(checked.P)],
+      ['Mux / Muy (kN·m)', `${knm(checked.Mx).toFixed(3)} / ${knm(checked.My).toFixed(3)}`]
     ]
+
+    if (direct) {
+      const sheet = workbook.addWorksheet(`${tag}_2D_Check`)
+      sheet.columns = [{ width: 28 }, { width: 82 }]
+      const hit = direct.crossing
+      for (const row of [
+        ['Check basis', '2D Load Ray'], ...contextRows,
+        ['Direction source', direct.angleSource ?? 'Unavailable'],
+        ['Strain direction β (deg)', direct.beta === null ? '—' : direct.beta * 180 / Math.PI],
+        ['Pr (kN)', hit ? kn(hit.P) : '—'], ['Mrx (kN·m)', hit ? knm(hit.Mx) : '—'],
+        ['Mry (kN·m)', hit ? knm(hit.My) : '—'], ['Plotted MR (kN·m)', hit ? knm(hit.M) : '—'],
+        ['Path index (zero-based)', hit?.segment.path ?? '—'], ['Segment index (zero-based)', hit?.segment.segment ?? '—'],
+        ['Segment fraction', hit?.segment.fraction ?? '—'], ['Capacity multiplier λ', hit?.lambda ?? '—'],
+        ['Utilization UR', solution.result.utilization ?? '—'], ['Status', direct.status], ['Evidence', direct.message]
+      ]) sheet.addRow(row)
+      if (solution.result.direct2DCurve && direct.beta !== null) {
+        const vertical = writeVerticalAuditSheet(context, {
+          sheet: workbook.addWorksheet(`${tag}_Vertical`), sliceAngleDeg: direct.beta * 180 / Math.PI,
+          exactDirectionCurve: solution.result.direct2DCurve, titleText: `2D LOAD RAY — ${loadcase.name}`,
+          contextRows: [...contextRows, ['Check basis', '2D Load Ray']],
+          demand: { x: knm(resultantMomentCoordinate(checked).M), y: kn(checked.P),
+            xLabel: 'Demand M_R (kN·m)', yLabel: 'Demand P (kN)', label: 'Demand' }
+        })
+        if (vertical.chart) charts.push(vertical.chart)
+      }
+      return
+    }
 
     const inverse = workbook.addWorksheet(`${tag}_Inverse`, {
       views: [{ state: 'frozen', ySplit: 3, showGridLines: false }],

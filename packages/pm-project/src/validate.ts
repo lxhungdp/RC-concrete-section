@@ -1210,6 +1210,19 @@ const parseDesignBasis = (value: unknown | undefined, materials: MaterialStore):
       value.basisVersion !== DESIGN_BASIS_VERSION &&
       value.profileId === 'en-1992-1-1-2004-default' &&
       value.compressionEndpoint === 'ultimate-strain'
+    let minimumEccentricity = profileDefault.minimumEccentricity
+    if (value.minimumEccentricity !== undefined) {
+      assert(profileDefault.minimumEccentricity !== undefined, 'inputs.design.minimumEccentricity is not supported by this profile')
+      assertRecord(value.minimumEccentricity, 'inputs.design.minimumEccentricity must be an object')
+      assert(isFiniteNumber(value.minimumEccentricity.constantMm), 'inputs.design.minimumEccentricity.constantMm must be finite')
+      assert(isFiniteNumber(value.minimumEccentricity.depthFactor), 'inputs.design.minimumEccentricity.depthFactor must be finite')
+      assert(isString(value.minimumEccentricity.clauseRef), 'inputs.design.minimumEccentricity.clauseRef must be a string')
+      minimumEccentricity = {
+        constantMm: value.minimumEccentricity.constantMm,
+        depthFactor: value.minimumEccentricity.depthFactor,
+        clauseRef: value.minimumEccentricity.clauseRef
+      }
+    }
     design = {
       ...common,
       format: 'designMaterialReevaluation',
@@ -1220,7 +1233,7 @@ const parseDesignBasis = (value: unknown | undefined, materials: MaterialStore):
           : value.compressionEndpoint === 'peak-stress-strain' || value.compressionEndpoint === 'ultimate-strain'
           ? value.compressionEndpoint
           : profileDefault.compressionEndpoint,
-      ...(profileDefault.minimumEccentricity ? { minimumEccentricity: profileDefault.minimumEccentricity } : {})
+      ...(minimumEccentricity ? { minimumEccentricity } : {})
     }
   }
   assertValidDesignBasis(design)

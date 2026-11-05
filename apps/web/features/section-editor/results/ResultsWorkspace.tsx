@@ -37,7 +37,7 @@ import {
 } from '../../../application/analysis/client'
 import { PlotlyChart } from './PlotlyChart'
 import { chartText, curvePointCriteria } from './demand-chart-text'
-import { demandPmDiagnosticMessage, demandPmTraces } from './demand-pm-chart'
+import { demandPmTraces } from './demand-pm-chart'
 import { DemandChartDataDialog, type DemandChartData } from './DemandChartDataDialog'
 import {
   DEMAND_CHART_IDS,
@@ -218,7 +218,7 @@ const SyncedControl = ({
         aria-label={title ?? label}
       />
       {inputWorking ? <Loader2 size={11} className="pm-spin" aria-hidden="true" /> : null}
-      <em>{unit}</em>
+      {unit && <em>{unit}</em>}
     </span>
   </label>
 )
@@ -504,9 +504,10 @@ export function ResultsWorkspace({
   )
 
   const equilibriumBeta = useMemo(() => {
+    if (inverseResult?.direct2D) return inverseResult.direct2D.beta
     if (!isLoadcaseMode || !sectionField) return null
     return strainGradientDirection(sectionField.state)
-  }, [sectionField, isLoadcaseMode])
+  }, [inverseResult, sectionField, isLoadcaseMode])
 
   useEffect(() => {
     if (!requestedIsLoadcaseMode || !requestedSurface) {
@@ -531,7 +532,8 @@ export function ResultsWorkspace({
     }
     const field = resolveLoadcaseField(requestedInverseResult, requestedSurface.analysisOptions.methodId)
     const physical = field.status === 'available' ? field : null
-    const exactBeta = (physical ? strainGradientDirection(physical.state) : null) ?? demandView.directAngle * Math.PI / 180
+    const directCheck = requestedInverseResult.direct2D
+    const exactBeta = directCheck?.beta ?? (physical ? strainGradientDirection(physical.state) : null) ?? demandView.directAngle * Math.PI / 180
     const completed = currentLoadcaseFrame(requestedSelectedLoadcase, requestedInverseResult, requestedSurface, fieldSnapshot)
     if (completed && completed.requestedBeta === exactBeta && sameLoadcaseAnalysisInputs(completed, {
       surface: requestedSurface, section: requestedSection, rebars: requestedRebars,
@@ -558,7 +560,7 @@ export function ResultsWorkspace({
       },
       controller.signal
     ) : Promise.resolve(null)
-    const exactCurvePromise = buildExactDirectionCurveAsync({
+    const exactCurvePromise = directCheck ? Promise.resolve(requestedInverseResult.direct2DCurve ?? null) : buildExactDirectionCurveAsync({
           calculationProfileId: requestedSurface.calculationProfileId ?? 'kds-2024-stress-strain',
           section: requestedSection,
           rebars: requestedRebars,
@@ -655,13 +657,20 @@ export function ResultsWorkspace({
       name: checkedLoadcase.name
     }
   }, [displayUnits, isLoadcaseMode, checkedLoadcase])
-  const constantAxialCheck = inverseResult?.designCheck.evaluated === true && inverseResult.designCheck.definition === 'constantAxial'
+  const checkBasis = inverseResult?.designCheck.evaluated ? inverseResult.designCheck.definition : null
+  const constantAxialCheck = checkBasis === 'constantAxial'
+  const direct2DCheck = checkBasis === 'direct2D'
+  const checkBasisLabel = constantAxialCheck ? 'Constant P' : direct2DCheck ? '2D Load Ray' : checkBasis ? '3D Load Ray' : 'Pending'
   const demandPm = useMemo(() => isLoadcaseMode && surface ? buildDemandPmGeometry({
     surface, exact: demandExactCurve, inspectionBeta: demandView.directAngle * Math.PI / 180,
     demand: checkedLoadcase, governingPoint: inverseResult?.designCapacityPoint ?? null,
-    basis: constantAxialCheck ? 'constantAxial' : 'proportional3D', showTheta: demandView.showLoadAngleSection
+    basis: checkBasis ?? 'proportional3D', stored2D: inverseResult?.direct2D, showTheta: demandView.showLoadAngleSection
   }) : null, [isLoadcaseMode, surface, demandExactCurve, demandView.directAngle,
-    checkedLoadcase, inverseResult, constantAxialCheck, demandView.showLoadAngleSection])
+    checkedLoadcase, inverseResult, checkBasis, demandView.showLoadAngleSection])
+  const displayedBeta = demandExactCurve?.beta ?? equilibriumBeta ?? (direct2DCheck ? null : demandPm?.beta)
+  const betaReadout = displayedBeta == null ? '—' : (displayedBeta * 180 / Math.PI).toFixed(3)
+  const loadAngleReadout = demandPm && (demandPm.demand?.M ?? 0) > 0
+    ? (demandPm.theta * 180 / Math.PI).toFixed(3) : '—'
   const demandPmData = useMemo(() => demandPm ? demandPmTraces(demandPm, {
     ...plotPalette, showDesign: view.showDesignResistance, showNominal: view.showNominalReference,
     showTheta: demandView.showLoadAngleSection, constantP: constantAxialCheck,
@@ -1880,7 +1889,19 @@ export function ResultsWorkspace({
                   ['Captured (UTC)', new Date().toISOString()],
                   ['Display units', `${unit('length')}; ${unit('force')}; ${unit('moment')}; ${unit('stress')}; ${unit('curvature')}; angles in degrees`]
                 ]
-                if (isLoadcaseMode && selectedLoadcase) context.push(['Loadcase', `${selectedLoadcase.id}: ${selectedLoadcase.name}`], ['Design check', fieldCheckLabel])
+                if (isLoadcaseMode && selectedLoadcase) context.push(['Loadcase', `${selectedLoadcase.id}: ${selectedLoadcase.name}`], ['Check basis', checkBasisLabel],
+                  ['Design check', fieldCheckLabel], ['UR', inverseResult?.utilization?.toString() ?? 'Unavailable'])
+                if (isLoadcaseMode && id === 'vertical') context.push(
+                  [equilibriumBeta === null && !direct2DCheck ? 'Inspection β (degrees)' : 'β (degrees)', betaReadout],
+                  ['Load angle θ (degrees)', loadAngleReadout]
+                )
+                if (isLoadcaseMode && inverseResult?.direct2D) {
+                  const evidence = inverseResult.direct2D
+                  context.push(['N.A. direction source', evidence.angleSource ?? 'Unavailable'], ['2D check status', evidence.status])
+                  if (evidence.crossing) context.push(['2D path / segment (zero-based)',
+                    `${evidence.crossing.segment.path} / ${evidence.crossing.segment.segment}`],
+                  ['2D segment fraction', evidence.crossing.segment.fraction.toString()])
+                }
                 else context.push(['Direct β', `${activeAngle} degrees`], ['Moment coordinate', 'M_R = sqrt(Mx² + My²); M_plot = +M_R at β and -M_R at β+180°'])
                 if (isLoadcaseMode && requestedSelectedLoadcase && fieldFrameTransition.status === 'previous')
                   context.push(['Requested loadcase', `${requestedSelectedLoadcase.id}: ${requestedSelectedLoadcase.name}`])
@@ -1958,6 +1979,29 @@ export function ResultsWorkspace({
   }
 
   if (isLoadcaseMode && selectedLoadcase) {
+    const resistance = inverseResult?.designCapacityPoint
+    const ur = inverseResult?.utilization
+    const forceValue = (value: number | undefined) => value == null || !Number.isFinite(value)
+      ? '—' : `${fmt(displayForce(value))} ${unit('force')}`
+    const momentValue = (value: number | undefined) => value == null || !Number.isFinite(value)
+      ? '—' : `${fmt(displayMoment(value))} ${unit('moment')}`
+    const summaryMessage = inverseResult?.direct2D?.message ?? (ur == null ? 'Check result unavailable.' : null)
+    const summaryGroups = [
+      { title: 'Checked demand', rows: [
+        ['Pu', forceValue(checkedLoadcase?.P)], ['Mux', momentValue(checkedLoadcase?.Mx)],
+        ['Muy', momentValue(checkedLoadcase?.My)], ['Mu', momentValue(demandPm?.demand?.M)]
+      ] },
+      { title: 'Design crossing', rows: [
+        ['Pr', forceValue(resistance?.P)], ['Mrx', momentValue(resistance?.Mx)],
+        ['Mry', momentValue(resistance?.My)], ['Mr', momentValue(demandPm?.governing?.M)]
+      ], hint: direct2DCheck ? 'Mr is the plotted magnitude. Mrx and Mry interpolate the signed station components.' : undefined },
+      { title: checkBasisLabel, rows: [
+        ...(direct2DCheck ? [['N.A. angle', inverseResult?.direct2D?.beta == null ? '—'
+          : `${fmt(strainDirectionToNeutralAxisAngleDeg(inverseResult.direct2D.beta * 180 / Math.PI), 3)}°`]] : []),
+        ['λ', inverseResult?.designCapacityMultiplier == null ? '—' : fmt(inverseResult.designCapacityMultiplier, 4)],
+        ['UR', ur == null ? '—' : fmt(ur, 4)]
+      ], hint: 'UR = 1 / λ. Constant P scales moment only.' }
+    ]
     return (
       <section
         className={`pm-results-stage pm-results-stage--charts-only${busy ? ' is-recalculating' : ''}`}
@@ -2311,31 +2355,36 @@ export function ResultsWorkspace({
           {renderChartShell({
             id: 'vertical',
             title: DIRECT_BETA_CHART_TITLE,
-            meta: `${equilibriumBeta == null ? 'βselected' : sectionField?.basis === 'capacity' ? 'βcapacity' : 'βdemand'} = ${fmt(activeAngle, 3)}° · UR (${constantAxialCheck ? 'Constant P' : '3D'}) = ${inverseResult?.utilization == null ? 'n/a' : fmt(inverseResult.utilization, 3)}`,
+            meta: `${checkBasisLabel} · UR = ${inverseResult?.utilization == null ? 'n/a' : fmt(inverseResult.utilization, 3)}`,
             primary: demandView.primaryChart === 'vertical',
             visible: demandView.visibleCharts.vertical,
             onMakePrimary: () => onDemandViewChange({ primaryChart: 'vertical' }),
             onToggleVisible: () => toggleDemandChart('vertical'),
             controls: (
               <>
-                <SyncedControl
-                  label="β"
+                {direct2DCheck || equilibriumBeta !== null ? (
+                  <span className="ws-compact-status" title="Strain-gradient angle β that fixes the neutral-axis direction, in degrees.">
+                    <span>β (N.A.)</span><span className="ws-num">{betaReadout}</span>
+                  </span>
+                ) : <SyncedControl
+                  label="β (Inspect)"
                   title="Section-field strain-gradient direction, or selected inspection angle"
                   value={Number(activeAngle.toFixed(3))}
                   min={0}
                   max={360}
                   step={0.001}
-                  unit="deg"
-                  disabled={equilibriumBeta != null}
-                  inputValue={equilibriumBeta == null ? String(demandView.directAngle) : undefined}
+                  unit=""
+                  inputValue={String(demandView.directAngle)}
                   inputWorking={fieldMapWorking}
                   onChange={value => onDemandViewChange({ directAngle: normalizeAngleDeg(value) })}
-                />
+                />}
                 <label className={`ws-check pm-field-check${demandView.showLoadAngleSection ? ' is-on' : ''}`}
-                  title="Forward surface section at the checked load-moment angle θ. Diamond marks the governing Design crossing.">
+                  title={loadAngleReadout === '—' ? 'Load angle is undefined for zero moment.'
+                    : 'Forward surface section at the checked load-moment angle θ, in degrees.'}>
                   <input type="checkbox" aria-label="Load-angle section θ" checked={demandView.showLoadAngleSection}
+                    aria-description={loadAngleReadout === '—' ? 'Load angle unavailable' : `${loadAngleReadout} degrees`}
                     onChange={event => onDemandViewChange({ showLoadAngleSection: event.target.checked })} />
-                  θ cut
+                  <span>θ (Load Angle)</span><span className="ws-num">{loadAngleReadout}</span>
                 </label>
                 <ResistanceVisibilityControls
                   showDesign={view.showDesignResistance}
@@ -2345,12 +2394,19 @@ export function ResultsWorkspace({
                 />
               </>
             ),
-            footer: <div className="pm-preview-hint">
-              <p title="Filled dots mark 2D intersections on solid Direct β. Hollow blue circles mark the field point before Pmax. The diamond marks the governing Design crossing used for UR.">● 2D diagnostic · ◆ governing check</p>
-              <p data-theta-cut-note title="P–M surface section at θ = atan2(My, Mx), showing only the forward branch.">θ cut: red dotted curve at the load-moment angle.</p>
-              {!!demandPm?.beforeDirect.length && view.showDesignResistance && <p data-before-cap-legend>Dotted above Pmax: excluded from checks.</p>}
-              {demandPm && demandPmDiagnosticMessage(demandPm.diagnostic) && <p role="status">{demandPmDiagnosticMessage(demandPm.diagnostic)}</p>}
-            </div>,
+            footer: <section aria-label="Loadcase check summary" hidden={demandView.primaryChart !== 'vertical'}>
+              <div className="pm-section-field-metrics">
+                {summaryGroups.map(group => <article key={group.title} className="pm-field-metric-card" data-text-group>
+                  <header title={group.hint}>{group.title}</header>
+                  <div className="pm-field-metric-rows">
+                    {group.rows.map(([label, value]) => <div key={label}>
+                      <span>{label}</span><strong className="ws-num">{value}</strong>
+                    </div>)}
+                  </div>
+                </article>)}
+              </div>
+              {summaryMessage && <p className="pm-preview-hint" role="status">{summaryMessage}</p>}
+            </section>,
             children: displayFieldSnapshot
               ? <PlotlyChart data={verticalData} layout={verticalLayout} config={plotConfig} />
               : <div className="pm-results-plot-placeholder">Preparing chart…</div>

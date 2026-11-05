@@ -65,7 +65,7 @@ export const plottedPointsText = (series: readonly PlottedTrace2D[] | undefined,
 
 /** Snapshot the presentation owner instead of duplicating its formulas, precision or labels. */
 export const chartText = (chart: HTMLElement, context: TextGroup, workspace: 'Capacity' | 'Demand Check', pointUnits?: PointUnits): string => {
-  if (pointUnits) {
+  if (pointUnits && workspace === 'Capacity') {
     const frame = context.rows.find(([label]) => label === 'Frame')?.[1]
     const warning = frame && /previous|updating|rebuilding/i.test(frame) ? `${frame}\n\n` : ''
     return warning + plottedPointsText(chart.querySelector<PlottedGraph>('.js-plotly-plot')?.data, pointUnits)
@@ -103,5 +103,7 @@ export const chartText = (chart: HTMLElement, context: TextGroup, workspace: 'Ca
   const diagnostic = chart.querySelector('.pm-field-metric-rows strong[title]')?.getAttribute('title')
   if (diagnostic) notes.push(diagnostic)
   const document = formatTextDocument({ title: `${workspace} — ${title}`, groups, notes: [...new Set(notes)] })
-  return document
+  return pointUnits
+    ? document.trimEnd() + '\n\n' + plottedPointsText(chart.querySelector<PlottedGraph>('.js-plotly-plot')?.data, pointUnits)
+    : document
 }

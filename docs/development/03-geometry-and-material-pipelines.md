@@ -4,6 +4,16 @@ This file binds the current `@pm/geometry` and `@pm/materials` code to the requi
 pipelines. It distinguishes implemented behavior from required behavior so later coding does not
 mistake a preview helper for an analysis contract.
 
+Material authoring follows the [active-input inventory](17-active-inputs-and-audit.md). Concrete
+`mc` and `elasticModulus` remain stored compatibility properties but have no input controls or
+active calculation-parameter readouts. Current resistance laws do not consume them. Removing their
+controls must not call a derivation helper or rewrite saved strains/curves. Compression-strain
+authoring updates the selected law parameter and its matching declared limit together; an EC2
+`epsC2`/`epsCu2` edit cannot update only an unused snapshot. Built-in parabolic laws have no editable
+tension toggle. A user curve edits its effective `zeroTension` policy and matching limit explicitly.
+Published block profiles show their resolved code strain read-only; a user block has one editable
+model-owned ultimate strain. EN/AS steel Es is profile-supplied in the panel and shown read-only.
+
 ## 1. Geometry: current input and output
 
 ### Persisted/editor input

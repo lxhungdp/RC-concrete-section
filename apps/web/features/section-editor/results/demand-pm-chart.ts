@@ -1,4 +1,4 @@
-import { resultantMomentCoordinate, type buildDemandPmGeometry, type DemandPmPoint, type PmLoadPathIntersections, type Resultant } from '@pm/analysis'
+import { resultantMomentCoordinate, type buildDemandPmGeometry, type DemandPmPoint, type Resultant } from '@pm/analysis'
 
 type Geometry = ReturnType<typeof buildDemandPmGeometry>
 type Style = {
@@ -15,19 +15,17 @@ const demandIntersectionMarker = (color: string, curve: 'solid' | 'dotted', outl
     line: { color: curve === 'dotted' ? color : outline, width: 1 } }
 }
 
-export const demandPmDiagnosticMessage = (query: PmLoadPathIntersections): string => {
-  switch (query.status) {
-    case 'intersections': return query.points.length > 1 ? 'Multiple 2D intersections; no unique λ2D.' : ''
-    case 'overlap': return 'Overlapping 2D paths; no unique λ2D.'
-    case 'no-intersection': return 'No forward 2D intersection.'
-    case 'unavailable': return {
-      'missing-curve': 'Direct β curve unavailable.',
-      'missing-demand': 'Select a loadcase.',
-      'zero-path': 'Zero 2D load path; λ2D undefined.',
-      'invalid-arithmetic': 'Invalid 2D coordinates.'
-    }[query.reason]
-  }
-}
+export const demandPmSummaryMessage = (reason: Extract<Geometry['summary'], { status: 'unavailable' }>['reason']) => ({
+  'missing-curve': 'Direct β curve unavailable.',
+  'missing-demand': 'Select a loadcase.',
+  'zero-path': 'Zero 2D load path.',
+  'invalid-arithmetic': 'Invalid 2D coordinates.',
+  'no-intersection': 'No forward 2D intersection.',
+  'multiple-intersections': 'Multiple 2D intersections.',
+  'overlap': 'Overlapping 2D paths.',
+  'contact': 'No positive transverse crossing.',
+  'ambiguous-components': 'Ambiguous 2D moment components.'
+})[reason]
 
 /** Presentation copies only. Geometry and diagnostics come from the analysis owner. */
 export const demandPmTraces = (geometry: Geometry, style: Style, beforeCapField: Resultant | null) => {
@@ -89,7 +87,7 @@ export const demandPmTraces = (geometry: Geometry, style: Style, beforeCapField:
       meta: { customDataFields: customFields },
       marker: { size: 6, color: style.primary }, hovertemplate: `${actionHover}<extra>Geometric Pmax intersection</extra>`
     }] : []),
-    ...(style.showDesign && geometry.diagnostic.points.length ? [{
+    ...(geometry.basis !== 'direct2D' && style.showDesign && geometry.diagnostic.points.length ? [{
       type: 'scatter', name: 'Direct β 2D intersections', mode: 'markers',
       x: geometry.diagnostic.points.map(point => moment(point.M)), y: geometry.diagnostic.points.map(point => force(point.P)),
       customdata: geometry.diagnostic.points.map(point => [point.lambda, point.kind, point.sources]),
@@ -104,8 +102,8 @@ export const demandPmTraces = (geometry: Geometry, style: Style, beforeCapField:
       marker: { size: 10, color: '#ff1f3d', line: { color: style.markerOutline, width: 1 } },
       hovertemplate: `${coordinate}<extra>Checked centroidal demand</extra>`
     }] : []),
-    ...(style.showTheta && style.showDesign && geometry.governing ? [{
-      type: 'scatter', name: 'Governing Design crossing · θ', mode: 'markers',
+    ...((geometry.basis === 'direct2D' || style.showTheta) && style.showDesign && geometry.governing ? [{
+      type: 'scatter', name: geometry.basis === 'direct2D' ? 'Governing Design crossing · 2D Load Ray' : 'Governing Design crossing · θ', mode: 'markers',
       x: [moment(geometry.governing.M)], y: [force(geometry.governing.P)],
       marker: { size: 10, color: '#16a34a', symbol: 'diamond', line: { color: style.markerOutline, width: 1 } },
       hovertemplate: `${coordinate}<extra>Stored governing Design crossing</extra>`

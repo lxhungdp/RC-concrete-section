@@ -28,6 +28,7 @@ It owns input classification, dependency review and the minimal sufficient input
 | Drawing palette | `apps/web/app/drawing-palette.css`, existing SVG/renderer owners |
 | Geometry-only drawing and layout | `apps/web/app/geometry/geometry.css` |
 | Sidebar sizing/resize | `shared/workspace-layout.ts`, `shared/WorkspaceFrame.tsx` |
+| Movable dialogs and modeless app controls | `shared/MovableDialog.tsx`; `project/ProjectSpreadsheetWindow.tsx` selects controls integrated into the native filename row; `tools/gridcraft/patch.mjs` reserves that row's right slot |
 | Add/transfer vectors | `shared/WorkspaceIcons.tsx` |
 | Native select popup and navigation | `shared/WorkspaceComboboxes.tsx`, `shared/combobox-navigation.ts` |
 

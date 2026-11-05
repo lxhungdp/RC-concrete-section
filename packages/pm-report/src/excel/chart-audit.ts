@@ -658,9 +658,6 @@ export const prepareAuditContext = (
   addConcreteMetadata('Standard', concrete.standard, 'Standard the material definition declares')
   addConcreteMetadata('Stress–strain law', concrete.stressStrain.type, 'Model the parameters below belong to')
   addConcreteParameter('f′c / fck', 'Specified concrete compressive strength', concrete.fck, 'MPa', 'C_fck', 'Strength used by the active material law')
-  if (concrete.elasticModulus !== undefined) {
-    addConcreteParameter('Eᴄ', 'Elastic modulus', concrete.elasticModulus, 'MPa', null, 'Concrete elastic modulus reported by the selected standard')
-  }
   if ('alpha' in concrete.stressStrain) {
     addConcreteParameter('α', 'Concrete stress coefficient', cParams.alpha, '–', 'C_alpha', 'Multiplier applied to the concrete compression stress')
   }

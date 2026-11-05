@@ -3,13 +3,13 @@ import {
   buildExactDirectionCurveFromPrepared, buildStressStrainPointCalculationAudit,
   buildSectionFieldMapFromPrepared, checkLoadcaseUtilizationFromSurface,
   checkLoadcasesUtilizationFromSurface, codeAdjustedDemandOfCheck, prepareAnalysis,
-  sliceActiveDesignPContour, solveInversePreviewFromPrepared, surfaceInputKey,
+  sliceActiveDesignPContour, solveDirect2DLoadcase, solveInversePreviewFromPrepared, surfaceInputKey,
   type PreparedAnalysis
 } from '@pm/analysis'
 import {
   buildEquivalentBlockDesignSurfaceFromPrepared, buildEquivalentBlockExactDirectionCurveFromPrepared,
   buildEquivalentBlockPreviewSurfaceFromPrepared, buildEquivalentBlockFieldMapFromPrepared,
-  buildEquivalentBlockPointCalculationAudit, prepareBlockAnalysis, solveEquivalentBlockDemandFromPrepared,
+  buildEquivalentBlockPointCalculationAudit, prepareBlockAnalysis, solveEquivalentBlockDemandFromPrepared, solveEquivalentBlockDemandRaw,
   type EquivalentBlockDesignSurface, type PreparedBlockAnalysis
 } from '@pm/analysis-equivalent-block'
 import type { CapacityFieldResult, PreviewSurface } from '@pm/results/contracts'
@@ -90,7 +90,22 @@ export const createAnalysisExecution = () => {
     surfaces.set(key, result)
     return result
   }
+  const direct2D = async (payload: CheckLoadcasePayload) => {
+    const { surface, loadcase, materialStore, designBasis } = payload
+    const options = surface.analysisOptions
+    if (isEquivalentBlockAnalysisOptions(options)) {
+      const model = blockFor(payload)
+      const key = blockKey({ ...payload, analysisOptions: options })
+      const core = blockSurfaces.get(key)?.core ?? buildEquivalentBlockDesignSurfaceFromPrepared(model, options)
+      return solveDirect2DLoadcase(surface, loadcase,
+        demand => solveEquivalentBlockDemandRaw(model, options, demand, core, 'proportional3D'),
+        beta => buildEquivalentBlockExactDirectionCurveFromPrepared(model, options, beta))
+    }
+    const { solveStressStrainDirect2DFromPrepared } = await import('@pm/analysis/capacity-field')
+    return solveStressStrainDirect2DFromPrepared(stressFor({ ...payload, analysisOptions: options }), materialStore, designBasis, surface, loadcase)
+  }
   const checkLoadcase = async (payload: CheckLoadcasePayload) => {
+    if (payload.checkBasis === 'direct2D') return (await direct2D(payload)).result
     const options = payload.surface.analysisOptions
     if (isEquivalentBlockAnalysisOptions(options)) {
       const model = blockFor(payload)
@@ -122,8 +137,19 @@ export const createAnalysisExecution = () => {
     checkLoadcase: async (payload: CheckLoadcasePayload) => {
       try { return await checkLoadcase(payload) } catch (error) { throw expectedFailure(error) }
     },
-    checkLoadcases: (payload: CheckLoadcasesPayload) =>
-      checkLoadcasesUtilizationFromSurface(payload.surface, payload.loadcases, payload.checkBasis),
+    checkLoadcases: (payload: CheckLoadcasesPayload) => {
+      if (payload.checkBasis !== 'direct2D' || !payload.preparedInputs) {
+        return checkLoadcasesUtilizationFromSurface(payload.surface, payload.loadcases, payload.checkBasis)
+      }
+      const preparedInputs = payload.preparedInputs
+      return (async () => {
+        const checks = []
+        for (const loadcase of payload.loadcases) {
+          checks.push((await direct2D({ ...preparedInputs, surface: payload.surface, loadcase, checkBasis: 'direct2D' })).check)
+        }
+        return checks
+      })()
+    },
     buildExactDirection: (payload: BuildExactDirectionPayload) => isEquivalentBlockAnalysisOptions(payload.analysisOptions)
       ? buildEquivalentBlockExactDirectionCurveFromPrepared(blockFor(payload), payload.analysisOptions, payload.beta)
       : buildExactDirectionCurveFromPrepared(stressFor({ ...payload, analysisOptions: payload.analysisOptions }),

@@ -93,6 +93,7 @@ export type CheckLoadcasesPayload = {
   surface: PreviewSurface
   loadcases: LoadCombination[]
   checkBasis: DemandCheckBasis
+  preparedInputs?: Omit<CheckLoadcasePayload, 'loadcase' | 'surface' | 'checkBasis'>
 }
 
 /** Worker-only handle. Public callers keep using the strongly typed payloads above. */
@@ -110,10 +111,7 @@ export type CalculationTraceAuditWorkerPayload = CalculationTraceAuditWorkbookIn
 
 export type DemandCheckWorkerPayload = Omit<DemandCheckExcelInput, 'surface'> & WorkerSurfaceReference
 
-export type CheckLoadcasesWorkerPayload = WorkerSurfaceReference & {
-  loadcases: LoadCombination[]
-  checkBasis: DemandCheckBasis
-}
+export type CheckLoadcasesWorkerPayload = WorkerSurfaceReference & Omit<CheckLoadcasesPayload, 'surface'>
 
 export type CheckLoadcaseWorkerPayload = Omit<CheckLoadcasePayload, 'surface'> & WorkerSurfaceReference & {
   analysisOptions: CalculationAnalysisOptions

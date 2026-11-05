@@ -252,7 +252,7 @@ button svg { color: currentColor; }
 .pm-toolbar .pm-project-menu__example:hover,
 .pm-project-menu__example-toggle:hover { background: var(--card-hover); }
 .pm-project-menu__example-toggle { min-height: var(--nav-control-h); border-radius: var(--r-sm); }
-.pm-project-menu__actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
+.pm-project-menu__actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); }
 .pm-toolbar .pm-project-menu__format { width: 100%; }
 .pm-about-popover { left: 0; right: auto; width: min(360px, calc(100vw - 28px)); }
 .pm-about-title p,
@@ -335,6 +335,7 @@ body[data-jscad-theme='dark'] .pm-cad-surface { border-color: transparent; box-s
   color: var(--foreground);
 }
 .pm-data-dialog:not([open]) { display: none; }
+.pm-data-dialog.pm-check-basis-help { block-size: auto; }
 .pm-data-dialog::backdrop { background: var(--overlay-scrim); }
 .pm-data-dialog-toolbar {
   display: flex;
@@ -361,12 +362,47 @@ body[data-jscad-theme='dark'] .pm-cad-surface { border-color: transparent; box-s
 .pm-data-dialog-toolbar > [role='status'] { max-inline-size: 14ch; color: var(--foreground-muted); font-size: var(--fs-sm); }
 .pm-data-dialog-toolbar > [role='status']:empty { display: none; }
 .pm-data-dialog textarea { flex: 1; min-height: 0; margin: var(--sp-3); resize: none; }
-.pm-spreadsheet-dialog { inline-size: min(600px, calc(100vw - var(--sp-7))); block-size: min(500px, calc(100dvh - var(--sp-7))); container-type: inline-size; }
+.pm-spreadsheet-dialog { inline-size: min(var(--spreadsheet-width, 600px), calc(100vw - var(--sp-7))); block-size: min(var(--spreadsheet-height, 500px), calc(100dvh - var(--sp-7))); container-type: inline-size; }
 .pm-spreadsheet-viewport { position: relative; display: flex; flex: 1; min-block-size: 0; background: inherit; }
 .pm-spreadsheet-dialog iframe { display: block; flex: 1; min-block-size: 0; inline-size: 100%; block-size: 100%; border: 0; }
 .pm-spreadsheet-dialog iframe[data-presented='false'] { opacity: 0; pointer-events: none; }
 .pm-spreadsheet-loading { position: absolute; inset: 0; display: grid; place-items: center; background: inherit; color: var(--foreground-muted); }
 .pm-spreadsheet-dialog[data-moving] iframe { pointer-events: none; }
+.pm-app-window { position: fixed; z-index: 900; overflow: hidden; }
+.pm-app-window > .pm-data-dialog-toolbar { gap: var(--sp-1); padding: var(--sp-2); background: var(--menu-surface); }
+.pm-app-window--native-title > .pm-data-dialog-toolbar {
+  /* Match Gridcraft's native 38px title row without adding a second content row. */
+  position: absolute; inset: 0 0 auto; z-index: 1; block-size: 38px;
+  justify-content: flex-end; padding: 0 8px; border: 0; background: transparent; pointer-events: none;
+}
+.pm-app-window--native-title > .pm-data-dialog-toolbar > button { pointer-events: auto; }
+.pm-app-window--native-title > .pm-data-dialog-toolbar > h2 {
+  position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%);
+}
+.pm-window-title-drag { position: absolute; inset: 0 248px 0 160px; pointer-events: auto; }
+.pm-app-window--native-title[data-window-state='minimized'] > .pm-data-dialog-toolbar { position: relative; background: var(--menu-surface); }
+.pm-app-window--native-title[data-window-state='minimized'] > .pm-data-dialog-toolbar > h2 {
+  position: static; inline-size: auto; block-size: auto; clip-path: none;
+}
+.pm-app-window--native-title[data-window-state='minimized'] .pm-window-title-drag { inset-inline: 0 248px; }
+.pm-window-content { display: flex; flex: 1; min-inline-size: 0; min-block-size: 0; }
+.pm-app-window[data-window-state='maximized'],
+.pm-app-window[data-window-state='minimized'] { resize: none; }
+.pm-app-window[data-window-state='minimized'] { min-block-size: 0; }
+.pm-app-window[data-window-state='minimized'] > .pm-window-content {
+  position: absolute; inset-block-start: 100%; inline-size: var(--app-content-width); block-size: var(--app-content-height);
+}
+.pm-project-spreadsheet-window {
+  inline-size: min(1280px, calc(100vw - 2 * var(--ws-pane-gap)));
+  block-size: min(840px, calc(100dvh - 2 * var(--ws-pane-gap)));
+  min-inline-size: min(680px, calc(100vw - 2 * var(--ws-pane-gap)));
+  max-inline-size: calc(100vw - 2 * var(--ws-pane-gap));
+  max-block-size: calc(100dvh - 2 * var(--ws-pane-gap));
+}
+.pm-project-spreadsheet-window[data-window-state='minimized'] { min-inline-size: 0; }
+.pm-project-spreadsheet-window iframe { display: block; flex: 1; min-block-size: 0; inline-size: 100%; block-size: 100%; border: 0; }
+.pm-project-spreadsheet-window iframe[data-presented='false'] { opacity: 0; pointer-events: none; }
+.pm-app-window[data-moving] iframe { pointer-events: none; }
 .pm-dialog-context { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground-muted); font-size: var(--fs-sm); }
 .pm-spreadsheet-error { flex-shrink: 0; margin: 0; padding: var(--sp-3); color: var(--danger); border-bottom: 1px solid var(--group-separator); overflow-wrap: anywhere; }
 @container (max-width: 560px) {
@@ -469,7 +505,13 @@ body[data-jscad-theme='dark'] .pm-cad-surface { border-color: transparent; box-s
   .pm-shell .pm-results-grid--dynamic { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-auto-rows: minmax(var(--chart-stacked-min-height), max-content); align-content: start; overflow-y: auto; }
   .pm-shell .pm-results-plot-body { height: auto; grid-template-rows: minmax(var(--chart-content-min-height), 1fr) auto; }
   .pm-shell .pm-results-plot-canvas { min-height: var(--chart-content-min-height); }
-  .pm-shell .pm-results-grid--dynamic:is(.count-1, .count-2, .count-3) .pm-results-plot { grid-column: 1; grid-row: auto; min-height: var(--chart-stacked-min-height); }
+  .pm-shell .pm-results-grid--dynamic:is(.count-1, .count-2, .count-3) .pm-results-plot {
+    grid-column: 1;
+    grid-row: auto;
+    grid-template-rows: auto minmax(min-content, 1fr);
+    height: max-content;
+    min-height: var(--chart-stacked-min-height);
+  }
 }
 
 /* Content layout selects shared roles; it does not redefine control geometry. */

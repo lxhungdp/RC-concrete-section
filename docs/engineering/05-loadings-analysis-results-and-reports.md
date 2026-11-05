@@ -72,9 +72,15 @@ below. Under the default, a fixed-`P` moment ratio is reported only as a named s
 Under either basis that ratio is moment utilization at `Pu`. It is not total utilization and does
 not make a pure-axial demand have zero utilization.
 
-Demand P-M may also show a separately labelled Direct-beta 2D intersection. This is a geometric
-diagnostic on the magnitude-mapped fixed-neutral-axis polyline specified by root 05 section 8.
-Its multiplier is not the governing utilization, an adequacy decision or a compatible strain state.
+The project can select `direct2D` as a preview check under a fixed neutral-axis
+assumption. Root 05 sections 8–9 define the magnitude-mapped Design polyline and
+its projected load ray. Use the qualified demand-equilibrium direction for fibre
+when available. Otherwise use a qualified proportional capacity reference,
+including for block mechanics. Resolve the direction before the selected
+check and retain the source. Each minimum-eccentricity candidate uses the selected
+query. Fixed retains the project screening margin. Adaptive uses the exact
+meridian's converged station estimate as preview evidence. A geometric crossing
+never asserts material admissibility or engineering release eligibility.
 The optional demand-angle plane cut displays the forward load-moment half-section and the same
 Design-domain crossing as the selected governing query. Root 05 section 8 owns the geometric
 zero-moment clipping. Visibility of either curve cannot change UR, uncertainty or classification.

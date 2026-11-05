@@ -10,7 +10,7 @@
   --ws-choice-fs: var(--fs-md);
 }
 
-.ws-action--compact, .ws-compact-status {
+.ws-action--compact, .ws-compact-status:not(:where(.ws-chart-controls *)) {
   --ws-control-h: var(--control-compact-h);
   --ws-control-fs: var(--control-compact-fs);
   --ws-control-padding: var(--sp-2);

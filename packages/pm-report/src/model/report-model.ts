@@ -24,7 +24,7 @@ import {
   evaluatePreparedState,
   intersectFixedPContourWithMomentRay,
   fixedPContourPaths,
-  intersectSurfaceWithDemandRay,
+  buildDemandPmGeometry,
   prepareAnalysis,
   sliceFixedPContour,
   sliceMomentPlane,
@@ -194,6 +194,7 @@ export type CombinationRow = {
   fixedPUtilization: number | null
   proportionalUtilization: number | null
   checkBasis: DemandCheckBasis
+  direct2D?: InversePreviewResult['direct2D']
   phi: number | null
   classification: string
   verdict: 'adequate' | 'inadequate' | 'indeterminate' | 'not-checked'
@@ -483,16 +484,18 @@ const capacityMarkersFor = (surface: PreviewSurface, thetaDeg: number): CurveMar
   return markers
 }
 
-const directMeridianCurve = (curve: ExactDirectionCurve): InteractionCurve => {
-  const project = (point: ExactDirectionCurve['designAdaptive'][number]) => ({
-    m: fromCanonical('moment', (point.Mx * Math.cos(curve.beta) + point.My * Math.sin(curve.beta)), displayUnits),
+const directMeridianCurve = (surface: PreviewSurface, curve: ExactDirectionCurve): InteractionCurve => {
+  const geometry = buildDemandPmGeometry({ surface, exact: curve, inspectionBeta: curve.beta,
+    demand: null, governingPoint: null, basis: 'direct2D', showTheta: false })
+  const project = (point: { M: number; P: number }) => ({
+    m: fromCanonical('moment', point.M, displayUnits),
     p: fromCanonical('force', point.P, displayUnits)
   })
   return {
     kind: 'direct-beta',
     thetaDeg: deg(curve.beta),
-    design: activeDesignDirectionPoints(curve).map(project),
-    nominal: activeNominalDirectionPoints(curve).map(project)
+    design: geometry.design.flatMap(path => path.map(project)),
+    nominal: geometry.nominal.flatMap(path => path.map(project))
   }
 }
 
@@ -517,10 +520,11 @@ const combinationRow = (loadcase: LoadCombination, result: InversePreviewResult 
     fixedPUtilization: result?.fixedPUtilization ?? null,
     proportionalUtilization: result?.proportionalUtilization ?? null,
     checkBasis: result ? checkBasisOfResult(result) : DEFAULT_DEMAND_CHECK_BASIS,
-    phi: result?.resistance?.factor ?? null,
-    classification: result?.resistance?.classification ?? '—',
+    ...(result?.direct2D ? { direct2D: result.direct2D } : {}),
+    phi: result?.direct2D ? null : result?.resistance?.factor ?? null,
+    classification: result?.direct2D ? 'Geometric 2D check' : result?.resistance?.classification ?? '—',
     verdict: verdictOf(result),
-    note: result?.message ?? 'Not solved.'
+    note: result?.direct2D?.message ?? result?.message ?? 'Not solved.'
   }
 }
 
@@ -600,11 +604,12 @@ const clipCompressionZone = (
 
 const interactionFor = (
   surface: PreviewSurface,
-  loadcase: LoadCombination,
+  rawLoadcase: LoadCombination,
   curves: readonly InteractionCurve[],
   exactCurve: ExactDirectionCurve | null,
   result: InversePreviewResult
 ) => {
+  const loadcase = result.codeAdjustedDemand ?? rawLoadcase
   const demandTheta =
     Math.abs(loadcase.Mx) < 1e-9 && Math.abs(loadcase.My) < 1e-9 ? 0 : Math.atan2(loadcase.My, loadcase.Mx)
   const demandThetaDeg = deg(demandTheta)
@@ -613,27 +618,28 @@ const interactionFor = (
   const existing = curves.find((curve) =>
     curve.kind === 'moment-plane' && Math.abs(curve.thetaDeg - demandThetaDeg) < 1e-6
   )
-  const curve: InteractionCurve = exactCurve
-    ? directMeridianCurve(exactCurve)
+  const direct = result.direct2D
+  const curve: InteractionCurve = direct
+    ? exactCurve ? directMeridianCurve(surface, exactCurve)
+      : { kind: 'direct-beta', thetaDeg: 0, design: [], nominal: [] }
     : existing ?? {
         kind: 'moment-plane',
         thetaDeg: demandThetaDeg,
         design: planeCurve(displayDesign.points, displayDesign.triangles, demandTheta),
         nominal: planeCurve(displayNominal.points, displayNominal.triangles, demandTheta)
       }
-  const projectionAngle = exactCurve?.beta ?? demandTheta
   const constantAxial = checkBasisOfResult(result) === 'constantAxial'
-  const capacityPoint = constantAxial ? result.designCapacityPoint ?? null : intersectSurfaceWithDemandRay(surface, loadcase)?.point ?? null
+  const capacityPoint = result.designCapacityPoint
   return {
     ...curve,
     loadPath: constantAxial ? 'constant-axial' as const : 'proportional' as const,
     demand: {
-      m: fromCanonical('moment', (loadcase.Mx * Math.cos(projectionAngle) + loadcase.My * Math.sin(projectionAngle)), displayUnits),
+      m: fromCanonical('moment', Math.hypot(loadcase.Mx, loadcase.My), displayUnits),
       p: fromCanonical('force', loadcase.P, displayUnits)
     },
     capacity: capacityPoint
       ? {
-          m: fromCanonical('moment', (capacityPoint.Mx * Math.cos(projectionAngle) + capacityPoint.My * Math.sin(projectionAngle)), displayUnits),
+          m: fromCanonical('moment', direct?.crossing?.M ?? Math.hypot(capacityPoint.Mx, capacityPoint.My), displayUnits),
           p: fromCanonical('force', capacityPoint.P, displayUnits)
         }
       : null
@@ -851,7 +857,7 @@ const basicsFor = (
     ['Curvature κy', `${sci(fromCanonical('curvature', state.ky, displayUnits), 4)} ${unit('curvature')}`],
     ['Strain direction βeq', curvature > 1e-14 ? `${fmt(deg(Math.atan2(state.ky, state.kx)), 3)}°` : 'uniform strain'],
     ['Neutral-axis depth c', neutralAxisDepth === null ? '—' : `${qfmt('length', neutralAxisDepth, 1)} ${unit('length')}`],
-    ['Capacity at Pu', fixedP.capacity === null
+    [row.checkBasis === 'constantAxial' ? 'Capacity at Pu' : 'Secondary capacity at Pu', fixedP.capacity === null
       ? '—'
       : `Mx ${fmt(fixedP.capacity.mx, 1)} · My ${fmt(fixedP.capacity.my, 1)} ${unit('moment')}`],
     ['φ', row.phi === null ? '—' : fmt(row.phi, 4)],
@@ -947,7 +953,8 @@ const build = (input: ReportInput): ColumnReportModel => {
     results.set(loadcase.id, result)
     const detailed = wanted.has(loadcase.id)
     // The exact meridian is a full station sweep, so it is bought only for a worked-through case.
-    const exactCurve = detailed && solution.beta !== null ? solved.exactDirectionCurve(solution.beta) : null
+    const exactCurve = result.direct2D ? result.direct2DCurve ?? null
+      : detailed && solution.beta !== null ? solved.exactDirectionCurve(solution.beta) : null
     detail.push(
       solved.blockPrepared
         ? blockDetail(
@@ -1089,8 +1096,8 @@ const build = (input: ReportInput): ColumnReportModel => {
             ["sigma_block", `${qfmt('stress', concrete.stressStrain.alpha2 * concrete.fck, 3)} ${unit('stress')}`]
           ] as LabelledValue[])
         : []),
-      ...(concrete.elasticModulus !== undefined ? [['Ec', `${qfmt('modulus', concrete.elasticModulus, 0)} ${unit('modulus')}`] as LabelledValue] : []),
-      ['Tension', concrete.limits.ignoreTension ? 'ignored' : 'included']
+      ['Tension', concrete.stressStrain.type !== 'user-curve' ||
+        (concrete.stressStrain.zeroTension ?? concrete.limits.ignoreTension) ? 'ignored' : 'included']
     ],
     steelMaterial: [
       ['Name', steel.name],
@@ -1226,7 +1233,7 @@ const blockDetail = (
     detailed,
     converged: result.converged,
     admissible: result.admissibility.evaluated === false || result.admissibility.ok,
-    message: result.message,
+    message: result.direct2D?.message ?? result.message,
     state: result.converged ? { e0: result.state.e0, kx: result.state.kx, ky: result.state.ky } : null,
     interaction,
     fixedP,
@@ -1350,7 +1357,7 @@ const fibreDetail = (
     detailed,
     converged: result.converged,
     admissible: result.admissibility.evaluated === false || result.admissibility.ok,
-    message: result.message,
+    message: result.direct2D?.message ?? result.message,
     state: result.converged ? { e0: result.state.e0, kx: result.state.kx, ky: result.state.ky } : null,
     interaction,
     fixedP,

@@ -77,8 +77,8 @@ Implementation map as of 2026-11-04 (Preview; no release approval):
   pure-tension midpoint with steel hardening On or Off; clipped geometry can
   add geometric vertices without adding physical strain stations.
 - Nominal/reference and design-resistance surfaces are separated. Factored ULS loadcases use a
-  default governing 3D proportional check. An explicit `constantAxial` basis selects the qualified
-  Constant-P query; the other ratio remains secondary.
+  default governing 3D proportional check. A project can select the fixed neutral-axis
+  `direct2D` preview or the `constantAxial` query.
 - The KDS 2024 current-set profiles (with resistance clauses explicitly traced to KDS 14 20 10:2021
   and KDS 14 20 20:2022) and ACI 318-19(22) block profile are implemented as `draft` design
   previews; no profile is approved for released engineering use. EN 1992-1-1:2004 is selectable only

@@ -79,6 +79,11 @@ quantities, accessible interaction and an apparent next action.
   or uncommon context in concise accessible help or a relevant detail view. Remove repeated labels,
   repeated derived-value summaries, decorative boxes and empty groups. Keep invalid-input messages,
   unsupported scope, units, source/design basis and result status visible where they affect a decision.
+- Routine forms omit static how-to paragraphs, default-setting reminders and completed or generated
+  audit narratives. Store provenance without repeatedly displaying its editor. A required missing
+  reason stays editable, and its editor remains stable while the user writes it. Existing reasons
+  are available through an explicit Details action. Keep actionable errors and necessary units,
+  active choices and engineering status visible; a general explanation is not an actionable error.
 - Initialise enabled features with the existing valid, traceable authoring defaults when the owning
   contract supports this. Preserve saved edits and physical bounds. UI simplification never authorises
   inventing a coefficient, silently changing a model, deleting required input or weakening validation.
@@ -103,6 +108,16 @@ Before implementing a parameter group, perform a dependency review:
    field frames and align their labels/choices. Reveal only applicable inputs, preserve useful derived
    readouts, and keep the active basis apparent. Choose columns from content and task requirements;
    no fixed column count or compound-field pattern applies to every engineering form.
+
+An editable control requires a traced current consumer for the selected profile, mechanics, material
+model and mode. The consumer may be calculation, geometry authoring, an actual view/export choice,
+or necessary project/report identity. Merely storing a value, printing an unused property, or
+reserving a future feature does not justify asking for it. Apply this rule to dialogs and editable
+workbooks as well as panels. Hide inactive inputs, retain useful derived/profile values read-only,
+and preserve legacy stored definitions without presenting them as active parameters. A value having
+no effect at one load or limit state does not prove it unused: check its entire applicable domain,
+validation, signed limits and resistance route. Record field groups, consumers, activation and
+disposition in the [active-input inventory](../../../../docs/development/17-active-inputs-and-audit.md).
 
 Before delivery, check whether an engineer can identify the required inputs, their units and the
 active basis without reading a paragraph. Each control and persistent line of text must support
@@ -232,6 +247,26 @@ the simple 16px outline-file icon and accessible name `Project menu`. Its text
 uses the same 13px/500 typography as ordinary module menus. It opens project
 information, import/export, recent files and examples; do not label this menu
 `Open` or use an open-folder icon.
+Label the Project file group `Import / Export / Open`. Place Import, Export and text-only Open in
+one row below the format selector. The selector applies to Import and Export. Open displays the
+current project workbook in the modeless spreadsheet window. Use native Open in that window to
+load a local XLSX.
+
+Use one title row: its left side has only
+Open, Save, Undo and Redo icons in that order, using native Gridcraft controls/actions. Omit
+AutoSave, Home, the Undo-list chevron and More from this row. Keep the truncated filename centred. Replace the native right
+Search/Share/Comments/theme cluster with primary `Update to Project`, then Minimize,
+Maximize/Restore and Close. Shared action roles overlay a reserved native right-hand slot;
+there is no additional header row above it. The shared movable primitive owns window geometry
+and the transparent drag area over the filename, without intercepting left-side controls.
+Minimize preserves the draft in a compact title bar; maximize fills the workspace viewport;
+restore retains the prior bounds. There is no backdrop or focus trap. Repeated Project Open commands
+restore/focus the existing draft. Keep Gridcraft's File menu, ribbon, formula bar, bottom sheet
+tabs and status bar below the single title row. Its own Open/Save actions own file operations;
+never insert Update into the native ribbon or duplicate file
+buttons. Gridcraft owns its internal UI geometry/palette. Generated Project XLSX is text-like:
+only input text is dark blue; cells have no fills or bold headings. Native editing/Save preserves
+formatting explicitly authored by the user. All generated project cells remain editable.
 Inside the menu, `Project information` is a text-only action with no icon or
 chevron; it retains the existing hover/focus style and dialog-opening handler.
 

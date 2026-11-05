@@ -14,7 +14,13 @@ export const checkBasisLabels = (basis: DemandCheckBasis = DEFAULT_DEMAND_CHECK_
       note: 'UR is moment utilization at constant axial force: Md/Mb on the ray at P = Pu. It is not total utilization. The proportional 3D ratio is a secondary diagnostic only.',
       pdfNote: 'UR is moment utilization at constant axial force: the demand moment divided by the Design-surface moment at P = Pu. It is not total utilization. A proportional 3D ratio is reported per combination in its detail section and is a secondary diagnostic only.'
     }
-  : {
+  : basis === 'direct2D' ? {
+      title: '2D Load Ray',
+      basis: 'Proportional P–MR ray against the fixed neutral-axis Design meridian',
+      heading: 'Declared check uses the fixed neutral-axis Design meridian.',
+      note: 'UR = 1 / λ at the projected P–MR crossing. The station coordinates use one neutral-axis direction.',
+      pdfNote: 'UR = 1 / λ at the projected P–MR crossing of the fixed neutral-axis Design meridian. Other ratios are secondary.'
+    } : {
       title: '3D load ray',
       basis: 'Governing proportional 3D ray against the Design surface',
       heading: 'Governing check is the proportional 3D ray against the Design surface.',

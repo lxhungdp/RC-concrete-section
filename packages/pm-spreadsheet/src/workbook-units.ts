@@ -8,15 +8,23 @@ export const CANONICAL_WORKBOOK_UNITS: UnitSelection = parseUnitSelection({ vers
 export type QuantityCell = { readonly kind: 'quantity'; readonly quantity: Quantity; readonly canonical: number; readonly units: UnitContext }
 export const quantityCell = (quantity: Quantity, canonical: number, units: UnitContext): QuantityCell => ({ kind: 'quantity', quantity, canonical, units })
 const SOURCE_PREFIX = 'pm-unit-source/v1 '
+/** A calculated value cannot claim the canonical precision record of its former literal. */
+export const evaluatedCellNote = (formula: boolean, note: string | null): string | undefined =>
+  formula && note?.startsWith(SOURCE_PREFIX) ? undefined : note ?? undefined
 /** Exact no-op transport where binary64 display conversion is not invertible. The visible numeric
  * value stays authoritative: an authored change always converts using the declared source unit. */
-export function writeQuantityCell(cell: Cell, source: QuantityCell) {
+export function encodeQuantityCell(source: QuantityCell): { value: number; note?: string } {
   const displayed = fromCanonical(source.quantity, source.canonical, source.units)
-  cell.value = displayed
   if (!Object.is(toCanonical(source.quantity, displayed, source.units), source.canonical)) {
-    cell.note = SOURCE_PREFIX + JSON.stringify({ quantity: source.quantity, unit: quantityUnit(source.quantity, source.units),
-      canonical: source.canonical, displayed })
+    return { value: displayed, note: SOURCE_PREFIX + JSON.stringify({ quantity: source.quantity, unit: quantityUnit(source.quantity, source.units),
+      canonical: source.canonical, displayed }) }
   }
+  return { value: displayed }
+}
+export function writeQuantityCell(cell: Cell, source: QuantityCell) {
+  const encoded = encodeQuantityCell(source)
+  cell.value = encoded.value
+  if (encoded.note !== undefined) cell.note = encoded.note
 }
 export function readQuantityCell(quantity: Quantity, displayed: number, units: UnitContext, note: Cell['note'] | undefined): number {
   const plain = typeof note === 'string' ? note : note?.texts?.map(text => text.text ?? '').join('') ?? ''

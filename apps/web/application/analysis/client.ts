@@ -229,11 +229,12 @@ export const checkLoadcasesAsync = (
   runWorkerOrFallback<LoadcaseQuickCheckResult[]>(
     {
       type: 'checkLoadcases',
-      payload: { ...workerSurfaceReference(payload.surface), loadcases: payload.loadcases, checkBasis: payload.checkBasis }
+      payload: { ...workerSurfaceReference(payload.surface), loadcases: payload.loadcases, checkBasis: payload.checkBasis,
+        preparedInputs: payload.preparedInputs }
     },
     async () => (await loadFallback()).checkLoadcasesFallback(payload),
     signal,
-    { type: 'checkLoadcases', payload: { surface: payload.surface, loadcases: payload.loadcases, checkBasis: payload.checkBasis } }
+    { type: 'checkLoadcases', payload }
   )
 
 export const checkLoadcaseAsync = (

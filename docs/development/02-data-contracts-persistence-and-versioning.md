@@ -7,8 +7,9 @@ v3 with its explicit v1/v2 readers. Older readers reject the unfamiliar law inst
 plateau. Raw hardening strength, construction strain and the discriminated cutoff rule are stored
 once. Compiled tangents and effective design strengths are derived runtime data. A separate optional
 `steelModelModified` flag records KDS steel customization independently of concrete customization.
-The editable workbook revision for these fields is v7, with bounded v5/v6 readers retaining their
-existing load-reference semantics.
+Project workbook v1 preserves the explicit hardening strength, construction strain and cutoff
+inputs; no earlier Excel format is supported. Native project JSON schema versions are independent
+of the workbook format.
 
 The compact hardening form exposes construction strain, radio-selected ratio/stress peak strength,
 and linked editable percentage/direct tensile cutoffs without a mode selector. Editing a cutoff
@@ -67,6 +68,13 @@ JSON must match `npm run fixture:complex-section-json` byte for byte, including 
 stored rebar areas and explicit load-reference/check-basis defaults. Other examples may retain
 declared legacy versions for reader coverage; menu-example tests must distinguish those contracts
 instead of requiring every example to remain v1. The CI fixture-diff gate remains strict.
+
+Authoring visibility is separate from persistence compatibility. The
+[active-input inventory](17-active-inputs-and-audit.md) governs panel/dialog/workbook inputs.
+Concrete `mc` and `elasticModulus` remain in JSON and readonly workbook properties for exact round
+trips, but are not presented for entry or as active calculation parameters. Moving them out of the
+input sheets never regenerates material definitions. The first external workbook format is v1;
+there are no earlier Excel readers.
 
 JSON file import checks file bytes before reading and text/entity budgets before expensive parsing
 or topology work. In a browser with Worker support, the application parses and validates in a
@@ -244,6 +252,12 @@ type TensionControlledLimitRule =
 ACI uses the first rule. KDS uses the second. This prevents the project from persisting one ambiguous
 `transitionExtraStrain` and applying it to both standards.
 
+The KDS Appendix basis also stores its explicit `minimumEccentricity` constant, depth factor and
+clause reference. Parsing preserves all supplied finite values and applies the design owner's
+range/reason checks. Only an omitted rule receives the selected profile's documented default.
+A rule supplied to a profile without that capability is rejected. This repairs an input-loss bug;
+it introduces no new eccentricity equation, coefficient or profile applicability.
+
 ## 7. Load combinations
 
 Every current demand combination has `actionBasis: 'factoredULS'` and stores `P`, `Mx`, and `My` in
@@ -265,7 +279,7 @@ it. V3 rejects an omitted/unknown/non-finite reference. See [the task packet](16
 
 ### Check basis
 
-`loadings.checkBasis` is `'proportional3D'` or `'constantAxial'`, defined by engineering/05 §3.
+`loadings.checkBasis` is `'proportional3D'`, `'direct2D'` or `'constantAxial'`, defined by engineering/05 §3.
 Canonical exports write it. A project document that omits it, at any version, reads as
 `proportional3D`, the only behaviour those files could have declared; this is a documented parser
 default, not a migration. An unknown value is rejected. It is a load-check input rather than an
@@ -309,119 +323,66 @@ and Plotly traces are runtime artifacts. They are regenerated from persisted def
 embedded in the project JSON. A future accepted-result artifact requires its own immutable contract,
 input hash, kernel/profile versions, convergence evidence, and release policy.
 
-## 10. Editable project workbook
+## 10. Editable project workbook v1
 
-`Import Export` selects Excel (`.xlsx`, default) or JSON. Both export the same applied input
-snapshot and project metadata; unapplied geometry drafts are excluded. The web boundary adapter
-`features/section-editor/project/project-xlsx.ts` owns `pm-column-input-workbook`, version 8.
-It retains the declared project version and adds editable As plus optional hidden source snapshots.
-Canonical v2/v3 rows require As. Explicit legacy v1 workbooks retain diameter-only rows until export
-through the canonical project creator.
+The user declares this the first external Excel format. @pm/spreadsheet/project-xlsx owns the
+single writer/reader; the web module is a thin facade. Earlier development workbook layouts are
+not supported readers or migration sources. JSON v1/v2/v3 readers remain separate and unchanged.
 
-Version 8 adds the optional `loadCheckBasis` project field, written when the project declares a
-basis so that an undeclared document round-trips exactly. Readers of versions 5 to 7 omit it. Version 6 includes a visible Load reference declaration. Loadings values are about that declared
-origin and normalize once to centroid on import. The explicit workbook-v5 reader declares zero
-offset; earlier versions require re-export. JSON keeps centroidal actions. Nonzero-frame Excel
-round trips retain full binary64 cell values without display rounding; subtraction/addition of
-lever-arm terms can incur ordinary roundoff. The zero-offset exact round-trip contract is unchanged.
-Standalone loadcase workbooks carry the same reference declaration; old files without it explicitly
-contain centroidal moments. Missing new-format declarations fail closed.
+The workbook contains applied input definitions and input options only. Unapplied geometry,
+camera/chart state, report selections, prepared models, results and analysis surfaces are excluded.
+The [engineering-facing contract](../task-packets/2026-11-05-readable-project-workbook.md) defines
+blue input values, concise engineering symbols and strict validation.
+Generated workbooks are deliberately plain: dark-blue input text only, with no cell fills,
+bold headings or decorative typography. Native editing/Save may preserve explicit user formatting.
+Presentation changes no value, unit or identity contract.
 
-The format selector sits above two explicitly labeled Import and Export buttons. Project share
-links are removed: the app neither creates project URL payloads nor reads project inputs from the
-URL fragment on startup. Recent-file storage and explicit Excel/JSON file imports retain their
-existing validation and apply paths. No URL-fragment compatibility or migration is provided.
+| Sheet | Input responsibility |
+|---|---|
+| Project | User identity, selected calculation profile and check basis |
+| Section | Section name, ordered outer/hole coordinates and identity |
+| Rebar | Diameter, stored As, coordinates and steel assignment |
+| Material | Default steel and per-material active law/boundary inputs; user curves |
+| Loadings | Named factored ULS actions about the declared input origin |
+| Load reference | Applied offsets, with explicit source units |
+| Options | Mode, ordered criteria, directions, refinement and mesh/resource options |
+| Resistance | Active resistance coefficients, class/cap/transition and override reason |
+| Units | One explicit source-unit declaration per quantity |
 
-Visible sheets are Project, Section, Rebar, Material, Loadings, and Load reference. Analysis and Resistance are
-hidden (not veryHidden); users may unhide them for advanced editing. Analysis also retains separate
-PROJECT_METADATA and SECTION_METADATA field/value blocks for workbook identity, project IDs/
-timestamps/profile and section identity. Those blocks cannot override the visible Project fields.
-Material hides the fixed strain sign, curve interpolation/extrapolation, limits/factors, and
-advanced code-model coefficients. Base strengths/density/moduli, names, standard/model identity,
-user-block coefficients, bilinear hardening, user-curve points and zero-tension control remain
-visible. The general material settings block is hidden when there is only one steel grade.
-All hidden material parameters remain independent, persisted inputs; strength edits derive nothing.
-No JSON snapshot overrides the editable cells, including the explicitly retained hidden advanced settings.
+All sheets are visible. No Analysis sheet, raw property paths, workbookFormat/workbookVersion rows,
+editable verification flags, or empty-container machine tokens appear in the worksheet inputs.
+Necessary format identity is a document property. Readonly provenance/identity and retained
+compatibility values are separate document properties; they contain no backup of editable inputs
+and cannot override authored cells. Equal concrete law/boundary fields use a checked binding of
+paths rather than two editable copies; distinct active bounds stay distinct.
+For plateau/bilinear steel, a saved yield-snapshot presence binding is resolved through the material
+compiler after fy/Es edits; no second editable yield value or adapter equation is maintained.
+Authored resistance-coefficient overrides retain the design owner's modified/reason checks.
 
-Ordinary cells, bold markers/headers, gridlines, and basic widths/text/number formats support
-editing. There are no native Excel Tables, merges, background fills, or print layouts.
-Section/Rebar and Loadings state their declared display units in the first note row. The hidden
-Units sheet owns the strict version-1 transport selection. Named table headers remain stable;
-material/advanced dimensional field labels and curve stress headers carry their declared units.
-The UI passes its captured display selection; programmatic exports default to canonical units.
+Units is authoritative. Every dimensional input label/header is checked against that declaration.
+No unchecked duplicate unit notes are used. Canonical quantities, compression-positive P, axes,
+moment signs, stored As and existing load-reference translation owners are unchanged. Scalar unit
+precision notes retain the existing checked no-op role; edited numeric cells remain authoritative.
+Nonzero-origin subtraction/addition retains its documented ordinary binary64 roundoff qualification.
 
-| Sheet | Marker | User-facing inputs |
-|---|---|---|
-| Project | PROJECT | Name, Client, Company, Designed by, Checked by, Address, Date |
-| Section | `outer #1`, `outer #2`, ... | X, Y |
-| Section | `hole #1`, `hole #2`, ... | X, Y; belongs to the nearest preceding outer |
-| Rebar | REBAR | Diameter, As, X, Y; Steel Material ID shown when several grades exist |
-| Material | MATERIAL; CONCRETE, ID; STEEL, ID | Independent material field/value inputs and default steel reference |
-| Material | CONCRETE_CURVE, ID; STEEL_CURVE, ID | Strain (1), Stress (MPa) |
-| Loadings | LOADINGS | Name, P, Mx, My |
-| Analysis (hidden) | ANALYSIS; STATIONS | Explicit options and ordered station records |
-| Resistance (hidden) | RESISTANCE | Explicit design basis and provenance |
+Import requires the declared v1 metadata and every exported required configuration field before
+calling the project parser, so absent Mesh/check-basis inputs cannot silently select JSON defaults.
+Optional clears are explicit; duplicate/conflicting inputs, metadata shadowing, unknown units,
+nonfinite or invalid cells/references/topology and resource exhaustion fail without partial apply.
+The existing 10 MiB compressed, 64 MiB declared expanded ZIP, 256-entry, 100000-row and 64-column
+limits apply. No new engineering coefficient, project JSON schema or acceptance status is added.
 
-Markers and named column headers, never absolute row/column coordinates, identify tables.
-Keywords/column names are case-insensitive with surrounding spaces ignored. Blank rows and single-cell
-`#` comments are ignored; repeated column headers continue a table. Columns can be reordered.
-Loading names beginning with `#` or matching LOADINGS remain data when demand cells are present.
-Outer/hole numbers are stable entity IDs; they must be positive and unique in their namespaces.
-A hole before an outer fails closed. Move an outer together with its holes to retain ownership.
-Vertex/station/curve order remains row order; sorting changes meaning and is never repaired.
-
-Point, bar and loading ID columns are hidden optional transport hints, not user-required inputs.
-Existing unique IDs survive a round trip. New rows, missing ID columns and copied duplicate ID
-hints receive unused positive IDs through the existing public identity allocator; copied-ID
-reassignment is reported as a warning. This normalization concerns editor identity only and
-changes no coordinates, bars, material references, demand values, signs or engineering parameters.
-Malformed explicit ID hints still fail closed. New blank bar material references use the persisted
-default under the existing project contract. The optional Steel Material ID column remains readable
-even when hidden; imported explicit references must exist. Loadings has no Action basis column:
-the current application's `createLoadCombination` owner declares every row `factoredULS`.
-Export rejects another demand basis instead of relabeling it.
-
-Add/delete complete rows directly, or add an outer/hole by copying a marker, headers and vertices
-and assigning a new marker number. Rebar/loading blocks can repeat. Copy STEEL fields and assign
-a unique material ID to add a grade. Empty tables represent empty arrays; deleting a definition
-removes it subject to geometry/material validation. No ordering-column renumbering is needed.
-Section may contain no polygon blocks for an empty project.
-
-Field/value tables use explicit per-block allowed-field/type maps; units appear in field names.
-Booleans accept TRUE/FALSE. Empty optional objects/arrays use {}/[]; numeric paths in advanced
-arrays require consecutive zero-based indexes. Version-1/2/3/4 previews require re-export; there is no
-silent migration. Required hidden sheets/metadata must be retained; missing advanced settings are
-not reconstructed from defaults.
-
-Workbook numbers use the declared per-quantity presentation units and convert once at the
-explicit typed field/column boundary. Canonical project lengths remain mm, stresses/moduli MPa,
-density kg/m3, forces N, moments N.mm, and declared angles degrees. Compression-positive P/strain and canonical moment signs are unchanged. Stored doubles
-retain full precision; cell formatting affects display only. Formulas, cached results, dates,
-errors and linked/rich text cells are rejected; paste values. Material parameters remain explicit
-independent inputs; editing strength does not derive a new modulus or code parameter.
-
-Import reconstructs raw definitions and uses `parseProjectDocument` for engineering validation
-and documented version-specific normalization. Missing sheets/markers/columns, duplicate authoritative
-fields/entities, malformed types/units, broken references and resource exhaustion return typed
-failures with sheet/row context. No project state changes until validation succeeds. Limits are
-10 MiB compressed, 64 MiB declared expanded ZIP content, 256 ZIP entries, 100,000 rows per sheet,
-and 64 columns: resource bounds, not engineering tolerances/defaults. Input workbooks contain no
-results and confer no acceptance or release status. Their verification status must match the
-selected registry profile (currently draft or user-defined); a workbook cannot grant reviewed/
-verified status. Source snapshots that disagree with edited diameter/As become Manual.
-
-### Exact no-op unit transport
-
-Unit-aware project, loadcase and section/rebar workbooks carry a strict Units declaration; missing,
-unknown or malformed declarations fail. None reads the browser preference on import. Native JSON
-retains canonical units. Section DXF cannot preserve independent As and rejects lossy exports.
-Standalone section/rebar workbooks use `pm-section-rebars-area-v2` and require As; earlier previews
-require re-export.
-
-When binary64 display conversion has no exact inverse for the original number, the numeric cell
-also carries a `pm-unit-source/v1` comment with its quantity, source display unit, canonical value
-and exported display value. The reader verifies this scalar record against the shared converter.
-Only an unchanged visible numeric value with a matching declared unit retains that original number.
-An edited cell always converts its visible value; an inconsistent record fails. This is exact
-no-op provenance, not a model snapshot or an override of edited cells. IDs, order, ratios and
-coefficients never receive quantity records. Moving an Excel cell carries its comment with it.
+The Project spreadsheet editor uses the same v1 schema in a transient Gridcraft workbook. Direct file
+import requires plain values; the modeless app window evaluates formulas before whole-project Update.
+Only current finite scalar results enter the v1 reader, and a formula cannot reuse a previous
+literal's precision note. Save retains workbook formulas/layout independently of project state.
+Update publishes all validated inputs together through the existing project-apply boundary;
+no formulas, editor layout or report selections enter project JSON. Project rows are unlocked,
+so invalid structural edits are diagnosed on Update. The nine required sheet names and input
+labels remain the explicit schema, rather than guessed positions or hidden value backups.
+Native Open stages a bounded workbook independently, using its current identity properties at Update.
+Extra helper sheets can calculate inputs and remain in native Save; only the nine project sheets
+enter the project reader. Generic workbooks can be opened/edited/saved, but cannot Update a project
+without the complete declared v1 schema. Original workbook formatting/views/protection are preserved
+on native Open; newly generated project workbooks are unlocked. Minimize/restore keeps the same
+transient document; closing discards it. No window geometry or spreadsheet state is persisted in P-M.

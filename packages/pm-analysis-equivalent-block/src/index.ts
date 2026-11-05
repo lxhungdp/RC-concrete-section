@@ -1605,13 +1605,14 @@ const constantAxialCapacity = (
     }
   : { status: 'no-intersection', iterations: fixedAxial?.innerIterations ?? 0 }
 
-const solveEquivalentBlockDemandRaw = (
+export const solveEquivalentBlockDemandRaw = (
   prepared: PreparedBlockAnalysis,
   options: EquivalentBlockAnalysisOptions,
   loadcase: LoadCombination,
   preparedDesignSurface: EquivalentBlockDesignSurface | undefined,
   checkBasis: DemandCheckBasis
 ): InversePreviewResult => {
+  if (checkBasis === 'direct2D') throw new AnalysisInputError('INVALID_ANALYSIS_OPTIONS', '2D Load Ray requires a fixed neutral-axis meridian.')
   if (loadcase.P === 0 && loadcase.Mx === 0 && loadcase.My === 0) {
     // The geometric check owns UR=0. A zero ray has no block capacity state; the legacy required
     // state/response slots below are explicitly unevaluated and must never supply a field.

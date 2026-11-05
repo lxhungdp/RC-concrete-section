@@ -1,6 +1,7 @@
 'use client'
 
 import { QuantityInput } from '../shared/DisplayUnits'
+import { ModificationReasonField } from './ModificationReasonField'
 import type { Quantity } from '@pm/units'
 
 import { useEffect, useMemo, useState } from 'react'
@@ -83,8 +84,6 @@ const DesignSelect = ({
 export function DesignBasisPanel({ value, onChange }: Props) {
   const [draft, setDraft] = useState<DesignBasis>(() => clone(value))
   const [showMethodInfo, setShowMethodInfo] = useState(false)
-  // Keep a newly started reason editable through canonical-state echoes in this panel session.
-  const [enteredReasonHere, setEnteredReasonHere] = useState(false)
   useEffect(() => setDraft(clone(value)), [value])
 
   const issues = useMemo(() => designBasisIssues(draft), [draft])
@@ -185,7 +184,6 @@ export function DesignBasisPanel({ value, onChange }: Props) {
           <div className="pm-design-group">
             <div className="pm-design-group-title">
               <strong>Strength reduction</strong>
-              <span>Applied to the complete P-Mx-My resultant</span>
             </div>
             {/* A code profile owns its transition shape; a user-defined profile chooses one. */}
             {isUserDefinedProfile && (
@@ -300,7 +298,6 @@ export function DesignBasisPanel({ value, onChange }: Props) {
         <div className="pm-design-group">
           <div className="pm-design-group-title">
             <strong>Minimum eccentricity</strong>
-            <span>Demand-side rule</span>
           </div>
           <div className="pm-design-factor-grid">
             <NumericFactor
@@ -331,33 +328,16 @@ export function DesignBasisPanel({ value, onChange }: Props) {
             />
           </div>
         </div>
-      ) : <p className="pm-design-help">Material factors are entered in Materials.</p>}
+      ) : null}
 
-      {requiresOverrideReason && (isAs3600Profile || enteredReasonHere || draft.overrideReason.trim().length === 0) && (
-        <label className="pm-design-override">
-          <span>Reason for modification</span>
-          <textarea
-            rows={2}
-            value={draft.overrideReason}
-            placeholder="State the approved project basis for changing the code defaults"
-            onChange={(event) => {
-              setEnteredReasonHere(true)
-              const next = clone(draft)
-              next.overrideReason = event.target.value
-              publishIfValid(next)
-            }}
-          />
-          <small>
-            Required for traceability because this profile no longer matches the stored code
-            defaults. It is included in the project file and Excel audit.
-          </small>
-        </label>
-      )}
+      {requiresOverrideReason && <ModificationReasonField key={draft.profileId} className="pm-design-override"
+        multiline showExisting={showMethodInfo} value={draft.overrideReason} onChange={(reason) => {
+          const next = clone(draft)
+          next.overrideReason = reason
+          publishIfValid(next)
+        }} />}
 
       {issues.length > 0 && <p className="pm-design-basis-error">{issues[0]}</p>}
-      <p className="pm-design-auto-save">
-        Valid changes are applied automatically.
-      </p>
     </section>
   )
 }

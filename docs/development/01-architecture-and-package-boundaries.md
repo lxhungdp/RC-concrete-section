@@ -37,7 +37,7 @@ filesystem/network APIs, project UI state, or report libraries.
 | `@pm/code-custom` | user-declared block law, endpoints, phi transition, and cap | derives nothing from a code table; validates ranges and uses what the project gives it; never claims clause traceability |
 | `@pm/analysis-equivalent-block` | project/profile/result bridge for the block kernel and adapters | routing/normalization only; do not merge it into the stress-strain kernel |
 | `@pm/report` | result workbooks for both mechanics, stress-strain mesh Excel/DXF, the format-neutral `ReportModel`, and the PDF renderer on the `@pm/report/pdf` subpath | shared spine in `workbook-common.ts`; the PDF is deliberately not re-exported from the index so the analysis worker never bundles it; no accepted-result release contract yet |
-| `@pm/spreadsheet` | generic XLSX table schemas/metadata, evaluated snapshots and loadcase/coordinate/rebar authoring adapters | outward adapter; may consume ExcelJS and inward owners; no React, browser/file/network APIs, P-M solver or project formula persistence |
+| `@pm/spreadsheet` | Project XLSX v1, whole-project and table authoring adapters, metadata and evaluated snapshots | outward adapter; may consume ExcelJS and inward owners; no React, browser/file/network APIs, P-M solver or project formula persistence |
 | `@structures/cad-drawing` | reusable view/navigation foundation | presentation only; never an analysis dependency |
 | `@pm/web` | current integrated editor | application composition only; move reusable domain/use-case logic into packages |
 
@@ -201,6 +201,36 @@ pass the applicable portability, numerical-matrix, workbook/PDF, build, security
 Numerically relevant dependency updates receive change classification and full affected regression,
 not automatic merge after type checking alone.
 
+### Project input workbook
+
+Project input XLSX has its separate `@pm/spreadsheet/project-xlsx` entry point. Its one first-format
+v1 writer/reader maps concise engineering sheets through a private typed field codec and the project
+validator. The web module only re-exports that API. Units, load-reference translations, derived
+steel yield evidence and resistance-override checks consume their inward owners. Readonly identity
+and compatibility properties do not shadow editable cells. The complete contract is in
+[development/02 section 10](02-data-contracts-persistence-and-versioning.md#10-editable-project-workbook-v1).
+No earlier Excel layout reader, engineering equation or result state is introduced.
+The presentation-only formatter styles generated exports by visible input role: dark-blue input
+text, plain headings, no fills or bold. Native editing/Save preserves user-authored formatting.
+Neither path infers input meaning from colours or trusts formula caches for project values.
+
+`prepareWorkbookEditor` validates bounded native Open without rewriting bytes, styles or locks.
+`@pm/spreadsheet/project` decodes the engine's current evaluated snapshot/properties through the
+same v1 reader. The Project menu's Open command displays the current workbook in a modeless
+spreadsheet window within the workspace. One integrated title row has only native Open/Save/Undo/Redo icons on the left and the centred,
+truncated filename. The shared movable primitive overlays primary Update to Project followed by
+Minimize, Maximize/Restore and Close in a reserved right-hand slot, replacing Search/Share/Comments/
+theme. It adds no extra title row; a transparent filename-region drag target retains movement.
+Gridcraft's menus, ribbon, formula bar, bottom tabs and status remain below. Native Open/Save use the application file
+adapter; no Update or duplicate file buttons are inserted into the native ribbon. The generated
+project has unlocked cells. Save preserves formulas, authored styles and independent helper sheets;
+Update selects the nine declared project sheets, validates every input group and calls the existing
+project-apply boundary once. The current properties identify a natively opened file; helper sheets
+are not project inputs. An applied-input revision is checked before and after asynchronous decoding;
+successful Updates advance it. Unchanged metadata copies do not invalidate the draft. Formula
+results discard former literal precision notes before unit conversion. No formula cache or duplicate
+project state is trusted. See the [title-row packet](../task-packets/2026-11-05-project-spreadsheet-title-bar.md).
+
 ### Transient table spreadsheets
 
 `@pm/spreadsheet` is an outward XLSX adapter package, like the report adapter rather than a
@@ -208,9 +238,9 @@ numerical kernel. It owns bounded archive/metadata handling, table schemas, prot
 headers, evaluated-cell decoding and pure loadcase/coordinate/rebar mapping. It may depend on
 ExcelJS and inward geometry/project/units owners. Numerical/domain packages never import it.
 The web shared spreadsheet dialog owns session lifecycle and presentation; browser/file APIs stay
-in `application/`. The Gridcraft host receives a checked sheet/column descriptor instead of a
-hardcoded loadcase mapping. Feature components select an adapter and publish one validated value
-array through their existing input callback. They do not implement another workbook or modal.
+in `application/`. Protocol v4 distinguishes a checked sheet/column table descriptor from explicit
+whole-workbook mode. Feature components select an adapter and publish one validated value array
+or project document through their existing input callback. Shared presentation owns modal/app-window geometry.
 
 Coordinates replace only the selected unlocked draft Outer/Hole; the complete draft is checked
 before publication and Apply remains explicit. Rebars resolve steel IDs and validate their full
@@ -223,7 +253,7 @@ The web-only Gridcraft integration is pinned to revision
 `919a6b58fe6661de27af0609d02443ac9db467bf` (0.16.0). Its reviewed Rust lockfile, bounded source
 patch, build recipe, license/security record and artifact manifest live in
 [`tools/gridcraft`](../../tools/gridcraft/README.md). The included self-hosted WebAssembly artifact
-loads only when a table modal opens. It is outside the initial-route and analysis-worker
+loads only when a spreadsheet dialog or app window opens. It is outside the initial-route and analysis-worker
 bundles and has its own checked compressed-size budget.
 
 `application/spreadsheets/gridcraft-client.ts` owns the versioned, origin/source/session-checked

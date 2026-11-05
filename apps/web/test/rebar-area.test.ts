@@ -91,7 +91,7 @@ test('UNITS-005 / REBAR-AS-003: area and source survive project and standalone E
   const book = new ExcelJS.Workbook()
   await book.xlsx.load(new Uint8Array(await buildProjectWorkbook(original, UNIT_PRESETS.us)).buffer)
   const sheet = book.getWorksheet('Rebar')!
-  const header = sheet.getRows(1, sheet.rowCount)!.find(row => row.getCell(1).value === 'REBAR')!
+  const header = sheet.getRows(1, sheet.rowCount)!.find(row => row.getCell(1).value === 'Rebars')!
   sheet.getCell(header.number + 2, 6).value = 0.5
   const edited = await importProjectWorkbook(new Uint8Array(await book.xlsx.writeBuffer()).buffer)
   assert.ok(edited.ok, edited.ok ? '' : edited.error)

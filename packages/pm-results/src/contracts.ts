@@ -660,6 +660,15 @@ export type CapacityFieldResult =
     }
 
 
+export type Direct2DCheckEvidence = {
+  beta: number | null
+  angleSource: 'demand-equilibrium' | 'proportional-capacity' | null
+  crossing: { P: number; M: number; Mx: number; My: number; lambda: number
+    segment: { path: number; segment: number; fraction: number } } | null
+  status: 'crossing' | 'zero-demand' | 'missing-angle' | 'evaluation-error' | 'unresolved-crossing'
+  message: string
+}
+
 export type InversePreviewResult = {
   /** Converged **and** admissible. Only this may be presented as an equilibrium state. */
   ok: boolean
@@ -691,6 +700,9 @@ export type InversePreviewResult = {
         utilizationInterval: UtilizationInterval
       }
   designCapacityPoint?: Resultant | null
+  designCapacityMultiplier?: number | null
+  direct2D?: Direct2DCheckEvidence
+  direct2DCurve?: ExactDirectionCurve
   resistance?: DesignResistanceTrace | null
   equivalentBlock?: EquivalentBlockStateTrace | null
   contourPoint: PreviewContourPoint | null
@@ -707,6 +719,7 @@ export type LoadcaseQuickCheckResult = {
   codeAdjustedDemand?: LoadCombination
   minimumEccentricityMm?: number
   utilizationDefinition: DemandCheckBasis
+  direct2D?: Direct2DCheckEvidence
   /** Set only under the constant-axial basis: why that query did or did not publish a ratio. */
   constantAxialStatus?: ConstantAxialIntersection['status']
   /** Boundary moment Mb on the constant-axial ray; null when that query publishes no ratio. */

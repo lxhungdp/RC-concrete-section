@@ -11,5 +11,8 @@ skill. Read its linked design standard, engineering input composition and role m
 Outer/Hole and Loadcase table layout, bounded option lists and inline unit notes,
 file actions, transfer icons, toolbar basis states and header layout exceptions,
 and chart metric rows,
+including the current-consumer rule and linked active-input inventory,
+and the routine-form text rule,
+and the Project menu Import/Export/Open row, single spreadsheet title row and plain workbook contract,
 completely before UI work. Do not act
 from this adapter alone or duplicate the workflow or visual rules here.

@@ -89,6 +89,16 @@ context, never a substitute for the normative source.
 
 - Inspect `git status`, current owner APIs, callers, tests, and uncommitted work before editing.
   Preserve user changes and keep unrelated cleanup out of the patch.
+- Expose an editable field only when its value has a traced consumer in the active calculation,
+  geometry authoring, view/export choice, or required project/report identity. Check every applicable
+  profile, mechanics, material model and mode, including input workbooks. Remove unused controls;
+  show useful derived/profile values read-only. Persistence compatibility or a possible future
+  feature alone never justifies an input. Record the consumer and activation in the
+  [active-input inventory](docs/development/17-active-inputs-and-audit.md); preserve existing stored
+  data and validation when simplifying a form.
+- Keep routine forms concise: omit static instructions, default reminders and completed/generated
+  audit-reason editors. Follow the workspace standard for missing required information, explicit
+  Details access, actionable errors and necessary engineering context.
 - For result-affecting work, create the task packet required by
   [`development/05`](docs/development/05-coding-quality-and-ai-workflow.md): objective, requirement
   IDs, owners, contracts, blocking failures, oracles, impact, and out-of-scope items. Assign the

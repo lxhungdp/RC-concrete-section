@@ -1,5 +1,5 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; style-src 'unsafe-inline'; img-src 'self' data: blob:; worker-src 'self' blob:; font-src 'self'">
-<title>Spreadsheet</title><style>html,body{width:100%;height:100%;margin:0;overflow:hidden}canvas{width:100%;height:100%;display:block}#gridcraft_loading{position:absolute;inset:0;display:grid;place-items:center;font:13px system-ui;color:#777;background:#fff}</style>
+<title>Spreadsheet</title><style>html,body{width:100%;height:100%;margin:0;overflow:hidden}canvas{width:100%;height:100%;display:block}#gridcraft_loading,#pm_project_loading{position:absolute;inset:0;display:grid;place-items:center;font:13px system-ui;color:CanvasText;background:Canvas}html[data-pm-project='true']:not([data-pm-presented='true']) canvas{opacity:0}#pm_project_status{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}</style>
 </head><body><canvas id="gridcraft_canvas" tabindex="0" aria-label="Loadcase spreadsheet"></canvas><div id="gridcraft_loading">Opening spreadsheet…</div><script type="module" src="./loader.mjs"></script></body></html>

@@ -1902,6 +1902,30 @@ body[data-jscad-theme='dark'] .pm-side-panel .pm-design-basis-identity strong.is
 .pm-check-basis-options { flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-1) var(--sp-3); }
 .pm-check-basis-options > label { gap: var(--sp-2); white-space: nowrap; cursor: pointer; }
 
+.pm-check-basis-help-content {
+  padding: var(--sp-3);
+  overflow: auto;
+  min-block-size: 0;
+  line-height: 1.5;
+}
+
+.pm-check-basis-help-content > section {
+  display: grid;
+  grid-template-columns: minmax(0, 7rem) minmax(0, 1fr);
+  gap: var(--sp-3);
+  align-items: start;
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--ws-shell-border);
+}
+
+.pm-check-basis-help-content h3 { margin: 0; }
+.pm-check-basis-sketch { inline-size: 100%; max-inline-size: 7rem; }
+
+@media (max-width: 560px) {
+  .pm-check-basis-help-content > section { grid-template-columns: minmax(0, 1fr); }
+  .pm-check-basis-sketch { inline-size: 7rem; }
+}
+
 /* Layout only: native radio choices share the heading row above the peak-strength value. */
 .pm-hardening-strength-options,
 .pm-hardening-strength-options > label {

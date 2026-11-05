@@ -80,6 +80,7 @@ import {
   type LoadingsInput,
   type LoadReference,
   type ParseProjectResult,
+  type PmProjectDocument,
   type ProjectInformation
 } from '@pm/project'
 import {
@@ -101,6 +102,7 @@ import { CalculationBasisToolbar } from './CalculationBasisToolbar'
 import { WorkspaceFrame } from './shared/WorkspaceFrame'
 import { WORKSPACE_PANE_GAP } from './shared/workspace-layout'
 import { AddIcon, TransferIcon } from './shared/WorkspaceIcons'
+import { projectSpreadsheetRevision } from './project/project-spreadsheet-state'
 import { PROJECT_EXAMPLES, type ProjectExample } from './project-examples'
 import {
   RECENT_PROJECT_STORAGE_KEY,
@@ -178,6 +180,7 @@ const RebarPanel = dynamic(() => import('./geometry/RebarPanel').then(module => 
   { ssr: false, loading: () => <p role="status">Loading reinforcement…</p> })
 const CoordinateSpreadsheetDialog = dynamic(() => import('./geometry/GeometrySpreadsheetDialog').then(module => module.CoordinateSpreadsheetDialog), { ssr: false })
 const RebarSpreadsheetDialog = dynamic(() => import('./geometry/GeometrySpreadsheetDialog').then(module => module.RebarSpreadsheetDialog), { ssr: false })
+const ProjectSpreadsheetWindow = dynamic(() => import('./project/ProjectSpreadsheetWindow').then(module => module.ProjectSpreadsheetWindow), { ssr: false })
 import { boundarySelectionStatus, shouldHandleBoundaryDelete } from './geometry/boundary-selection'
 import { prepareBoundaryDraftForApply } from './geometry/boundary-draft'
 import { DemandCheckPanel } from './results/DemandCheckPanel'
@@ -610,6 +613,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
   const projectImportAbortRef = useRef<AbortController | null>(null)
   const drawingImportInputRef = useRef<HTMLInputElement | null>(null)
   const projectMenuRef = useRef<HTMLDivElement | null>(null)
+  const projectMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
   const aboutMenuRef = useRef<HTMLDivElement | null>(null)
   const rotationSessionRef = useRef<BoundaryObject | null>(null)
   const pendingFitAfterImportRef = useRef(false)
@@ -631,6 +635,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
   const [drawingFileBusy, setDrawingFileBusy] = useState(false)
   const [aboutMenuOpen, setAboutMenuOpen] = useState(false)
   const [projectInformationOpen, setProjectInformationOpen] = useState(false)
+  const [projectSpreadsheet, setProjectSpreadsheet] = useState<{ document: PmProjectDocument; units: typeof displayUnits; activation: number } | null>(null)
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([])
   const [recentStorageReady, setRecentStorageReady] = useState(false)
   const [tool, setTool] = useState<Tool>('select')
@@ -752,6 +757,11 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
     ]
   )
 
+  const projectSpreadsheetTarget = useMemo(() => projectSpreadsheetRevision({
+    inputs: { calculationProfileId, geometry: appliedGeometryInput, materials: materialStore,
+      loadings: loadingsInput, analysis: analysisOptions, design: designBasis }, meta: projectMeta
+  }), [calculationProfileId, appliedGeometryInput, materialStore, loadingsInput, analysisOptions, designBasis, projectMeta])
+
   const publishRecentEntry = useCallback((recent: RecentProject | null) => {
     if (!recent) return
     setRecentProjects((current) => {
@@ -828,14 +838,18 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
   const calculationCheckCandidate = calculationLoadcaseId === null
     ? null
     : quickChecksById[calculationLoadcaseId] ?? null
-  const calculationCheck = currentLoadcaseEvidence(calculationLoadcase, calculationCheckCandidate)
+  const calculationCheck = calculationCheckCandidate?.utilizationDefinition === checkBasis
+    ? currentLoadcaseEvidence(calculationLoadcase, calculationCheckCandidate) : null
   const calculationInverseCandidate = calculationLoadcaseId === null
     ? null
     : inverseResults[calculationLoadcaseId] ?? null
-  const calculationInverse = currentLoadcaseEvidence(calculationLoadcase, calculationInverseCandidate)
+  const calculationInverse = calculationInverseCandidate?.designCheck.evaluated &&
+    calculationInverseCandidate.designCheck.definition === checkBasis
+    ? currentLoadcaseEvidence(calculationLoadcase, calculationInverseCandidate) : null
   const currentQuickChecksById = useMemo(
-    () => currentLoadcaseEvidenceMap(loadingsInput.combinations, quickChecksById),
-    [loadingsInput.combinations, quickChecksById]
+    () => currentLoadcaseEvidenceMap(loadingsInput.combinations, Object.fromEntries(
+      Object.entries(quickChecksById).filter(([, result]) => result.utilizationDefinition === checkBasis))),
+    [loadingsInput.combinations, quickChecksById, checkBasis]
   )
 
   useEffect(() => {
@@ -1200,7 +1214,9 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
 
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
-      checkLoadcasesAsync({ surface: resultSurface, loadcases: pending, checkBasis }, controller.signal)
+      checkLoadcasesAsync({ surface: resultSurface, loadcases: pending, checkBasis,
+        ...(checkBasis === 'direct2D' ? { preparedInputs: { calculationProfileId, section: finalSection, rebars,
+          materialStore, designBasis } } : {}) }, controller.signal)
         .then((results) => {
           const next = { ...quickChecksRef.current }
           for (const result of results) next[result.loadcaseId] = result
@@ -2573,6 +2589,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
         <div className="pm-toolbar" aria-label="Project and application tools">
           <div className="pm-project-menu" ref={projectMenuRef}>
             <button
+              ref={projectMenuTriggerRef}
               className={`pm-project-menu__trigger${projectMenuOpen ? ' is-active' : ''}`}
               type="button"
               title="Project information and files"
@@ -2603,7 +2620,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
                 </section>
 
                 <section className="pm-project-menu__section">
-                  <div className="pm-project-menu__section-head"><span>Import / Export</span></div>
+                  <div className="pm-project-menu__section-head"><span>Import / Export / Open</span></div>
                   <div className="pm-project-menu__file-controls">
                     <select
                       className="pm-project-menu__format"
@@ -2643,6 +2660,28 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
                       >
                         <TransferIcon direction="export" />
                         <span>Export</span>
+                      </button>
+                      <button
+                        className="ws-action pm-project-menu__file-action"
+                        type="button"
+                        title="Open the current project spreadsheet"
+                        disabled={projectFileBusy || drawingFileBusy}
+                        onClick={() => {
+                          projectMenuTriggerRef.current?.focus({ preventScroll: true })
+                          setProjectMenuOpen(false)
+                          if (projectSpreadsheet) {
+                            setProjectSpreadsheet({ ...projectSpreadsheet, activation: projectSpreadsheet.activation + 1 })
+                            return
+                          }
+                          const document = buildCurrentProjectDocument()
+                          setProjectSpreadsheet({
+                            document: { ...document, meta: { ...document.meta, name: projectMeta.name } },
+                            units: displayUnits,
+                            activation: 0,
+                          })
+                        }}
+                      >
+                        Open
                       </button>
                     </div>
                   </div>
@@ -2721,6 +2760,13 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
           onSave={saveProjectInformation}
         />
       ) : null}
+
+      {projectSpreadsheet && <ProjectSpreadsheetWindow activation={projectSpreadsheet.activation}
+        document={projectSpreadsheet.document} units={projectSpreadsheet.units} revision={projectSpreadsheetTarget}
+        onClose={() => setProjectSpreadsheet(null)} onUpdate={result => {
+          applyValidatedProject(result)
+          return projectSpreadsheetRevision(result.document)
+        }} />}
 
       <WorkspaceComboboxes />
       <WorkspaceFrame>

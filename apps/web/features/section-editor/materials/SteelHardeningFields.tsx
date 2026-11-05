@@ -205,8 +205,6 @@ export function SteelStressStrainCurve({ material, store, basis, stage }: {
       <p><MaterialSymbol symbol="epsY" /> = {preview.epsY?.toPrecision(5)} · <MaterialSymbol symbol="fyEff" /> = {preview.yieldStress === undefined ? '' : qfmt('stress', preview.yieldStress, 3)} {unit('stress')}</p>
       {preview.hardening && <p><MaterialSymbol symbol="epsUd" /> = {preview.hardening.epsUd.toPrecision(5)} · <MaterialSymbol symbol="Eh" /> = {qfmt('modulus', preview.hardening.hardeningModulus, 3)} {unit('modulus')}</p>}
       {preview.physicalControls && <p>Active tensile limit (physical) = {preview.end?.toPrecision(5)}.</p>}
-      {stage === 'design' && basis.format === 'globalResultantFactor' && <p>The strength reduction factor applies to section resultants.</p>}
-      {preview.construction && <p>Dotted extension reaches <MaterialSymbol symbol="epsUk" /> beyond the active tensile limit.</p>}
     </> : <p role="status">{preview.error}</p>}
     </div>
 }
