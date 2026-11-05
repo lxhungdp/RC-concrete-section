@@ -12,6 +12,7 @@ dist/
 build/
 *.tsbuildinfo
 apps/*/.next/
+apps/web/.next-gridcraft/
 apps/*/out/
 apps/*/dist/
 

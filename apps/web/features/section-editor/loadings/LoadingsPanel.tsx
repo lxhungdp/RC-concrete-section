@@ -3,11 +3,11 @@
 import { QuantityInput, UnitLabel, useDisplayUnits } from '../shared/DisplayUnits'
 
 import { AddIcon } from '../shared/WorkspaceIcons'
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
 import type { LoadcaseQuickCheckResult } from '@pm/analysis'
 import { createLoadCombination, editLoadAtReference, loadReferenceOf, resultantAtCentroid, resultantAtLoadReference, type LoadCombination, type LoadingsInput } from '@pm/project'
-import { downloadLoadcaseWorkbook, importLoadcaseWorkbook } from './loadcase-xlsx'
+import { LoadcaseSpreadsheetDialog } from './LoadcaseSpreadsheetDialog'
 import { selectLoadcaseFromRow } from './loadcase-selection'
 
 type Props = {
@@ -86,7 +86,7 @@ export function LoadingsPanel({
   const { selection: displayUnits } = useDisplayUnits()
   const combinations = input.combinations
   const reference = loadReferenceOf(input)
-  const excelInputRef = useRef<HTMLInputElement | null>(null)
+  const [spreadsheetOpen, setSpreadsheetOpen] = useState(false)
 
   const updateCombination = (id: number, patch: Partial<LoadCombination>, refreshCheck = false) => {
     const nextCombinations = combinations.map((item) => (item.id === id ? editLoadAtReference(item, patch, reference) : item))
@@ -120,28 +120,6 @@ export function LoadingsPanel({
     onChange({ ...input, combinations: next })
     if (selectedLoadcaseId === id) {
       onSelectLoadcase(next[Math.min(Math.max(removedIndex, 0), next.length - 1)]?.id ?? null)
-    }
-  }
-
-  const exportExcel = async () => {
-    try {
-      await downloadLoadcaseWorkbook(combinations, displayUnits, reference)
-    } catch (error) {
-      window.alert(`Excel export failed: ${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-
-  const importExcel = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-
-    try {
-      const imported = await importLoadcaseWorkbook(await file.arrayBuffer())
-      onChange({ ...input, combinations: imported })
-      onSelectLoadcase(null)
-    } catch (error) {
-      window.alert(`Excel import failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -303,34 +281,26 @@ export function LoadingsPanel({
           <button
             type="button"
             className="ws-action pm-file-btn"
-            onClick={() => void exportExcel()}
-            title="Export loadcases to Excel"
-            aria-label="Export XLSX loadcase workbook"
+            onClick={() => setSpreadsheetOpen(true)}
+            title="Open loadcases in a spreadsheet"
+            aria-label="Open XLSX"
           >
-            Export XLSX
+            Open XLSX
           </button>
-          <button
-            type="button"
-            className="ws-action pm-file-btn"
-            onClick={() => excelInputRef.current?.click()}
-            title="Import loadcases from Excel"
-            aria-label="Import XLSX loadcase workbook"
-          >
-            Import XLSX
-          </button>
-          <input
-            ref={excelInputRef}
-            type="file"
-            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            hidden
-            onChange={importExcel}
-          />
         </div>
         <button type="button" className="ws-action ws-action--primary" onClick={addCombination}>
           <AddIcon />
           Add
         </button>
       </div>
+      {spreadsheetOpen && <LoadcaseSpreadsheetDialog input={input} units={displayUnits}
+        onClose={() => setSpreadsheetOpen(false)}
+        onUpdate={values => {
+          const next = { ...input, combinations: values }
+          onChange(next)
+          if (selectedLoadcaseId != null && !values.some(value => value.id === selectedLoadcaseId)) onSelectLoadcase(null)
+          return next
+        }} />}
     </section>
   )
 }

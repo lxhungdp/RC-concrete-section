@@ -7,7 +7,7 @@ const issues: string[] = []
 const codeRoots = ['apps', 'packages', 'tools', 'bench']
 const sourceExtensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])
 const runtimeGuard = 'node ../../tools/runtime/check-runtime.mjs && '
-const ignoredDirectories = new Set(['node_modules', '.next', '.git', 'dist', 'outputs', 'coverage'])
+const ignoredDirectories = new Set(['node_modules', '.next', '.next-gridcraft', '.git', 'dist', 'outputs', 'coverage'])
 const workspaces: WorkspaceDefinition[] = []
 const workspaceSources: WorkspaceSource[] = []
 

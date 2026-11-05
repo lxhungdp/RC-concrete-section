@@ -1,4 +1,6 @@
 const nextConfig = {
+  // Allow verification builds without overwriting a running development server's artifacts.
+  distDir: process.env.PM_NEXT_DIST_DIR ?? '.next',
   // The repository owns its agent instructions; next dev must not generate a second contract.
   agentRules: false,
   // Keep HMR usable when the local app is opened through either localhost or its loopback IP.

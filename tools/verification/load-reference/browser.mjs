@@ -89,6 +89,20 @@ const settledForDemand = async (page, load, units = UNIT_PRESETS.metric) => {
   }, { x, y, p, dx: comparisonBound(x), dy: comparisonBound(y), dp: comparisonBound(p) })
 }
 const axes = page => page.locator('.pm-section-moment-axes').evaluate(el => ({ x: Number(el.dataset.originX), y: Number(el.dataset.originY) }))
+const centroid = async (page, label) => {
+  const marker = page.locator('[data-section-centroid]')
+  await marker.waitFor({ state: 'visible' })
+  const data = await marker.evaluate(el => {
+    const circle = el.querySelector('circle')
+    const viewport = el.ownerSVGElement.viewBox.baseVal
+    return { x: circle.cx.baseVal.value, y: circle.cy.baseVal.value,
+      width: viewport.width, height: viewport.height, label: el.querySelector('text').textContent }
+  })
+  assert.equal(data.label, label)
+  assert.ok(data.x > 0 && data.x < data.width && data.y > 0 && data.y < data.height,
+    'The exact section centroid remains inside the drawing viewport')
+  return { x: data.x, y: data.y }
+}
 try {
   for (const [mechanics, file] of [
     ['stress-strain', 'docs/examples/realistic-sections/KDS-REAL-05-complex-stress-strain.pm-project.json'],
@@ -129,6 +143,7 @@ try {
     await page.getByText('Direct β', { exact: true }).click(); await settled(page)
     const beforePlots = await plots(page)
     const origin = await axes(page)
+    const beforeCentroid = await centroid(page, 'C = O')
     const beforeResult = await page.evaluate(() => window.__referenceAudit.results[2])
     assert.ok(beforeResult)
     const beforeJobs = await page.evaluate(() => window.__referenceAudit.jobs.length)
@@ -144,6 +159,7 @@ try {
       const axes = document.querySelector('.pm-section-moment-axes')
       return axes && Number(axes.dataset.originX) === x && Number(axes.dataset.originY) === y
     }, { x: origin.x + 125, y: origin.y })
+    assert.deepEqual(await centroid(page, 'C'), beforeCentroid, 'Offset moves O while C stays on the section')
     // Click both native mouse spinner targets while the edit is still focused.
     const box = await x.boundingBox(); assert.ok(box)
     await page.mouse.click(box.x + box.width - 7, box.y + box.height * 0.25)
@@ -168,6 +184,7 @@ try {
       labelRight: el.getBoundingClientRect().right }))
     assert.equal(checkStyle.border, '0px'); assert.ok(checkStyle.buttonX >= checkStyle.labelRight)
     assert.deepEqual(await axes(page), { x: origin.x + 125, y: origin.y - 75 })
+    assert.deepEqual(await centroid(page, 'C'), beforeCentroid, 'Apply/Convert preserves the centroid marker')
     await checkOffsetRows(panel, `${mechanics}-converted-light`)
     await page.screenshot({ path: `${out}/${mechanics}-converted-light.png` })
     // Without Convert, the displayed old numbers acquire the new origin's lever arms.
@@ -233,6 +250,7 @@ try {
     console.log(`${mechanics}: US offset input and unit round trip`)
     await page.getByRole('button', { name: 'Theme', exact: true }).click()
     await checkOffsetRows(panel, `${mechanics}-default-dark`)
+    await centroid(page, 'C')
     await page.screenshot({ path: `${out}/${mechanics}-dark.png` })
     await page.getByRole('separator', { name: 'Resize side panel' }).press('Home')
     await checkOffsetRows(panel, `${mechanics}-minimum-dark`)
@@ -246,14 +264,17 @@ try {
     const narrow = await panel.evaluate(el => ({ width: el.clientWidth, scrollWidth: el.scrollWidth }))
     assert.ok(narrow.scrollWidth <= narrow.width + 1)
     await checkOffsetRows(panel, `${mechanics}-phone-dark`)
+    await centroid(page, 'C')
     await page.screenshot({ path: `${out}/${mechanics}-phone.png` })
     await page.getByRole('button', { name: 'Theme', exact: true }).click()
     await checkOffsetRows(panel, `${mechanics}-phone-light`)
+    await centroid(page, 'C')
     await page.screenshot({ path: `${out}/${mechanics}-phone-light.png` })
     assert.deepEqual(errors, []); assert.deepEqual(await page.evaluate(() => window.__referenceAudit.failures), [])
     evidence.push({ mechanics, nativeMouseSpinners: true, draftOnlyPreview: true, convertPreservesCanonicalAndUR: true,
       centroidalCurvesUnchanged: true, uncheckedReinterpretsInputs: true, newLoadsUseAppliedOrigin: true,
-      usOffsetInputs: true, nativeUSSpinner: true, unitRoundTripPreservesCanonicalAndCurves: true, checkStyle, narrow, errors })
+      usOffsetInputs: true, nativeUSSpinner: true, unitRoundTripPreservesCanonicalAndCurves: true,
+      persistentCentroidMarker: true, checkStyle, narrow, errors })
     // The drawing preview also works before the first loadcase exists.
     await page.setViewportSize({ width: 1600, height: 1100 })
     project.inputs.loadings.combinations = []
@@ -262,10 +283,13 @@ try {
     await page.getByText('Load reference axes', { exact: true }).waitFor()
     assert.equal(await convert.isChecked(), false)
     const emptyOrigin = await axes(page)
+    const emptyCentroid = await centroid(page, 'C = O')
     await x.fill('10')
     await page.waitForFunction(expectedX => Number(document.querySelector('.pm-section-moment-axes')?.dataset.originX) === expectedX, emptyOrigin.x + 10)
+    assert.deepEqual(await centroid(page, 'C'), emptyCentroid, 'Geometry-only preview retains the section centroid')
     await x.press('Escape')
     await page.waitForFunction(expectedX => Number(document.querySelector('.pm-section-moment-axes')?.dataset.originX) === expectedX, emptyOrigin.x)
+    assert.deepEqual(await centroid(page, 'C = O'), emptyCentroid)
     assert.equal(await panel.getByRole('button', { name: 'Apply', exact: true }).isDisabled(), true)
     evidence.at(-1).emptyProjectPreviewAndEscape = true
     await page.screenshot({ path: `${out}/${mechanics}-empty.png` })

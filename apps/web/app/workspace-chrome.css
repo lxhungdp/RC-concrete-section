@@ -361,6 +361,20 @@ body[data-jscad-theme='dark'] .pm-cad-surface { border-color: transparent; box-s
 .pm-data-dialog-toolbar > [role='status'] { max-inline-size: 14ch; color: var(--foreground-muted); font-size: var(--fs-sm); }
 .pm-data-dialog-toolbar > [role='status']:empty { display: none; }
 .pm-data-dialog textarea { flex: 1; min-height: 0; margin: var(--sp-3); resize: none; }
+.pm-spreadsheet-dialog { inline-size: min(600px, calc(100vw - var(--sp-7))); block-size: min(500px, calc(100dvh - var(--sp-7))); container-type: inline-size; }
+.pm-spreadsheet-viewport { position: relative; display: flex; flex: 1; min-block-size: 0; background: inherit; }
+.pm-spreadsheet-dialog iframe { display: block; flex: 1; min-block-size: 0; inline-size: 100%; block-size: 100%; border: 0; }
+.pm-spreadsheet-dialog iframe[data-presented='false'] { opacity: 0; pointer-events: none; }
+.pm-spreadsheet-loading { position: absolute; inset: 0; display: grid; place-items: center; background: inherit; color: var(--foreground-muted); }
+.pm-spreadsheet-dialog[data-moving] iframe { pointer-events: none; }
+.pm-dialog-context { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground-muted); font-size: var(--fs-sm); }
+.pm-spreadsheet-error { flex-shrink: 0; margin: 0; padding: var(--sp-3); color: var(--danger); border-bottom: 1px solid var(--group-separator); overflow-wrap: anywhere; }
+@container (max-width: 560px) {
+  .pm-spreadsheet-dialog .pm-data-dialog-toolbar { gap: var(--sp-2); padding: var(--sp-2); }
+  .pm-spreadsheet-dialog .pm-dialog-context { display: none; }
+  .pm-spreadsheet-dialog .pm-data-dialog-toolbar > [role='status'] { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+
 .pm-results-frame-status {
   position: absolute;
   inset-block-start: var(--sp-1);

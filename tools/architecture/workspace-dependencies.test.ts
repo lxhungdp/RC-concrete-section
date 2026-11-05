@@ -41,3 +41,11 @@ test('DEV-ARCH-003/005: declared dependencies cannot authorize upward or concret
   assert.ok(upward.some((issue) => issue.includes('cannot import presentation adapters')))
   assert.ok(upward.some((issue) => issue.includes('escapes the owning')))
 })
+
+test('DEV-ARCH: spreadsheet adapters may consume ExcelJS while domain packages cannot depend on them', () => {
+  const adapter: WorkspaceDefinition = { name: '@pm/spreadsheet', directory: '/workspace/packages/sheet', dependencies: { exceljs: '4.4.0' } }
+  assert.deepEqual(inspectWorkspaceDependencies([adapter], [{ path: '/workspace/packages/sheet/src/index.ts', text: "import 'exceljs'" }]), [])
+  const domain: WorkspaceDefinition = { name: '@pm/geometry', directory: '/workspace/packages/geometry', dependencies: { '@pm/spreadsheet': '0.1.0' } }
+  const issues = inspectWorkspaceDependencies([adapter, domain], [{ path: '/workspace/packages/geometry/src/index.ts', text: "import '@pm/spreadsheet'" }])
+  assert.ok(issues.some(issue => issue.includes('cannot import presentation adapters')))
+})

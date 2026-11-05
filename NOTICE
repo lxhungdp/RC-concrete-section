@@ -8,3 +8,8 @@ Community contributions are welcomed and are licensed under the same terms.
 
 Third-party packages, fonts, assets, and normative engineering references remain
 subject to their respective licenses and copyright terms.
+
+The loadcase spreadsheet embeds a modified Gridcraft 0.16.0 web component at revision
+919a6b58fe6661de27af0609d02443ac9db467bf (MIT OR Apache-2.0).
+Its licenses, required notices and bundled-asset attribution are distributed in
+apps/web/public/gridcraft/. Build/source provenance is recorded in tools/gridcraft/README.md.

@@ -13,6 +13,10 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "paths": {
+      "@pm/spreadsheet": ["./packages/pm-spreadsheet/src"],
+      "@pm/spreadsheet/units": ["./packages/pm-spreadsheet/src/workbook-units.ts"],
+      "@pm/spreadsheet/archive": ["./packages/pm-spreadsheet/src/workbook-archive.ts"],
+      "@pm/spreadsheet/*": ["./packages/pm-spreadsheet/src/*"],
       "@pm/ids": ["./packages/pm-ids/src"],
       "@pm/ids/*": ["./packages/pm-ids/src/*"],
       "@pm/geometry": ["./packages/pm-geometry/src"],

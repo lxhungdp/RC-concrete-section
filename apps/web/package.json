@@ -11,6 +11,7 @@
     "typecheck": "node ../../tools/runtime/check-runtime.mjs && tsc --noEmit"
   },
   "dependencies": {
+    "@pm/spreadsheet": "0.1.0",
     "@pm/analysis": "0.1.0",
     "@pm/analysis-equivalent-block": "0.1.0",
     "@pm/code-kds142020": "0.1.0",

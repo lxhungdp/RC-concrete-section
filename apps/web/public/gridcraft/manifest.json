@@ -1,0 +1,21 @@
+{
+  "revision": "919a6b58fe6661de27af0609d02443ac9db467bf",
+  "archiveSha256": "43a1cef6eb3fdf4de2c18d5ececd46505e220701161f178e77fdd28be024b155",
+  "patchSha256": "a75eb00693a403d63ac2333f42143c81ce405293c51ef9d8426e53aea7de6101",
+  "hostSha256": "edfc2b8cabe2a6cf5c6282c35656631e17a69446335efbc8cdef49ce9307d9b3",
+  "budgetSha256": "5f99c327e14d03d097c33246a26bb2bd68260e0af5e6a4b220a3f5e0ebaff3ca",
+  "lockSha256": "fb04951f7d48d3212fb819031cb37bdad976cfa39be2387f5c52255f0363c788",
+  "rust": "1.95.0",
+  "wasmBindgen": "0.2.129",
+  "files": {
+    "ATTRIBUTION.md": "1c78f894b54a4f778757d3c3323678c613d08825c9c46b26ca1d4d74565965f7",
+    "gridcraft.js": "75ebda7039fbe80ad96cedc78c873c0cc3dd7927980e9eafa8234774777acea0",
+    "gridcraft_bg.wasm": "633caea701f88d57f4d92141e57fd054451b4875b2021e182ee07ea7576eb8fb",
+    "index.html": "ccdb8843ac7a31c1419ed769ff029b7c4259bd2ffd8a3f1cbf6565316782e14e",
+    "LICENSE-APACHE": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+    "LICENSE-MIT": "a87109bbb1ad43ca3920a5d7ff3806863b7e8470a73f4ded97a1447ac93333f5",
+    "loader.mjs": "a2628b4da5804027571f0d8142d3e1ea5a4ba41942f4939359cc64cea0465dc1",
+    "NOTICE": "5cf0a6672ca59846acdb610aca5ee0797c6eeffe3979cfa95eebc9860856c486",
+    "snippets/eframe-d31a8450ea12dfc1/inline0.js": "22a98f9d0c5a0532d291bdc9a3050439420b3d11143b4568fcfd3c66fff36995"
+  }
+}

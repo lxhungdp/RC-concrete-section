@@ -176,6 +176,8 @@ const MaterialPanel = dynamic(
 import { createRebarGeneratorState } from './geometry/rebar-generator-state'
 const RebarPanel = dynamic(() => import('./geometry/RebarPanel').then(module => module.RebarPanel),
   { ssr: false, loading: () => <p role="status">Loading reinforcement…</p> })
+const CoordinateSpreadsheetDialog = dynamic(() => import('./geometry/GeometrySpreadsheetDialog').then(module => module.CoordinateSpreadsheetDialog), { ssr: false })
+const RebarSpreadsheetDialog = dynamic(() => import('./geometry/GeometrySpreadsheetDialog').then(module => module.RebarSpreadsheetDialog), { ssr: false })
 import { boundarySelectionStatus, shouldHandleBoundaryDelete } from './geometry/boundary-selection'
 import { prepareBoundaryDraftForApply } from './geometry/boundary-draft'
 import { DemandCheckPanel } from './results/DemandCheckPanel'
@@ -196,11 +198,7 @@ import {
   sameLoadcaseDemand,
   sameLoadcaseAnalysisInputs
 } from './results/loadcase-calculation-trace'
-import {
-  downloadRebarWorkbook,
-  downloadSectionWorkbook,
-  importRebarWorkbook
-} from './geometry/section-xlsx'
+import { downloadSectionWorkbook } from './geometry/section-xlsx'
 import {
   createSectionCamera2d,
   panSectionCamera2d,
@@ -642,6 +640,9 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
   const [geometrySubTab, setGeometrySubTab] = useState<GeometrySubTab>('concrete')
   const [selectedRebarId, setSelectedRebarId] = useState<number | null>(null)
   const [rebarGenerator, setRebarGenerator] = useState(createRebarGeneratorState)
+  const [geometrySpreadsheet, setGeometrySpreadsheet] = useState<
+    { kind: 'coordinates'; boundaryId: number; outerIndex: number; ringIndex: number } |
+    { kind: 'rebars'; materials: MaterialStore } | null>(null)
   const [boundaries, setBoundaries] = useState<BoundaryObject[]>([])
   const [selectedBoundaryIds, setSelectedBoundaryIds] = useState<number[]>([])
   const [activeBoundaryId, setActiveBoundaryId] = useState<number>(0)
@@ -1461,12 +1462,14 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
   )
 
   const updateAppliedRebars = (nextRebars: GeometryInputRebarView[]) => {
-    setAppliedGeometryInput((current) => updateGeometryInputRebars(current, nextRebars))
+    const nextInput = updateGeometryInputRebars(appliedGeometryInput, nextRebars)
+    setAppliedGeometryInput(nextInput)
     setBoundaries((current) =>
       current.map((boundary) =>
         boundary.id === appliedBoundaryId ? { ...boundary, rebars: nextRebars.map((bar) => ({ ...bar })) } : boundary
       )
     )
+    return nextInput
   }
 
   const addBoundary = (boundary: BoundaryObject) => {
@@ -2048,50 +2051,6 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
         return boundary
       })
     )
-  }
-
-  const exportAppliedRebarsExcel = async () => {
-    if (!hasAppliedSection) return
-    try {
-      await downloadRebarWorkbook({
-        units: displayUnits,
-        sectionName: finalSection.name,
-        rebars,
-        steelMaterials: materialStore.steel
-      })
-    } catch (error) {
-      window.alert(`Rebar Excel export failed:\n${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-
-  const importAppliedRebarsExcel = async (file: File) => {
-    if (!hasAppliedSection) return
-    try {
-      const imported = await importRebarWorkbook(
-        await file.arrayBuffer(),
-        materialStore.steel,
-        materialStore.defaults.steelMaterialId,
-        finalSection.solids.length
-      )
-      const appliedBoundary = boundaries.find((boundary) => boundary.id === appliedBoundaryId)
-      if (!appliedBoundary) throw new Error('The applied boundary is not available in the editor.')
-      const outside = imported.rebars.filter((bar) => !barCenterInsideBoundary(appliedBoundary, bar))
-      const warnings = [...imported.warnings]
-      if (outside.length > 0) {
-        warnings.push(
-          `${outside.length} bar(s) outside concrete or inside a hole (ids: ${outside.map((bar) => bar.id).join(', ')}). You can edit them after import.`
-        )
-      }
-      const warningText = warnings.length ? `\n\nWarnings:\n${warnings.join('\n')}` : ''
-      const confirmed = window.confirm(
-        `Replace the current ${rebars.length} rebar(s) with ${imported.rebars.length} imported rebar(s)?\nConcrete geometry will not change.${warningText}`
-      )
-      if (!confirmed) return
-      updateAppliedRebars(imported.rebars)
-      setSelectedRebarId(imported.rebars[0]?.id ?? null)
-    } catch (error) {
-      window.alert(`Rebar Excel import failed:\n${error instanceof Error ? error.message : String(error)}`)
-    }
   }
 
   useEffect(() => {
@@ -3282,6 +3241,9 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
                         ? `Outer ${activeOuterIndex + 1}`
                         : `Outer ${activeOuterIndex + 1} · Hole ${activeRingIndex}`}
                       <span>{activeRing.length} pts</span>
+                      <button type="button" className="ws-action" onClick={() => setGeometrySpreadsheet({
+                        kind: 'coordinates', boundaryId: activeBoundary.id, outerIndex: activeOuterIndex, ringIndex: activeRingIndex
+                      })}>Open XLSX</button>
                     </div>
                 </>
               )}
@@ -3372,8 +3334,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
                 selectedRebarId={selectedRebarId}
                 onSelectRebar={setSelectedRebarId}
                 onChangeRebars={updateAppliedRebars}
-                onImportExcel={importAppliedRebarsExcel}
-                onExportExcel={exportAppliedRebarsExcel}
+                onOpenSpreadsheet={() => setGeometrySpreadsheet({ kind: 'rebars', materials: materialStore })}
               />
             )}
           </>
@@ -3788,6 +3749,31 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
         )}
       </section>
       </WorkspaceFrame>
+
+      {geometrySpreadsheet?.kind === 'coordinates' && activeBoundary && (
+        <CoordinateSpreadsheetDialog revision={activeBoundary} units={displayUnits} locked={activeBoundary.locked}
+          target={{ ...activeBoundary, outerIndex: geometrySpreadsheet.outerIndex, ringIndex: geometrySpreadsheet.ringIndex }}
+          onClose={() => setGeometrySpreadsheet(null)} onUpdate={points => {
+            if (activeBoundary.locked || activeBoundary.id !== geometrySpreadsheet.boundaryId ||
+                activeOuterIndex !== geometrySpreadsheet.outerIndex || activeRingIndex !== geometrySpreadsheet.ringIndex) {
+              throw new Error('The selected ring changed or is locked. Close and reopen the spreadsheet.')
+            }
+            const next = withEditedOuters(activeBoundary, mapOuterRing(activeBoundary.outers, activeOuterIndex, activeRingIndex, () => points))
+            setBoundaries(current => current.map(boundary => boundary.id === next.id ? next : boundary))
+            setSelectedPointId(current => points.some(point => point.id === current) ? current : points[0]?.id ?? null)
+            return next
+          }} />
+      )}
+      {geometrySpreadsheet?.kind === 'rebars' && hasAppliedSection && (
+        <RebarSpreadsheetDialog revision={appliedGeometryInput} units={displayUnits}
+          target={{ section: finalSection, rebars, steelMaterials: materialStore.steel, defaultSteelMaterialId: materialStore.defaults.steelMaterialId }}
+          onClose={() => setGeometrySpreadsheet(null)} onUpdate={bars => {
+            if (geometrySpreadsheet.materials !== materialStore) throw new Error('Materials changed. Close and reopen the spreadsheet.')
+            const next = updateAppliedRebars(bars)
+            setSelectedRebarId(current => bars.some(bar => bar.id === current) ? current : bars[0]?.id ?? null)
+            return next
+          }} />
+      )}
 
       {activeModule === 'demand' && calculationLoadcase && resultSurface ? (
         <LoadcaseCalculationDialog

@@ -68,7 +68,8 @@ export const inspectWorkspaceDependencies = (
         issues.push(`${location}: the standard-neutral block kernel cannot select a code adapter`)
       }
       if (owner.name.startsWith('@pm/') && !['@pm/web', '@pm/report'].includes(owner.name) &&
-        /^(?:@pm\/report|@structures\/cad-drawing|react|react-dom|next|plotly|plotly\.js|plotly\.js-dist-min|exceljs)$/u.test(dependency)) {
+        /^(?:@pm\/report|@pm\/spreadsheet|@structures\/cad-drawing|react|react-dom|next|plotly|plotly\.js|plotly\.js-dist-min|exceljs)$/u.test(dependency) &&
+        !(owner.name === '@pm/spreadsheet' && dependency === 'exceljs')) {
         issues.push(`${location}: canonical packages cannot import presentation adapters`)
       }
     }

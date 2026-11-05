@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { gzipSync } from 'node:zlib'
 import { join, relative, resolve } from 'node:path'
 
-const webBuild = resolve('apps/web/.next')
+const webBuild = resolve('apps/web', process.env.PM_NEXT_DIST_DIR ?? '.next')
 const chunkRoot = join(webBuild, 'static/chunks')
 const htmlPath = join(webBuild, 'server/app/index.html')
 

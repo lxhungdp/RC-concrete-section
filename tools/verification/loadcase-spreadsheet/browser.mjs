@@ -1,0 +1,226 @@
+/** Real Gridcraft canvas and values-only P-M write-back, using an isolated browser session. */
+import assert from 'node:assert/strict'
+import { createRequire } from 'node:module'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+const require = createRequire(import.meta.url)
+const { chromium } = require(process.env.PM_PLAYWRIGHT_MODULE ?? 'playwright')
+const out = process.env.PM_EVIDENCE_DIR ?? 'outputs/gridcraft/browser'
+await mkdir(out, { recursive: true })
+const browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--enable-unsafe-webgpu'] })
+const page = await browser.newPage({ viewport: { width: 1600, height: 1100 }, acceptDownloads: true })
+page.setDefaultTimeout(60_000)
+const errors = [], requests = [], evidence = []
+const fixturePath = process.env.PM_FIXTURE ?? 'docs/examples/equivalent-block/KDS-EB-01-rectangle-8-bars.pm-project.json'
+page.on('pageerror', error => errors.push(error.message))
+page.on('request', request => { if (request.url().includes('/gridcraft/')) requests.push(request.url()) })
+page.on('console', message => { if (message.type() === 'error') console.log('browser:', message.text().slice(0, 500)) })
+
+async function values() {
+  return page.evaluate(() => new Promise((resolve, reject) => {
+    const iframe = document.querySelector('iframe[title="Loadcase spreadsheet"]')
+    const session = new URL(iframe.src).searchParams.get('pm'), id = 100_000 + Math.floor(Math.random() * 100_000)
+    const timer = setTimeout(() => { removeEventListener('message', listen); reject(Error('Snapshot timed out')) }, 15000)
+    function listen(event) {
+      if (event.source !== iframe.contentWindow || event.origin !== location.origin || event.data?.session !== session || event.data?.id !== id) return
+      clearTimeout(timer); removeEventListener('message', listen)
+      event.data.ok ? resolve(event.data.data) : reject(Error(event.data.error))
+    }
+    addEventListener('message', listen)
+    iframe.contentWindow.postMessage({ type: 'pm-gridcraft', version: 2, session, id, action: 'values' }, location.origin)
+  }))
+}
+
+try {
+  await page.goto(process.env.PM_TEST_URL ?? 'http://127.0.0.1:3001', { waitUntil: 'networkidle' })
+  const fixture = JSON.parse(await readFile(fixturePath, 'utf8'))
+  await page.getByRole('button', { name: 'Project menu', exact: true }).click()
+  await page.getByLabel('Project file format').selectOption('json')
+  const choose = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: 'Import project from JSON' }).click()
+  await (await choose).setFiles(fixturePath)
+  await page.getByRole('button', { name: 'Demand Check', exact: true }).click()
+  await page.locator(`input[aria-label="Loadcase ${fixture.inputs.loadings.combinations[0].id} name"]`).waitFor()
+  await page.getByRole('button', { name: 'Open XLSX', exact: true }).waitFor()
+  assert.equal(requests.length, 0, 'The spreadsheet must not load before Open XLSX')
+  const openedAt = Date.now()
+  await page.getByRole('button', { name: 'Open XLSX', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Loadcases', exact: true })
+  await page.waitForFunction(() => document.querySelector('.pm-spreadsheet-dialog button.ws-action--primary')?.disabled === false)
+  const defaultSize = await dialog.boundingBox()
+  assert.equal(defaultSize.width, 600); assert.equal(defaultSize.height, 500)
+  const coldOpenMs = Date.now() - openedAt
+  await page.screenshot({ path: `${out}/opened.png` })
+  const original = await values()
+  await writeFile(`${out}/initial-values.json`, JSON.stringify(original, null, 2))
+  assert.equal(original.rows[1][0].value, fixture.inputs.loadings.combinations[0].id)
+  console.log('Opened actual Gridcraft and read initial values')
+  const canvas = page.frameLocator('iframe[title="Loadcase spreadsheet"]').locator('canvas')
+  await canvas.focus()
+  await page.keyboard.press('Control+Home'); await values()
+  await canvas.evaluate(node => {
+    const data = new DataTransfer(); data.setData('text/plain', 'Changed heading')
+    node.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+  })
+  assert.deepEqual((await values()).rows[0], original.rows[0])
+  await page.keyboard.press('Enter') // Dismiss the native protected-cell message.
+  await values()
+  await page.keyboard.press('Control+Home'); await values()
+  await page.keyboard.press('Delete')
+  assert.deepEqual((await values()).rows[0], original.rows[0])
+  console.log('Header paste and clear were blocked by worksheet protection')
+  await dialog.getByRole('button', { name: 'Close Loadcases', exact: true }).click()
+  await page.getByRole('button', { name: 'Open XLSX', exact: true }).click()
+  await page.waitForFunction(() => document.querySelector('.pm-spreadsheet-dialog button.ws-action--primary')?.disabled === false)
+  await canvas.focus()
+  await page.keyboard.press('Tab')
+  await page.keyboard.type('=SUM(100,200)', { delay: 40 })
+  await page.keyboard.press('Enter')
+  const edited = await values()
+  await writeFile(`${out}/edited-values.json`, JSON.stringify(edited, null, 2))
+  assert.equal(edited.rows[1][2].value, 300)
+  assert.equal(edited.rows[1][2].formula, true)
+  await dialog.getByRole('button', { name: 'Update', exact: true }).click()
+  await dialog.getByRole('status').filter({ hasText: 'Updated.' }).waitFor()
+  assert.equal(Number((await page.locator(`input[aria-label^="Loadcase ${fixture.inputs.loadings.combinations[0].id} Pu"]`).inputValue()).replaceAll(',', '')), 300)
+  await page.screenshot({ path: `${out}/updated.png` })
+  console.log('Formula calculated independently and Update filled the P-M value')
+  await page.evaluate(() => Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: undefined }))
+  const pendingDownload = page.waitForEvent('download')
+  await dialog.getByRole('button', { name: 'Save as…', exact: true }).click()
+  const downloaded = await pendingDownload
+  await downloaded.saveAs(`${out}/loadcases.xlsx`)
+  const imported = await import('exceljs'), ExcelJS = imported.default ?? imported
+  const workbook = new ExcelJS.Workbook(), bytes = await readFile(`${out}/loadcases.xlsx`)
+  await workbook.xlsx.load(new Uint8Array(bytes).buffer)
+  assert.equal(workbook.getWorksheet('Loadcases').getCell('C2').formula, 'SUM(100,200)')
+  assert.equal(workbook.getWorksheet('Loadcases').getCell('C2').result, 300)
+  assert.ok(workbook.getWorksheet('Units'))
+  assert.ok(workbook.getWorksheet('Load reference'))
+  assert.equal(workbook.getWorksheet('Loadcases').getCell('B1').protection?.locked ?? true, true)
+  assert.equal(workbook.getWorksheet('Loadcases').getCell('C2').protection.locked, false)
+  console.log('Saved the formula-bearing XLSX')
+  await dialog.getByRole('button', { name: 'Close Loadcases', exact: true }).click()
+  await page.getByRole('button', { name: 'Open XLSX', exact: true }).click()
+  await page.waitForFunction(() => document.querySelector('.pm-spreadsheet-dialog button.ws-action--primary')?.disabled === false)
+  const reopened = await values()
+  assert.equal(reopened.rows[1][2].value, 300)
+  assert.equal(reopened.rows[1][2].formula, false)
+
+  // Relative formulas filled through the real canvas handle, never a synthetic engine command.
+  await canvas.click({ position: { x: 240, y: 45 } })
+  await page.keyboard.type('=D2*2+$D$2', { delay: 40 }); await page.keyboard.press('Enter')
+  const beforeFill = await values()
+  assert.equal(beforeFill.rows[1][2].value, beforeFill.rows[1][3].value * 3)
+  await page.keyboard.press('ArrowUp')
+  await values() // Settle the canvas selection before starting another pointer gesture.
+  const bounds = await canvas.boundingBox()
+  await page.screenshot({ path: `${out}/before-fill.png`, clip: { x: bounds.x, y: bounds.y, width: 400, height: 120 } })
+  await page.mouse.move(bounds.x + 284, bounds.y + 50)
+  await values()
+  assert.equal(await canvas.evaluate(node => getComputedStyle(node).cursor), 'crosshair', 'Use the actual fill handle')
+  await page.mouse.down(); await page.mouse.move(bounds.x + 284, bounds.y + 82, { steps: 8 }); await page.mouse.up()
+  const filled = await values()
+  await writeFile(`${out}/filled-values.json`, JSON.stringify(filled, null, 2))
+  for (let row = 1; row <= 3; row++) {
+    assert.equal(filled.rows[row][2].value, filled.rows[row][3].value * 2 + beforeFill.rows[1][3].value, `Filled C${row + 1} preserves relative and absolute references`)
+    assert.equal(filled.rows[row][2].formula, true)
+  }
+  console.log('Drag fill kept the correct relative references')
+  await page.keyboard.press('Control+z')
+  const undone = await values()
+  assert.equal(undone.rows[2][2].value, beforeFill.rows[2][2].value)
+  await page.keyboard.press('Control+y')
+  const redone = await values()
+  assert.equal(redone.rows[2][2].value, filled.rows[2][2].value)
+
+  // A spreadsheet error cannot change P-M, and closing discards this draft.
+  await canvas.click({ position: { x: 240, y: 45 } })
+  await page.keyboard.type('=1/0', { delay: 40 }); await page.keyboard.press('Enter')
+  await dialog.getByRole('button', { name: 'Update', exact: true }).click()
+  await dialog.getByRole('alert').filter({ hasText: 'C2:' }).waitFor()
+  const pmPu = page.locator(`input[aria-label^="Loadcase ${fixture.inputs.loadings.combinations[0].id} Pu"]`)
+  assert.equal(Number((await pmPu.inputValue()).replaceAll(',', '')), 300)
+  console.log('Formula errors blocked write-back atomically')
+
+  // Imported caches are recalculated by Gridcraft; opening remains independent of P-M.
+  workbook.getWorksheet('Loadcases').getCell('C2').value = { formula: 'SUM(101,202)', result: -999 }
+  workbook.getWorksheet('Loadcases').getCell('D2').note = 'This note must not appear in the P-M grid.'
+  const staleFile = `${out}/stale-cache.xlsx`
+  await writeFile(staleFile, new Uint8Array(await workbook.xlsx.writeBuffer()))
+  const openChooser = page.waitForEvent('filechooser')
+  await dialog.getByRole('button', { name: 'Open file', exact: true }).click()
+  await (await openChooser).setFiles(staleFile)
+  await page.waitForFunction(() => document.querySelector('.pm-spreadsheet-dialog button.ws-action--primary')?.disabled === false)
+  const importedValues = await values()
+  assert.equal(importedValues.rows[1][2].value, 303)
+  assert.equal(importedValues.rows[1][2].formula, true)
+  assert.equal(importedValues.rows[1][3].note, 'This note must not appear in the P-M grid.')
+  await canvas.hover({ position: { x: 330, y: 45 } }); await values()
+  await page.waitForTimeout(800) // Exercise the renderer's delayed note-hover path.
+  await page.screenshot({ path: `${out}/note-hover.png` })
+  assert.equal(Number((await pmPu.inputValue()).replaceAll(',', '')), 300)
+  await dialog.getByRole('button', { name: 'Update', exact: true }).click()
+  await dialog.getByRole('status').filter({ hasText: 'Updated.' }).waitFor()
+  assert.equal(Number((await pmPu.inputValue()).replaceAll(',', '')), 303)
+  console.log('Open file recalculated stale formula caches and changed P-M only on Update')
+
+  // Exercise the canvas paste event without reading or overwriting the OS clipboard.
+  await canvas.focus(); await page.keyboard.press('Tab')
+  await canvas.evaluate(node => {
+    const data = new DataTransfer(); data.setData('text/plain', '=SUM(1,2)\t=4+5')
+    node.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+  })
+  const pasted = await values()
+  assert.equal(pasted.rows[1][2].value, 3)
+  assert.equal(pasted.rows[1][3].value, 9)
+  await page.keyboard.press('Control+z')
+  assert.equal((await values()).rows[1][2].value, 303)
+  console.log('Pasted formulas and undo stayed independent of P-M')
+
+  // A draft expanded beyond the column budget must fail at both host boundaries.
+  await canvas.evaluate(node => {
+    const data = new DataTransfer(); data.setData('text/plain', Array(65).fill('1').join('\t'))
+    node.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+  })
+  await dialog.getByRole('button', { name: 'Update', exact: true }).click()
+  await dialog.getByRole('alert').filter({ hasText: '64 columns' }).waitFor()
+  assert.equal(Number((await pmPu.inputValue()).replaceAll(',', '')), 303)
+  await dialog.getByRole('button', { name: 'Save as…', exact: true }).click()
+  await dialog.getByRole('alert').filter({ hasText: '64 columns' }).waitFor()
+  await canvas.focus(); await page.keyboard.press('Control+z')
+  assert.equal((await values()).rows[1][2].value, 303)
+  console.log('Edited helper-cell bounds blocked Update and Save as')
+
+  const title = dialog.locator('header'), initial = await dialog.boundingBox()
+  await page.mouse.move(initial.x + 35, initial.y + 18); await page.mouse.down()
+  await page.mouse.move(initial.x + 95, initial.y + 48, { steps: 8 }); await page.mouse.up()
+  const moved = await dialog.boundingBox()
+  assert.ok(Math.abs(moved.x - initial.x - 60) < 2)
+  await page.mouse.move(moved.x + moved.width - 3, moved.y + moved.height - 3); await page.mouse.down()
+  await page.mouse.move(moved.x + moved.width - 103, moved.y + moved.height - 83, { steps: 8 }); await page.mouse.up()
+  const resized = await dialog.boundingBox()
+  assert.ok(resized.width < moved.width - 60 && resized.height < moved.height - 50)
+  await title.focus(); await page.keyboard.press('ArrowLeft'); await page.keyboard.press('Shift+ArrowRight')
+  await page.screenshot({ path: `${out}/moved-resized.png` })
+  await page.evaluate(() => { document.body.dataset.jscadTheme = 'dark' })
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.pm-spreadsheet-dialog')).colorScheme === 'dark')
+  await page.screenshot({ path: `${out}/dark.png` })
+  await page.setViewportSize({ width: 390, height: 900 })
+  await page.screenshot({ path: `${out}/narrow.png` })
+  const narrow = await dialog.boundingBox()
+  assert.ok(narrow.x >= 0 && narrow.x + narrow.width <= 391)
+  assert.ok(await dialog.locator('h2').evaluate(node => node.scrollWidth <= node.clientWidth), 'Keep the modal title visible at 390px')
+  await page.setViewportSize({ width: 1600, height: 1100 })
+  await canvas.focus(); await page.keyboard.press('Escape')
+  await dialog.waitFor({ state: 'detached' })
+  assert.equal(Number((await pmPu.inputValue()).replaceAll(',', '')), 303)
+  evidence.push({ fixture: fixturePath, coldOpenMs, defaultSize, headerProtected: true, original: original.rows.length, formulaResult: 300, reopenedAsLiteral: true,
+    dragFill: true, pasteEvent: true, undoRedo: true, editedBoundsBlocked: true, importedStaleCacheRecalculated: true, invalidFormulaBlocked: true, moved, resized, narrow, requests })
+  assert.deepEqual(errors, [])
+  await writeFile(`${out}/evidence.json`, JSON.stringify({ evidence, errors }, null, 2))
+  console.log('PASS: open, formula, Update, Save as and values-only reopen')
+} finally {
+  await page.screenshot({ path: `${out}/final.png` }).catch(() => {})
+  await writeFile(`${out}/errors.json`, JSON.stringify(errors))
+  await browser.close()
+}

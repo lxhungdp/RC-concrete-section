@@ -2,7 +2,7 @@
 
 import { QuantityInput, UnitLabel } from '../shared/DisplayUnits'
 
-import { AddIcon, TransferIcon } from '../shared/WorkspaceIcons'
+import { AddIcon } from '../shared/WorkspaceIcons'
 import { useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { X } from 'lucide-react'
@@ -35,8 +35,7 @@ type Props = {
   selectedRebarId: number | null
   onSelectRebar: (id: number | null) => void
   onChangeRebars: (rebars: GeometryInputRebarView[]) => void
-  onImportExcel: (file: File) => Promise<void>
-  onExportExcel: () => Promise<void>
+  onOpenSpreadsheet: () => void
 }
 
 export function RebarPanel({
@@ -50,10 +49,8 @@ export function RebarPanel({
   selectedRebarId,
   onSelectRebar,
   onChangeRebars,
-  onImportExcel,
-  onExportExcel
+  onOpenSpreadsheet
 }: Props) {
-  const importInputRef = useRef<HTMLInputElement | null>(null)
   const quickRef = useRef<HTMLDivElement | null>(null)
   const [catalogOpen, setCatalogOpen] = useState(false)
   const [fillRevision, setFillRevision] = useState(0)
@@ -271,32 +268,10 @@ export function RebarPanel({
             <button
               type="button"
               className="ws-action pm-file-btn"
-              title="Import rebar from Excel"
-              onClick={() => importInputRef.current?.click()}
+              onClick={onOpenSpreadsheet}
             >
-              <TransferIcon direction="import" />
-              Excel
+              Open XLSX
             </button>
-            <button
-              type="button"
-              className="ws-action pm-file-btn"
-              title="Export rebar to Excel"
-              onClick={onExportExcel}
-            >
-              <TransferIcon direction="export" />
-              Excel
-            </button>
-            <input
-              ref={importInputRef}
-              type="file"
-              accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"
-              hidden
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                event.target.value = ''
-                if (file) void onImportExcel(file)
-              }}
-            />
           </div>
         </div>
         <div className="pm-point-table-wrap ws-table-scroll">
