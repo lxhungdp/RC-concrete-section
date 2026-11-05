@@ -948,12 +948,20 @@
         {
           "file": "packages/pm-analysis/test/analysis-options.test.ts",
           "oracle": "Independent dense sampling comparisons and explicit non-convergence."
+        },
+        {
+          "file": "packages/pm-analysis/test/pure-tension-midpoint.test.ts",
+          "oracle": "Independent midpoint strain equalities and per-bar endpoint-law summation, hardening On/Off and Nominal/Design separation."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-pure-tension-midpoint.md"
         }
       ],
       "reviewer": null,

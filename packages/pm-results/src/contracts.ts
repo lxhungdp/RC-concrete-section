@@ -414,6 +414,7 @@ export type SurfaceStationId =
   | 'pure-compression'
   | `station-${number}`
   | `adaptive-station-${string}`
+  | 'pure-tension-transition-50'
   | 'pure-tension'
 
 

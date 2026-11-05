@@ -65,14 +65,14 @@ const controllingBarStrain = (
   return point.state.e0 + point.state.kx * control.y + point.state.ky * control.x
 }
 
-test('the canonical default uses the fixed 27-by-36 production grid without probes', () => {
+test('the canonical fibre default resolves 27 base stations plus one tension midpoint without probes', () => {
   const implicit = buildPreviewSurfaceFromPrepared(prepared)
   const defaults = createDefaultAnalysisOptions()
   const explicit = buildPreviewSurfaceFromPrepared(prepared, defaults)
 
   assert.equal(defaults.stations.intermediate.length + 2, UNIFIED_STATION_COUNT)
-  assert.equal(explicit.stations.filter((station) => station.fixed).length, UNIFIED_STATION_COUNT)
-  assert.equal(explicit.stations.length, UNIFIED_STATION_COUNT)
+  assert.equal(explicit.stations.filter((station) => station.fixed).length, UNIFIED_STATION_COUNT + 1)
+  assert.equal(explicit.stations.length, UNIFIED_STATION_COUNT + 1)
   assert.equal(defaults.stations.refinement.type, 'fixed')
   assert.equal(defaults.directions.refinement.type, 'fixed')
   assert.ok(Number.isNaN(explicit.stationError.maxRelative))
@@ -134,11 +134,11 @@ test('an exact stress-strain direction uses no angular interpolation and keeps i
   )
 
   assert.ok(Math.abs(curve.beta - beta) < 1e-14)
-  assert.equal(curve.beforeAxialCap?.length, UNIFIED_STATION_COUNT)
-  assert.equal(curve.nominalFixed.length, UNIFIED_STATION_COUNT)
+  assert.equal(curve.beforeAxialCap?.length, UNIFIED_STATION_COUNT + 1)
+  assert.equal(curve.nominalFixed.length, UNIFIED_STATION_COUNT + 1)
   assert.equal(curve.designAdaptive.length, curve.designFixed.length)
   assert.ok(curve.designFixed.some(point=>point.surfaceRole==='axial-cap'&&point.stationId===null))
-  assert.equal(curve.stations.filter((station) => station.fixed).length, UNIFIED_STATION_COUNT)
+  assert.equal(curve.stations.filter((station) => station.fixed).length, UNIFIED_STATION_COUNT + 1)
   assert.ok(curve.designAdaptive.every((point) => Math.abs(point.beta - beta) < 1e-14))
   assert.ok(curve.designFixed.every((point) => point.stationId?.startsWith('adaptive-') !== true))
   assert.ok(Number.isNaN(curve.stationError.maxRelative))
@@ -179,17 +179,18 @@ test('the controlling-bar branch resolves the canonical yield-strain multiples',
   )
 })
 
-test('an explicit nonuniform grid and custom schedule flow through the engine unchanged', () => {
+test('a custom fibre schedule gains only the shared tension midpoint and retains its input snapshot', () => {
   const options = explicitOptions()
   const surface = buildPreviewSurfaceFromPrepared(prepared, options)
 
-  assert.equal(surface.stations.length, 5)
-  assert.equal(surface.points.length, 5 * 5)
+  assert.equal(surface.stations.length, 6)
+  assert.equal(surface.points.length, 6 * 5)
   assert.deepEqual(surface.stations.map((station) => station.id), [
     'pure-compression',
     'station-11',
     'station-22',
     'station-33',
+    'pure-tension-transition-50',
     'pure-tension'
   ])
   assert.deepEqual(

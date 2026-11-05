@@ -511,7 +511,7 @@ export const surfaceInputKey = (
  */
 const STRAIN_LIMIT_TOL = 1e-9
 
-/** Shared 27-station schedule used by compatibility helpers and the production surface. */
+/** Shared 27-station base used by compatibility helpers and the production surface. */
 export const UNIFIED_STATIONS: StationDefinition[] = [
   { kind: 'pure-compression' },
   ...UNIFIED_DEPTH_RATIOS.map((ratio) => ({ kind: 'neutral-axis-depth-ratio' as const, ratio })),
@@ -1247,17 +1247,17 @@ const projectedSteelExtents = (prepared: PreparedAnalysis, beta: number) => {
   return extents
 }
 
-const withSteelBoundaryStations = (stations: SurfaceStation[], prepared: PreparedAnalysis): SurfaceStation[] => {
-  if (!prepared.hasSteelHardening) return stations
+// docs/05 §2.3: one explicit midpoint for both hardening and plateau fibre schedules.
+const withTensionTransitionStation = (stations: SurfaceStation[]): SurfaceStation[] => {
   const last = stations[stations.length - 2]
   if (!last) return stations
-  const transitions: SurfaceStation[] = [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875].map((ratio, index) => ({
-    id: `adaptive-station-steel-boundary-${index}`,
-    label: `Steel-controlled boundary ${ratio}`,
-    definition: { kind: 'tension-pole-transition-ratio', from: last.definition, ratio },
+  const transition: SurfaceStation = {
+    id: 'pure-tension-transition-50',
+    label: 'Pure tens 50%',
+    definition: { kind: 'tension-pole-transition-ratio', from: last.definition, ratio: 0.5 },
     fixed: true
-  }))
-  return [...stations.slice(0, -1), ...transitions, stations[stations.length - 1]]
+  }
+  return [...stations.slice(0, -1), transition, stations[stations.length - 1]]
 }
 
 /**
@@ -1878,7 +1878,7 @@ const buildPreviewSurfaceFromPreparedLegacy = (
   const meshReport = prepared.mesh.report
   const epsCu = materialStore.concrete.limits.epsCu
   const pureCompressionStrain = resolvePureCompressionStrain(materialStore, designBasis)
-  let stations = withSteelBoundaryStations(analysisStations(analysisOptions), prepared)
+  let stations = withTensionTransitionStation(analysisStations(analysisOptions))
   const fixedStationCount = stations.length
   const seedBetas = analysisDirections(analysisOptions)
   const warnings: string[] = []
@@ -2363,7 +2363,12 @@ const buildIndependentAdaptivePreviewSurface = (
   designBasis: DesignBasis,
   sampling: PreviewSamplingHooks
 ): PreviewSurface => {
-  const seedStations = withSteelBoundaryStations(analysisStations(analysisOptions), prepared)
+  const seedStations = withTensionTransitionStation(analysisStations(analysisOptions))
+  if (analysisOptions.stations.refinement.type === 'adaptive' && seedStations.length > analysisOptions.stations.refinement.maxStations) {
+    throw new AnalysisInputError('INVALID_ANALYSIS_OPTIONS',
+      'The adaptive station budget must include the explicit pure-tension midpoint.',
+      { requiredStations: seedStations.length, maxStations: analysisOptions.stations.refinement.maxStations })
+  }
   const { section, rebars, materialStore, origin, concreteFibers, rebarFibers, materials } = prepared
   const meshReport = prepared.mesh.report
   const epsCu = materialStore.concrete.limits.epsCu

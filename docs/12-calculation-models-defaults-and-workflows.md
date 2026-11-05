@@ -59,11 +59,11 @@ Two guards keep this from becoming a way to smuggle an unevaluable state into a 
   ACI and AS block profiles retain their plateau-only guard. The KDS block adapter compiles the
   project law for each material-strength stage and preserves its code axial-cap definition.
 
-Endpoint hardening adds material-derived steel-controlled transition states to the selected fibre
-schedule. These states satisfy the inequalities of every used steel material and the exact concrete
-support boundary. An unused material does not add states. The ordinary plateau schedule retains its
-existing station counts. Fixed hardening-domain checks use the project's 2% screening margin, which
-is unmeasured for that domain. Adaptive sampling supplies measured convergence evidence.
+The fibre schedule adds one explicit `Pure tens 50%` transition with hardening On or Off, as owned
+by [sampling §2.3](05-pm-diagram-stations-angles-plotting.md). Endpoint hardening resolves it on the
+compatible steel/concrete boundary; plateau retains its existing transition path. An unused
+material does not change the schedule. Fixed hardening-domain checks use the project's 2% screening
+margin, which is unmeasured for that domain. Adaptive sampling supplies measured convergence evidence.
 
 `@pm/code-custom` derives nothing. Where the KDS adapter reads Table 4.1-2 and the ACI adapter
 computes `beta1` from `f'c`, the custom adapter validates ranges and uses what it was given. Its
@@ -112,7 +112,7 @@ All profiles use `unified-27-v2`:
 Here `D` is the projected full section depth in the active direction. `εₛ` is the tensile-strain
 magnitude at the controlling longitudinal bar and `εy` is that bar material's yield strain. The
 schedule deliberately contains no automatically inserted strength-reduction transition point.
-Design and nominal resistance evaluate the same 27 fixed states before any geometric maximum-
+Design and nominal resistance evaluate the same 27 base states plus the fibre tension midpoint before any geometric maximum-
 axial-resistance clipping. The five additional values around the high-curvature yield range are
 fixed criteria, not adaptive results. A clipped Design surface can replace or remove high-
 compression vertices from its published topology; that operation does not change the fixed-state
@@ -124,13 +124,13 @@ substitute another displayed row merely because it has the same ordinal position
 The stress-strain model uses 36 uniform directions at 10 degrees. The production default is:
 
 ```text
-stations                 = 27 fixed
+stations                 = 27 base + 1 fixed pure-tension midpoint
 directions               = 36 fixed
 midpoint probes          = none
 adaptive insertion       = none
 ```
 
-An arbitrary typed vertical angle is evaluated as one new exact 27-station meridian. It is not added
+An arbitrary typed vertical angle is evaluated as one new exact 28-station meridian. It is not added
 to or used to rebuild the 3D surface. Fixed angles reuse the existing 36 meridians.
 
 `beta` is the strain-gradient direction. It is not the neutral-axis line angle and it is not the
@@ -289,7 +289,8 @@ batch reuses one surface; changing any resistance-domain input invalidates it.
 reference whose meridians are also independently station-refined. Every non-cap reference vertex is
 checked, and signed under-prediction and over-prediction are reported separately.
 `npm run bench:pipelines` performs the corresponding cross-model check with a dense
-equivalent-block reference. Both production candidates preserve the canonical 27 × 36 grid exactly.
+equivalent-block reference. Production uses the canonical 27-state base with 36 directions; fibre
+adds its one explicit tension midpoint and block retains 27 states.
 The denser references are benchmark-only and do not change application results.
 
 The stress-strain gate requires a 100% ray-hit rate, a converged reference-station refinement, and

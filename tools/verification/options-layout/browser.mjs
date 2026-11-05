@@ -4,7 +4,8 @@ import { createRequire } from 'node:module'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { applyCalculationProfileToMaterials, createAnalysisOptionsForProfile, createDesignBasisForCalculationProfile,
   createAdaptiveAnalysisOptions, createAdaptiveEquivalentBlockAnalysisOptions, createSteelHardeningDefinition, parseProjectDocument, serializeProjectDocument } from '@pm/project'
-import { withSteelModelModification } from '@pm/design'
+import { buildResistanceMaterialSets, withSteelModelModification } from '@pm/design'
+import { compileSteelMaterial } from '@pm/materials'
 
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PM_PLAYWRIGHT_MODULE ?? 'playwright')
@@ -104,7 +105,7 @@ try {
           await page.locator('.pm-panel-section h2').waitFor()
           const rows = page.locator(variant === 'steel' ? '.pm-material-param' : '.pm-option-field')
           if (variant === 'materials') await rows.last().scrollIntoViewIfNeeded()
-          if (variant === 'steel') await page.getByLabel('Curve stage', { exact: true }).scrollIntoViewIfNeeded()
+          if (variant === 'steel') await page.getByLabel('Steel stress strain curve', { exact: true }).scrollIntoViewIfNeeded()
           const measured = await rows.evaluateAll(elements => elements.map(row => {
             const label = row.firstElementChild
             const input = row.querySelector('select, input')
@@ -135,16 +136,15 @@ try {
           }
           let materialFieldWidths
           if (variant === 'steel') {
-            const stage = page.getByLabel('Curve stage', { exact: true })
-            const stageWidth = await stage.evaluate(element => element.getBoundingClientRect().width)
+            assert.equal(await page.getByLabel('Curve stage', { exact: true }).count(), 0)
+            const designSteel = buildResistanceMaterialSets(parsed.document.inputs.materials, parsed.document.inputs.design).designMaterials.steel[0]
+            const designYield = compileSteelMaterial(designSteel).limits.epsYield
+            assert.ok(Number.isFinite(designYield))
+            assert.ok((await page.locator('.pm-material-curve > p').first().innerText()).includes(designYield.toPrecision(5)), `${name}: the curve uses the Design material`)
             materialFieldWidths = await page.locator('.pm-material-param > input, .pm-material-param > .ws-field-group')
               .evaluateAll(elements => elements.map(element => element.getBoundingClientRect().width))
             assert.ok(materialFieldWidths.length >= 3)
-            assert.ok(materialFieldWidths.every(value => Math.abs(value - stageWidth) < 1), `${name}/${width}: curve stage matches all material value frames`)
-            await stage.selectOption('design')
-            assert.equal(await stage.evaluate(element => element.getBoundingClientRect().width), stageWidth)
-            await page.screenshot({ path: `${out}/${name}-${tab}-${width}-${theme}-design.png` })
-            await stage.selectOption('reference')
+            assert.ok(materialFieldWidths.every(value => Math.abs(value - materialFieldWidths[0]) < 1), `${name}/${width}: material value frames stay equal`)
           }
           snapshots.push({ width, theme, tab, measured, materialFieldWidths })
           await page.screenshot({ path: `${out}/${name}-${tab}-${width}-${theme}.png` })

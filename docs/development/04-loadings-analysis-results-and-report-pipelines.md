@@ -109,7 +109,7 @@ Current schema v3 (and the explicit centroidal v1/v2 readers) resolves one of tw
 
 ```text
 strain-domain-surface-v1
-  -> @pm/analysis (stress-strain mesh, shared 27 stations, 36 fixed directions)
+  -> @pm/analysis (stress-strain mesh, shared 27 base stations + one tension midpoint, 36 fixed directions)
 
 equivalent-block-surface-v1
   -> @pm/analysis-equivalent-block
@@ -168,6 +168,13 @@ AnalysisOptions editor
   -> PreviewSurface { requested options, resolved stations, actual directions, error evidence }
   -> plots / inverse queries / Excel
 ```
+
+The fibre owner adds one fixed `Pure tens 50%` transition with hardening On or Off; the persisted
+base criteria are unchanged. Consumers use resolved station metadata and counts, including custom
+schedules. The stress-strain workbook takes the transition's compatible plane from the engine and
+recalculates its concrete/bar resultants. It must not reconstruct this plane by holding extreme
+concrete strain at `epsCu`, because the plateau transition can leave that branch. See
+[the sampling decision and evidence](../task-packets/2026-11-05-pure-tension-midpoint.md).
 
 Equivalent-block options use a separate path:
 
@@ -405,7 +412,18 @@ worker chunk-loader failures as well as rejected imports. Field-map and exact-cu
 settle independently, then commit one coherent visual frame.
 
 The Demand vertical chart always shows the exact Direct-beta curve using the resultant-moment
-coordinate owned by root 05 section 8. The compact `θ cut` checkbox uses the shared chart check
+coordinate owned by root 05 section 8. Capacity and Demand use the heading
+`P–M_R (Mx, My) · fixed N.A. angle` for that chart. Its hover description identifies the 2D
+resultant-moment coordinate and distinguishes the strain-gradient direction beta from the
+perpendicular neutral-axis orientation. The Chart Data dialog inherits the displayed heading;
+its compact point tables retain their existing format.
+Demand Direct-beta 2D intersections on the solid blue Design curve use filled blue dots. The blue
+field point on the excluded curve above Pmax uses a hollow circle. Both use the load point's
+10-pixel marker size and 1-pixel outline. Marker colours, source coordinates and the separate
+green governing Design diamond retain their existing meaning.
+Capacity and Demand P-M/Mx-My charts mark their coordinate origin with a small neutral dot and
+the label O at (0,0). This is a display guide, not a resistance state or an additional Data row.
+The compact `θ cut` checkbox uses the shared chart check
 role and adds the red dotted geometric
 forward Demand-theta half-section without rebuilding the surface or exact curve. The analysis
 query clips paths at Mtheta = 0; Data consumes those same plotted arrays. A permanent footer note

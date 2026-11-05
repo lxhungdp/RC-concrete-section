@@ -85,6 +85,9 @@ schema or engineering-status impact.
 
 ## Steel curve-stage width follow-up
 
+Historical layout evidence: the selector was subsequently removed in favor of a fixed Design
+preview; see [the follow-up](2026-11-05-steel-design-curve-default.md).
+
 Curve stage now uses the existing material-parameter row and the same section-relative value-width
 variable as fy, Es, yield strain and hardening fields. The material field-width selector includes
 native selects alongside inputs and compound fields. Compact Ref./Design captions retain the full

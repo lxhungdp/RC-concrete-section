@@ -173,8 +173,10 @@ the measurement and returns `NaN`, never a misleading zero.
 The direction grid, not the integration mesh, can govern numerical error. For a locally convex
 fixed-P contour, chord interpolation cuts the corner and under-reports capacity, but the sign is not
 a universal theorem for arbitrary non-convex or multi-loop slices. Fixed mode uses the editable
-27-station by 36-direction grid without refinement. Adaptive mode starts from 12 criteria plus the
-two axial poles and 12 directions at 30-degree spacing. Both mechanics use the same 1% relative
+27-base-station by 36-direction grid without refinement; fibre adds the explicit tension midpoint
+owned by [sampling §2.3](05-pm-diagram-stations-angles-plotting.md). Adaptive mode starts from 12
+criteria plus the two axial poles and 12 directions at 30-degree spacing, with that same explicit
+fibre midpoint. Both mechanics use the same 1% relative
 target for direction and station chord error, with at most 360 directions and 48 stations per
 meridian. Each meridian is refined and cached independently; neighboring rows are compared and
 triangulated through a monotone station coordinate rather than paired by array index. Effective

@@ -23,7 +23,6 @@ import {
   UNIFIED_STEEL_STRAIN_YIELD_RATIOS
 } from '@pm/project'
 import {
-  UNIFIED_STATIONS,
   buildPreviewSurface,
   intersectFixedPContourWithMomentRay,
   contourStrainAngleSamples,
@@ -339,7 +338,12 @@ const run = async () => {
   check('mesh area = polygon area (mm2)', cellValue('Input', `C${findLabelRow(readBack.getWorksheet('Input')!, 'Net concrete area')}`), 1120000, 1e-9)
   console.log()
 
-  console.log('== 4. PM_Angle: unified 27-station schedule reproduces the engine ==')
+  const inputSheet = readBack.getWorksheet('Input')!
+  const cellSize = Number(inputSheet.getCell(`C${findLabelRow(inputSheet, 'mesh cell size')}`).value)
+  const surface = buildPreviewSurface(section, rebars, materialStore, { cellSize }, fixedAnalysisOptions)
+  const stationCount = surface.stations.length
+  assert.equal(stationCount, UNIFIED_STATION_COUNT + 1)
+  console.log('== 4. PM_Angle: resolved station schedule reproduces the engine ==')
   const pmSheet = readBack.getWorksheet('PM_Angle')!
   const PM_HEAD = 5
   const PM_FIRST = 7
@@ -352,7 +356,7 @@ const run = async () => {
   console.log(
     `      columns → concrete P ${colName(cCon.P)}, steel P ${colName(cSteelP)}, total P ${colName(cTotP)}, engine ${colName(cEng)}`
   )
-  for (let index = 0; index < UNIFIED_STATIONS.length; index++) {
+  for (let index = 0; index < stationCount; index++) {
     const r = PM_FIRST + index
     check(`P${index} total P (kN)`, cellValue('PM_Angle', `${colName(cTotP)}${r}`), Number(pmSheet.getCell(r, cEng).value), 1e-9, 1)
   }
@@ -360,7 +364,7 @@ const run = async () => {
 
   console.log('== 5. Concrete + steel ledger closes at every station ==')
   let worstLedger = 0
-  for (let index = 0; index < UNIFIED_STATIONS.length; index++) {
+  for (let index = 0; index < stationCount; index++) {
     const r = PM_FIRST + index
     const total = cellValue('PM_Angle', `${colName(cTotP)}${r}`)
     const parts = cellValue('PM_Angle', `${colName(cCon.P)}${r}`) + cellValue('PM_Angle', `${colName(cSteelP)}${r}`)
@@ -398,13 +402,9 @@ const run = async () => {
   console.log()
 
   console.log('== 7. MxMy_FixedP: effective directions vs the engine contour ==')
-  const inputSheet = readBack.getWorksheet('Input')!
-  const cellSize = Number(inputSheet.getCell(`C${findLabelRow(inputSheet, 'mesh cell size')}`).value)
-  const surface = buildPreviewSurface(section, rebars, materialStore, { cellSize }, fixedAnalysisOptions)
   const engineContour = contourStrainAngleSamples(
     sliceFixedPContour(surface.points, loadcase.P, surface.triangles)
   )
-  const stationCount = UNIFIED_STATIONS.length
   const MM_FIRST = 8
   const MM_P_COL = 2 + 4 + stationCount * 3
   const MM_RESULT_COL = MM_P_COL + stationCount * 3
@@ -492,7 +492,7 @@ const run = async () => {
     `      engine ${engineMb.toFixed(3)}   ray on the workbook contour ${workbookMbRay.toFixed(3)}   ` +
       `plane cut of the station rings ${workbookMbPlane.toFixed(3)} kN·m`
   )
-  // The workbook and engine slice the same shared fixed 27 × 36 grid. The ray and plane
+  // The workbook and engine slice the same resolved fixed grid. The ray and plane
   // routes are different geometric queries, so their agreement is checked at sampling tolerance.
   check('workbook ray Mb vs engine', workbookMbRay, engineMb, 5e-3)
   check('workbook plane Mb vs engine', workbookMbPlane, engineMb, 5e-3)
@@ -513,7 +513,7 @@ const run = async () => {
   let worstM = 0
   let worstP = 0
   let sectionCompared = 0
-  for (let index = 0; index < UNIFIED_STATIONS.length; index++) {
+  for (let index = 0; index < stationCount; index++) {
     const r = PT_FIRST + index
     if (cellText('PM_Theta', `J${r}`) === 'pole') continue
     const excelP = cellValue('PM_Theta', `E${r}`)
@@ -532,13 +532,13 @@ const run = async () => {
   console.log(`      non-pole stations compared: ${sectionCompared}`)
   check('worst |ΔP| vs the engine plane cut (kN)', worstP, 0, 1e-6, Math.abs(loadcase.P) / 1e3)
   check('worst |ΔM| vs the engine plane cut (kN·m)', worstM, 0, 5e-3, momentScale)
-  const poleRows = Array.from({ length: UNIFIED_STATIONS.length }, (_, index) => index).filter(
+  const poleRows = Array.from({ length: stationCount }, (_, index) => index).filter(
     (index) => cellText('PM_Theta', `J${PT_FIRST + index}`) === 'pole'
   )
   console.log(`      poles detected and given Mtheta = 0: ${poleRows.map((index) => `P${index}`).join(', ')}`)
   assert.ok(
-    poleRows.includes(0) && poleRows.includes(UNIFIED_STATIONS.length - 1),
-    'the first and final unified stations must be poles'
+    poleRows.includes(0) && poleRows.includes(stationCount - 1),
+    'the first and final resolved stations must be poles'
   )
   for (const index of poleRows) {
     check(`P${index} pole Mtheta (kN·m)`, cellValue('PM_Theta', `F${PT_FIRST + index}`), 0, 1e-12, 1)
@@ -775,7 +775,7 @@ const run = async () => {
   await customRead.xlsx.load(customBuffer as ArrayBuffer)
   const customPm = customRead.getWorksheet('PM_Angle')!
   const customMm = customRead.getWorksheet('MxMy_FixedP')!
-  assert.match(String(customPm.getCell('B1').value), /5 STATIONS/)
+  assert.match(String(customPm.getCell('B1').value), /6 STATIONS/)
   assert.deepEqual(
     Array.from({ length: 6 }, (_, index) => Number(customMm.getCell(8 + index, 2).value)),
     [5, 37, 101, 190, 278, 365]
@@ -786,10 +786,10 @@ const run = async () => {
     'number',
     'a nonlinear fₛ/fyd station must store the engine-resolved inverse strain'
   )
-  assert.equal(customPm.getCell(12, 2).value, null, 'the station block must stop after the configured five rows')
-  console.log('PASS  5 custom stations, 5 nonuniform directions, wrap angle and nonlinear inverse\n')
+  assert.equal(customPm.getCell(13, 2).value, null, 'the station block must stop after five base rows plus one midpoint')
+  console.log('PASS  5 custom base stations plus midpoint, 5 nonuniform directions, wrap angle and nonlinear inverse\n')
 
-  console.log('== 15. The shared 27-station default exports the canonical criteria ==')
+  console.log('== 15. The shared 27-station base plus midpoint exports the canonical criteria ==')
   const currentOptions = createDefaultAnalysisOptions()
   const currentWorkbook = await buildSectionWorkbook({
     projectName: `${parsed.document.meta.name} (current sampling default)`,
@@ -807,7 +807,7 @@ const run = async () => {
   const currentRead = new ExcelJS.Workbook()
   await currentRead.xlsx.load(currentBuffer as ArrayBuffer)
   const currentPm = currentRead.getWorksheet('PM_Angle')!
-  assert.match(String(currentPm.getCell('B1').value), /27 STATIONS/)
+  assert.match(String(currentPm.getCell('B1').value), /28 STATIONS/)
   const currentEpsControlColumn = headerColumn(currentPm, 5, 'ε_ctrl')
   const yieldRatioStartRow = 7 + 1 + UNIFIED_DEPTH_RATIOS.length
   const yieldRatioStrains = Array.from(
@@ -819,7 +819,7 @@ const run = async () => {
   yieldRatioStrains.forEach((strain, index) => {
     assert.ok(Math.abs(strain + UNIFIED_STEEL_STRAIN_YIELD_RATIOS[index] * epsY) < 1e-12)
   })
-  console.log('PASS  27 stations exported with six c/D points and nineteen εₛ/εy points\n')
+  console.log('PASS  28 stations exported with six c/D points, nineteen εₛ/εy points and one tension midpoint\n')
 
   if (failures.length > 0) {
     console.log(`${failures.length} check(s) failed:`)

@@ -287,8 +287,9 @@ for (const result of results) {
   if (result.mode === 'adaptive' && (!result.stationOk || !result.directionOk)) {
     failures.push(`${result.mechanics}/${result.mode}: refinement did not satisfy tolerance`)
   }
-  if (result.mode === 'fixed' && (result.directions !== 36 || result.minStations !== 27 || result.maxStations !== 27)) {
-    failures.push(`${result.mechanics}/${result.mode}: expected the exact editable 27 x 36 grid`)
+  const expectedFixedStations = result.mechanics === 'stress-strain' ? 28 : 27
+  if (result.mode === 'fixed' && (result.directions !== 36 || result.minStations !== expectedFixedStations || result.maxStations !== expectedFixedStations)) {
+    failures.push(`${result.mechanics}/${result.mode}: expected ${expectedFixedStations} resolved stations x 36 directions`)
   }
   const evaluationAmplification = result.evaluations / Math.max(1, result.points)
   const allowedAmplification = result.mechanics === 'stress-strain' ? 6 : 10

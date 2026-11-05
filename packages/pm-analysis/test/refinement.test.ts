@@ -1,6 +1,7 @@
 /**
  * Direction sampling is measured, and refinement reduces what it measures (`docs/05` section 5,
- * `docs/06` section 5). Production uses the fixed 27-by-36 grid; adaptive sampling remains an
+ * `docs/06` section 5). Fibre production uses 27 base states plus a tension midpoint, by 36 directions;
+ * adaptive sampling remains an
  * explicit audit/benchmark choice.
  */
 import { strict as assert } from 'node:assert'
@@ -51,7 +52,7 @@ const adaptiveOptions = (directionPasses: number, maxDirections: number, toleran
 
 test('the default fixed grid performs no station or direction probes', () => {
   const surface = buildPreviewSurfaceFromPrepared(prepared)
-  assert.equal(surface.stations.length, UNIFIED_STATION_COUNT)
+  assert.equal(surface.stations.length, UNIFIED_STATION_COUNT + 1)
   assert.equal(surface.directionError.directions, 36)
   assert.equal(surface.directionError.refinementPasses, 0)
   assert.equal(surface.stationError.refinementPasses, 0)

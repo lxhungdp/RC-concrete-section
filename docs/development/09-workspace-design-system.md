@@ -34,11 +34,12 @@ It owns input classification, dependency review and the minimal sufficient input
 `shared/`, `materials/`, `analysis/`, `design/` and `loadings/` are relative to `apps/web/features/section-editor/`. The shared material
 frame owns SVG aspect ratio, plot margins and axes; each material renderer supplies its own evaluated
 curve and annotations. Steel uses tensile magnitudes only. Its Stress–strain heading and yield-strain
-field precede the fixed chart position; curve-stage selection and the plain hardening checkbox with
-its conditional input group follow the figure. Both material tabs place short mathematical labels
+field precede the fixed chart position. Steel always displays the Design material curve, without a
+curve-stage selector; the plain hardening checkbox and its conditional input group follow the
+figure. Both material tabs place short mathematical labels
 beside their fields in two-column parameter rows. A shared width derived from the material section's
-inline size keeps native and unit-bearing field frames equal across rows, including yield strain,
-curve-stage selection and hardening inputs; an unpaired final field retains that width. Heights, padding, type and states remain
+inline size keeps native and unit-bearing field frames equal across rows, including yield strain
+and hardening inputs; an unpaired final field retains that width. Heights, padding, type and states remain
 with the shared field primitives. The strength field reuses one compound frame with two equal native
 editors and a centred separator; it shows values only. Radio selection makes one editor writable and
 the other read-only; read-only compound-field values use the shared muted foreground. MaterialSymbol

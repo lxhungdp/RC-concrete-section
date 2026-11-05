@@ -14,8 +14,8 @@ A P-M-M surface is built from two independent coordinates:
 
 Both coordinates are persisted inputs. A calculation selects exactly one independent mode:
 
-- **Fixed** builds the editable base grid, with the declared finite-steel transition layers when
-  applicable, and performs no adaptive probes;
+- **Fixed** builds the editable base grid, adds the fibre pure-tension midpoint described in §2.3,
+  and performs no adaptive probes;
 - **Adaptive** starts from its declared fixed criteria/directions, refines each meridian's station
   schedule independently, and refines directions from the common angular seeds.
 
@@ -60,20 +60,33 @@ numerically collapses onto a pole is retained in the public 27-station metadata 
 triangulation to prevent degenerate triangles. No code transition, rupture-event, or adaptive
 station is inserted automatically.
 
-### 2.3 Finite endpoint-hardening boundary
+### 2.3 Pure-tension midpoint and finite endpoint-hardening boundary
 
-The base schedule remains `unified-27-v2`. When an active grade uses endpoint-defined immediate
-hardening, the fibre route supplements the selected schedule with seven explicit transition ratios
-`0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875` before uniform tension. The analysis owner resolves
-them from the compatible concrete and per-material steel inequalities. They are material-domain
-layers, not resistance-factor events or new ductility defaults. A default fixed hardening surface
-therefore reports 34 station descriptors. Unused grade definitions do not activate the extension.
+The base schedule remains `unified-27-v2`. The fibre route adds exactly one fixed transition at
+ratio `0.5` between the last selected intermediate criterion and uniform tension, with hardening
+On or Off. Its stable result ID is `pure-tension-transition-50` and its display label is
+`Pure tens 50%`. The default Fixed fibre schedule therefore has 28 station descriptors. This
+replaces the former seven hardening-only transition ratios; an unused grade cannot alter the
+schedule. The ratio measures progress along the declared strain path, not a fraction of axial
+force, strength or reinforcement yield. It is a project sampling choice, not a code requirement
+or a new material limit. See the [decision and evidence](task-packets/2026-11-05-pure-tension-midpoint.md).
+
+With endpoint-defined hardening, the analysis owner resolves the midpoint from the compatible
+concrete and per-material steel inequalities. At 50% this path reaches the joint limit. Without
+active hardening, the existing three-leg transition from the last state through its tensile
+pivot and zero-compression state to uniform tension is retained. The two laws share a sampling
+ratio, not an asserted identical physical strain plane. Their material laws and pole strains do
+not change.
 
 Each grade contributes its own tensile support and, when physically bounded, its compression
 support. The boundary reaches the joint concrete/steel limit, follows the active steel envelope,
 and may change controlling grade before uniform tension. Adaptive refines these physically defined
-transition intervals through the same boundary, including the final interval to the pole. The
-legacy unbounded pole edge retains its existing treatment. Point coordinates, traces and declared
+transition intervals through the same boundary, including the final interval to the pole. Fixed
+does not claim a measured interpolation bound from its single midpoint. The legacy unbounded
+transition intervals retain their existing exclusion from adaptive probing, with the explicit
+50% seed still retained. The adaptive station budget must accommodate the resolved seeds,
+including this midpoint; an insufficient budget is typed `INVALID_ANALYSIS_OPTIONS` rather than
+silently exceeded. Point coordinates, traces and declared
 counts come from the resolved result, never a consumer's assumption of 27 rows.
 
 The block route retains its independent fixed-extreme-compression-strain mechanics, clamps depths
@@ -98,7 +111,7 @@ Fixed default shared by both mechanics:
 
 ```text
 36 uniform seed directions (10-degree spacing)
-27 fixed stations
+27 base stations (28 resolved fibre stations including the 50% transition)
 36 fixed directions
 no production midpoint probes or adaptive insertion
 ```
@@ -132,8 +145,9 @@ The finite endpoint-hardening domain has no measured Fixed uncertainty bound; it
 the project's 2% screening margin. Adaptive must converge its direction and station estimates; those
 estimates are not a universal certified capacity error.
 
-Fixed mode does not evaluate hidden midpoint probes. It calculates only the 27 × 36 requested
-states, so changing to Capacity does not pay for a second error-measurement grid.
+Fixed mode does not evaluate hidden midpoint probes. It calculates the selected base grid plus
+the explicit fibre transition (28 × 36 by default for fibre, 27 × 36 for block), so changing to
+Capacity does not pay for a second error-measurement grid.
 These counts describe physical states before geometric clipping. Applying Pmax retains the
 original permitted points and introduces exact geometric edge intersections, so the clipped
 Design vertex count and per-meridian point count need not equal the physical station count.

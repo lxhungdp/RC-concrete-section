@@ -146,7 +146,8 @@ test('material-factor adaptive refinement follows total Design resultants and av
   assert.ok((surface.stationError.maxStations ?? 48) < 48)
   assert.equal(
     surface.stations.filter((station) => station.definition.kind === 'tension-pole-transition-ratio').length,
-    0
+    1,
+    'the explicit 50% seed is retained without probing the unbounded pole path'
   )
 })
 

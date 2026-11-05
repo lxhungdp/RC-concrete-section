@@ -9,6 +9,12 @@ type Style = {
   criterion?: (point: DemandPmPoint, stage: 'nominal' | 'design', theta: boolean) => string
 }
 
+/** Match the load point's ten-pixel marker and one-pixel outline. */
+const demandIntersectionMarker = (color: string, curve: 'solid' | 'dotted', outline: string) => {
+  return { size: 10, color, symbol: curve === 'dotted' ? 'circle-open' : 'circle',
+    line: { color: curve === 'dotted' ? color : outline, width: 1 } }
+}
+
 export const demandPmDiagnosticMessage = (query: PmLoadPathIntersections): string => {
   switch (query.status) {
     case 'intersections': return query.points.length > 1 ? 'Multiple 2D intersections; no unique λ2D.' : ''
@@ -89,7 +95,7 @@ export const demandPmTraces = (geometry: Geometry, style: Style, beforeCapField:
       customdata: geometry.diagnostic.points.map(point => [point.lambda, point.kind, point.sources]),
       meta: { family: 'direct-beta-2d-diagnostic', sourceIndices: 'Zero-based Direct-beta Design path and segment indices',
         customDataFields: ['2D multiplier', 'contact kind', 'source paths/segments/fractions'] },
-      marker: { size: 11, color: style.primary, symbol: 'circle-open', line: { width: 2 } },
+      marker: demandIntersectionMarker(style.primary, 'solid', style.markerOutline),
       hovertemplate: `${coordinate}<br>λ2D=%{customdata[0]:.6f}<br>%{customdata[1]}<extra>Direct β 2D diagnostic</extra>`
     }] : []),
     ...(geometry.demand ? [{
@@ -107,7 +113,7 @@ export const demandPmTraces = (geometry: Geometry, style: Style, beforeCapField:
     ...(beforeCapField ? [{
       type: 'scatter', name: 'Field point before Pmax cap', mode: 'markers',
       x: [moment(resultantMomentCoordinate(beforeCapField).M)], y: [force(beforeCapField.P)],
-      marker: { size: 10, color: style.primary },
+      marker: demandIntersectionMarker(style.primary, 'dotted', style.markerOutline),
       hovertemplate: `${coordinate}<extra>Field before Pmax cap · exceeds permitted Design resistance</extra>`
     }] : [])
   ]

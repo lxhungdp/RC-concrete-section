@@ -1023,14 +1023,14 @@ export const buildSectionWorkbook = async (input: ExcelExportInput) => {
       pmSheet.getCell(r, PM.e0).value = { formula: `ecu-${kappa}*u_max` }
     }
 
-    if (materialStore.steel.some((item) => item.stressStrain.type === 'linear-hardening')) {
+    if (station.kind === 'tension-pole-transition-ratio' || materialStore.steel.some((item) => item.stressStrain.type === 'linear-hardening')) {
       const state = engineStations[index].state
       const magnitude = Math.hypot(state.kx, state.ky)
       pmSheet.getCell(r, PM.e0).value = state.e0
       pmSheet.getCell(r, PM.kappa).value = magnitude
       pmSheet.getCell(r, PM.epsCtrl).value = state.e0 + magnitude * auditUBar
       pmSheet.getCell(r, PM.c).value = magnitude === 0 ? 'n/a' : Math.max(...outerXY.map((point) => point.y * Math.cos(beta) + point.x * Math.sin(beta))) + state.e0 / magnitude
-      pmSheet.getCell(r, PM.e0).note = 'Compatible plane resolved against every material strain limit. Per-bar stresses and forces are recalculated below.'
+      pmSheet.getCell(r, PM.e0).note = 'Engine-resolved compatible plane. Per-bar stresses and forces are recalculated below.'
     }
     pmSheet.getCell(r, kxCol).value = { formula: `${kappa}*COS(RADIANS(beta))` }
     pmSheet.getCell(r, kyCol).value = { formula: `${kappa}*SIN(RADIANS(beta))` }

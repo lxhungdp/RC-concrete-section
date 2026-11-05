@@ -29,7 +29,7 @@ const fixed = (options: AnalysisOptions, directions: number): AnalysisOptions =>
 }
 
 /**
- * Empirical regression envelope for the fixed 27 x 36 Preview surface against the independently
+ * Empirical regression envelope for the fixed 28 x 36 Preview surface against the independently
  * refined benchmark surface. These are not design-code acceptance tolerances and do not promote a
  * Preview result; they prevent the measured fixture envelope from silently getting worse.
  */
@@ -38,7 +38,7 @@ const MAX_OVER_PREDICTION = 0.005
 
 /**
  * The benchmark reference densifies the direction lattice to 144 and independently refines each
- * meridian's station schedule. Holding the same 27 stations here would make the harness
+ * meridian's station schedule. Holding the same Fixed station grid here would make the harness
  * structurally unable to detect meridian discretisation error.
  */
 const referenceOptions = (): AnalysisOptions => {
@@ -82,7 +82,7 @@ for (const fixture of BENCH_CASES.filter((item) => item.key !== 'tabulated-law')
   const samples = reference.value.points.filter((point) => point.surfaceRole !== 'axial-cap')
 
   const candidates = [
-    { name: 'unified-27x36-fixed', options: fixed(createDefaultAnalysisOptions(), 36) }
+    { name: 'unified-27-plus-midpointx36-fixed', options: fixed(createDefaultAnalysisOptions(), 36) }
   ]
 
   for (const candidate of candidates) {

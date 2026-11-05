@@ -492,7 +492,7 @@ try {
     assert.notEqual(await closeLabels.nth(0).getAttribute('y'), await closeLabels.nth(1).getAttribute('y'))
     await curve.screenshot({ path: `${out}/${profile}-close-axis-points.png` })
     await percent.fill(String(initialFactor * 100))
-    await page.getByLabel('Curve stage', { exact: true }).selectOption('design')
+    assert.equal(await page.getByLabel('Curve stage', { exact: true }).count(), 0, 'Steel always displays the Design curve without a selector.')
     await page.getByLabel('Steel stress strain curve').scrollIntoViewIfNeeded()
     await page.setViewportSize({ width: 1000, height: 760 })
     await page.getByLabel('Steel stress strain curve').scrollIntoViewIfNeeded()

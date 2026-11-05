@@ -24,11 +24,11 @@ const setup = (id: 'kds-2024-stress-strain' | 'en-1992-1-1-2004-stress-strain' |
 }
 
 for (const profileId of ['kds-2024-stress-strain', 'en-1992-1-1-2004-stress-strain'] as const) {
-  test(`${profileId} evaluates a complete compatible mixed-grade hardening domain`, () => {
+  test(`${profileId} adaptively evaluates a complete compatible mixed-grade hardening domain`, () => {
     const { materials, basis } = setup(profileId)
     const sets = buildResistanceMaterialSets(materials, basis)
     const prepared = prepareAnalysis(section, rebars, sets.stateMaterials)
-    const options = createAnalysisOptionsForProfile(profileId)
+    const options = createAdaptiveAnalysisOptions()
     if (options.methodId !== 'strain-domain-surface-v1') throw new Error('Invalid fixture mechanics.')
     options.directions.seed = { type: 'explicit', anglesDeg: [0, 90, 180, 270] }
     const surface = buildDesignPreviewSurfaceFromPrepared(prepared, materials, basis, options)

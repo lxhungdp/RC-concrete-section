@@ -73,8 +73,8 @@ Implementation map as of 2026-11-04 (Preview; no release approval):
 - Every stress-strain and equivalent-block profile uses the shared `unified-27-v2` schedule: two
   exact poles, six outside/on-section `c/D` states, and nineteen inside-section `εₛ/εy` states.
   Fixed uses 36 directions and no midpoint refinement. Independent Adaptive uses its own seed
-  schedule and per-meridian station/direction refinement. Finite endpoint hardening supplements
-  the base schedule with its documented material-derived transition layers; clipped geometry can
+  schedule and per-meridian station/direction refinement. The fibre route adds one explicit
+  pure-tension midpoint with steel hardening On or Off; clipped geometry can
   add geometric vertices without adding physical strain stations.
 - Nominal/reference and design-resistance surfaces are separated. Factored ULS loadcases use a
   default governing 3D proportional check. An explicit `constantAxial` basis selects the qualified

@@ -78,6 +78,14 @@ import {
 
 type ResultsViewMode = 'overview' | 'loadcase'
 type ResultsTheme = 'light' | 'dark'
+const DIRECT_BETA_CHART_TITLE = 'P–M_R (Mx, My) · fixed N.A. angle'
+const DIRECT_BETA_CHART_DESCRIPTION = '2D P–M_R curve from P, Mx and My states at a fixed neutral-axis orientation. M_R = √(Mx² + My²). β is the strain-gradient direction normal to the neutral axis.'
+const coordinateOriginTrace = (color: string, xLabel: string, yLabel: string) => ({
+  type: 'scatter', name: 'Coordinate origin', mode: 'markers+text', x: [0], y: [0],
+  text: ['O'], textposition: 'bottom left', textfont: { size: 10, color },
+  marker: { size: 5, color }, showlegend: false, meta: { family: 'coordinate-origin' },
+  hovertemplate: `O<br>${xLabel}=0<br>${yLabel}=0<extra>Coordinate origin</extra>`
+})
 type CapacityVerticalPoint = {
   m: number; p: number; station: number
   source: ReturnType<typeof buildDirectMomentSection>['primary'][number]
@@ -1121,6 +1129,7 @@ export function ResultsWorkspace({
       : []
 
     return [
+      coordinateOriginTrace(plotPalette.mutedText, `Mx (${unit('moment')})`, `My (${unit('moment')})`),
       ...(view.showFixedPAngleRays
         ? [
             {
@@ -1513,7 +1522,8 @@ export function ResultsWorkspace({
   }, [exactCurve, nominalDataset, nominalVerticalPaths, surface])
 
   const verticalData = useMemo(() => {
-    if (isLoadcaseMode) return demandPmData
+    const origin = coordinateOriginTrace(plotPalette.mutedText, `M_R (${unit('moment')})`, `P (${unit('force')})`)
+    if (isLoadcaseMode) return [origin, ...demandPmData]
     const nominalOnly = view.showNominalReference && !view.showDesignResistance
     const selectedStations = nominalOnly ? nominalVerticalAnnotations.stations : verticalSlice.stations
     const selectedIntermediatePoints = nominalOnly
@@ -1541,6 +1551,7 @@ export function ResultsWorkspace({
       customDataFields: ['Mx', 'My', 'section beta (deg)', 'station ID', 'point role', 'source ID', 'branch', 'M_R', 'branchSign', 'Criteria'] }
 
     return [
+      origin,
       {
         type: 'scatter',
         name: 'Key station rays',
@@ -1848,7 +1859,7 @@ export function ResultsWorkspace({
         <div className="pm-results-plot-chrome ws-chart-controls">
           <div className="pm-results-plot-heading" data-text-heading>
             <span className={id === 'heatmap' ? 'pm-field-basis-label' : undefined}
-              title={id === 'heatmap' ? title : undefined}
+              title={id === 'vertical' ? `${title}\n${DIRECT_BETA_CHART_DESCRIPTION}` : id === 'heatmap' ? title : undefined}
               data-basis={id === 'heatmap' ? fieldEvidence?.basis ?? 'pending' : undefined}>{title}</span>
             {meta ? <strong>{meta}</strong> : null}
           </div>
@@ -2299,7 +2310,7 @@ export function ResultsWorkspace({
 
           {renderChartShell({
             id: 'vertical',
-            title: 'Direct β — fixed N.A.',
+            title: DIRECT_BETA_CHART_TITLE,
             meta: `${equilibriumBeta == null ? 'βselected' : sectionField?.basis === 'capacity' ? 'βcapacity' : 'βdemand'} = ${fmt(activeAngle, 3)}° · UR (${constantAxialCheck ? 'Constant P' : '3D'}) = ${inverseResult?.utilization == null ? 'n/a' : fmt(inverseResult.utilization, 3)}`,
             primary: demandView.primaryChart === 'vertical',
             visible: demandView.visibleCharts.vertical,
@@ -2335,7 +2346,7 @@ export function ResultsWorkspace({
               </>
             ),
             footer: <div className="pm-preview-hint">
-              <p title="Hollow markers are 2D diagnostic intersections. The diamond marks the governing Design crossing used for UR.">○ 2D diagnostic · ◆ governing check</p>
+              <p title="Filled dots mark 2D intersections on solid Direct β. Hollow blue circles mark the field point before Pmax. The diamond marks the governing Design crossing used for UR.">● 2D diagnostic · ◆ governing check</p>
               <p data-theta-cut-note title="P–M surface section at θ = atan2(My, Mx), showing only the forward branch.">θ cut: red dotted curve at the load-moment angle.</p>
               {!!demandPm?.beforeDirect.length && view.showDesignResistance && <p data-before-cap-legend>Dotted above Pmax: excluded from checks.</p>}
               {demandPm && demandPmDiagnosticMessage(demandPm.diagnostic) && <p role="status">{demandPmDiagnosticMessage(demandPm.diagnostic)}</p>}
@@ -2363,7 +2374,7 @@ export function ResultsWorkspace({
       >
         {renderChartShell({
           id: 'vertical',
-          title: 'Direct β meridian',
+          title: DIRECT_BETA_CHART_TITLE,
           meta: exactCurveMessage || `Fixed β = ${fmt(view.sliceAngle, 0)}°`,
           primary: view.primaryChart === 'vertical',
           visible: view.visibleCharts.vertical,

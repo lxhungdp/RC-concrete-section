@@ -429,7 +429,6 @@ export function MaterialPanel({
   const isCustomProfile = profile.materialStandard === 'CUSTOM'
   const concreteSupportIssue = isBlockMechanics ? null : concreteModelSupportIssue(store.concrete)
   const [activePage, setActivePage] = useState<MaterialPage>('concrete')
-  const [steelCurveStage, setSteelCurveStage] = useState<'reference' | 'design'>('reference')
   const activeSteel = store.steel.find((material) => material.id === store.defaults.steelMaterialId) ?? store.steel[0]
   const kdsBlockResolution = useMemo(() => {
     if (calculationProfileId !== 'kds-142020-equivalent-block') return { parameters: null, error: '' }
@@ -1038,15 +1037,7 @@ export function MaterialPanel({
                       }))} />
                   </label>
                 </div>
-                <SteelStressStrainCurve material={activeSteel} store={store} basis={designBasis} stage={steelCurveStage} />
-                <label className="pm-material-param"><span>Curve stage</span>
-                  <select aria-label="Curve stage" value={steelCurveStage}
-                    title={steelCurveStage === 'design' ? 'Design material' : 'Reference material'}
-                    onChange={(event) => setSteelCurveStage(event.target.value === 'design' ? 'design' : 'reference')}>
-                    <option value="reference" title="Reference material">Ref.</option>
-                    <option value="design" title="Design material">Design</option>
-                  </select>
-                </label>
+                <SteelStressStrainCurve material={activeSteel} store={store} basis={designBasis} stage="design" />
                 <div className="pm-material-form">
                   <SteelHardeningFields key={activeSteel.id} material={activeSteel} profileId={calculationProfileId}
                     onChange={(stressStrain) => updateSteel(activeSteel.id, (material) => ({ ...material, stressStrain }))}
