@@ -1,4 +1,9 @@
 import { activeDesignSurfaceDataset, activeNominalSurfaceDataset } from '@pm/results/audit'
+import { PREVIEW_GEOMETRY_TOL } from './geometry-criteria'
+import { directMomentCoordinate, forwardMomentPaths, intersectPmLoadPath, resultantMomentCoordinate, type DemandPmPoint } from './demand-pm'
+import { axialCapExcludedPaths } from './axial-cap-display'
+export { directMomentCoordinate, intersectPmLoadPath, resultantMomentCoordinate } from './demand-pm'
+export type { DemandPmPoint, PmLoadPathIntersections, PmPathIntersection } from './demand-pm'
 export { activeDesignSurfaceDataset, activeNominalSurfaceDataset } from '@pm/results/audit'
 import type {
   Resultant,
@@ -371,6 +376,81 @@ export const buildDirectMeridianSection = (
   return { primary, opposite, displayPaths: [loop], closed: true }
 }
 
+/** Root 05 §8: positive magnitudes with explicit signed display sides and separate paths. */
+export const buildDirectMomentSection = (
+  points: readonly PreviewSurfacePoint[], angleDeg: number, includeOpposite: boolean
+) => {
+  const section = buildDirectMeridianSection(points, angleDeg, includeOpposite)
+  const map = (path: DirectMeridianSectionPoint[], branch: 'primary' | 'opposite') => path.map(point => ({
+    ...point, ...directMomentCoordinate(point, branch), branch,
+    sectionBeta: wrapSectionAngle((angleDeg + (branch === 'opposite' ? 180 : 0)) * Math.PI / 180)
+  }))
+  const primary = map(section.primary, 'primary'), opposite = map(section.opposite, 'opposite')
+  return { primary, opposite, displayPaths: [primary, opposite].filter(path => path.length > 0), closed: false }
+}
+
+/** Root 05 §§8–9: canonical Demand P-M geometry, shared by both independent mechanics. */
+export const buildDemandPmGeometry = (input: {
+  surface: PreviewSurface
+  exact: ExactDirectionCurve | null
+  inspectionBeta: number
+  demand: Resultant | null
+  governingPoint: Resultant | null
+  basis: DemandCheckBasis
+  showTheta: boolean
+}) => {
+  const { surface, exact, demand, governingPoint, basis, showTheta } = input
+  const beta = exact?.beta ?? input.inspectionBeta
+  const theta = demand && Math.hypot(demand.Mx, demand.My) > 0 ? Math.atan2(demand.My, demand.Mx) : beta
+  const direction = (point: Resultant) => Math.hypot(point.Mx, point.My) > 0 ? Math.atan2(point.My, point.Mx) : null
+  const direct = (points: PreviewSurfacePoint[]): DemandPmPoint[][] =>
+    buildDirectMomentSection(points, beta * 180 / Math.PI, false).displayPaths.map(path => path.map(point => ({
+      M: point.M, P: point.P, Mx: point.Mx, My: point.My, beta: point.beta,
+      theta: direction(point), station: point.station, stationId: point.stationId, sourceId: point.id,
+      role: point.sectionPointRole === 'axial-center' ? 'axial-center' : point.surfaceRole === 'axial-cap' ? 'cap-edge' : 'physical-station'
+    })))
+  const valid = (paths: DemandPmPoint[][]) => paths.every(path => path.every(point =>
+    [point.M, point.P, point.Mx, point.My].every(Number.isFinite)))
+  const nominalRaw = exact ? direct(activeNominalDirectionPoints(exact)) : []
+  const designRaw = exact ? direct(activeDesignDirectionPoints(exact)) : []
+  const directStatus = !valid(nominalRaw) || !valid(designRaw) ? 'invalid-arithmetic'
+    : !exact ? 'missing-exact-direction' : 'available'
+  const nominal = directStatus === 'available' ? nominalRaw : []
+  const design = directStatus === 'available' ? designRaw : []
+  const diagnostic = demand ? intersectPmLoadPath(design, demand, basis)
+    : { status: 'unavailable' as const, reason: 'missing-demand' as const, points: [] as [] }
+  const slice = (dataset: PreviewSurfaceDataset): DemandPmPoint[][] =>
+    forwardMomentPaths(sliceMomentPlane(dataset.points, theta, dataset.triangles).map(path => path.points.map(point => ({
+      M: point.M, P: point.P, Mx: point.Mx, My: point.My, beta: null, theta: direction(point),
+      station: null, stationId: null, sourceId: null, role: 'surface-cut'
+    }))))
+  const nominalTheta = showTheta ? slice(activeNominalSurfaceDataset(surface)) : []
+  const designTheta = showTheta ? slice(activeDesignSurfaceDataset(surface)) : []
+  const cap = surface.beforeAxialCap ? surface.bounds.P[1] : null
+  const before = (paths: readonly (readonly Resultant[])[], magnitude: boolean): DemandPmPoint[][] =>
+    cap === null ? [] : axialCapExcludedPaths(paths, cap).map(path => path.map(point => ({
+      M: magnitude ? resultantMomentCoordinate(point).M : point.Mx * Math.cos(theta) + point.My * Math.sin(theta),
+      P: point.P, Mx: point.Mx, My: point.My, beta: magnitude ? beta : null,
+      theta: direction(point), station: null, stationId: null, sourceId: null, role: 'before-cap'
+    })))
+  const beforeDirect = exact?.beforeAxialCap && directStatus === 'available' ? before(direct(exact.beforeAxialCap), true) : []
+  const beforeTheta = showTheta && surface.beforeAxialCap
+    ? forwardMomentPaths(before(sliceMomentPlane(surface.beforeAxialCap.points, theta, surface.beforeAxialCap.triangles).map(path => path.points), false)) : []
+  const loadPath: Array<{ M: number; P: number }> = []
+  if (demand && [demand.P, demand.Mx, demand.My].every(Number.isFinite)) {
+    const md = Math.hypot(demand.Mx, demand.My)
+    const governingLambda = governingPoint ? md > 0 ? Math.hypot(governingPoint.Mx, governingPoint.My) / md
+      : basis === 'proportional3D' && demand.P !== 0 ? governingPoint.P / demand.P : 0 : 0
+    let extent = Number.isFinite(governingLambda) ? Math.max(1, governingLambda) : 1
+    for (const point of diagnostic.points) extent = Math.max(extent, point.lambda)
+    const end = { M: extent * md, P: basis === 'constantAxial' ? demand.P : extent * demand.P }
+    if ([end.M, end.P].every(Number.isFinite)) loadPath.push({ M: 0, P: basis === 'constantAxial' ? demand.P : 0 }, end)
+  }
+  return { beta, theta, directStatus, nominal, design, nominalTheta, designTheta, beforeDirect, beforeTheta,
+    diagnostic, loadPath, demand: demand ? resultantMomentCoordinate(demand) : null,
+    governing: governingPoint ? resultantMomentCoordinate(governingPoint) : null }
+}
+
 /**
  * A fiber carries its already-resolved constitutive law. Resolution happens once, up front, so the
  * integration loop cannot encounter a missing material and cannot silently substitute one.
@@ -425,7 +505,6 @@ export const surfaceInputKey = (
   meshOptions: ConcreteMeshOptions = {}
 ) => JSON.stringify([section, rebars, materialStore, meshOptions, analysisOptions])
 
-const PREVIEW_GEOMETRY_TOL = 1e-9
 /**
  * Relative slack on strain limits. The capacity stations sit exactly on `epsCu`, so an exact
  * comparison would reject them on rounding alone.

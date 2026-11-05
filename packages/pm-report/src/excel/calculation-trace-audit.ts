@@ -2,6 +2,7 @@ import { appendPresentationSummary } from './presentation-summary'
 import { bindSteelFormulaNames, steelHardeningNames, writeSteelHardeningInputs } from './steel-hardening-inputs'
 import {
   stationDefinitionLabel,
+  resultantMomentCoordinate,
   type AxialCapPointCalculationAudit,
   type PointCalculationAudit,
   type PreviewSurfacePoint,
@@ -742,12 +743,12 @@ const addSummarySheet = (
   const selection = input.selection
   if (selection.kind === 'vertical') {
     const point = first.state.point
-    const storedM = point.Mx * Math.cos(selection.angleDeg * Math.PI / 180) + point.My * Math.sin(selection.angleDeg * Math.PI / 180)
+    const storedM = resultantMomentCoordinate(point).M
     const values = [
       { label: 'P (kN)', formula: `E${first.totalRow}`, stored: point.P / 1_000 },
       {
-        label: 'Mβ (kN·m)',
-        formula: `F${first.totalRow}*COS(RADIANS(${selection.angleDeg}))+G${first.totalRow}*SIN(RADIANS(${selection.angleDeg}))`,
+        label: 'M_R (kN·m)',
+        formula: `SQRT(F${first.totalRow}^2+G${first.totalRow}^2)`,
         stored: storedM / 1_000_000
       }
     ]

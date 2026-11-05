@@ -8,6 +8,7 @@ import {
   activeNominalSurfaceDataset,
   buildDirectMeridianSection,
   isMeridianAuditPoint,
+  resultantMomentCoordinate,
   evaluatePreparedState,
   prepareAnalysisFromMesh,
   stationDefinitionLabel,
@@ -1324,7 +1325,6 @@ export const writeVerticalAuditSheet = (context: AuditContext, options: Vertical
   const mainRows: VerticalResultRow[] = []
   collectVerticalPoints(selected).forEach(({ point, criterion, definition }, index) => {
     const source = sourceFor(point, criterion, selected.betaDeg, definition)
-    const beta = selected.betaDeg * Math.PI / 180
     const displayedCriterion = criterion.toLowerCase().includes('adaptive') && source.criterion?.kind === 'c-over-d'
       ? `c/D = ${source.criterion.value.toFixed(6)} (adaptive)`
       : criterion
@@ -1334,7 +1334,7 @@ export const writeVerticalAuditSheet = (context: AuditContext, options: Vertical
       criterion: displayedCriterion,
       sourceKey: source.key,
       engineP: point.P,
-      engineM: point.Mx * Math.cos(beta) + point.My * Math.sin(beta)
+      engineM: resultantMomentCoordinate(point).M
     })
   })
 
@@ -1354,7 +1354,7 @@ export const writeVerticalAuditSheet = (context: AuditContext, options: Vertical
     { label: 'Chart source', value: 'Vertical' },
     { label: 'Resistance stage', value: context.resistanceStage },
     {
-      label: 'Selected β — M projection (deg)',
+      label: 'Selected direct β (deg)',
       value: (options.exactDirectionCurve?.beta ?? options.sliceAngleDeg * Math.PI / 180) * 180 / Math.PI,
       role: 'regenerate',
       numFmt: '#,##0.0000'
@@ -1376,9 +1376,8 @@ export const writeVerticalAuditSheet = (context: AuditContext, options: Vertical
   const headerRow = headerRowFor(identity.length)
   const firstDataRow = headerRow + 1
   const identityRef = (index: number) => `$${col(IDENTITY_VALUE_COLUMN)}$${IDENTITY_FIRST_ROW + index}`
-  // Index 2 is the selected β the M column is projected on; index 3 is the strain direction the
-  // station formulas are built in. They coincide for a requested meridian and differ for a snapped one.
-  const projectionRef = identityRef(2)
+  // Index 3 owns the strain direction used by the component formulas. M_R is independent of
+  // the displayed direction: it is formed after those final Mx/My components are assembled.
   const block = sourceBlock(5, () => identityRef(3))
 
   const sheetSpan = block.at('fMy')
@@ -1390,7 +1389,7 @@ export const writeVerticalAuditSheet = (context: AuditContext, options: Vertical
     (context.mechanicsSupportsMeshFormula
       ? 'Displayed values are formulas. Each physical station criterion determines ε₀, κx and κy; resistance is integrated from Materials and Mesh. Geometric axial-cap rows are explicitly anchored to their geometric engine ledger; strain fields are unavailable.'
       : 'Equivalent-block resultants use the engine total-ledger anchor because this mechanics has no concrete integration mesh. Use the calculation-mode column to identify the provenance.') +
-      ' Two angles are published above: the selected β the M column is projected on, and the strain direction the stations were solved in — the same for a requested meridian, and the nearest sampled direction when the surface has no meridian at the selected angle.'
+      ' M_R = SQRT(Mx^2 + My^2) uses the final assembled components, not a sum of contribution magnitudes. Selected β and the stored strain direction remain explicit station provenance.'
   )
   const identityCells = writeIdentityBlock(sheet, identity)
   const demandCells = options.demand
@@ -1399,7 +1398,7 @@ export const writeVerticalAuditSheet = (context: AuditContext, options: Vertical
   addLegend(sheet, headerRow - 2, sheetSpan)
 
   blockHeading(sheet, headerRow - 1, 'Meridian stations', sheetSpan)
-  styleHeader(sheet, headerRow, ['#', 'Resolved criterion', 'P (kN)', 'M (kN·m)'], 1)
+  styleHeader(sheet, headerRow, ['#', 'Resolved criterion', 'P (kN)', 'M_R (kN·m)'], 1)
   styleHeader(sheet, headerRow, block.labels, 5)
   ;[...sources.values()].forEach((source, index) => {
     source.row = firstDataRow + index
@@ -1413,7 +1412,7 @@ export const writeVerticalAuditSheet = (context: AuditContext, options: Vertical
     setFormula(sheet.getCell(excelRow, 3), `=$${col(block.at('fP'))}$${source.row}`, kn(row.engineP), '#,##0.0')
     setFormula(
       sheet.getCell(excelRow, 4),
-      `=$${col(block.at('fMx'))}$${source.row}*COS(RADIANS(${projectionRef}))+$${col(block.at('fMy'))}$${source.row}*SIN(RADIANS(${projectionRef}))`,
+      `=SQRT($${col(block.at('fMx'))}$${source.row}^2+$${col(block.at('fMy'))}$${source.row}^2)`,
       knm(row.engineM),
       '#,##0.00'
     )
@@ -1430,7 +1429,7 @@ export const writeVerticalAuditSheet = (context: AuditContext, options: Vertical
   const chart: SheetChart | null = mainRows.length < 2 ? null : {
     sheet: sheet.name,
     title: `P–M meridian at β = ${selected.betaDeg.toFixed(2)}°`,
-    xTitle: 'M (kN·m)',
+    xTitle: 'M_R (kN·m)',
     yTitle: 'P (kN)',
     anchor: { column: 0, row: lastRow + 2 },
     widthPx: 620,

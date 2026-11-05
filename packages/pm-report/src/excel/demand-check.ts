@@ -26,6 +26,7 @@ import { appendPresentationSummary } from './presentation-summary'
  */
 import {
   evaluatePreparedState,
+  resultantMomentCoordinate,
   type InversePreviewResult,
   type PreviewSurface,
   type ResultantLedger
@@ -906,10 +907,9 @@ export const buildDemandCheckWorkbookParts = async (input: DemandCheckExcelInput
       views: [{ showGridLines: false }],
       properties: { tabColor: { argb: 'FF2563EB' } }
     })
-    // The meridian a loadcase is checked on is the one its own equilibrium defines. Without a
-    // converged state there is none, so the demand moment direction is used and labelled as such.
+    // The Direct-beta diagnostic follows the stored equilibrium strain direction. Its magnitude
+    // coordinate does not replace the governing Design-surface check.
     const beta = solution.beta
-    const meridianRad = beta ?? (loadcaseAngleDeg(loadcase) * Math.PI) / 180
     const verticalSheet = writeVerticalAuditSheet(context, {
       sheet: vertical,
       sliceAngleDeg: beta === null ? loadcaseAngleDeg(loadcase) : (beta * 180) / Math.PI,
@@ -921,11 +921,11 @@ export const buildDemandCheckWorkbookParts = async (input: DemandCheckExcelInput
           ? 'demand moment direction (no converged state)'
           : 'equilibrium strain direction βeq']
       ],
-      // The demand projected on the meridian: the same number the check compares against the curve.
+      // Match the magnitude coordinate of the shared Direct-beta sheet.
       demand: {
-        x: knm(loadcase.Mx * Math.cos(meridianRad) + loadcase.My * Math.sin(meridianRad)),
+        x: knm(resultantMomentCoordinate(loadcase).M),
         y: kn(loadcase.P),
-        xLabel: 'Demand M on β (kN·m)',
+        xLabel: 'Demand M_R (kN·m)',
         yLabel: 'Demand P (kN)',
         label: 'Demand'
       }

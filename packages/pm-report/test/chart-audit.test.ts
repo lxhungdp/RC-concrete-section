@@ -306,7 +306,7 @@ test('vertical chart audit has four traceable sheets and formula-driven result v
   const head = headerRowOf(result)
   const first = head + 1
   assert.match(result.getCell(first, 3).formula ?? '', /^\$AC\$/)
-  assert.match(result.getCell(first, 4).formula ?? '', /COS\(RADIANS/)
+  assert.match(result.getCell(first, 4).formula ?? '', /^SQRT\(\$AD\$\d+\^2\+\$AE\$\d+\^2\)$/)
   const meshFormulaRow = Array.from({ length: result.rowCount - head }, (_, index) => index + head + 1)
     .find((row) => String(result.getCell(row, 37).value).startsWith('strain-state Mesh/Material'))
   assert.ok(meshFormulaRow)
