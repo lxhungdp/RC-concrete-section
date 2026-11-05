@@ -38,6 +38,14 @@ identities. This prevents the input adapter from silently omitting a cleared
 outer. Apply reports typed issues and leaves the applied section unchanged for
 incomplete, degenerate or invalid drafts.
 
+Open XLSX uses the shared `@pm/spreadsheet` pipeline and web modal for the selected ring. Its
+versioned coordinate workbook carries ID, X and Y with declared source units. Update replaces that
+ring only after complete draft validation, preserving all other rings, bars, locks and the explicit
+Apply boundary. Rebar Open XLSX uses the same modal with ID, diameter, As, steel material ID, X and
+Y. Update validates finite positive dimensions, stored-area provenance, resolved material IDs and
+full-bar topology before using the existing applied-rebar callback. Formulas are authoring state;
+only evaluated numeric values enter P-M. See the [shared pipeline packet](../task-packets/2026-11-05-shared-table-spreadsheet.md).
+
 ### Editable section drawing exchange
 
 The web geometry adapter `geometry/section-dxf.ts` owns section DXF exchange.

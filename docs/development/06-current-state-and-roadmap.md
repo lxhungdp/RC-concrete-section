@@ -1,6 +1,6 @@
 # Current-State Assessment and Roadmap
 
-Implementation map: **2026-11-04**. Status: **Stage 1 cross-section Preview**.
+Implementation map: **2026-11-05**. Status: **Stage 1 cross-section Preview**.
 This map records capability and remaining gates, not release approval. Engineering meaning remains
 in the control-map authorities. Historical task packets are dated evidence for their recorded
 working tree/runtime rather than a substitute for fresh verification.
@@ -17,6 +17,7 @@ working tree/runtime rather than a substitute for fresh verification.
 | Equivalent block | separate clipped-polygon kernel/adapters, independent sampling, inverse and admissibility | complete inverse coverage and independent profile qualification |
 | Resistance | retained reference ledger, exactly one global-factor or design-material route, geometric axial clipping | verified profile and accepted-result gating |
 | Demand | factored ULS, default proportional 3D or declared Constant-P basis, common three-state classification | immutable accepted checks and targeted error verification |
+| Table spreadsheets | shared @pm/spreadsheet package and one Gridcraft modal for Loadcases, selected Concrete Outer/Hole coordinates and Rebar; formulas/fill, XLSX Save as and atomic values-only Update; coordinates retain draft/Apply | upstream alpha spreadsheet compatibility; no formula persistence or engineering acceptance role |
 | Results | neutral contracts/audit assembly in `@pm/results`, separate constitutive owners, indexed surfaces, connected Fixed-P paths and exact-beta inspection | accepted/current/stale history and topology certification |
 | Units | presentation-only `@pm/units`; canonical mm/N/MPa/N mm through workers and kernels | released-report qualification |
 | Reinforcement | stored diameter/As, one-time Equation/Catalog fills and source snapshots | qualified normative catalogs and code detailing |
@@ -88,6 +89,7 @@ v1 input, compares through the documented canonical export boundary and retains 
 
 - [Programming-audit remediation](../task-packets/2026-11-04-programming-audit-remediation.md)
 - [Fixed-P and Adaptive repair](../task-packets/2026-11-04-fixed-p-adaptive-repair.md)
+- [Loadcase Gridcraft modal](../task-packets/2026-11-05-loadcase-gridcraft-plan.md)
 - [Hardening implementation](../task-packets/2026-11-03-reinforcing-steel-post-yield-plan.md)
 - [Constant-P basis](../task-packets/2026-11-04-constant-p-check-basis.md)
 - [Demand verdict matrix](../task-packets/2026-11-04-demand-verdict-matrix.md)

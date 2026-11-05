@@ -191,8 +191,35 @@ nearby adaptive direction. Typing an arbitrary angle explicitly launches a new e
 calculation; there is no angular interpolation.
 
 For a valid demand inverse, beta is recovered from the exact strain gradient and the same exact
-direction calculation can inspect that physical state. Demand Check defaults to the geometric
-demand-moment-plane slice and separately offers Direct beta at the selected demand/capacity field angle.
+direction calculation can inspect that physical state. Demand Check always displays Direct beta
+at the selected demand/capacity field angle. Its horizontal coordinate is resultant moment
+`M_R = hypot(Mx, My)`, with `P` unchanged. Preserve the one-sided exact-beta station order and
+geometric point roles. The plotted polyline joins the magnitude-mapped endpoints; taking the
+magnitude after interpolating a 3D segment defines a different curve.
+An independent, initially off `θ cut` checkbox (accessible name `Load-angle section θ`) adds the
+geometric demand-moment plane cut as a red dotted overlay. It uses the checked demand direction and the original active
+Nominal/Design triangulations. Display only the forward half-plane `Mθ >= 0`, where its coordinate
+equals `M_R`, to match the one-sided Direct-beta presentation. Clip straddling source segments at
+`Mθ = 0` by affine interpolation, retaining geometric boundary points and disconnected paths.
+Do not fold the opposite half-plane onto this branch. Apply the same selection to pre-cap theta
+paths. A permanent chart note explains that theta is the checked load-moment direction and that
+the red dotted curve is the forward surface section. This supersedes the earlier full signed-cut
+display decision. See the [task packet](task-packets/2026-11-05-demand-theta-forward-branch.md).
+Beta and demand theta remain separate quantities. Hover/Data retain source components, angle,
+station identity and point role. Capacity uses the same resultant-magnitude coordinate for its
+Direct-beta chart, Envelope totals, focused value derivations and chart audit workbooks. The
+optional beta+180 branch also has nonnegative magnitude. For a two-sided Capacity diagram, its
+plot coordinate is `M_plot = -M_R`, while the selected-beta branch uses `M_plot = +M_R`.
+This is a display-side convention, not a sign change of the source Mx/My or of M_R. Keep branch
+identity and separate paths; do not present this flattened diagram as a true plane cut. Apply
+the same branch sign to before-cap segments and cap markers. Data stores the signed plotted
+coordinate alongside the positive magnitude, branch sign and original components.
+An exact-direction result still contains its single requested beta; the opposite-branch option
+applies to sampled directions and is unavailable while that single exact result is selected.
+The Capacity Data snapshot contains all drawn coordinates. Its primary-beta Envelope table
+remains the declared physical-station/geometric-cap audit subset and excludes synthetic axial
+closure points. Sum Mx/My contributions before taking the total magnitude; individual moment
+magnitudes do not add. Interpolate geometric cap components before applying the magnitude map.
 Neither curve is gated by demand-equilibrium convergence. A direction without a unique physical
 strain gradient remains an explicitly selected inspection angle, not an inferred neutral axis.
 
@@ -217,13 +244,20 @@ with `Pu` beyond the axial range has no crossing and shows no capacity point.
 
 The origin-to-demand ray and stored governing crossing remain visible for outside demands.
 Demand-plane plots use the checked demand direction, including any declared code adjustment;
-Direct beta is a separate view and any load-path projection there is labelled as a projection.
+In Demand P-M, the load path uses resultant demand magnitude. A Direct-beta 2D diagnostic
+intersects that path with exactly the displayed magnitude-mapped Design segments. Preserve
+all distinct forward hits and source segment/fraction evidence; distinguish tangency, overlap,
+missing/invalid geometry and zero-length paths. It supplies no compatible physical field and
+never replaces the governing crossing or UR. Show the stored governing crossing with the
+optional theta layer. Under Constant P the diagnostic path remains horizontal at Pu.
 Fixed-P retains the actual Pu; a plane outside the axial range has no contour and must not be
 silently clamped. The governing UR still comes only from the unchanged Design-surface query.
 
 When a maximum axial-resistance cap clips the Design domain, retain the Design dataset before
 that cap as separate diagnostic geometry, with its own original topology. Draw only its portion
-above the cap as dotted lines in the same colour as the corresponding Design curve. This is
+above the cap in the same colour as the corresponding Design curve. Use dotted lines outside
+Demand P-M. Demand P-M reserves dots for the theta overlay and uses dash-dot for before-cap
+paths, with the same explicit exclusion label. This is
 already reduced Design resistance before the axial-domain operation, not Nominal resistance.
 The capped domain is the intersection of that same pre-cap domain with `P <= Pmax`. For every
 straddling source edge A-B, calculate `t = (Pmax - PA)/(PB - PA)` and retain the exact linear

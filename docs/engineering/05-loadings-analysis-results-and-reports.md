@@ -72,6 +72,13 @@ below. Under the default, a fixed-`P` moment ratio is reported only as a named s
 Under either basis that ratio is moment utilization at `Pu`. It is not total utilization and does
 not make a pure-axial demand have zero utilization.
 
+Demand P-M may also show a separately labelled Direct-beta 2D intersection. This is a geometric
+diagnostic on the magnitude-mapped fixed-neutral-axis polyline specified by root 05 section 8.
+Its multiplier is not the governing utilization, an adequacy decision or a compatible strain state.
+The optional demand-angle plane cut displays the forward load-moment half-section and the same
+Design-domain crossing as the selected governing query. Root 05 section 8 owns the geometric
+zero-moment clipping. Visibility of either curve cannot change UR, uncertainty or classification.
+
 For the fixed-axial query, compute `thetaLoad = atan2(Muy, Mux)`, slice the completed
 surface by `P = Pu`, and intersect the resulting `Mx-My` contour with the ray
 `Mx = t*cos(thetaLoad), My = t*sin(thetaLoad)`. The boundary value is `Mb = t` and the component
@@ -141,6 +148,8 @@ capacity. It provides:
   boundary point/state, and warnings;
 - nominal/reference and design P-M/P-Mx-My surfaces with explicit mesh connectivity;
 - fixed-`P` contours created by slicing the surface triangles;
+- Direct-beta curves and separately labelled 2D diagnostics using the presentation contract in
+  root 05 section 8;
 - vertical `P-Mtheta` demand-direction slices created by intersecting the surface with
   `Mx*sin(thetaLoad) - My*cos(thetaLoad) = 0`;
 - selected load path, governing point, failure classification, and controlling strains;

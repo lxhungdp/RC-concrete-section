@@ -43,6 +43,10 @@ increment to the canonical moments. A zero increment is an exact no-op.
 
 Only Apply changes the applied reference. Native spinner/text draft edits preview only the load
 axes on the section drawing, with an explicit preview label; they never change a calculation.
+Both the physical-field and geometry-only drawings retain a visible marker C at the exact
+net-concrete centroid while O follows the draft or applied load reference. Coincident origins
+use the single label C = O. The centroid marker belongs to the shared drawing overlay, so it
+remains available without a selected loadcase or a resolved physical field.
 The Convert checkbox is an ordinary borderless checkbox and Apply follows the fields/checkbox.
 The draft and checkbox are local editing state. Apply changes
 the reference and all existing loads together; new loads thereafter are authored at that reference.

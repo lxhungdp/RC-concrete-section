@@ -45,8 +45,48 @@ table/import
   -> persist definition / send immutable snapshot to engine
 ```
 
-The current UI supports add/edit/delete and Excel import/export in `LoadingsPanel`, owned by the
-dedicated `Demand Check` workspace. The current persistence helpers live in `@pm/project`; a future
+The Demand Check loadcase spreadsheet contract is an independent, transient workbook opened by
+`Open XLSX` in `LoadingsPanel`. Formula editing and fill stay in the modal. `Update` copies only
+evaluated values through the existing unit/reference and loadings boundary in one transaction;
+`Save as` saves the formula-bearing XLSX without changing project inputs. Each new opening starts
+from current numeric P-M inputs. Project JSON stores no spreadsheet formulas or layout. The
+implementation and verification status are tracked in the
+[Gridcraft packet](../task-packets/2026-11-05-loadcase-gridcraft-plan.md).
+The ordinary table still supports add/edit/delete in the dedicated `Demand Check` workspace.
+The reusable owner is now `@pm/spreadsheet`: its loadcase adapter consumes the generic XLSX and
+evaluated-snapshot pipeline; `shared/SpreadsheetDialog` owns the one web session/modal. Concrete
+coordinates and Rebar use that same package/modal with their own checked mappings, as described in
+[development/03](03-geometry-and-material-pipelines.md). The host protocol v2 carries a bounded
+worksheet name and mapped column count; it exposes no general engine commands.
+
+The modal header contains Loadcases, a concise input-origin caption, Open file, Save as, Update
+and Close. The grid retains row/column headings, in-cell formulas and fill; its ribbon, formula
+bar, status bar, sheet tabs and unrelated application panes are hidden. Open file replaces the
+draft only and requires the existing standalone P-M workbook's Loadcases, Units and Load reference
+contracts. Units are captured from that file rather than inferred from browser preferences.
+Extra working columns remain independent; only ID, Name, Pu, Mux and Muy map back to P-M.
+The spreadsheet modal opens at 600 × 500 CSS pixels, clamped to the viewport and still movable
+and resizable. Its mapped header cells are highlighted and locked with worksheet protection;
+data and working cells stay editable. Cell-note markers, hover panels and note/comment actions
+are omitted from the embedded grid. Quantity-source notes remain in workbook metadata so exact
+unit round trips are preserved; they are not displayed as cell annotations in the modal.
+See the [compact/header evidence](../task-packets/2026-11-05-loadcase-compact-header.md).
+
+Update commits the active edit and reads the engine's current evaluated scalar values. Opening a
+file recalculates imported formulas in automatic mode; Update does not separately rerun volatile
+formulas. The adapter validates the entire array before applying it once. Invalid headers/IDs,
+non-numeric or non-finite actions, cell errors, incompatible metadata, calculation limits or a
+changed project context leave P-M unchanged. Unchanged rows preserve canonical precision and
+source provenance. Existing IDs are retained; blank IDs use the shared project allocator.
+Closing discards the draft, while Save as retains its formulas. The bounded transport, archive
+preflight and calculation limits are documented in the
+[Gridcraft owner](../../tools/gridcraft/README.md).
+The initial iframe remains covered by a parent-owned loading surface until the workbook and theme
+acknowledgments complete and its rendering frames have run. The populated grid and enabled actions
+appear together, without exposing the renderer's black/empty startup frames. Closing cancels the
+pending presentation callbacks; errors remain visible. See the
+[opening-transition evidence](../task-packets/2026-11-05-loadcase-opening-flash.md).
+The current persistence helpers live in `@pm/project`; a future
 `@pm/loadings` extraction will own richer source-case validation and transformations. Demand Check
 retains input order while using stable IDs.
 
@@ -256,8 +296,9 @@ verification state. This architecture is important for high-aspect-ratio section
 rule uses `h = Dmin/32`, a 0.1 m × 10 m section has about 102,400 base cells even though a
 geometrically similar compact section is inexpensive.
 
-The slice rotation angle is a moment-direction angle. For loadcase mode it is
-`thetaLoad = atan2(Muy, Mux)`. It must be applied as a geometric query on the completed surface:
+A geometric surface-plane cut uses a moment-direction angle. For the optional Demand layer it is
+`thetaLoad = atan2(Muy, Mux)`, independently of the exact Direct-beta strain direction.
+It must be applied as a geometric query on the completed surface:
 fixed-`P` checks intersect the `P = Pu` contour with the ray
 `Mx = t*cos(thetaLoad), My = t*sin(thetaLoad)`, and vertical charts intersect the surface with
 `Mx*sin(thetaLoad) - My*cos(thetaLoad) = 0`. It must not select the strain-plane sample row whose
@@ -267,6 +308,23 @@ The current preview already uses explicit `mesh3d` whenever stored `i/j/k` trian
 available. Do not use Plotly `alphahull` for resistance domains. Plotly remains a presentation
 adapter only: it must display values already stored in the result DTO and must not perform
 mechanics, resistance reduction, or adequacy logic.
+
+Each chart shell has a React identity scoped to its workspace mode and chart role. Capacity and
+Demand Check arrange different charts in the same grid positions. Reusing a positional Plotly
+host across those roles can retain another chart's axis ranges through `uirevision`, leaving
+valid resistance curves outside the viewport. Within the same workspace and role, the shell
+retains its identity for ordinary data, theme and layout updates.
+
+Menu navigation retains one completed Demand visual frame while its immutable resistance surface
+and source row still exist. Returning to Demand reuses it only when the current inverse-result
+identity, applied input references and requested exact-beta direction also match.
+The selected-detail request likewise reuses the current result only when its demand, check basis
+and applied context match; changing menus alone does not force another check/field/exact-curve job.
+An initial frame without completed field/exact-curve evidence shows the existing chart placeholder rather than
+mounting a ray-only vertical plot and autoscaling it before the resistance curves arrive. Plotly
+hosts remain scoped to workspace/chart roles; preserving a data frame does not share viewport state
+between Capacity and Demand. See the
+[transition regression](../task-packets/2026-11-05-demand-navigation-transition.md).
 
 ## 5. Results UI state
 
@@ -333,10 +391,11 @@ checked load ray, using each mechanics' existing physical refinement. Available 
 discriminates the permitted Design boundary from a before-axial-cap boundary with its cap limit.
 The latter has an explicit label/note and a separate marker; it never changes the stored governing
 check. Original pre-cap Design geometry/topology is retained on transient surface/exact-curve DTOs
-for same-colour dotted overlays of only the excluded portions. See [development/14](14-before-axial-cap-fields.md).
+for same-colour dotted overlays of only the excluded portions in both Demand P-M and Capacity
+charts. See [development/14](14-before-axial-cap-fields.md).
 The corrected cap operation intersects the original domain with P <= Pmax, inserting actual
 source-edge crossings and retaining the original below-cap side geometry. The shared geometric
-intersection owner also supplies the dotted path endpoints. `Pmax intersection` rows expose the
+intersection owner also supplies the before-cap path endpoints. `Pmax intersection` rows expose the
 cut explicitly without a physical-station ID. Chart-audit exports identify geometric ledger anchors
 and leave their strain/curvature and physical-criterion values blank. See
 [development/15](15-exact-axial-cap-intersections.md) for the governing-result correction and oracles.
@@ -345,10 +404,19 @@ discarding the already computed governing check. Explicit try/await/catch contai
 worker chunk-loader failures as well as rejected imports. Field-map and exact-curve requests
 settle independently, then commit one coherent visual frame.
 
-The vertical chart offers the geometric Demand-theta slice and a separately labelled Direct-beta
-inspection with standard joined controls. Theta uses the checked moment vector; beta uses the
-qualified selected demand/capacity state or an explicitly selected inspection angle. Zero moments identify the
-theta plane as inspection rather than a unique demand direction. The Capacity overview contains
+The Demand vertical chart always shows the exact Direct-beta curve using the resultant-moment
+coordinate owned by root 05 section 8. The compact `θ cut` checkbox uses the shared chart check
+role and adds the red dotted geometric
+forward Demand-theta half-section without rebuilding the surface or exact curve. The analysis
+query clips paths at Mtheta = 0; Data consumes those same plotted arrays. A permanent footer note
+explains the option independently of its checked state. Theta uses the checked moment
+vector; beta uses the qualified selected demand/capacity state or an explicitly selected inspection
+angle. The analysis owner supplies magnitude mapping and a separately typed 2D intersection
+diagnostic; the stored governing check is unchanged. Data reads the same plotted arrays and uses
+internal curve/action/role bindings to publish the compact point/criterion tables. Its row counts do not imply
+physical-station counts. Zero moments identify the theta plane as inspection rather than a unique
+demand direction. Refit coordinate/layer/unit changes while preserving a theme-only viewport.
+The Capacity overview contains
 Design/Nominal resistance surfaces, their existing Direct-beta and Fixed-P slices, and explicitly
 qualified before-Pmax geometry. Its chart data do not depend on loadcase selection or checks.
 See [the Capacity presentation packet](18-capacity-resistance-only.md). Presentation units change
@@ -363,6 +431,14 @@ Results are keyed by input hash and result ID, not by the currently selected row
 The Capacity Fixed-P table labels the selected Design moment components `Mrx`/`Mry` and the
 Nominal components `Mnx`/`Mny`. These are presentation labels for the existing stage-specific
 `Mx`/`My` values; they introduce no additional resistance reduction or component transformation.
+
+Capacity Direct beta and its vertical Envelope use the same resultant-magnitude adapter as
+Demand Check. Plot Data reads all rendered resistance-curve points, including geometric closure/cap points and
+separately identified opposite branches. Capacity draws the opposite beta+180 branch at -M_R
+while retaining its positive magnitude and original components in Data. Envelope is the primary-beta audit subset. Value traces
+assemble the two moment components and then show their magnitude; no scalar sum of contribution
+magnitudes is permitted. Chart and selected-value Excel audits use the same convention. The shared
+Direct-beta sheet in a demand workbook and its demand marker follow that coordinate too.
 
 The Capacity table toolbar has one Detail action immediately before Excel for the complete
 calculation inspector, whose criterion selector exposes every row. A row or its identifying cells
@@ -417,7 +493,7 @@ Factored/Design contribution ledgers are presented side by side in one result ta
 separate tables. The modal header also exposes one lazy `exportCalculationTraceAudit` workbook.
 For a Vertical row it contains `Input`, the reused point-specific `Concrete` detail, a formula-driven
 per-bar `Steel` ledger, and `Summary`; the summary links the two detail totals and calculates the
-selected `P/Mx/My` and projected `M-beta` without displaying a stored-result comparison. A non-exact Fixed-P row exports both lower and upper
+selected `P/Mx/My` and resultant moment magnitude without displaying a stored-result comparison. A non-exact Fixed-P row exports both lower and upper
 physical-state Concrete/Steel sheet pairs, then performs the displayed interpolation by formula in
 `Summary`. It never assigns an invented strain plane to the interpolated point. The existing
 chart-audit export in the Results toolbar is unchanged. Fixed-P
@@ -444,7 +520,7 @@ numbers as a resolved or pre-cap state.
 
 The Loadcases header in Demand Check has one `Detail calculation` button. With a selected combination
 and a ready resistance surface, it opens that combination's calculation trace by stable ID. Closing the
-dialog returns focus to that button. Export XLSX and Import XLSX sit on the left below the table and
+dialog returns focus to that button. Open XLSX sits on the left below the table and
 Add sits on the right. The calculation dialog header exposes every
 current combination through one compact selector
 and exports the selected combination through the existing `exportDemandCheck` worker route with
@@ -623,6 +699,37 @@ Report results and adequacy rules are not redefined by this input-reference feat
 
 ### Stable demand-field presentation
 
+Each of the three Demand chart headers has a `Data` button, using the shared outlined action at
+chart density. It opens a modal with a selectable text snapshot, Copy all and Save as `.txt` actions.
+Capacity Direct beta has the same Data action and exact plotted-coordinate snapshot, with Capacity
+context and no loadcase/check attribution. Its Envelope remains the separate primary-beta audit subset.
+The modal has one title on the same row as Copy, Save as and Close, plus the text area. It repeats
+no filename or Preview/help footer outside the document. Its title bar supports dragging and arrow
+keys; Shift+arrows and the bottom-right grip resize it. Viewport bounds keep its controls reachable.
+Action feedback appears inline only after copy/save;
+the text itself retains its Preview identity, units and frame warnings.
+The snapshot copies the displayed chart heading,
+options, field metric groups, annotations and status notes, with the displayed loadcase/frame and
+units. It preserves unavailable markers and previous-result/pending warnings; it does not run a
+calculation or turn a Preview into an accepted report. Opening text does not download automatically.
+The file action writes the same UTF-8 text being viewed. Save/copy failure is visible;
+cancelling Save as changes nothing. Escape closes the modal and restores focus to its button.
+This presentation adapter belongs to the web feature
+and application file helpers, not the numerical/report packages.
+
+For Fixed-P Mx-My and vertical P-M charts, Data contains only the displayed Nominal/Design
+resistance-curve points, in their original order and full available display precision. Each compact
+table starts with N# and Criteria, then Mnx/Mny/Mn/P for Nominal or Mrx/Mry/Mr/P for Design,
+with explicit units. N# is the original one-based index in that plotted curve; Criteria uses its
+stage-specific returned station label. Geometric and Fixed-P intersections receive truthful
+intersection labels rather than an invented material criterion.
+Before-Pmax curves remain separately labelled excluded; optional theta cuts are identified separately.
+Guides, load paths, duplicate markers, raw custom data, JSON metadata and chart-control context are
+omitted. Closing points and path breaks are retained. Mr/Mn is the analysis owner's resultant
+magnitude, including on theta cuts; it is never the signed or projected plotted abscissa. Internal
+trace column bindings supply already converted values; text formatting creates no replacement curve.
+Field Data retains its existing metric snapshot. Pending/previous-frame warnings remain concise.
+
 The completed demand frame is replaced atomically after its field map and direction curve settle.
 During a loadcase switch or a demand edit (including unchecked load-reference Apply), one outgoing
 frame may remain visible only on the same immutable resistance surface and while its row still
@@ -631,8 +738,10 @@ continue to exclude its values from current row checks and calculation dialogs. 
 missing selections and changed surfaces withdraw that frame. This is transient Preview display
 history, not an accepted or current result.
 
-The section-field footer reserves its status area and all four metric cards across demand,
-capacity, before-Pmax and unavailable states. Missing physical fields display unavailable values.
+The section-field footer retains its status area in every layout. Its four metric cards appear
+only when the field is the primary (large) chart, across demand, capacity, before-Pmax and
+unavailable states; secondary field charts omit the cards to leave space for the drawing.
+Missing physical fields display unavailable values in the expanded cards.
 The drawing fit uses exact section bounds and the visible LOAD-axis origin, identically in field
 and outline views. Applying an already previewed origin therefore cannot change that fit.
 See [the presentation task packet](17-stable-demand-field-layout.md) for evidence and limits.

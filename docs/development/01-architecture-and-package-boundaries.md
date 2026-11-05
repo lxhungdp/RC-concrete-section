@@ -37,6 +37,7 @@ filesystem/network APIs, project UI state, or report libraries.
 | `@pm/code-custom` | user-declared block law, endpoints, phi transition, and cap | derives nothing from a code table; validates ranges and uses what the project gives it; never claims clause traceability |
 | `@pm/analysis-equivalent-block` | project/profile/result bridge for the block kernel and adapters | routing/normalization only; do not merge it into the stress-strain kernel |
 | `@pm/report` | result workbooks for both mechanics, stress-strain mesh Excel/DXF, the format-neutral `ReportModel`, and the PDF renderer on the `@pm/report/pdf` subpath | shared spine in `workbook-common.ts`; the PDF is deliberately not re-exported from the index so the analysis worker never bundles it; no accepted-result release contract yet |
+| `@pm/spreadsheet` | generic XLSX table schemas/metadata, evaluated snapshots and loadcase/coordinate/rebar authoring adapters | outward adapter; may consume ExcelJS and inward owners; no React, browser/file/network APIs, P-M solver or project formula persistence |
 | `@structures/cad-drawing` | reusable view/navigation foundation | presentation only; never an analysis dependency |
 | `@pm/web` | current integrated editor | application composition only; move reusable domain/use-case logic into packages |
 
@@ -199,6 +200,40 @@ pass the applicable portability, numerical-matrix, workbook/PDF, build, security
 
 Numerically relevant dependency updates receive change classification and full affected regression,
 not automatic merge after type checking alone.
+
+### Transient table spreadsheets
+
+`@pm/spreadsheet` is an outward XLSX adapter package, like the report adapter rather than a
+numerical kernel. It owns bounded archive/metadata handling, table schemas, protected template
+headers, evaluated-cell decoding and pure loadcase/coordinate/rebar mapping. It may depend on
+ExcelJS and inward geometry/project/units owners. Numerical/domain packages never import it.
+The web shared spreadsheet dialog owns session lifecycle and presentation; browser/file APIs stay
+in `application/`. The Gridcraft host receives a checked sheet/column descriptor instead of a
+hardcoded loadcase mapping. Feature components select an adapter and publish one validated value
+array through their existing input callback. They do not implement another workbook or modal.
+
+Coordinates replace only the selected unlocked draft Outer/Hole; the complete draft is checked
+before publication and Apply remains explicit. Rebars resolve steel IDs and validate their full
+disks/overlap against the applied section before publication. Stored As is never derived from an
+edited diameter. Unknown metadata, invalid cells and stale targets fail without partial updates.
+Formulas and layout remain transient or in saved XLSX, outside project JSON. The contract and
+evidence are tracked in [the task packet](../task-packets/2026-11-05-shared-table-spreadsheet.md).
+
+The web-only Gridcraft integration is pinned to revision
+`919a6b58fe6661de27af0609d02443ac9db467bf` (0.16.0). Its reviewed Rust lockfile, bounded source
+patch, build recipe, license/security record and artifact manifest live in
+[`tools/gridcraft`](../../tools/gridcraft/README.md). The included self-hosted WebAssembly artifact
+loads only when a table modal opens. It is outside the initial-route and analysis-worker
+bundles and has its own checked compressed-size budget.
+
+`application/spreadsheets/gridcraft-client.ts` owns the versioned, origin/source/session-checked
+request/reply transport; `application/files/xlsx-file.ts` owns saving. The spreadsheet package owns
+standalone workbook mapping and delegates units, identity allocation and load-reference translation
+to existing package owners. The spreadsheet computes authoring formulas only: no P-M capacity,
+resistance or acceptance calculation imports it. Project JSON contains numeric inputs, with no
+spreadsheet document or formula state. See the
+[implementation evidence](../task-packets/2026-11-05-loadcase-gridcraft-plan.md) for tested behavior
+and the upstream alpha compatibility limitation.
 
 ## 10. Physical repository layout
 

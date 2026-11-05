@@ -2,6 +2,12 @@
 
 Status: implemented; presentation gates passed on 2026-11-03. Preview only.
 
+Current coordinate follow-up: [Capacity resultant moment](../task-packets/2026-11-05-capacity-resultant-moment.md)
+supersedes the former projected-M-beta table/derivation convention. M now means resultant moment
+magnitude. Its focused trace retains both assembled component ledgers before taking the norm.
+Scalar contribution helpers accept only P, Mx or My, so a magnitude cannot be added as a scalar
+reinforcement/concrete contribution. Governing resistance and adequacy are unchanged.
+
 ## Task packet
 
 - Objective: one toolbar Detail action before Excel opens the complete inspector; each calculated value

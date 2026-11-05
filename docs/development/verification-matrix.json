@@ -11,18 +11,30 @@
         {
           "file": "tools/architecture/workspace-dependencies.ts",
           "symbol": "inspectWorkspaceDependencies"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/table.ts",
+          "symbol": "prepareSheetWorkbook"
         }
       ],
       "verification": [
         {
           "file": "tools/architecture/workspace-dependencies.test.ts",
           "oracle": "Synthetic dependency DAG, public-export, relative-bypass and capability rejection cases."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
         }
       ],
       "reviewer": null,
@@ -140,9 +152,24 @@
       "id": "DEV-ARCH-006",
       "authority": "docs/development/01-architecture-and-package-boundaries.md",
       "coverage": "open",
-      "implementation": [],
-      "verification": [],
-      "evidence": [],
+      "implementation": [
+        {
+          "file": "apps/web/features/section-editor/results/loadcase-calculation-trace.ts",
+          "symbol": "sameLoadcaseAnalysisInputs"
+        }
+      ],
+      "verification": [
+        {
+          "file": "apps/web/test/results/loadcase-calculation-trace.test.ts",
+          "oracle": "Immutable applied-input identity and demand/result/surface replacement reject stale Preview frames."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-demand-navigation-transition.md"
+        }
+      ],
       "reviewer": null,
       "releaseGap": "The accepted-result/profile/normalization capability required by this gate is not implemented or independently approved."
     },
@@ -229,18 +256,30 @@
         {
           "file": "packages/pm-units/src/index.ts",
           "symbol": "commitQuantity"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "coordinatesFromSheet"
         }
       ],
       "verification": [
         {
           "file": "packages/pm-units/test/units.test.ts",
           "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
         }
       ],
       "reviewer": null,
@@ -279,18 +318,30 @@
         {
           "file": "packages/pm-units/src/index.ts",
           "symbol": "parseQuantityUnitSelection"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "coordinatesFromSheet"
         }
       ],
       "verification": [
         {
           "file": "packages/pm-units/test/units.test.ts",
           "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
         }
       ],
       "reviewer": null,
@@ -329,18 +380,30 @@
         {
           "file": "packages/pm-geometry/src/rebar-area.ts",
           "symbol": "rebarArea"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "rebarsFromSheet"
         }
       ],
       "verification": [
         {
           "file": "packages/pm-geometry/test/rebar-area.test.ts",
           "oracle": "Stored-area identity, explicit authoring and legacy-operation-order fixtures."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
         }
       ],
       "reviewer": null,
@@ -354,18 +417,30 @@
         {
           "file": "packages/pm-geometry/src/rebar-area.ts",
           "symbol": "equationRebarProperties"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "rebarsFromSheet"
         }
       ],
       "verification": [
         {
           "file": "packages/pm-geometry/test/rebar-area.test.ts",
           "oracle": "Stored-area identity, explicit authoring and legacy-operation-order fixtures."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
         }
       ],
       "reviewer": null,
@@ -379,18 +454,30 @@
         {
           "file": "packages/pm-geometry/src/rebar-area.ts",
           "symbol": "withStoredRebarArea"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "rebarsFromSheet"
         }
       ],
       "verification": [
         {
           "file": "packages/pm-geometry/test/rebar-area.test.ts",
           "oracle": "Stored-area identity, explicit authoring and legacy-operation-order fixtures."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
         }
       ],
       "reviewer": null,
@@ -437,6 +524,10 @@
         {
           "file": "apps/web/application/project/import.ts",
           "symbol": "importProjectJsonAsync"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "coordinatesFromSheet"
         }
       ],
       "verification": [
@@ -455,12 +546,20 @@
         {
           "file": "apps/web/test/project-json.test.ts",
           "oracle": "Oversized file rejection precedes text allocation."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
         }
       ],
       "reviewer": null,
@@ -474,18 +573,30 @@
         {
           "file": "packages/pm-geometry/src/validation.ts",
           "symbol": "validatePolygonSection"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "coordinatesFromSheet"
         }
       ],
       "verification": [
         {
           "file": "packages/pm-geometry/test/geometry-kernel.test.ts",
           "oracle": "Analytical topology/containment and invalid ring fixtures."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
         }
       ],
       "reviewer": null,
@@ -549,18 +660,30 @@
         {
           "file": "packages/pm-geometry/src/validation.ts",
           "symbol": "validatePolygonSection"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "rebarsFromSheet"
         }
       ],
       "verification": [
         {
           "file": "packages/pm-geometry/test/geometry-kernel.test.ts",
           "oracle": "Circular disk, hole and overlap boundary fixtures."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
         }
       ],
       "reviewer": null,
@@ -846,6 +969,22 @@
           "symbol": "intersectSurfaceAtConstantAxial"
         },
         {
+          "file": "packages/pm-analysis/src/index.ts",
+          "symbol": "buildDemandPmGeometry"
+        },
+        {
+          "file": "packages/pm-analysis/src/index.ts",
+          "symbol": "buildDirectMomentSection"
+        },
+        {
+          "file": "packages/pm-analysis/src/demand-pm.ts",
+          "symbol": "directMomentCoordinate"
+        },
+        {
+          "file": "packages/pm-analysis/src/demand-pm.ts",
+          "symbol": "intersectPmLoadPath"
+        },
+        {
           "file": "packages/pm-analysis/src/surface-topology.ts",
           "symbol": "IndexedSurfaceTopologyCache"
         }
@@ -856,6 +995,18 @@
           "oracle": "Analytical polyhedra, solid-angle containment, tangency and exit-count cases."
         },
         {
+          "file": "packages/pm-analysis/test/demand-pm.test.ts",
+          "oracle": "Analytical flattened polyline crossings, tangency, overlap, path breaks and force/moment scaling."
+        },
+        {
+          "file": "packages/pm-analysis/test/direct-moment.test.ts",
+          "oracle": "Independent 3-4-5 actions at a different beta, positive magnitudes with signed opposite plot coordinates and source-action immutability."
+        },
+        {
+          "file": "apps/web/test/results/demand-pm-chart.test.ts",
+          "oracle": "Registered-profile plane-cut versus ray/triangle crossings and unchanged governing checks under layer toggles."
+        },
+        {
           "file": "packages/pm-analysis/test/batch-topology.test.ts",
           "oracle": "Complete cold/cached result equality and topology/vertex/direction mutation invalidation."
         }
@@ -864,6 +1015,14 @@
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-direct-beta-primary-plan.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-capacity-resultant-moment.md"
         }
       ],
       "reviewer": null,
@@ -883,12 +1042,20 @@
         {
           "file": "packages/pm-results/test/classification.test.ts",
           "oracle": "Independent uncertainty interval and classification boundaries."
+        },
+        {
+          "file": "apps/web/test/results/demand-pm-chart.test.ts",
+          "oracle": "Both mechanics, sampling modes and check bases retain full governing check results under presentation changes."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:unit",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-direct-beta-primary-plan.md"
         }
       ],
       "reviewer": null,
@@ -898,9 +1065,24 @@
       "id": "ENG-RES-002",
       "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
       "coverage": "open",
-      "implementation": [],
-      "verification": [],
-      "evidence": [],
+      "implementation": [
+        {
+          "file": "apps/web/features/section-editor/results/ResultsWorkspace.tsx",
+          "symbol": "ResultsWorkspace"
+        }
+      ],
+      "verification": [
+        {
+          "file": "tools/verification/demand-navigation/transition.mjs",
+          "oracle": "Intermediate browser/compositor frames exclude ray-only menu flashes; complete trace/axis equality and worker-job observations preserve coherent Preview results."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-demand-navigation-transition.md"
+        }
+      ],
       "reviewer": null,
       "releaseGap": "The accepted-result/profile/normalization capability required by this gate is not implemented or independently approved."
     },
@@ -922,18 +1104,34 @@
         {
           "file": "packages/pm-report/src/model/report-model.ts",
           "symbol": "buildColumnReportModel"
+        },
+        {
+          "file": "apps/web/features/section-editor/results/demand-chart-text.ts",
+          "symbol": "plottedPointsText"
         }
       ],
       "verification": [
         {
           "file": "packages/pm-report/test/integration/pdf-report.selftest.ts",
           "oracle": "DTO-to-report agreement, deterministic bytes, Unicode and PDF structure."
+        },
+        {
+          "file": "tools/verification/demand-data/counts.mjs",
+          "oracle": "Every plotted coordinate matches the SVG path or marker and the Data snapshot; magnitude mapping and unchanged table UR are checked."
         }
       ],
       "evidence": [
         {
           "command": "npm run test:pdf-report",
           "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-direct-beta-primary-plan.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-capacity-resultant-moment.md"
         }
       ],
       "reviewer": null,

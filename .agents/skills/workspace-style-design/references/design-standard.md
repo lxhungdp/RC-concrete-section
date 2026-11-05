@@ -361,8 +361,11 @@ above. Feature CSS owns placement only.
 
 Table headings keep their unit note beside the title on the same row rather
 than spending a separate line on units. Keep that title/unit group together;
-file-action groups may wrap as a whole on narrow sidebars. The two Loadcase Excel actions use
-text-only `Import XLSX` and `Export XLSX` buttons so both the command and file format are visible.
+file-action groups may wrap as a whole on narrow sidebars. The Loadcase footer uses one outlined
+`Open XLSX` action. It opens a movable, resizable spreadsheet modal with a large Loadcases title
+and Open file, Save as and Update actions on the same header row. Show cells and row/column headings;
+hide the embedded spreadsheet ribbon, formula bar, sheet tabs and status bar. Keep feedback brief
+and conditional, without a permanent help footer.
 
 Exclusive choice switches use `ws-joined-buttons`: the same 26px height,
 13px/400 type, 10px horizontal padding and 6px icon gap as standard actions.
