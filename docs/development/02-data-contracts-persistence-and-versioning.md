@@ -7,7 +7,7 @@ v3 with its explicit v1/v2 readers. Older readers reject the unfamiliar law inst
 plateau. Raw hardening strength, construction strain and the discriminated cutoff rule are stored
 once. Compiled tangents and effective design strengths are derived runtime data. A separate optional
 `steelModelModified` flag records KDS steel customization independently of concrete customization.
-Project workbook v1 preserves the explicit hardening strength, construction strain and cutoff
+Project workbook v2 preserves the explicit hardening strength, construction strain and cutoff
 inputs; no earlier Excel format is supported. Native project JSON schema versions are independent
 of the workbook format.
 
@@ -329,66 +329,46 @@ and Plotly traces are runtime artifacts. They are regenerated from persisted def
 embedded in the project JSON. A future accepted-result artifact requires its own immutable contract,
 input hash, kernel/profile versions, convergence evidence, and release policy.
 
-## 10. Editable project workbook v1
+## 10. Editable project workbook
 
-The user declares this the first external Excel format. @pm/spreadsheet/project-xlsx owns the
-single writer/reader; the web module is a thin facade. Earlier development workbook layouts are
-not supported readers or migration sources. JSON v1/v2/v3 readers remain separate and unchanged.
-
-The workbook contains applied input definitions and input options only. Unapplied geometry,
-camera/chart state, report selections, prepared models, results and analysis surfaces are excluded.
-The [engineering-facing contract](../task-packets/2026-11-05-readable-project-workbook.md) defines
-blue input values, concise engineering symbols and strict validation.
-Generated workbooks are deliberately plain: dark-blue input text only, with no cell fills,
-bold headings or decorative typography. Native editing/Save may preserve explicit user formatting.
-Presentation changes no value, unit or identity contract.
+The Project menu Export and Open generate the Project XLSX v2 format owned by
+`@pm/spreadsheet/project-xlsx`. Direct Import and spreadsheet Update share its validator.
 
 | Sheet | Input responsibility |
 |---|---|
-| Project | User identity, selected calculation profile and check basis |
-| Section | Section name, ordered outer/hole coordinates and identity |
+| Section | Section name and ordered outer/hole coordinates |
 | Rebar | Diameter, stored As, coordinates and steel assignment |
-| Material | Default steel and per-material active law/boundary inputs; user curves |
-| Loadings | Named factored ULS actions about the declared input origin |
-| Load reference | Applied offsets, with explicit source units |
-| Options | Mode, ordered criteria, directions, refinement and mesh/resource options |
-| Resistance | Active resistance coefficients, class/cap/transition and override reason |
-| Units | One explicit source-unit declaration per quantity |
+| Material | Calculation profile, default steel, active material definitions and user curves |
+| Loadings | Ordered factored ULS actions about the section centroid |
 
-All sheets are visible. No Analysis sheet, raw property paths, workbookFormat/workbookVersion rows,
-editable verification flags, or empty-container machine tokens appear in the worksheet inputs.
-Necessary format identity is a document property. Readonly provenance/identity and retained
-compatibility values are separate document properties; they contain no backup of editable inputs
-and cannot override authored cells. Equal concrete law/boundary fields use a checked binding of
-paths rather than two editable copies; distinct active bounds stay distinct.
-For plateau/bilinear steel, a saved yield-snapshot presence binding is resolved through the material
-compiler after fy/Es edits; no second editable yield value or adapter equation is maintained.
-Authored resistance-coefficient overrides retain the design owner's modified/reason checks.
+Generated workbooks have four visible, unlocked sheets with normal views, no frozen rows and no
+cell notes. They use dark-blue text for inputs, plain headings and no cell fills. Export and Open
+capture the current Options units and write converted numeric values with matching field and column
+labels. Workbook properties carry the versioned source unit selection. Earlier v2 files without
+that property use their original canonical units. Import uses the workbook declaration regardless
+of the current Options. Conversion of visible values can introduce ordinary binary64 roundoff.
+The recorded rebar area and diameter are kept exactly when both displayed cells still match the
+source pair. Technical IDs,
+material template identity, inactive material compatibility fields and As provenance are transport
+data. They contain no backup of editable values. Material yield is derived through the material
+compiler where a bound yield snapshot is present.
 
-Units is authoritative. Every dimensional input label/header is checked against that declaration.
-No unchecked duplicate unit notes are used. Canonical quantities, compression-positive P, axes,
-moment signs, stored As and existing load-reference translation owners are unchanged. Scalar unit
-precision notes retain the existing checked no-op role; edited numeric cells remain authoritative.
-Nonzero-origin subtraction/addition retains its documented ordinary binary64 roundoff qualification.
+The reader ignores additional sheets. It validates the four groups before publishing them together.
+Project information, sampling, mesh, resistance and Check Basis come from the current project
+default owners. The imported Material profile selects analysis and resistance defaults. Loadings
+use zero origin offsets because the workbook already carries centroidal resultants. Diameter-only
+geometry from legacy JSON materializes As through the existing geometry owner on export.
 
-Import requires the declared v1 metadata and every exported required configuration field before
-calling the project parser, so absent Mesh/check-basis inputs cannot silently select JSON defaults.
-Optional clears are explicit; duplicate/conflicting inputs, metadata shadowing, unknown units,
-nonfinite or invalid cells/references/topology and resource exhaustion fail without partial apply.
-The existing 10 MiB compressed, 64 MiB declared expanded ZIP, 256-entry, 100000-row and 64-column
-limits apply. No new engineering coefficient, project JSON schema or acceptance status is added.
+The v1 compatibility reader uses its Project Profile, Units and Load reference declarations only
+to interpret the engineering inputs. It ignores Project information, Options and Resistance and
+publishes the same defaults as v2. The v1 origin conversion uses the existing load-reference owner.
+A user-defined concrete model under a design Code requires a project-specific resistance record
+under the project validator. The compact exchange blocks that case and directs users to Project JSON,
+which preserves the record, including the P16 UMD design-level concrete model and factors.
 
-The Project spreadsheet editor uses the same v1 schema in a transient Gridcraft workbook. Direct file
-import requires plain values; the modeless app window evaluates formulas before whole-project Update.
-Only current finite scalar results enter the v1 reader, and a formula cannot reuse a previous
-literal's precision note. Save retains workbook formulas/layout independently of project state.
-Update publishes all validated inputs together through the existing project-apply boundary;
-no formulas, editor layout or report selections enter project JSON. Project rows are unlocked,
-so invalid structural edits are diagnosed on Update. The nine required sheet names and input
-labels remain the explicit schema, rather than guessed positions or hidden value backups.
-Native Open stages a bounded workbook independently, using its current identity properties at Update.
-Extra helper sheets can calculate inputs and remain in native Save; only the nine project sheets
-enter the project reader. Generic workbooks can be opened/edited/saved, but cannot Update a project
-without the complete declared v1 schema. Original workbook formatting/views/protection are preserved
-on native Open; newly generated project workbooks are unlocked. Minimize/restore keeps the same
-transient document; closing discards it. No window geometry or spreadsheet state is persisted in P-M.
+Missing inputs, conflicting headers, nonfinite values, invalid topology/references and resource
+exhaustion fail atomically. The existing compressed/expanded ZIP, row, column and editor cell bounds
+apply. Direct Import consumes plain cells. The modeless editor supplies current finite scalar
+formula results on Update and retains the formula-bearing draft for native Save. Native Open and
+Save preserve authored styles, formulas and helper sheets of existing files. The editor only
+publishes the declared input sheets. JSON readers and result workbooks use their own contracts.

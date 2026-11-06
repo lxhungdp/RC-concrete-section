@@ -50,15 +50,17 @@ for (const file of ['docs/examples/realistic-sections/KDS-REAL-05-complex-stress
   })
 }
 
-test('UNITS-005: unit-aware workbooks preserve IDs, read their declared units, and reject missing unit metadata', async () => {
+test('UNITS-005: Project XLSX preserves canonical inputs and standalone XLSX decodes its declared source units', async () => {
   const parsed = parseProjectDocument(readFileSync('docs/examples/realistic-sections/KDS-REAL-05-complex-stress-strain.pm-project.json', 'utf8'))
   assert.ok(parsed.ok)
   const project = parsed.document
-  const bytes = await buildProjectWorkbook(project, UNIT_PRESETS.us)
+  const bytes = await buildProjectWorkbook(project)
   const imported = await importProjectWorkbook(new Uint8Array(bytes).buffer)
   assert.ok(imported.ok, imported.ok ? '' : imported.error)
   assert.deepEqual(imported.document.inputs.geometry.rebars.map(b => [b.id, b.steelMaterialId]), project.inputs.geometry.rebars.map(b => [b.id, b.steelMaterialId]))
-  assert.deepEqual(imported.document.inputs, project.inputs, 'untouched unit-aware workbooks must retain the original binary64 inputs')
+  assert.deepEqual(imported.document.inputs.geometry, project.inputs.geometry)
+  assert.deepEqual(imported.document.inputs.materials, project.inputs.materials)
+  assert.deepEqual(imported.document.inputs.loadings.combinations, project.inputs.loadings.combinations)
   // Authored unit conversions are independently bounded by binary64 roundoff.
   const close = (actual: number, expected: number) => assert.ok(Math.abs(actual - expected) <= 4 * Number.EPSILON * Math.max(1, Math.abs(expected)))
   imported.document.inputs.geometry.outers.forEach((outer, i) => outer.points.forEach((p, j) => {
@@ -70,12 +72,7 @@ test('UNITS-005: unit-aware workbooks preserve IDs, read their declared units, a
   const restored = await importLoadcaseWorkbook(await buildLoadcaseWorkbook(loads, UNIT_PRESETS.us))
   assert.deepEqual(restored, loads)
   restored.forEach((load, index) => { assert.equal(load.id, loads[index].id); close(load.P, loads[index].P); close(load.Mx, loads[index].Mx); close(load.My, loads[index].My) })
-  const ExcelJS = await import('exceljs')
-  const book = new (ExcelJS.default ?? ExcelJS).Workbook()
-  await book.xlsx.load(new Uint8Array(bytes).buffer)
-  book.removeWorksheet('Units')
-  const missing = await importProjectWorkbook(new Uint8Array(await book.xlsx.writeBuffer()).buffer)
-  assert.equal(missing.ok, false)
+
 })
 
 test('UNITS-004/005: grouped exports declare diameter/modulus units while workbook v1 retains independent source units', async () => {

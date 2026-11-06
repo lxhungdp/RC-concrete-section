@@ -1,26 +1,27 @@
 import type { Workbook, Worksheet } from 'exceljs'
-import { ANALYSIS_OPTIONS_VERSION, CALCULATION_PROFILES, PM_PROJECT_SCHEMA, demandCheckBasisOf, type PmProjectDocument } from '@pm/project'
+import { CALCULATION_PROFILES, type PmProjectDocument } from '@pm/project'
 import { compileSteelMaterial, steelMaterialIssues } from '@pm/materials'
-import { designBasisIssues, designBasisRequiresOverrideReason } from '@pm/design'
-import { fieldQuantity, parseQuantityUnitSelection, quantityUnit, type UnitContext } from '@pm/units'
+import { fieldQuantity, parseQuantityUnitSelection, parseUnitSelection, quantityUnit, type UnitContext, type UnitSelection } from '@pm/units'
 import { inspectWorkbookArchive, WORKBOOK_MAX_BYTES } from './workbook-archive'
-import { CANONICAL_WORKBOOK_UNITS, encodeQuantityCell, readQuantityCell, readWorkbookUnits, quantityCell } from './workbook-units'
-import { allowedBinding, candidatePaths, canActivateStoredField, CRITERION_LABELS, decodeValue, encodeValue, fieldLabel, fieldRole, indexedInputPath, makeFieldContext, materialBindings, selectedInputPath, STEEL_YIELD_SOURCE, UNIT_LABELS, type FieldContext, type FieldValue } from './project-workbook-fields'
+import { CANONICAL_WORKBOOK_UNITS, encodeQuantityCell, readQuantityCell, writeWorkbookUnits, quantityCell } from './workbook-units'
+import { allowedBinding, candidatePaths, canActivateStoredField, decodeValue, encodeValue, fieldLabel, fieldRole, makeFieldContext, materialBindings, selectedInputPath, STEEL_YIELD_SOURCE, UNIT_LABELS, type FieldContext, type FieldValue } from './project-workbook-fields'
 import { buildProjectWorkbookModel, readProjectWorkbookModel, scanSheet, specFor, fail, WorkbookInputError,
   projectWorkbookFileName, type Block, type InputRow, type ProjectWorkbookResult, type Scalar, type Scope } from './project-workbook-codec'
 
 export { projectWorkbookFileName, type ProjectWorkbookResult }
 export const PROJECT_WORKBOOK_MAX_BYTES = WORKBOOK_MAX_BYTES
-const SUBJECT = 'P-M project inputs / 1'
+const SUBJECT = 'P-M project inputs / 2'
+const LEGACY_SUBJECT = 'P-M project inputs / 1'
 const FORMAT = 'pm-column-input-workbook'
 const MAX_ROWS = 100_000
 export const PROJECT_INPUT_TEXT_COLOR = 'FF00008B'
-export const PROJECT_WORKBOOK_SHEETS = ['Project', 'Section', 'Rebar', 'Material', 'Loadings', 'Load reference', 'Options', 'Resistance', 'Units'] as const
-const SHEETS = PROJECT_WORKBOOK_SHEETS
+export const PROJECT_WORKBOOK_SHEETS = ['Section', 'Rebar', 'Material', 'Loadings'] as const
+const LEGACY_INPUT_SHEETS = ['Project', ...PROJECT_WORKBOOK_SHEETS, 'Load reference', 'Units'] as const
+export const projectWorkbookInputSheets = (subject: string) =>
+  subject === SUBJECT ? PROJECT_WORKBOOK_SHEETS : subject === LEGACY_SUBJECT ? LEGACY_INPUT_SHEETS
+    : fail('WORKBOOK_FORMAT', 'Unsupported P-M Project XLSX format.')
 type GroupDef = { sheet: string; title: string; scope?: Scope; owner?: boolean }
 const GROUPS: Record<string, GroupDef> = {
-  PROJECT: { sheet: 'Project', title: 'Project', scope: 'projectInformation' },
-  PROJECT_METADATA: { sheet: 'Project', title: 'Design', scope: 'project' },
   SECTION_METADATA: { sheet: 'Section', title: 'Section', scope: 'section' },
   OUTER: { sheet: 'Section', title: 'Outer', owner: true }, HOLE: { sheet: 'Section', title: 'Hole', owner: true },
   REBAR: { sheet: 'Rebar', title: 'Rebars' }, MATERIAL: { sheet: 'Material', title: 'Defaults', scope: 'material' },
@@ -28,11 +29,10 @@ const GROUPS: Record<string, GroupDef> = {
   STEEL: { sheet: 'Material', title: 'Steel', scope: 'steel', owner: true },
   CONCRETE_CURVE: { sheet: 'Material', title: 'Concrete curve', owner: true },
   STEEL_CURVE: { sheet: 'Material', title: 'Steel curve', owner: true },
-  LOADINGS: { sheet: 'Loadings', title: 'Loadcases' }, ANALYSIS: { sheet: 'Options', title: 'Sampling', scope: 'analysis' },
-  STATIONS: { sheet: 'Options', title: 'Points' }, RESISTANCE: { sheet: 'Resistance', title: 'Resistance', scope: 'resistance' }
+  LOADINGS: { sheet: 'Loadings', title: 'Loadcases' }
 }
 type SavedGroup = { key: string; keyword: string; paths: string[]; stored: FieldValue[]; bindings: Array<{ target: string; source: string }> }
-type Metadata = { groups: SavedGroup[]; checkBasisPresent: boolean; barSources: Array<{ id: number; source: string }> }
+type Metadata = { groups: SavedGroup[]; barSources: Array<{ id: number; source: string }>; sourceUnits?: UnitSelection }
 type HumanBlock = { keyword: string; args: Scalar[]; rows: InputRow[]; template?: string }
 const keyOf = (block: Pick<Block, 'keyword' | 'args'>) => `${block.keyword}:${block.args.join(':')}`
 const scalar = (value: unknown, context: string): Scalar => {
@@ -48,31 +48,24 @@ const positiveId = (value: Scalar, context: string): number => typeof value === 
 const excel = async () => { const module = await import('exceljs'); return module.default ?? module }
 const clearBook = (book: Workbook) => { for (const sheet of [...book.worksheets]) book.removeWorksheet(sheet.id) }
 const row = (values: Scalar[], notes: InputRow['notes'] = [], context = 'Workbook'): InputRow => ({ values, notes, context })
-const pathOf = (scope: Scope, label: Scalar): string => {
-  const text = string(label, 'Field').replace(/ \([^)]+\)$/, '')
-  if (scope !== 'projectInformation') return text
-  const names: Record<string, string> = { Name: 'meta.name', Client: 'meta.information.client', Company: 'meta.information.company',
-    'Designed by': 'meta.information.designedBy', 'Checked by': 'meta.information.checkedBy', Address: 'meta.information.address', Date: 'meta.information.date' }
-  return names[text] ?? fail('WORKBOOK_CELL', `Unknown project input: ${text}.`)
-}
+const pathOf = (label: Scalar): string => string(label, 'Field').replace(/ \([^)]+\)$/, '')
+const TEMPLATE_PREFIX = 'Input template: '
 const codecHeaders = (keyword: string, units: UnitContext): string[] => {
   if (GROUPS[keyword].scope) return ['Field', 'Value']
   switch (keyword) {
     case 'OUTER': case 'HOLE': return ['X', 'Y', 'ID']
     case 'REBAR': return ['Diameter', 'X', 'Y', 'Steel Material ID', 'ID', 'As', 'As source']
     case 'LOADINGS': return ['Name', 'P', 'Mx', 'My', 'ID']
-    case 'STATIONS': return ['ID', 'Label', 'Type', 'Ratio (1)', 'Strain (1)']
     default: return ['Strain (1)', `Stress (${quantityUnit('stress', units)})`]
   }
 }
-const humanHeaders = (keyword: string, units: UnitContext, fibre: boolean): string[] => {
+const humanHeaders = (keyword: string, units: UnitContext): string[] => {
   const unit = (q: Parameters<typeof quantityUnit>[0]) => quantityUnit(q, units)
   if (GROUPS[keyword].scope) return ['Parameter', 'Value']
   switch (keyword) {
     case 'OUTER': case 'HOLE': return [`x (${unit('length')})`, `y (${unit('length')})`, 'ID']
     case 'REBAR': return [`db (${unit('barDiameter')})`, `x (${unit('length')})`, `y (${unit('length')})`, 'Steel', 'ID', `As (${unit('area')})`]
     case 'LOADINGS': return ['Name', `P (${unit('force')})`, `Mx (${unit('moment')})`, `My (${unit('moment')})`, 'ID']
-    case 'STATIONS': return fibre ? ['No.', 'Name', 'Criterion', 'Value'] : ['Criterion', 'Value']
     default: return ['ε (1)', `σ (${unit('stress')})`]
   }
 }
@@ -94,7 +87,7 @@ export function formatProjectWorkbook(book: Workbook): void {
         cell.style = { ...cell.style, font: {}, fill: { type: 'pattern', pattern: 'none' }, border: {} }
         // Cached labels may guide appearance only. They never become validated project inputs.
         const value = cell.formula ? cell.result : cell.value
-        if (value !== null && value !== undefined && value !== '') cells.push({ col, text: String(value).trim() })
+        if (value !== null && value !== undefined && value !== '' && !String(value).startsWith(TEMPLATE_PREFIX)) cells.push({ col, text: String(value).trim() })
       })
       if (!cells.length || cells.length === 1 && cells[0].text.startsWith('#')) return
       const group = Object.values(GROUPS).find(def => def.sheet === sheet.name && def.title.toUpperCase() === cells[0].text.toUpperCase() && cells.length === (def.owner ? 2 : 1))
@@ -116,7 +109,7 @@ export function formatProjectWorkbook(book: Workbook): void {
 }
 const caption = (sheet: Worksheet) => {
   sheet.addRow([`# ${sheet.name}`])
-  sheet.views = [{ state: 'frozen', ySplit: 3, showGridLines: false }]
+  sheet.views = [{ state: 'normal', showGridLines: false }]
   sheet.getColumn(1).width = 30; sheet.getColumn(2).width = 36
   for (let i = 3; i <= 6; i++) sheet.getColumn(i).width = 23
 }
@@ -124,13 +117,11 @@ const header = (sheet: Worksheet, values: Scalar[]) => {
   const added = sheet.addRow(values)
   return added
 }
-const inputs = (sheet: Worksheet, values: Scalar[], notes: InputRow['notes']) => {
+const inputs = (sheet: Worksheet, values: Scalar[]) => {
   const added = sheet.addRow(values)
   added.height = 18
   for (let i = 0; i < values.length; i++) {
     const cell = added.getCell(i + 1)
-    const note = notes[i]
-    if (note !== undefined) cell.note = note
     cell.alignment = { vertical: 'middle', wrapText: typeof values[i] === 'string' }
     cell.numFmt = typeof values[i] === 'number' ? Number.isInteger(values[i]) ? '0' : '0.###############' : '@'
     if (typeof values[i] === 'string') {
@@ -141,74 +132,62 @@ const inputs = (sheet: Worksheet, values: Scalar[], notes: InputRow['notes']) =>
   }
 }
 const fieldContext = (block: Block, profileId: string): FieldContext => makeFieldContext(
-  block.rows.map(r => ({ path: pathOf(GROUPS[block.keyword].scope!, r.values[0]), value: r.values[1] })), profileId)
+  block.rows.map(r => ({ path: pathOf(r.values[0]), value: r.values[1] })), profileId)
 
 /** Engineering input sheets; readonly transport identity is stored once in document properties. */
-export async function buildProjectWorkbook(project: PmProjectDocument, units: UnitContext = CANONICAL_WORKBOOK_UNITS): Promise<Uint8Array> {
+export async function buildProjectWorkbook(project: PmProjectDocument, selection: UnitSelection = CANONICAL_WORKBOOK_UNITS): Promise<Uint8Array> {
+  const units = parseUnitSelection(selection)
   const book = await buildProjectWorkbookModel(project, units)
-  const declared = readWorkbookUnits(book, FORMAT)
-  const source = ['Project', 'Section', 'Rebar', 'Material', 'Loadings', 'Analysis', 'Resistance'].flatMap(name => scanSheet(book, name, declared))
+  const source = ['Section', 'Rebar', 'Material', 'Loadings', 'Analysis'].flatMap(name => scanSheet(book, name, units))
   source.sort((a, b) => Number(b.keyword === 'SECTION_METADATA') - Number(a.keyword === 'SECTION_METADATA'))
-  const reference = book.getWorksheet('Load reference')!
-  const offsets = [4, 5].map(n => ({ value: scalar(reference.getCell(n, 2).value, 'Load reference'), note: reference.getCell(n, 2).note }))
-  const meta: Metadata = { groups: [], checkBasisPresent: project.inputs.loadings.checkBasis !== undefined, barSources: [] }
-  const fibre = project.inputs.analysis.methodId === 'strain-domain-surface-v1'
+  const meta: Metadata = { groups: [], barSources: [], sourceUnits: units }
   clearBook(book)
-  for (const name of SHEETS) caption(book.addWorksheet(name))
+  for (const name of PROJECT_WORKBOOK_SHEETS) caption(book.addWorksheet(name))
   for (const block of source) {
     const def = GROUPS[block.keyword]
     const sheet = book.getWorksheet(def.sheet)!
     const output: InputRow[] = []
     if (def.scope) {
-      let context = fieldContext(block, project.inputs.calculationProfileId)
-      if (block.keyword === 'PROJECT_METADATA' && !meta.checkBasisPresent) context = makeFieldContext([...context.fields, { path: 'inputs.loadCheckBasis', value: demandCheckBasisOf(project.inputs.loadings) }], context.profileId)
+      const context = fieldContext(block, project.inputs.calculationProfileId)
       const bindings = materialBindings(def.scope, context)
       const saved: SavedGroup = { key: keyOf(block), keyword: block.keyword, paths: [], stored: [], bindings }
-      const sourceRows = new Map(block.rows.map(r => [pathOf(def.scope!, r.values[0]), r]))
+      if (block.keyword === 'MATERIAL') {
+        output.push(row(['Profile', encodeValue('inputs.calculationProfileId', project.inputs.calculationProfileId)]))
+      }
       for (const field of context.fields) {
-        const original = sourceRows.get(field.path)
-        const spec = specFor(def.scope, field.path, 'Export', declared)
+        const spec = specFor(def.scope, field.path, 'Export', units)
         const role = fieldRole(def.scope, field.path, context)
         if (role === 'derived' || bindings.some(binding => binding.target === field.path)) continue
         if (role === 'stored' || spec.type === 'array' || spec.type === 'object') {
           const quantity = fieldQuantity(field.path)
-          const value = quantity && typeof field.value === 'number' ? readQuantityCell(quantity, field.value, declared, original?.notes[1]) : field.value
-          saved.stored.push({ path: field.path, value })
+          const source = block.rows.find(item => pathOf(item.values[0]) === field.path)
+          saved.stored.push(quantity && typeof field.value === 'number'
+            ? { ...field, value: readQuantityCell(quantity, field.value, units, source?.notes[1]) }
+            : field)
         } else {
           saved.paths.push(field.path)
-          output.push(row([fieldLabel(def.scope, field.path, context, declared), encodeValue(field.path, field.value)], [undefined, original?.notes[1]]))
+          output.push(row([fieldLabel(def.scope, field.path, context, units), encodeValue(field.path, field.value)]))
         }
       }
       meta.groups.push(saved)
-    } else {
+    } else if (block.keyword === 'REBAR') {
       for (const item of block.rows) {
-        if (block.keyword === 'REBAR') {
-          if (typeof item.values[4] === 'number' && typeof item.values[6] === 'string') meta.barSources.push({ id: item.values[4], source: item.values[6] })
-          output.push(row(item.values.slice(0, 6), item.notes.slice(0, 6)))
-        } else if (block.keyword === 'STATIONS') {
-          const type = string(item.values[2], 'Point criterion'), label = CRITERION_LABELS[type]
-          if (!label) fail('WORKBOOK_CELL', `Unsupported point criterion: ${type}.`)
-          const value = item.values[3] ?? item.values[4]
-          output.push(row(fibre ? [item.values[0], item.values[1], label, value] : [label, value]))
-        } else output.push(item)
+        if (typeof item.values[4] === 'number' && typeof item.values[6] === 'string') meta.barSources.push({ id: item.values[4], source: item.values[6] })
+        output.push(row(item.values.slice(0, 6)))
       }
-    }
+    } else output.push(...block.rows)
     if (!output.length && def.scope) continue
     if (sheet.rowCount > 1) sheet.addRow([])
     const marker = header(sheet, [def.title, ...block.args])
-    marker.getCell(1).note = `Input template: ${keyOf(block)}`
-    header(sheet, humanHeaders(block.keyword, declared, fibre))
-    output.forEach(item => inputs(sheet, item.values, item.notes))
+    if (def.owner && def.scope) {
+      // A copied material table carries its template identity even when its material ID changes.
+      marker.getCell(3).value = TEMPLATE_PREFIX + keyOf(block)
+      sheet.getColumn(3).hidden = true
+    }
+    header(sheet, humanHeaders(block.keyword, units))
+    output.forEach(item => inputs(sheet, item.values))
   }
   for (const [sheetName, column] of [['Section', 3], ['Rebar', 5], ['Loadings', 5]] as const) book.getWorksheet(sheetName)!.getColumn(column).hidden = true
-  const frame = book.getWorksheet('Load reference')!
-  frame.views = [{ state: 'frozen', ySplit: 2, showGridLines: false }]
-  header(frame, ['Parameter', 'Value'])
-  offsets.forEach((offset, i) => inputs(frame, [`${i === 0 ? 'xO' : 'yO'} (${quantityUnit('length', declared)})`, offset.value], [undefined, offset.note]))
-  const unitSheet = book.getWorksheet('Units')!
-  unitSheet.views = [{ state: 'frozen', ySplit: 2, showGridLines: false }]
-  header(unitSheet, ['Quantity', 'Unit'])
-  for (const [quantity, unit] of Object.entries(declared.groups)) inputs(unitSheet, [UNIT_LABELS[quantity], unit], [])
   book.subject = SUBJECT
   book.description = JSON.stringify(meta)
   formatProjectWorkbook(book)
@@ -218,18 +197,26 @@ export async function buildProjectWorkbook(project: PmProjectDocument, units: Un
   return bytes
 }
 
-// The v1 reader normalizes this one human-facing format through the shared field codec.
+// Both versions normalize the input tables through the same field codec.
 const keysExactly = (value: Record<string, unknown>, keys: string[], context: string) => {
   if (Object.keys(value).sort().join('|') !== [...keys].sort().join('|')) fail('WORKBOOK_FORMAT', `${context}: unsupported metadata fields.`)
 }
-function metadataOf(book: Workbook): Metadata {
-  if (book.subject !== SUBJECT) return fail('WORKBOOK_FORMAT', 'Only P-M project input workbook v1 is supported.')
+function metadataOf(book: Workbook): Metadata & { legacyDiameterOnly: boolean } {
+  projectWorkbookInputSheets(book.subject)
+  const legacy = book.subject === LEGACY_SUBJECT
   if (typeof book.description !== 'string' || new TextEncoder().encode(book.description).length > WORKBOOK_MAX_BYTES) return fail('WORKBOOK_FORMAT', 'Missing or oversized input identity.')
   const raw: unknown = JSON.parse(book.description)
   if (!record(raw)) return fail('WORKBOOK_FORMAT', 'Missing input identity.')
-  keysExactly(raw, ['groups', 'checkBasisPresent', 'barSources'], 'Workbook')
-  if (typeof raw.checkBasisPresent !== 'boolean') return fail('WORKBOOK_FORMAT', 'Invalid check-basis identity.')
-  const groups: SavedGroup[] = array(raw.groups, 'Groups').map(value => {
+  const hasSourceUnits = !legacy && Object.hasOwn(raw, 'sourceUnits')
+  keysExactly(raw, legacy ? ['groups', 'checkBasisPresent', 'barSources']
+    : hasSourceUnits ? ['groups', 'barSources', 'sourceUnits'] : ['groups', 'barSources'], 'Workbook')
+  const sourceUnits = hasSourceUnits ? parseUnitSelection(raw.sourceUnits) : undefined
+  const declaredGroups = array(raw.groups, 'Groups')
+  const legacyDiameterOnly = legacy && declaredGroups.some(group => record(group) && group.keyword === 'PROJECT_METADATA' &&
+    Array.isArray(group.stored) && group.stored.some(field => record(field) && field.path === 'version' && field.value === 1))
+  const groups: SavedGroup[] = declaredGroups.filter(value =>
+    !legacy || !record(value) || !['PROJECT', 'PROJECT_METADATA', 'ANALYSIS', 'RESISTANCE'].includes(String(value.keyword))
+  ).map(value => {
     if (!record(value)) return fail('WORKBOOK_FORMAT', 'Invalid input group identity.')
     keysExactly(value, ['key', 'keyword', 'paths', 'stored', 'bindings'], 'Group')
     const keyword = string(value.keyword, 'Group'), key = string(value.key, 'Group')
@@ -258,12 +245,16 @@ function metadataOf(book: Workbook): Metadata {
     return { id: positiveId(scalar(value.id, 'As source'), 'As source'), source: string(value.source, 'As source') }
   })
   if (new Set(barSources.map(source => source.id)).size !== barSources.length) return fail('WORKBOOK_FORMAT', 'Duplicate As source identity.')
-  return { groups, barSources, checkBasisPresent: raw.checkBasisPresent }
+  return { groups, barSources, sourceUnits, legacyDiameterOnly }
 }
-function parameterRows(sheet: Worksheet): InputRow[] {
+function parameterRows(sheet: Worksheet, only?: string): InputRow[] {
+  if (sheet.state !== 'visible' || sheet.rowCount > MAX_ROWS || sheet.columnCount > 64) {
+    return fail('WORKBOOK_FORMAT', 'Missing or oversized legacy input table.')
+  }
   const rows: InputRow[] = []
   let columns: [number, number] | undefined
   sheet.eachRow(source => {
+    if (only && !(source.values as unknown[]).includes(only) && !(source.values as unknown[]).includes('Parameter')) return
     const cells: Array<{ col: number; value: Scalar }> = []
     source.eachCell((cell, col) => { const value = scalar(cell.value, `${sheet.name}!${cell.address}`); if (value !== null && value !== '') cells.push({ col, value }) })
     if (!cells.length || (cells.length === 1 && String(cells[0].value).trimStart().startsWith('#'))) return
@@ -295,9 +286,9 @@ function readUnits(book: Workbook): UnitContext {
   })
   return parseQuantityUnitSelection({ version: 1, groups })
 }
-function scanHuman(book: Workbook, units: UnitContext, fibre: boolean): HumanBlock[] {
+function scanHuman(book: Workbook, units: UnitContext): HumanBlock[] {
   const result: HumanBlock[] = []
-  for (const name of SHEETS.filter(name => name !== 'Units' && name !== 'Load reference')) {
+  for (const name of PROJECT_WORKBOOK_SHEETS) {
     const sheet = book.getWorksheet(name)
     if (!sheet || sheet.state !== 'visible') fail('WORKBOOK_FORMAT', `Missing input sheet: ${name}.`)
     if (sheet!.rowCount > MAX_ROWS || sheet!.columnCount > 64) fail('WORKBOOK_RESOURCE_LIMIT', `${name}: input sheet exceeds the size limit.`)
@@ -306,19 +297,22 @@ function scanHuman(book: Workbook, units: UnitContext, fibre: boolean): HumanBlo
       const cells: Array<{ col: number; value: Scalar }> = []
       source.eachCell((cell, col) => { const value = scalar(cell.value, `${name}!${cell.address}`); if (value !== null && value !== '') cells.push({ col, value }) })
       if (!cells.length || (cells.length === 1 && String(cells[0].value).trimStart().startsWith('#'))) return
-      const def = Object.entries(GROUPS).find(([, def]) => def.sheet === name && def.title.toUpperCase() === String(cells[0].value).trim().toUpperCase() && cells.length === (def.owner ? 2 : 1))
+      const templateCell = cells.find(cell => typeof cell.value === 'string' && cell.value.startsWith(TEMPLATE_PREFIX))
+      const markerCells = templateCell ? cells.filter(cell => cell !== templateCell) : cells
+      const def = Object.entries(GROUPS).find(([, def]) => def.sheet === name && def.title.toUpperCase() === String(markerCells[0]?.value).trim().toUpperCase() && markerCells.length === (def.owner ? 2 : 1))
       if (def) {
         if (active && !columns) fail('WORKBOOK_FORMAT', `${name}: missing table headers.`)
         const [keyword, definition] = def
         const args = definition.owner ? [positiveId(cells[1].value, `${name} ${definition.title}`)] : []
         const note = source.getCell(cells[0].col).note
         const noteText = typeof note === 'string' ? note : note?.texts?.map(part => part.text ?? '').join('') ?? ''
-        const template = noteText.startsWith('Input template: ') ? noteText.slice('Input template: '.length) : undefined
+        const template = templateCell ? String(templateCell.value).slice(TEMPLATE_PREFIX.length)
+          : book.subject === LEGACY_SUBJECT && noteText.startsWith(TEMPLATE_PREFIX) ? noteText.slice(TEMPLATE_PREFIX.length) : undefined
         active = { keyword, args, rows: [], ...(template ? { template } : {}) }; result.push(active); columns = undefined
         return
       }
       if (!active) fail('WORKBOOK_FORMAT', `${name} row ${source.number}: input outside a named table.`)
-      const expected = humanHeaders(active!.keyword, units, fibre)
+      const expected = humanHeaders(active!.keyword, units)
       const normalized = (value: unknown) => String(value ?? '').trim().toUpperCase()
       const headerColumns = expected.map(label => cells.find(cell => normalized(cell.value) === normalized(label))?.col)
       // Optional technical identity hints may be hidden/removed. They never supply engineering defaults.
@@ -326,10 +320,10 @@ function scanHuman(book: Workbook, units: UnitContext, fibre: boolean): HumanBlo
       if (expected.every((label, i) => headerColumns[i] !== undefined || optional(label)) && cells.every(cell => expected.some(label => normalized(label) === normalized(cell.value)))) {
         columns = headerColumns.map(col => col ?? 0); return
       }
-      if (!columns) fail('WORKBOOK_FORMAT', `${name} row ${source.number}: missing headers or units disagree with Units.`)
+      if (!columns) fail('WORKBOOK_FORMAT', `${name} row ${source.number}: missing headers or mismatched source units.`)
       if (cells.some(cell => !columns!.includes(cell.col))) fail('WORKBOOK_FORMAT', `${name} row ${source.number}: data outside input columns.`)
       active!.rows.push(row(columns!.map(col => col ? scalar(source.getCell(col).value, `${name} row ${source.number}`) : null),
-        columns!.map(col => col ? source.getCell(col).note : undefined), `${name} row ${source.number}`))
+        columns!.map(col => col && book.subject === LEGACY_SUBJECT ? source.getCell(col).note : undefined), `${name} row ${source.number}`))
     })
     if (active && !columns) fail('WORKBOOK_FORMAT', `${name}: missing table headers.`)
   }
@@ -360,12 +354,8 @@ function contextFor(saved: SavedGroup, block: HumanBlock, profileId: string): Fi
 function decodeFields(block: HumanBlock, saved: SavedGroup, profileId: string, units: UnitContext): InputRow[] {
   const scope = GROUPS[block.keyword].scope!
   const context = contextFor(saved, block, profileId)
-  const fibre = CALCULATION_PROFILES.find(profile => profile.id === profileId)?.mechanics === 'stress-strain-integration'
-  const extra = candidatePaths(scope).filter(path => scope !== 'analysis' || (fibre
-    ? !path.startsWith('neutralAxisStations.') && !['directions.seedCount', 'directions.startDeg'].includes(path)
-    : !path.startsWith('stations.') && !path.startsWith('directions.seed.') && !path.startsWith('mesh.')))
-  const indexed = block.rows.flatMap(item => { const path = typeof item.values[0] === 'string' ? indexedInputPath(scope, item.values[0]) : undefined; return path ? [path] : [] })
-  const paths = [...new Set([...saved.paths, ...extra, ...indexed])]
+  const extra = candidatePaths(scope)
+  const paths = [...new Set([...saved.paths, ...extra])]
   const inputPaths = new Set(saved.paths)
   const labels = new Map<string, string[]>()
   for (const path of paths) {
@@ -388,14 +378,8 @@ function decodeFields(block: HumanBlock, saved: SavedGroup, profileId: string, u
     if (scope === 'steel' && path === 'limits.epsU' && (value === null || value === '')) { cleared.add(path); continue }
     decoded.set(path, row([spec.label, value], item.notes, item.context))
   }
-  // Required v1 controls are independent of the untrusted presence manifest.
-  const required = scope === 'project' ? ['inputs.calculationProfileId', 'inputs.loadCheckBasis']
-    : scope === 'analysis' && fibre ? ['mesh.sizing.type', 'mesh.maxCells', 'mesh.maxSubdivision',
-      context.fields.find(field => field.path === 'mesh.sizing.type')?.value === 'fixed' ? 'mesh.sizing.cellSize' : 'mesh.sizing.seedDivisions'] : []
-  for (const path of required) if (!decoded.has(path)) fail('WORKBOOK_CELL', `${GROUPS[block.keyword].title}: missing ${fieldLabel(scope, path, context, units)}.`)
   for (const path of saved.paths) {
-    const indexed = /^(directions\.seed\.anglesDeg|directions\.refinement\.probe\.stationIds)\.\d+$/.test(path)
-    if (!indexed && selectedInputPath(scope, path, context) && !decoded.has(path) && !cleared.has(path)) fail('WORKBOOK_CELL', `${GROUPS[block.keyword].title}: missing ${fieldLabel(scope, path, context, units)}.`)
+    if (selectedInputPath(scope, path, context) && !decoded.has(path) && !cleared.has(path)) fail('WORKBOOK_CELL', `${GROUPS[block.keyword].title}: missing ${fieldLabel(scope, path, context, units)}.`)
   }
   for (const field of saved.stored) {
     const spec = specFor(scope, field.path, 'Readonly input identity', units)
@@ -429,7 +413,7 @@ function decodeFields(block: HumanBlock, saved: SavedGroup, profileId: string, u
   return [...decoded.values()]
 }
 function addNormalized(book: Workbook, keyword: string, args: Scalar[], data: InputRow[], units: UnitContext) {
-  const sheetName = keyword === 'PROJECT_METADATA' || keyword === 'SECTION_METADATA' || keyword === 'ANALYSIS' || keyword === 'STATIONS' ? 'Analysis' : GROUPS[keyword].sheet
+  const sheetName = keyword === 'SECTION_METADATA' ? 'Analysis' : GROUPS[keyword].sheet
   const sheet = book.getWorksheet(sheetName)!
   if (sheet.rowCount) sheet.addRow([])
   sheet.addRow(keyword === 'OUTER' || keyword === 'HOLE' ? [`${keyword.toLowerCase()} #${args[0]}`] : [keyword, ...args])
@@ -437,36 +421,40 @@ function addNormalized(book: Workbook, keyword: string, args: Scalar[], data: In
   data.forEach(item => { const added = sheet.addRow(item.values); item.notes.forEach((note, i) => { if (note !== undefined) added.getCell(i + 1).note = note }) })
 }
 
-/** Checks readonly v1 identity without evaluating or trusting formula caches. */
+/** Checks readonly format identity without evaluating or trusting formula caches. */
 export function projectWorkbookProperties(book: Workbook): Readonly<{ subject: string; description: string }> {
   metadataOf(book)
   return { subject: book.subject, description: book.description }
 }
 
-/** Consumes an in-memory plain-value workbook through the same v1 validator as file import. */
+/** Consumes an in-memory plain-value workbook through the same validator as file import. */
 export function readProjectWorkbookInputs(book: Workbook): ProjectWorkbookResult {
   try {
-    const meta = metadataOf(book), units = readUnits(book)
-    if (book.worksheets.some(sheet => !SHEETS.some(name => name === sheet.name))) fail('WORKBOOK_FORMAT', 'Unexpected worksheet; keep one project input source.')
-    const projectSheet = book.getWorksheet('Project')
-    if (!projectSheet) fail('WORKBOOK_FORMAT', 'Missing Project sheet.')
-    const profileRows = parameterRows(projectSheet!).filter(row => row.values[0] === 'Profile')
+    const meta = metadataOf(book)
+    const legacy = book.subject === LEGACY_SUBJECT
+    const units = legacy ? readUnits(book) : meta.sourceUnits ?? CANONICAL_WORKBOOK_UNITS
+    const blocks = scanHuman(book, units)
+    const material = blocks.find(block => block.keyword === 'MATERIAL')
+    const projectSheet = legacy ? book.getWorksheet('Project') : undefined
+    if (legacy && !projectSheet) fail('WORKBOOK_FORMAT', 'Missing legacy Project profile.')
+    const profileRows = (legacy ? parameterRows(projectSheet!, 'Profile') : material?.rows ?? []).filter(row => row.values[0] === 'Profile')
     if (profileRows.length !== 1) fail('WORKBOOK_CELL', 'Exactly one Profile input is required.')
+    if (!legacy && material) material.rows = material.rows.filter(row => row.values[0] !== 'Profile')
     const profileId = string(decodeValue('inputs.calculationProfileId', profileRows[0].values[1]), 'Profile')
     const profile = CALCULATION_PROFILES.find(profile => profile.id === profileId)
-    if (!profile) fail('WORKBOOK_CELL', 'Unsupported calculation profile.')
-    const fibre = profile!.mechanics === 'stress-strain-integration'
-    const blocks = scanHuman(book, units, fibre)
-    const frame = book.getWorksheet('Load reference')
-    if (!frame) fail('WORKBOOK_FORMAT', 'Missing Load reference sheet.')
+    if (!profile) return fail('WORKBOOK_CELL', 'Unsupported calculation profile.')
+    // Legacy coordinates need their old origin to recover the centroidal actions.
     const offsets: InputRow[] = []
-    parameterRows(frame!).forEach(r => {
-      const key = r.values[0]
-      const axis = ['xO', 'yO'].find(axis => key === `${axis} (${quantityUnit('length', units)})`)
-      if (!axis || offsets.some(item => item.values[0] === axis)) fail('WORKBOOK_CELL', 'Load reference: unknown, duplicate or mismatched-unit offset.')
-      offsets.push(row([axis!, r.values[1]], r.notes))
-    })
-    if (offsets.length !== 2) fail('WORKBOOK_CELL', 'Load reference requires xO and yO.')
+    if (legacy) {
+      const frame = book.getWorksheet('Load reference')
+      if (!frame) return fail('WORKBOOK_FORMAT', 'Missing legacy Load reference sheet.')
+      for (const r of parameterRows(frame)) {
+        const axis = ['xO', 'yO'].find(axis => r.values[0] === `${axis} (${quantityUnit('length', units)})`)
+        if (!axis || offsets.some(item => item.values[0] === axis)) fail('WORKBOOK_CELL', 'Load reference: unknown, duplicate or mismatched-unit offset.')
+        offsets.push(row([axis!, r.values[1]], r.notes))
+      }
+      if (offsets.length !== 2) fail('WORKBOOK_CELL', 'Load reference requires xO and yO.')
+    }
     const normalized: Array<{ block: HumanBlock; data: InputRow[] }> = []
     const barSources = new Map(meta.barSources.map(source => [source.id, source.source]))
     const seen = new Set<string>()
@@ -477,38 +465,25 @@ export function readProjectWorkbookInputs(book: Workbook): ProjectWorkbookResult
         seen.add(key)
         const saved = requiredGroup(meta, block), data = decodeFields(block, saved, profileId, units)
         normalized.push({ block, data })
-      } else if (block.keyword === 'STATIONS') {
-        const allowed = fibre ? ['c-over-c1', 'depth-ratio', 'steel-stress-ratio', 'steel-strain', 'bar-tension-yield-ratio', 'strength-reduction-transition-ratio', 'strength-reduction-post-transition'] : ['depth-ratio', 'bar-tension-yield-ratio', 'extreme-tension-strain']
-        normalized.push({ block, data: block.rows.map(item => {
-          const criterion = fibre ? item.values[2] : item.values[0], value = fibre ? item.values[3] : item.values[1]
-          const type = allowed.find(type => CRITERION_LABELS[type] === criterion)
-          if (!type) fail('WORKBOOK_CELL', `${item.context}: unknown point criterion.`)
-          const strain = ['steel-strain', 'extreme-tension-strain', 'strength-reduction-post-transition'].includes(type!)
-          return row([fibre ? item.values[0] : null, fibre ? item.values[1] : null, type!, strain ? null : value, strain ? value : null])
-        }) })
       } else if (block.keyword === 'REBAR') normalized.push({ block, data: block.rows.map(item => row([...item.values, typeof item.values[4] === 'number' ? barSources.get(item.values[4]) ?? null : null], item.notes)) })
       else normalized.push({ block, data: block.rows })
     }
-    for (const keyword of ['PROJECT', 'PROJECT_METADATA', 'SECTION_METADATA', 'MATERIAL', 'CONCRETE', 'ANALYSIS', 'RESISTANCE']) {
+    for (const keyword of ['SECTION_METADATA', 'REBAR', 'MATERIAL', 'CONCRETE', 'LOADINGS']) {
       if (!normalized.some(item => item.block.keyword === keyword)) fail('WORKBOOK_FORMAT', `Missing ${GROUPS[keyword].title} inputs.`)
     }
-    const analysis = normalized.find(item => item.block.keyword === 'ANALYSIS')!
-    const modeRow = analysis.data.find(item => item.values[0] === 'samplingMode')
-    const mode = modeRow?.values[1]
-    if (mode !== 'fixed' && mode !== 'adaptive') fail('WORKBOOK_CELL', 'Sampling requires Fixed or Adaptive mode.')
-    analysis.data.push(row(['optionsVersion', ANALYSIS_OPTIONS_VERSION]), row(['methodId', fibre ? 'strain-domain-surface-v1' : 'equivalent-block-surface-v1']),
-      row([fibre ? 'stations.refinement.type' : 'neutralAxisStations.refinement.type', mode!]), row(['directions.refinement.type', mode!]))
-    const identity = normalized.find(item => item.block.keyword === 'PROJECT_METADATA')!
-    identity.data.push(row(['schema', PM_PROJECT_SCHEMA]))
-    if (!meta.checkBasisPresent) identity.data = identity.data.filter(item => !(item.values[0] === 'inputs.loadCheckBasis' && item.values[1] === 'proportional3D'))
     clearBook(book)
-    for (const name of ['Project', 'Section', 'Rebar', 'Material', 'Loadings', 'Analysis', 'Resistance']) book.addWorksheet(name)
+    for (const name of [...PROJECT_WORKBOOK_SHEETS, 'Analysis']) book.addWorksheet(name)
     for (const item of normalized) addNormalized(book, item.block.keyword, item.block.args, item.data, units)
-    const ref = book.addWorksheet('Load reference')
-    ref.addRows([['LOAD_REFERENCE', 1], ['Moment basis', 'load-reference'], ['Kind', 'centroid-offset']])
-    offsets.forEach(item => { const r = ref.addRow([`${item.values[0] === 'xO' ? 'Offset X' : 'Offset Y'} (${quantityUnit('length', units)})`, item.values[1]]); if (item.notes[1]) r.getCell(2).note = item.notes[1] })
-    const unitSheet = book.addWorksheet('Units'); unitSheet.addRows([['pm-presentation-units', 1, FORMAT], ['Quantity', 'Unit'], ...Object.entries(units.groups)])
-    const result = readProjectWorkbookModel(book)
+    if (legacy) {
+      const ref = book.addWorksheet('Load reference')
+      ref.addRows([['LOAD_REFERENCE', 1], ['Moment basis', 'load-reference'], ['Kind', 'centroid-offset']])
+      for (const item of offsets) {
+        const added = ref.addRow([`${item.values[0] === 'xO' ? 'Offset X' : 'Offset Y'} (${quantityUnit('length', units)})`, item.values[1]])
+        if (item.notes[1]) added.getCell(2).note = item.notes[1]
+      }
+    }
+    writeWorkbookUnits(book, units, FORMAT)
+    const result = readProjectWorkbookModel(book, profile.id, meta.legacyDiameterOnly)
     if (!result.ok) return result
     for (const block of blocks.filter(block => block.keyword === 'STEEL')) {
       if (!requiredGroup(meta, block).bindings.some(binding => binding.source === STEEL_YIELD_SOURCE)) continue
@@ -519,11 +494,6 @@ export function readProjectWorkbookInputs(book: Workbook): ProjectWorkbookResult
       const issues = steelMaterialIssues(material)
       if (issues.length) fail('PROJECT_INPUT', issues.map(issue => `${issue.path}: ${issue.message}`).join(' '))
     }
-    const basis = result.document.inputs.design
-    // An authored coefficient override retains the owner's reason requirement and draft status.
-    if (designBasisRequiresOverrideReason({ ...basis, modified: true })) basis.modified = true
-    const issues = designBasisIssues(basis)
-    if (issues.length) fail('PROJECT_INPUT', issues.join(' '))
     return result
   } catch (error) {
     return { ok: false, code: error instanceof WorkbookInputError ? error.code : 'WORKBOOK_FORMAT', error: error instanceof Error ? error.message : 'Could not read the project workbook.' }

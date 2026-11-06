@@ -1,8 +1,8 @@
 import { CANONICAL_UNITS, fieldQuantity, fromCanonical, toCanonical, quantityUnit, type Quantity, type UnitContext } from '@pm/units'
 import { CANONICAL_WORKBOOK_UNITS, quantityCell, readQuantityCell, writeQuantityCell, readWorkbookUnits, writeWorkbookUnits, type QuantityCell } from './workbook-units'
-import { createDesignBasisForCalculationProfile, createLoadCombination, loadReferenceOf, resultantAtCentroid, resultantAtLoadReference, parseProjectDocument, projectDocumentFileName, type ParseProjectResult, type PmProjectDocument } from '@pm/project'
-import { readLoadReferenceSheet, writeLoadReferenceSheet } from './loadcase-xlsx'
-import { allocateIds, rebarAreaSource } from '@pm/geometry'
+import { CENTROID_LOAD_REFERENCE, calculationProfile, createAnalysisOptionsForProfile, createDesignBasisForCalculationProfile, createEmptyLoadingsInput, createEmptyProjectDocument, createProjectDocument, createLoadCombination, resultantAtCentroid, type CalculationProfileId, parseProjectDocument, projectDocumentFileName, type ParseProjectResult, type PmProjectDocument } from '@pm/project'
+import { readLoadReferenceSheet } from './loadcase-xlsx'
+import { allocateIds, parseRebarAreaSource, rebarAreaSource, withStoredRebarArea } from '@pm/geometry'
 import type { CellValue, Workbook, Worksheet } from 'exceljs'
 
 // Private flat field model shared by the v1 presenter and validator. This is not a file reader.
@@ -155,9 +155,9 @@ const blockHeaders: Record<string, string[]> = {
   ANALYSIS: FIELD_HEADERS, STATIONS: STATION_HEADERS, RESISTANCE: FIELD_HEADERS
 }
 const sheetKeywords: Record<string, string[]> = {
-  Project: ['PROJECT'], Section: [], Rebar: ['REBAR'],
+  Section: [], Rebar: ['REBAR'],
   Material: ['MATERIAL', 'CONCRETE', 'STEEL', 'CONCRETE_CURVE', 'STEEL_CURVE'],
-  Loadings: ['LOADINGS'], Analysis: ['PROJECT_METADATA', 'SECTION_METADATA', 'ANALYSIS', 'STATIONS'], Resistance: ['RESISTANCE']
+  Loadings: ['LOADINGS'], Analysis: ['SECTION_METADATA']
 }
 const optionalColumns = (keyword: string) => ['OUTER', 'HOLE', 'LOADINGS'].includes(keyword) ? ['ID']
   : keyword === 'REBAR' ? ['ID', 'Steel Material ID', 'As source'] : []
@@ -193,20 +193,18 @@ const withoutCurve = (material: PmProjectDocument['inputs']['materials']['concre
   }
   return copy
 }
-const assertInputStatus = (project: PmProjectDocument) => {
-  const declared = createDesignBasisForCalculationProfile(project.inputs.calculationProfileId).verificationStatus
-  if (project.inputs.design.verificationStatus !== declared) {
-    return fail('WORKBOOK_CELL', `Resistance: input workbooks cannot grant reviewed/verified status. The selected profile declares ${declared}.`)
+const assertDefaultResistanceCompatible = (profileId: CalculationProfileId, model: unknown) => {
+  const profile = calculationProfile(profileId)
+  if (profile.code !== null && profile.concreteModels.some(item => item.materialModelType === model && item.source === 'user-defined')) {
+    fail('PROJECT_INPUT', 'This concrete model needs its project resistance settings. Use Project JSON to transfer it.')
   }
 }
 export const buildProjectWorkbookModel = async (project: PmProjectDocument, units: UnitContext = CANONICAL_WORKBOOK_UNITS): Promise<Workbook> => {
-  assertInputStatus(project)
   const ExcelJS = await excelModule()
   const book = new ExcelJS.Workbook()
   book.creator = 'P-M Column Designer'
-  const { geometry, materials, loadings, analysis, design, calculationProfileId } = project.inputs
-  addBlock(sheet(book, 'Project', 'Edit values; save as .xlsx.', [20, 65]), 'PROJECT', [],
-    flatten('projectInformation', { meta: { name: project.meta.name, information: project.meta.information } }))
+  assertDefaultResistanceCompatible(project.inputs.calculationProfileId, project.inputs.materials.concrete.stressStrain.type)
+  const { geometry, materials, loadings } = project.version === 1 ? createProjectDocument(project.inputs).inputs : project.inputs
   const section = sheet(book, 'Section', `Units: ${quantityUnit('length', units)}. Hole belongs to outer above.`, [22, 22, 12])
   section.getColumn(3).hidden = true
   for (const outer of geometry.outers) {
@@ -230,35 +228,9 @@ export const buildProjectWorkbookModel = async (project: PmProjectDocument, unit
   materials.steel.forEach((m) => addMaterial('STEEL', m))
   for (const load of loadings.combinations) if (load.actionBasis !== 'factoredULS') return fail('WORKBOOK_CELL', 'Loadings: only factoredULS demand is supported.')
   const loadSheet = sheet(book, 'Loadings', `P: ${quantityUnit('force', units)}; Mx, My: ${quantityUnit('moment', units)}. Factored ULS; P compression positive.`, [38, 24, 24, 24, 12])
-  const reference = loadReferenceOf(loadings)
-  writeLoadReferenceSheet(book, reference, units)
-  addBlock(loadSheet, 'LOADINGS', [], loadings.combinations.map(canonical => {
-    const l = resultantAtLoadReference(canonical, reference)
-    return [l.name, quantityCell('force', l.P, units), quantityCell('moment', l.Mx, units), quantityCell('moment', l.My, units), l.id]
-  }))
-  loadSheet.getColumn(5).hidden = true
-  const analysisFields: Fields = structuredClone(analysis)
-  const fibre = analysis.methodId === 'strain-domain-surface-v1'
-  const stationOwner = analysisFields[fibre ? 'stations' : 'neutralAxisStations']
-  if (isObject(stationOwner)) delete stationOwner[fibre ? 'intermediate' : 'values']
-  const analysisSheet = sheet(book, 'Analysis', 'Advanced settings. Keep this sheet for import.', [49, 32, 38, 22, 22])
-  addBlock(analysisSheet, 'ANALYSIS', [], flatten('analysis', analysisFields, '', units))
-  const stationRows: Scalar[][] = fibre
-    ? analysis.stations.intermediate.map((s) => [s.id, s.label, s.criterion.type,
-      'ratio' in s.criterion ? s.criterion.ratio : null, 'strain' in s.criterion ? s.criterion.strain : null])
-    : analysis.neutralAxisStations.values.map((s) => [null, null, s.type, 'ratio' in s ? s.ratio : null, 'strain' in s ? s.strain : null])
-  addBlock(analysisSheet, 'STATIONS', [], stationRows)
-  const { name: _name, information: _information, ...meta } = project.meta
-  addBlock(analysisSheet, 'PROJECT_METADATA', [], flatten('project', {
-    schema: project.schema, version: project.version,
-    meta, inputs: { calculationProfileId, loadCheckBasis: project.inputs.loadings.checkBasis }
-  }))
-  addBlock(analysisSheet, 'SECTION_METADATA', [], flatten('section', { id: geometry.id, name: geometry.name }))
-  analysisSheet.state = 'hidden'
-  const resistanceSheet = sheet(book, 'Resistance', 'Advanced design basis. Keep this sheet for import.', [58, 70])
-  addBlock(resistanceSheet,
-    'RESISTANCE', [], flatten('resistance', design, '', units))
-  resistanceSheet.state = 'hidden'
+  addBlock(loadSheet, 'LOADINGS', [], loadings.combinations.map(load =>
+    [load.name, quantityCell('force', load.P, units), quantityCell('moment', load.Mx, units), quantityCell('moment', load.My, units), load.id]))
+  addBlock(sheet(book, 'Analysis', '', []), 'SECTION_METADATA', [], flatten('section', { id: geometry.id, name: geometry.name }))
   if (book.worksheets.some((ws) => ws.rowCount > MAX_ROWS)) return fail('WORKBOOK_RESOURCE_LIMIT', 'Project exceeds the workbook row limit.')
   writeWorkbookUnits(book, units, FORMAT)
   return book
@@ -439,34 +411,44 @@ const readSection = (blocks: Block[], identity: Fields, warnings: string[], unit
   return { ...identity, outers }
 }
 
-export const readProjectWorkbookModel = (book: Workbook): ProjectWorkbookResult => {
+export const readProjectWorkbookModel = (book: Workbook, profile: CalculationProfileId, legacyDiameterOnly: boolean): ProjectWorkbookResult => {
   try {
     const declaredUnits = readWorkbookUnits(book, FORMAT)
     const sheets = new Map(Object.keys(sheetKeywords).map((name) => [name, scanSheet(book, name, declaredUnits)]))
     const blocks = (name: string) => sheets.get(name)!
-    const raw = readFields(single(blocks('Analysis'), 'PROJECT_METADATA'), 'project')
-    if (!isObject(raw.inputs) || !isObject(raw.meta)) return fail('WORKBOOK_FORMAT', 'Project is missing metadata or the calculation profile.')
-    if ('name' in raw.meta || 'information' in raw.meta) return fail('WORKBOOK_FORMAT', 'Project metadata cannot override visible Project information.')
-    const information = readFields(single(blocks('Project'), 'PROJECT'), 'projectInformation')
-    if (!isObject(information.meta)) return fail('WORKBOOK_FORMAT', 'Project information is missing.')
-    raw.meta = { ...raw.meta, ...information.meta }
-    const inputs = raw.inputs
     const identityWarnings: string[] = []
     const geometry: Fields = readSection(blocks('Section'), readFields(single(blocks('Analysis'), 'SECTION_METADATA'), 'section'), identityWarnings, declaredUnits)
-    inputs.geometry = geometry
     const barRows = recordRows(blocks('Rebar'), 'REBAR')
     const barIds = rowIds(barRows, 4, identityWarnings, 'Rebar')
-    geometry.rebars = barRows.map((row) => ({
-      id: barIds.get(row)!, ...(blank(row.values[3]) ? {} : { steelMaterialId: integer(row.values[3], row.context) }),
-      dia: readQuantityCell('barDiameter', number(row.values[0], row.context), declaredUnits, row.notes[0]), x: readQuantityCell('length', number(row.values[1], row.context), declaredUnits, row.notes[1]), y: readQuantityCell('length', number(row.values[2], row.context), declaredUnits, row.notes[2]),
-      ...(blank(row.values[5]) ? {} : { area: readQuantityCell('area', number(row.values[5], row.context), declaredUnits, row.notes[5]) }),
-      ...(blank(row.values[6]) ? {} : { areaSource: JSON.parse(text(row.values[6], `${row.context} As source`)) as unknown })
-    }))
+    const bars = barRows.map((row) => {
+      const displayedDiameter = number(row.values[0], row.context)
+      const displayedArea = blank(row.values[5]) ? undefined : number(row.values[5], row.context)
+      const source = blank(row.values[6]) ? undefined : parseRebarAreaSource(JSON.parse(text(row.values[6], `${row.context} As source`)))
+      // Keep the recorded pair only while both authored cells still match its display conversion.
+      const unchanged = source && source.type !== 'manual' &&
+        displayedDiameter === fromCanonical('barDiameter', source.dia, declaredUnits) &&
+        displayedArea === fromCanonical('area', source.area, declaredUnits) ? source : undefined
+      const area = unchanged?.area ?? (displayedArea === undefined ? undefined : readQuantityCell('area', displayedArea, declaredUnits, row.notes[5]))
+      return {
+        id: barIds.get(row)!, ...(blank(row.values[3]) ? {} : { steelMaterialId: integer(row.values[3], row.context) }),
+        dia: unchanged?.dia ?? readQuantityCell('barDiameter', displayedDiameter, declaredUnits, row.notes[0]),
+        x: readQuantityCell('length', number(row.values[1], row.context), declaredUnits, row.notes[1]),
+        y: readQuantityCell('length', number(row.values[2], row.context), declaredUnits, row.notes[2]),
+        ...(area === undefined ? {} : { area }),
+        ...(source === undefined ? {} : { areaSource: unchanged ?? { type: 'manual' } })
+      }
+    })
+    if (legacyDiameterOnly && bars.some(bar => bar.area !== undefined || bar.areaSource !== undefined)) {
+      return fail('WORKBOOK_CELL', 'Stored rebar area does not belong to the legacy diameter-only project.')
+    }
+    geometry.rebars = legacyDiameterOnly ? bars.map(bar => withStoredRebarArea(bar,
+      calculationProfile(profile).mechanics === 'equivalent-rectangular-block' ? 'equivalent-block' : 'stress-strain')) : bars
     const materialBlocks = blocks('Material')
     const materials = readFields(single(materialBlocks, 'MATERIAL'), 'material')
-    inputs.materials = materials
-    const readMaterial = (b: Block, scope: 'concrete' | 'steel') => ({ ...readFields(b, scope, 1, declaredUnits), id: integer(b.args[0], b.context) })
+    const readMaterial = (b: Block, scope: 'concrete' | 'steel'): Fields & { id: number } =>
+      ({ ...readFields(b, scope, 1, declaredUnits), id: integer(b.args[0], b.context) })
     const concrete = readMaterial(single(materialBlocks, 'CONCRETE'), 'concrete')
+    assertDefaultResistanceCompatible(profile, isObject(concrete.stressStrain) ? concrete.stressStrain.type : undefined)
     materials.concrete = concrete
     const steelIds = new Set<number>()
     const steel = select(materialBlocks, 'STEEL', false).map((b) => {
@@ -494,33 +476,29 @@ export const readProjectWorkbookModel = (book: Workbook): ProjectWorkbookResult 
     }
     const loadRows = recordRows(blocks('Loadings'), 'LOADINGS')
     const loadIds = rowIds(loadRows, 4, identityWarnings, 'Loadings')
-    const reference = readLoadReferenceSheet(book, declaredUnits, true)
-    if (raw.version !== 3 && (reference.offsetX !== 0 || reference.offsetY !== 0)) return fail('WORKBOOK_FORMAT', 'Offset load references require project version 3.')
-    const { loadCheckBasis } = inputs
-    delete inputs.loadCheckBasis
-    inputs.loadings = { ...(raw.version === 3 ? { reference } : {}), ...(loadCheckBasis === undefined ? {} : { checkBasis: loadCheckBasis }), combinations: loadRows.map((row) => resultantAtCentroid(createLoadCombination({ id: loadIds.get(row)!,
+    // v1 authored moments at its declared input origin. v2 stores centroidal moments.
+    const reference = book.getWorksheet('Load reference') ? readLoadReferenceSheet(book, declaredUnits, true) : CENTROID_LOAD_REFERENCE
+    if (legacyDiameterOnly && (reference.offsetX !== 0 || reference.offsetY !== 0)) {
+      return fail('WORKBOOK_CELL', 'A legacy diameter-only project requires centroidal moments.')
+    }
+    const combinations = loadRows.map((row) => resultantAtCentroid(createLoadCombination({ id: loadIds.get(row)!,
       name: text(row.values[0], row.context), P: readQuantityCell('force', number(row.values[1], row.context), declaredUnits, row.notes[1]),
       Mx: readQuantityCell('moment', number(row.values[2], row.context), declaredUnits, row.notes[2]), My: readQuantityCell('moment', number(row.values[3], row.context), declaredUnits, row.notes[3])
-    }), reference)) }
-    const analysis = readFields(single(blocks('Analysis'), 'ANALYSIS'), 'analysis', 0, declaredUnits)
-    inputs.analysis = analysis
-    const fibre = analysis.methodId === 'strain-domain-surface-v1'
-    if (!fibre && analysis.methodId !== 'equivalent-block-surface-v1') return fail('WORKBOOK_FORMAT', 'Analysis method is unsupported.')
-    const stationRows = recordRows(blocks('Analysis'), 'STATIONS').map(({ values: v, context }) => {
-      const criterion: Fields = { type: text(v[2], context) }
-      if (!blank(v[3])) criterion.ratio = number(v[3], context)
-      if (!blank(v[4])) criterion.strain = number(v[4], context)
-      if (('ratio' in criterion) === ('strain' in criterion)) return fail('WORKBOOK_CELL', `${context}: enter exactly one Ratio or Strain.`)
-      if (!fibre && v.slice(0, 2).some((value) => !blank(value))) return fail('WORKBOOK_CELL', `${context}: block stations do not have ID/Label fields.`)
-      return fibre ? { id: integer(v[0], context), label: text(v[1], context), criterion } : criterion
+    }), reference))
+    const defaults = createEmptyProjectDocument()
+    const parsed = parseProjectDocument({
+      ...defaults,
+      meta: { ...defaults.meta, name: geometry.name },
+      inputs: {
+        calculationProfileId: profile,
+        geometry,
+        materials,
+        loadings: { ...createEmptyLoadingsInput(), combinations },
+        analysis: createAnalysisOptionsForProfile(profile),
+        design: createDesignBasisForCalculationProfile(profile)
+      }
     })
-    const owner = analysis[fibre ? 'stations' : 'neutralAxisStations']
-    if (!isObject(owner)) return fail('WORKBOOK_FORMAT', 'Analysis is missing station settings.')
-    owner[fibre ? 'intermediate' : 'values'] = stationRows
-    inputs.design = readFields(single(blocks('Resistance'), 'RESISTANCE'), 'resistance', 0, declaredUnits)
-    const parsed = parseProjectDocument(raw)
     if (!parsed.ok) return { ...parsed, code: 'PROJECT_INPUT' }
-    assertInputStatus(parsed.document)
     for (const bar of parsed.document.inputs.geometry.rebars) {
       if (bar.steelMaterialId !== undefined && !steelIds.has(bar.steelMaterialId)) return fail('WORKBOOK_CELL', `Rebar ID ${bar.id}: unknown Steel Material ID ${bar.steelMaterialId}.`)
     }

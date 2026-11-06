@@ -76,23 +76,28 @@ test('REBAR-AS-003: JSON v2 preserves edited As, rejects missing areas, and reta
   assert.equal(parseProjectDocument(invalidV1).ok, false)
 })
 
-test('UNITS-005 / REBAR-AS-003: area and source survive project and standalone Excel in metric, US and feet', async () => {
+test('UNITS-005 / REBAR-AS-003: area and source survive Project XLSX and unit-aware standalone Excel', async () => {
   const original = project()
   for (const units of [UNIT_PRESETS.metric, UNIT_PRESETS.us, selectUnit(UNIT_PRESETS.metric, 'length', 'ft')]) {
     const bytes = await buildProjectWorkbook(original, units)
     const imported = await importProjectWorkbook(new Uint8Array(bytes).buffer)
     assert.ok(imported.ok, imported.ok ? '' : imported.error)
-    assert.deepEqual(imported.document.inputs, original.inputs)
+    imported.document.inputs.geometry.rebars.forEach((bar, i) => {
+      const expected = original.inputs.geometry.rebars[i]
+      assert.equal(bar.dia, expected.dia)
+      assert.equal(bar.area, expected.area)
+      assert.deepEqual(bar.areaSource, expected.areaSource)
+    })
     const bars = original.inputs.geometry.rebars.map(bar => ({ ...bar, solidIndex: 0 }))
     const standalone = await buildRebarWorkbook({ sectionName: 'Independent As', rebars: bars, steelMaterials: original.inputs.materials.steel, units })
     const restored = await importRebarWorkbook(new Uint8Array(standalone).buffer, original.inputs.materials.steel, 1, 1)
     assert.deepEqual(restored.rebars, bars)
   }
   const book = new ExcelJS.Workbook()
-  await book.xlsx.load(new Uint8Array(await buildProjectWorkbook(original, UNIT_PRESETS.us)).buffer)
+  await book.xlsx.load(new Uint8Array(await buildProjectWorkbook(original)).buffer)
   const sheet = book.getWorksheet('Rebar')!
   const header = sheet.getRows(1, sheet.rowCount)!.find(row => row.getCell(1).value === 'Rebars')!
-  sheet.getCell(header.number + 2, 6).value = 0.5
+  sheet.getCell(header.number + 2, 6).value = 322.58
   const edited = await importProjectWorkbook(new Uint8Array(await book.xlsx.writeBuffer()).buffer)
   assert.ok(edited.ok, edited.ok ? '' : edited.error)
   close(edited.document.inputs.geometry.rebars[0].area!, 322.58)

@@ -30,7 +30,7 @@ owns the current-consumer rule. AGENTS.md makes this review mandatory for subseq
 | ProjectInformationDialog | Project/client/company/designer/checker/address/date feed document identity and reports | Useful report metadata remains optional and separate from numerical inputs |
 | ReportPanel | Selected combinations control worked pages and export | Unselected combinations remain checked under the report contract |
 | DisplayUnitsPanel | Preset and length/force/moment/stress units configure presentation and declared workbook source units | Unused density selector removed; existing stored/source density-unit declaration remains for compatibility; canonical stored numbers do not change |
-| Project XLSX / Project menu Open | Visible project, geometry, rebar, material, loading, Options, Resistance and source-unit fields have the same consumers above | Generated v1 uses dark-blue input text without fills/bold; native Save preserves authored formatting/formulas/helper sheets; identity/inactive compatibility data stay in readonly properties; derived yield uses the material compiler; integrated title-row Update consumes the nine project sheets' evaluated values atomically; no previous Excel reader |
+| Project XLSX / Project menu Open | Section, Rebar, Material (including its calculation profile) and centroidal Loadings feed the existing input owners | Generated v2 captures Options units and writes matching headers. Input units on import come from the workbook. Sheets are plain and unfrozen, with dark-blue inputs and no notes. Project, Options, Resistance and Check Basis use current defaults. Native Save preserves authored formatting/formulas/helper sheets. The editor publishes only validated inputs. |
 
 ## Dispositions from this review
 

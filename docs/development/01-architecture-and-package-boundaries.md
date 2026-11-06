@@ -37,7 +37,7 @@ filesystem/network APIs, project UI state, or report libraries.
 | `@pm/code-custom` | user-declared block law, endpoints, phi transition, and cap | derives nothing from a code table; validates ranges and uses what the project gives it; never claims clause traceability |
 | `@pm/analysis-equivalent-block` | project/profile/result bridge for the block kernel and adapters | routing/normalization only; do not merge it into the stress-strain kernel |
 | `@pm/report` | result workbooks for both mechanics, stress-strain mesh Excel/DXF, the format-neutral `ReportModel`, and the PDF renderer on the `@pm/report/pdf` subpath | shared spine in `workbook-common.ts`; the PDF is deliberately not re-exported from the index so the analysis worker never bundles it; no accepted-result release contract yet |
-| `@pm/spreadsheet` | Project XLSX v1, whole-project and table authoring adapters, metadata and evaluated snapshots | outward adapter; may consume ExcelJS and inward owners; no React, browser/file/network APIs, P-M solver or project formula persistence |
+| `@pm/spreadsheet` | Project input XLSX, whole-project and table authoring adapters, metadata and evaluated snapshots | outward adapter; may consume ExcelJS and inward owners; no React, browser/file/network APIs, P-M solver or project formula persistence |
 | `@structures/cad-drawing` | reusable view/navigation foundation | presentation only; never an analysis dependency |
 | `@pm/web` | current integrated editor | application composition only; move reusable domain/use-case logic into packages |
 
@@ -203,20 +203,18 @@ not automatic merge after type checking alone.
 
 ### Project input workbook
 
-Project input XLSX has its separate `@pm/spreadsheet/project-xlsx` entry point. Its one first-format
-v1 writer/reader maps concise engineering sheets through a private typed field codec and the project
-validator. The web module only re-exports that API. Units, load-reference translations, derived
-steel yield evidence and resistance-override checks consume their inward owners. Readonly identity
-and compatibility properties do not shadow editable cells. The complete contract is in
-[development/02 section 10](02-data-contracts-persistence-and-versioning.md#10-editable-project-workbook-v1).
-No earlier Excel layout reader, engineering equation or result state is introduced.
+Project input XLSX has its separate `@pm/spreadsheet/project-xlsx` entry point. The v2 writer and
+v1/v2 reader map Section, Rebar, Material and Loadings through a private field codec and the project
+validator. The web module only re-exports that API. The current project registry supplies omitted
+options. The complete contract is in
+[development/02 section 10](02-data-contracts-persistence-and-versioning.md#10-editable-project-workbook).
 The presentation-only formatter styles generated exports by visible input role: dark-blue input
 text, plain headings, no fills or bold. Native editing/Save preserves user-authored formatting.
 Neither path infers input meaning from colours or trusts formula caches for project values.
 
 `prepareWorkbookEditor` validates bounded native Open without rewriting bytes, styles or locks.
 `@pm/spreadsheet/project` decodes the engine's current evaluated snapshot/properties through the
-same v1 reader. The Project menu's Open command displays the current workbook in a modeless
+same input reader. The Project menu's Open command displays the current workbook in a modeless
 spreadsheet window within the workspace. One integrated title row has only native Open/Save/Undo/Redo icons on the left and the centred,
 truncated filename. The shared movable primitive overlays primary Update to Project followed by
 Minimize, Maximize/Restore and Close in a reserved right-hand slot, replacing Search/Share/Comments/
@@ -224,7 +222,7 @@ theme. It adds no extra title row; a transparent filename-region drag target ret
 Gridcraft's menus, ribbon, formula bar, bottom tabs and status remain below. Native Open/Save use the application file
 adapter; no Update or duplicate file buttons are inserted into the native ribbon. The generated
 project has unlocked cells. Save preserves formulas, authored styles and independent helper sheets;
-Update selects the nine declared project sheets, validates every input group and calls the existing
+Update selects the declared input sheets, validates every input group and calls the existing
 project-apply boundary once. The current properties identify a natively opened file; helper sheets
 are not project inputs. An applied-input revision is checked before and after asynchronous decoding;
 successful Updates advance it. Unchanged metadata copies do not invalidate the draft. Formula

@@ -2,7 +2,7 @@ import type { Workbook } from 'exceljs'
 import { evaluatedCellNote } from './workbook-units'
 import { failSheet, readSheetWorkbook, SPREADSHEET_LIMITS, type PreparedSheet, type WorkbookMapping } from './table'
 import { inspectWorkbookArchive } from './workbook-archive'
-import { formatProjectWorkbook, PROJECT_WORKBOOK_SHEETS, projectWorkbookProperties, readProjectWorkbookInputs, type ProjectWorkbookResult } from './project-xlsx'
+import { formatProjectWorkbook, projectWorkbookInputSheets, projectWorkbookProperties, readProjectWorkbookInputs, type ProjectWorkbookResult } from './project-xlsx'
 
 export type ProjectSpreadsheetContext = Readonly<{
   properties: Readonly<{ subject: string; description: string }>
@@ -22,23 +22,27 @@ export async function projectFromWorkbookEditor(value: unknown): Promise<Extract
     return failSheet('SHEET_FORMAT', 'Open a P-M Project XLSX workbook before Update.')
   }
   if (!Array.isArray(value.sheets) || value.sheets.length > SPREADSHEET_LIMITS.sheets) return failSheet('SHEET_FORMAT', 'Invalid workbook sheets.')
+  let required: readonly string[]
+  try { required = projectWorkbookInputSheets(value.properties.subject) }
+  catch { return failSheet('SHEET_FORMAT', 'Open a P-M Project XLSX workbook before Update.') }
   const names = new Set<string>(), inputSheets: unknown[] = []
   for (const sheet of value.sheets) {
     if (!record(sheet) || typeof sheet.name !== 'string' || names.has(sheet.name)) return failSheet('SHEET_FORMAT', 'Invalid or duplicate workbook sheet.')
     names.add(sheet.name)
-    if (PROJECT_WORKBOOK_SHEETS.some(name => name === sheet.name)) inputSheets.push(sheet)
+    if (required.includes(sheet.name)) inputSheets.push(sheet)
   }
   // Independent helper worksheets remain in the native workbook, outside the project input schema.
-  if (inputSheets.length !== PROJECT_WORKBOOK_SHEETS.length) return failSheet('SHEET_FORMAT', 'Open a complete P-M Project XLSX v1 workbook before Update.')
-  return projectFromSpreadsheet({ ...value, sheets: inputSheets }, { properties: { subject: value.properties.subject, description: value.properties.description }, sheets: PROJECT_WORKBOOK_SHEETS })
+  if (inputSheets.length !== required.length) return failSheet('SHEET_FORMAT', 'Open a complete P-M Project XLSX workbook before Update.')
+  return projectFromSpreadsheet({ ...value, sheets: inputSheets }, { properties: { subject: value.properties.subject, description: value.properties.description }, sheets: required })
 }
 
 /** No worksheet protection: schema errors are diagnosed at the atomic Update boundary. */
 export async function prepareProjectSpreadsheet(bytes: ArrayBuffer): Promise<PreparedSheet<ProjectSpreadsheetContext, WorkbookMapping>> {
   const book = await readSheetWorkbook(bytes)
   const properties = projectWorkbookProperties(book), sheets = book.worksheets.map(sheet => sheet.name)
-  if (sheets.length !== PROJECT_WORKBOOK_SHEETS.length || sheets.some(name => !PROJECT_WORKBOOK_SHEETS.some(required => required === name))) {
-    return failSheet('SHEET_FORMAT', 'Open a complete P-M Project XLSX v1 workbook.')
+  const required = projectWorkbookInputSheets(properties.subject)
+  if (required.some(name => !sheets.includes(name))) {
+    return failSheet('SHEET_FORMAT', 'Open a complete P-M Project XLSX workbook.')
   }
   for (const sheet of book.worksheets) {
     sheet.unprotect(); sheet.state = 'visible'
@@ -46,8 +50,8 @@ export async function prepareProjectSpreadsheet(bytes: ArrayBuffer): Promise<Pre
     sheet.views = [{ state: 'normal', showGridLines: false }]
   }
   const active = book.views?.[0]?.activeTab ?? 0
-  const sheet = sheets[active] ?? 'Project'
-  return { bytes: await writeWorkbook(book), mapping: { kind: 'workbook', sheet }, context: { properties, sheets } }
+  const sheet = sheets[active] ?? 'Section'
+  return { bytes: await writeWorkbook(book), mapping: { kind: 'workbook', sheet }, context: { properties, sheets: required } }
 }
 
 /** Current engine results only; imported Excel formula caches never enter this boundary. */

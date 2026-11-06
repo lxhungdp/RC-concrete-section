@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { ParseProjectResult, PmProjectDocument } from '@pm/project'
-import type { UnitContext } from '@pm/units'
+import type { UnitSelection } from '@pm/units'
 import { WORKBOOK_MAX_BYTES, inspectWorkbookArchive } from '@pm/spreadsheet/archive'
 import { prepareWorkbookEditor } from '@pm/spreadsheet'
 import { buildProjectWorkbook, projectWorkbookFileName } from '@pm/spreadsheet/project-xlsx'
@@ -15,7 +15,7 @@ import { sameProjectSpreadsheetRevision } from './project-spreadsheet-state'
 
 /** Window controls share the native title row; the frame owns Quick Access, filename and ribbon. */
 export function ProjectSpreadsheetWindow({ activation, document, units, revision, onUpdate, onClose }: {
-  activation: number; document: PmProjectDocument; units: UnitContext; revision: readonly unknown[]
+  activation: number; document: PmProjectDocument; units: UnitSelection; revision: readonly unknown[]
   onUpdate(result: Extract<ParseProjectResult, { ok: true }>): readonly unknown[]; onClose(): void
 }) {
   const frame = useRef<HTMLIFrameElement>(null), run = useRef<() => void>(() => {})

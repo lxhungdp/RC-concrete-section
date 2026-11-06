@@ -96,11 +96,11 @@ menu, ribbon, formula bar, bottom tabs and status remain below. Minimize retains
 restore bounds; the filename region remains draggable. Native Open/Save use the bounded file adapter. Generated project
 cells are editable and unfrozen, including headings. Native Open stages a bounded XLSX independently,
 Save preserves the formula-bearing draft, user formatting and helper sheets, and Update selects
-the nine required input sheets with the current document properties and validates them through
+the four v2 input sheets with the current document properties and validates them through
 `@pm/spreadsheet/project` and the existing project validator before applying once. Invalid
 headings, missing input groups, formula errors or stale applied inputs leave the project unchanged.
 Repeated Updates retain formulas in the open draft; reopening starts from numeric P-M inputs.
-Generated files stay text-like: input text dark blue, no cell fills or bold headings. Existing
+Generated Project files use dark-blue input text, plain headings, no cell fills, no cell notes and no frozen rows. Existing
 table modal sizes/header protection are unchanged. See the [title-row evidence](../task-packets/2026-11-05-project-spreadsheet-title-bar.md).
 The current persistence helpers live in `@pm/project`; a future
 `@pm/loadings` extraction will own richer source-case validation and transformations. Demand Check
@@ -735,8 +735,8 @@ neutral-axis and resultant overlays retain their centroidal state; the separatel
 axes may preview an unapplied input origin. A no-loadcase view can show geometry and load axes
 without manufacturing a physical field. Neither offset nor Convert rebuilds the capacity surface.
 
-Project input workbook v1 and standalone loadcase sheets declare their reference and convert
-authored values once at import/export. The Project menu uses the single first-format reader in
+Project workbook v2 exchanges centroidal actions directly. The v1 compatibility reader and standalone
+loadcase sheets convert authored values at the declared reference. The Project menu uses the reader in
 `@pm/spreadsheet/project-xlsx`; native centroidal JSON v1/v2 readers retain their separate contracts.
 Calculation trace dialogs identify entered values at O and converted values at C. PDF identity and
 Excel Load reference evidence keep those inputs separate from unchanged centroidal ledgers/curves.
