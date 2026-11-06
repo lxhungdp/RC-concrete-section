@@ -516,12 +516,13 @@ export const applyCalculationProfileToMaterials = (
         ...store.concrete,
         standard: 'KDS',
         stressStrain: { type: 'kds-parabolic', ...params },
-        factors: { ...store.concrete.factors, alpha: params.alpha, gammaC: undefined }
+        factors: { ...store.concrete.factors, alpha: params.alpha, gammaC: undefined, resistanceScale: undefined }
       })
       store.steel = store.steel.map((steel) => ({
         ...steel,
         standard: 'KDS',
         stressStrain: steel.stressStrain.type === 'linear-hardening' ? steel.stressStrain : { type: 'elastic-perfectly-plastic' },
+        factors: { ...steel.factors, gammaS: undefined, resistanceScale: undefined },
         limits: { ...steel.limits, epsY: steel.fy / steel.elasticModulus }
       }))
       return store

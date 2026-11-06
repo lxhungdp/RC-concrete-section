@@ -157,6 +157,14 @@ Project input snapshot
 Surface refinement occurs inside each compared integration level so error sources are not
 confounded. Cancellation returns a failure/diagnostic state, never an accepted partial result.
 
+Starting a resistance rebuild withdraws the former surface and dependent check/field/export inputs.
+A failed build displays its error and a retry action in every result workspace; it cannot leave the
+former profile's curves under the newly selected basis. Selected-detail failures also leave the
+pending state with an explicit loadcase error and retry, without discarding a valid surface or its
+geometric quick checks. Editing inputs or demand withdraws the corresponding failure. Cancelled and
+superseded jobs cannot publish a failure for the current revision. Same-surface loadcase transitions
+retain the completed-frame presentation described below.
+
 Target engine API, not a current exported interface:
 
 ```ts

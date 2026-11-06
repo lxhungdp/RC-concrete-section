@@ -27,6 +27,7 @@ type Props = {
   designBasis: DesignBasis
   exporting: boolean
   exportError: string | null
+  analysisError?: string | null
   onLoadcaseChange: (id: number) => void
   onExportExcel: () => Promise<void>
   onClose: () => void
@@ -87,6 +88,7 @@ export function LoadcaseCalculationDialog({
   designBasis,
   exporting,
   exportError,
+  analysisError,
   onLoadcaseChange,
   onExportExcel,
   onClose
@@ -271,7 +273,8 @@ export function LoadcaseCalculationDialog({
       </Step>
 
       <Step index={5} title={check?.utilizationDefinition === 'direct2D' ? 'Neutral-axis reference state' : 'Inverse equilibrium diagnostic'}>
-        {!inverseResult ? <div className="pm-calc-loading"><Loader2 size={17} className="pm-spin" /><span>Solving the diagnostic equilibrium state for this loadcase…</span></div> : <>
+        {analysisError ? <div className="pm-calc-note is-error" role="alert"><AlertTriangle size={16} /><p>{analysisError}</p></div>
+          : !inverseResult ? <div className="pm-calc-loading"><Loader2 size={17} className="pm-spin" /><span>Solving the diagnostic equilibrium state for this loadcase…</span></div> : <>
           <div className={`pm-calc-note ${inverseStatus?.tone ?? ''}`}>
             {inverseResult.ok ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
             <p><b>{inverseStatus?.label}.</b> This state explains section response; adequacy remains governed by Step 3, not by inverse convergence{constantAxial ? '' : ' or the fixed-P ratio'}.</p>

@@ -1,11 +1,45 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
+import { geometryInputRebars, sectionGeometryFromGeometryInput } from '@pm/geometry'
 import { AnalysisInputError, checkLoadcasesUtilizationFromSurface } from '@pm/analysis'
 import { createAnalysisExecution } from '../../application/analysis/execution'
 import { verdictInput } from '../support/demand-verdicts'
 import { buildDemandPmGeometry } from '@pm/analysis'
 import { buildColumnReportModel } from '@pm/report/report-model'
-import { createDefaultProjectInformation } from '@pm/project'
+import { applyCalculationProfileToMaterials, createAnalysisOptionsForProfile,
+  createDefaultProjectInformation, createDesignBasisForCalculationProfile, parseProjectDocument } from '@pm/project'
+
+test('ENG-MAT-001/006: P16 UMD converts to both KDS mechanics with separate Nominal/Design curves and completed checks', async () => {
+  const parsed = parseProjectDocument(readFileSync('docs/examples/reference-case/projects/P16_Column_ULS.pm-project.json', 'utf8'))
+  assert.ok(parsed.ok, parsed.ok ? '' : parsed.error)
+  const { geometry, materials, loadings } = parsed.document.inputs
+  const execution = createAnalysisExecution()
+  for (const calculationProfileId of ['kds-2024-stress-strain', 'kds-142020-equivalent-block'] as const) {
+    const input = { calculationProfileId, section: sectionGeometryFromGeometryInput(geometry),
+      rebars: geometryInputRebars(geometry), materialStore: applyCalculationProfileToMaterials(materials, calculationProfileId),
+      analysisOptions: createAnalysisOptionsForProfile(calculationProfileId), designBasis: createDesignBasisForCalculationProfile(calculationProfileId) }
+    const surface = execution.buildSurface(input)
+    const nominalTension = Math.min(...surface.nominalPoints.map(point => point.P))
+    const designTension = Math.min(...surface.points.map(point => point.P))
+    // Independent endpoint scaling oracle: the unchanged KDS Main-body tension factor is 0.85.
+    assert.ok(Math.abs(designTension / nominalTension - 0.85) < 1e-12)
+    assert.equal(surface.calculationProfileId, calculationProfileId)
+    for (const checkBasis of ['proportional3D', 'direct2D', 'constantAxial'] as const) {
+      const checks = await execution.checkLoadcases({ surface, loadcases: loadings.combinations,
+        checkBasis, preparedInputs: input })
+      assert.equal(checks.length, 6)
+      for (const loadcase of loadings.combinations) {
+        const detail = await execution.checkLoadcase({ ...input, surface, loadcase, checkBasis })
+        const check = checks.find(item => item.loadcaseId === loadcase.id)
+        assert.ok(check)
+        assert.equal(detail.utilization, check.utilization)
+        assert.equal(detail.designCheck.evaluated, true)
+        if (detail.designCheck.evaluated) assert.equal(detail.designCheck.definition, checkBasis)
+      }
+    }
+  }
+})
 
 for (const profileId of ['kds-2024-stress-strain', 'kds-142020-equivalent-block'] as const) {
   test(`ENG-AN-003: ${profileId} 2D batch, detail and report share a projected Design crossing`, async () => {

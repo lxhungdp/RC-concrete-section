@@ -152,6 +152,12 @@ them back to this atomic compatibility key. They are not independent unvalidated
 
 Downstream packages switch on these IDs. They must not infer mechanics from concrete material text.
 
+An explicit switch to either KDS mechanics removes prior material `gammaC`, `gammaS` and
+`resistanceScale` snapshots before deriving the nominal yield snapshot. The selected DesignBasis
+alone owns subsequent resistance reduction. Strengths, modulus, material identity and declared
+physical strain bounds survive the switch. This authoring rule does not rewrite imported projects
+or reconstruct characteristic strengths from an explicitly supplied design-level user curve.
+
 `CALCULATION_PROFILES` in `packages/pm-project/src/calculation-profiles.ts` is the single owner of
 this binding: each entry names its `mechanics`, `materialStandard` and `designProfileId`, and both
 the parser's coherence assertions and the atomic Materials apply read that table rather than

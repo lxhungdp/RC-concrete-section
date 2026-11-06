@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createEmptyGeometryInput } from '@pm/geometry'
-import { compileConcreteMaterial, compileSteelMaterial, createDefaultMaterialStore } from '@pm/materials'
+import { assertValidMaterialStore, compileConcreteMaterial, compileSteelMaterial, createDefaultMaterialStore } from '@pm/materials'
 import {
   buildResistanceMaterialSets,
   createKdsAppendixDesignBasis,
@@ -81,6 +81,44 @@ test('EN profile applies EC2 materials and round-trips its design-material resis
   })
   const parsed = parseProjectDocument(document)
   assert.equal(parsed.ok, true, parsed.ok ? 'EN project parsed' : parsed.error)
+})
+
+test('ENG-MAT-001/006: switching factored material snapshots to KDS compiles and round-trips nominal inputs', () => {
+  const source = applyCalculationProfileToMaterials(createDefaultMaterialStore(), 'en-1992-1-1-2004-stress-strain')
+  source.concrete.factors = { ...source.concrete.factors, gammaC: 1.5, resistanceScale: 0.9 }
+  for (const steel of source.steel) {
+    steel.factors = { ...steel.factors, gammaS: 1.111, resistanceScale: 0.9 }
+    steel.limits = { ...steel.limits, epsY: steel.fy / 1.111 * 0.9 / steel.elasticModulus, epsU: 0.05 }
+  }
+  assertValidMaterialStore(source)
+  const original = structuredClone(source)
+  for (const profileId of ['kds-2024-stress-strain', 'kds-142020-equivalent-block'] as const) {
+    const materials = applyCalculationProfileToMaterials(source, profileId)
+    assertValidMaterialStore(materials)
+    const basis = createDesignBasisForCalculationProfile(profileId)
+    const stages = buildResistanceMaterialSets(materials, basis)
+    for (const steel of materials.steel) {
+      const before = source.steel.find(item => item.id === steel.id)
+      assert.ok(before)
+      assert.equal(steel.fy, before.fy)
+      assert.equal(steel.elasticModulus, before.elasticModulus)
+      assert.equal(steel.limits?.epsU, before.limits?.epsU)
+      assert.equal(compileSteelMaterial(steel).stress(0.01), before.fy)
+      assert.equal(compileSteelMaterial(steel).limits.epsYield, before.fy / before.elasticModulus)
+      const designSteel = stages.designMaterials.steel.find(item => item.id === steel.id)
+      assert.ok(designSteel)
+      assert.equal(compileSteelMaterial(designSteel).stress(0.01), before.fy)
+    }
+    assert.equal(materials.concrete.fck, source.concrete.fck)
+    assert.equal(materials.concrete.factors?.gammaC, undefined)
+    assert.equal(materials.concrete.factors?.resistanceScale, undefined)
+    const saved = createProjectDocument({ calculationProfileId: profileId,
+      geometry: createEmptyGeometryInput(), materials, design: basis })
+    const parsed = parseProjectDocument(saved)
+    assert.ok(parsed.ok, parsed.ok ? '' : parsed.error)
+    assert.deepEqual(JSON.parse(JSON.stringify(parsed.document.inputs.materials)), JSON.parse(JSON.stringify(materials)))
+  }
+  assert.deepEqual(source, original)
 })
 
 test('both KDS mechanics round-trip the independently selected Appendix material-factor route', () => {

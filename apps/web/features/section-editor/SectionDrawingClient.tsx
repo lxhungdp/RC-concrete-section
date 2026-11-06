@@ -698,7 +698,9 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
   const [exactDirectionCurve, setExactDirectionCurve] = useState<ExactDirectionCurve | null>(null)
   const [surfaceStatus, setSurfaceStatus] = useState<'idle' | 'working' | 'error'>('idle')
   const [surfaceMessage, setSurfaceMessage] = useState('')
+  const [surfaceRetryVersion, setSurfaceRetryVersion] = useState(0)
   const [inverseResults, setInverseResults] = useState<Record<number, InversePreviewResult>>({})
+  const [inverseErrors, setInverseErrors] = useState<Record<number, string>>({})
   const [loadcaseUpdating, setLoadcaseUpdating] = useState(false)
   const [lastResolvedChartSnapshot, setLastResolvedChartSnapshot] = useState<{
     loadcase: LoadCombination
@@ -788,6 +790,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
     ? null
     : loadingsInput.combinations.find((item) => item.id === selectedLoadcaseId) ?? null
   const selectedInverseResult = selectedLoadcaseId == null ? null : inverseResults[selectedLoadcaseId] ?? null
+  const selectedInverseError = selectedLoadcaseId == null ? null : inverseErrors[selectedLoadcaseId] ?? null
   const selectedResolvedChartSnapshot = useMemo(
     () => {
       if (
@@ -980,9 +983,11 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
 
   useEffect(() => {
     setSurfaceMessage('')
+    // A new resistance revision cannot borrow the previous profile's domain or export inputs.
+    setResultSurface(null)
+    setExactDirectionCurve(null)
 
     if (!hasAppliedSection) {
-      setResultSurface(null)
       setSurfaceStatus('idle')
       return
     }
@@ -1011,7 +1016,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [analysisOptions, calculationProfileId, designBasis, finalSection, hasAppliedSection, materialStore, rebars])
+  }, [analysisOptions, calculationProfileId, designBasis, finalSection, hasAppliedSection, materialStore, rebars, surfaceRetryVersion])
   const appliedSummary = useMemo(() => summarizeSection(finalSection), [finalSection])
   const steelArea = useMemo(
     () => rebars.reduce((sum, bar) => sum + rebarArea(bar,
@@ -1158,10 +1163,11 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
     for (const controller of inverseAbortRef.current.values()) controller.abort()
     inverseAbortRef.current.clear()
     setInverseResults({})
+    setInverseErrors({})
     quickChecksRef.current = {}
     quickCheckSurfaceRef.current = null
     setQuickChecksById({})
-  }, [analysisOptions, appliedGeometryInput, designBasis, materialStore])
+  }, [analysisOptions, appliedGeometryInput, designBasis, materialStore, surfaceRetryVersion])
 
   useEffect(() => {
     const controllers = inverseAbortRef.current
@@ -1175,6 +1181,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
     analysisRevisionRef.current += 1
     for (const controller of inverseAbortRef.current.values()) controller.abort()
     inverseAbortRef.current.clear()
+    setInverseErrors({})
     const currentLoadcases = new Map(loadingsInput.combinations.map((loadcase) => [loadcase.id, loadcase]))
     setInverseResults((current) =>
       Object.fromEntries(
@@ -1248,13 +1255,18 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
 
   const calculateInverseForLoadcase = (loadcase: LoadCombination, force = false) => {
     setSelectedLoadcaseId(loadcase.id)
-    if (!hasAppliedSection || !resultSurface) return
+    if (!hasAppliedSection || !resultSurface || surfaceStatus !== 'idle') return
     if (!force && inverseResults[loadcase.id]) return
     if (inverseAbortRef.current.has(loadcase.id)) return
     const revision = analysisRevisionRef.current
     inverseAbortRef.current.get(loadcase.id)?.abort()
     const controller = new AbortController()
     inverseAbortRef.current.set(loadcase.id, controller)
+    setInverseErrors((current) => {
+      const next = { ...current }
+      delete next[loadcase.id]
+      return next
+    })
     checkLoadcaseAsync(
       { calculationProfileId, section: finalSection, rebars, materialStore, loadcase, surface: resultSurface, checkBasis, designBasis },
       controller.signal
@@ -1265,7 +1277,8 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
       })
       .catch((error) => {
         if (isAnalysisAbort(error) || analysisRevisionRef.current !== revision) return
-        setSurfaceMessage(error instanceof Error ? error.message : String(error))
+        setInverseErrors((current) => ({ ...current,
+          [loadcase.id]: error instanceof Error ? error.message : String(error) }))
       })
       .finally(() => {
         if (inverseAbortRef.current.get(loadcase.id) === controller) inverseAbortRef.current.delete(loadcase.id)
@@ -3464,7 +3477,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
               selectedLoadcaseId={selectedLoadcaseId}
               checksById={currentQuickChecksById}
               updateStatus={{
-                active: loadcaseUpdating,
+                active: loadcaseUpdating && surfaceStatus !== 'error' && !selectedInverseError,
                 message: selectedLoadcase ? `Updating ${selectedLoadcase.name}…` : ''
               }}
               onSelectLoadcase={(id) => {
@@ -3521,7 +3534,16 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
               : 'Section drawing'
         }
       >
-        {isResultsModule(activeModule) && hasAppliedSection && !resultSurface && surfaceStatus !== 'error' ? (
+        {isResultsModule(activeModule) && (surfaceStatus === 'error' || demandChartsVisible && selectedInverseError) ? (
+          <div className="pm-results-empty" role="alert">
+            <h2>{surfaceStatus === 'error' ? 'Resistance surface unavailable' : 'Loadcase details unavailable'}</h2>
+            <p>{surfaceStatus === 'error' ? surfaceMessage : selectedInverseError}</p>
+            <button type="button" className="ws-action" onClick={() => {
+              if (surfaceStatus === 'error') setSurfaceRetryVersion((version) => version + 1)
+              else if (selectedLoadcase) calculateInverseForLoadcase(selectedLoadcase, true)
+            }}>Retry calculation</button>
+          </div>
+        ) : isResultsModule(activeModule) && hasAppliedSection && !resultSurface ? (
           <WorkspaceLoading
             title="Building the resistance surface…"
             detail="Sampling stations and directions in a background worker."
@@ -3834,6 +3856,7 @@ function SectionDrawingWorkspace({ geometryOnly = false }: { geometryOnly?: bool
           designBasis={designBasis}
           exporting={calculationExporting}
           exportError={calculationExportError}
+          analysisError={calculationLoadcaseId === null ? null : inverseErrors[calculationLoadcaseId] ?? null}
           onLoadcaseChange={changeCalculationLoadcase}
           onExportExcel={exportCalculationLoadcaseExcel}
           onClose={() => {
