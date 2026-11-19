@@ -1,8 +1,8 @@
 # Demand and capacity field selection
 
 Historical decision. The display selection below is superseded by the user-authorized
-[mechanics-specific field decision](../task-packets/2026-11-04-mechanics-specific-field-basis.md),
-itself superseded on 2026-11-19 by the [one-convention decision](../task-packets/2026-11-19-load-direction-convention.md):
+mechanics-specific field decision,
+itself superseded on 2026-11-19 by the one-convention decision:
 every case shows the strength-point field.
 Current behavior is owned by root 05 section 10. Verification below describes the former behavior.
 

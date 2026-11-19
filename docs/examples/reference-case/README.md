@@ -3,7 +3,7 @@
 Files in this directory are evidence fixtures, not declarations of current defaults:
 
 - `source/` contains distributable provenance notes from external/reference material. The
-  [`source/adsec/`](source/adsec/README.md) folder preserves the user-provided AdSec comparison
+  `source/adsec/` folder preserves the user-provided AdSec comparison
   reports; those raw reports are evidence, not machine-readable acceptance oracles;
 - `projects/` contains project snapshots derived from those sources;
 - `expected/` contains machine-readable comparison oracles;
@@ -22,15 +22,15 @@ Files in this directory are evidence fixtures, not declarations of current defau
   saturated-steel endpoint separately; ad hoc spreadsheet renderings are disposable outputs and
   are not tracked.
 - The current default fibre schedule is checked against
-  [`expected/P16_umd-vs-engine-unified-28.json`](expected/P16_umd-vs-engine-unified-28.json).
+  `expected/P16_umd-vs-engine-unified-28.json`.
   `expected/P16_umd-vs-engine.json` remains the unmodified historical 27-station record.
   The reviewed addition of `Pure tens 50%` changes only the resolved station counts and the
   tension-band P–M polylines in this comparison. All six UMD records, sampled/exact flexural
   capacities, ratios, point stresses/strains, mesh, poles and scalar anchors are bit-identical.
   Removing only the added midpoint recovers the complete historical JSON values exactly.
-  See [the synchronization review](../../task-packets/2026-11-05-complex-fixture-ci.md).
+  See the synchronization review.
 - The twelve-report AdSec calculation-value audit is recorded in
-  [`expected/adsec/calculation-value-audit.md`](expected/adsec/calculation-value-audit.md) with the
+  `expected/adsec/calculation-value-audit.md` with the
   full machine-readable evidence beside it. Run `npm run verify:adsec` to check the committed
   evidence or `npm run verify:adsec:update` for an explicit reviewed regeneration. It intentionally
   excludes UR and compares `P/Mnx/Mny` only when the printed deformation state is preserved.

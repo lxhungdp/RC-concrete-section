@@ -51,7 +51,7 @@ evaluated values through the existing unit/reference and loadings boundary in on
 `Save as` saves the formula-bearing XLSX without changing project inputs. Each new opening starts
 from current numeric P-M inputs. Project JSON stores no spreadsheet formulas or layout. The
 implementation and verification status are tracked in the
-[Gridcraft packet](../task-packets/2026-11-05-loadcase-gridcraft-plan.md).
+Gridcraft packet.
 The ordinary table still supports add/edit/delete in the dedicated `Demand Check` workspace.
 The reusable owner is now `@pm/spreadsheet`: its loadcase adapter consumes the generic XLSX and
 evaluated-snapshot pipeline; `shared/SpreadsheetDialog` owns the one web session/modal. Concrete
@@ -70,7 +70,7 @@ and resizable. Its mapped header cells are highlighted and locked with worksheet
 data and working cells stay editable. Cell-note markers, hover panels and note/comment actions
 are omitted from the embedded grid. Quantity-source notes remain in workbook metadata so exact
 unit round trips are preserved; they are not displayed as cell annotations in the modal.
-See the [compact/header evidence](../task-packets/2026-11-05-loadcase-compact-header.md).
+See the compact/header evidence.
 
 Update commits the active edit and reads the engine's current evaluated scalar values. Opening a
 file recalculates imported formulas in automatic mode; Update does not separately rerun volatile
@@ -85,7 +85,7 @@ The initial iframe remains covered by a parent-owned loading surface until the w
 acknowledgments complete and its rendering frames have run. The populated grid and enabled actions
 appear together, without exposing the renderer's black/empty startup frames. Closing cancels the
 pending presentation callbacks; errors remain visible. See the
-[opening-transition evidence](../task-packets/2026-11-05-loadcase-opening-flash.md).
+opening-transition evidence.
 
 Open in the Project menu reuses this pipeline for the complete applied project. Its
 1280 × 840 CSS-pixel modeless app window is viewport-clamped and has no separate browser address
@@ -101,7 +101,7 @@ the four v2 input sheets with the current document properties and validates them
 headings, missing input groups, formula errors or stale applied inputs leave the project unchanged.
 Repeated Updates retain formulas in the open draft; reopening starts from numeric P-M inputs.
 Generated Project files use dark-blue input text, plain headings, no cell fills, no cell notes and no frozen rows. Existing
-table modal sizes/header protection are unchanged. See the [title-row evidence](../task-packets/2026-11-05-project-spreadsheet-title-bar.md).
+table modal sizes/header protection are unchanged. See the title-row evidence.
 The current persistence helpers live in `@pm/project`; a future
 `@pm/loadings` extraction will own richer source-case validation and transformations. Demand Check
 retains input order while using stable IDs.
@@ -199,7 +199,7 @@ base criteria are unchanged. Consumers use resolved station metadata and counts,
 schedules. The stress-strain workbook takes the transition's compatible plane from the engine and
 recalculates its concrete/bar resultants. It must not reconstruct this plane by holding extreme
 concrete strain at `epsCu`, because the plateau transition can leave that branch. See
-[the sampling decision and evidence](../task-packets/2026-11-05-pure-tension-midpoint.md).
+the sampling decision and evidence.
 
 Equivalent-block options use a separate path:
 
@@ -356,7 +356,7 @@ An initial frame without completed field/exact-curve evidence shows the existing
 mounting a ray-only vertical plot and autoscaling it before the resistance curves arrive. Plotly
 hosts remain scoped to workspace/chart roles; preserving a data frame does not share viewport state
 between Capacity and Demand. See the
-[transition regression](../task-packets/2026-11-05-demand-navigation-transition.md).
+transition regression.
 
 ## 5. Results UI state
 
@@ -597,7 +597,7 @@ PDF consume separate paths, while bounds and audit tables can consume their flat
 The complete triangle-cut chain supplies capacity markers and radial diagnostics. Sampled-meridian
 subsets remain audit markers. The block bridge also forwards a `state-stalled` station reason when
 finite steel limits prevent a distinct admissible depth midpoint. See the
-[repair evidence](../task-packets/2026-11-04-fixed-p-adaptive-repair.md).
+repair evidence.
 
 ## 6. Report package
 
@@ -664,7 +664,7 @@ profile, geometry, rebars, materials, analysis options, and DesignBasis, but exc
 combination. Repeated demand checks reuse that immutable core surface; any resistance-domain input
 change produces a different key and rebuilds it.
 
-The 2D Load Ray solve cache of the [latency packet](../task-packets/2026-11-19-direct2d-switch-latency.md)
+The 2D Load Ray solve cache of the latency packet
 was removed with the 2D basis on 2026-11-19.
 
 ## 8. Pipeline tests

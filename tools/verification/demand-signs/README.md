@@ -95,7 +95,7 @@ or release eligibility is asserted. Numerical repair of the boundary issue is ou
 correction and requires the owning engineering change workflow and independent boundary oracle.
 
 Presentation-only task, 2026-10-29. Authority: [engineering/02 §2](../../../docs/engineering/02-data-conventions-and-terminology.md)
-and the [canonical workspace design skill](../../../.agents/skills/workspace-style-design/SKILL.md).
+and the canonical workspace design skill.
 Field at capacity shows X/Y axes through the exact analysis origin. Fixed curved
 arrows at their positive ends show +Mux about X and +Muy about Y. These reference arrows are
 independent of demand sign, physical-field availability and the resultant visibility switch.

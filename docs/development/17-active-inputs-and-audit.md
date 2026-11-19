@@ -3,7 +3,7 @@
 Reviewed: 2026-11-05. Scope: current Stage 1 cross-section application, all seven calculation
 profiles, both mechanics, Fixed/Adaptive modes, supported material models and input workbooks.
 This is a consumer inventory, not new formula, standard, default or acceptance authority.
-The [workspace input-composition contract](../../.agents/skills/workspace-style-design/references/design-standard.md#engineering-input-composition)
+The workspace input-composition contract
 owns the current-consumer rule. AGENTS.md makes this review mandatory for subsequent input changes.
 
 ## Reviewed field groups
@@ -53,8 +53,8 @@ owns the current-consumer rule. AGENTS.md makes this review mandatory for subseq
 - Routine helper text follows the workspace standard: omit static instructions and already filled
   audit-reason editors. Missing required reasons remain editable; existing reasons are accessible
   through Options > Resistance > Details. Provenance is retained without showing generated prose
-  as another routine input. See [the follow-up](../task-packets/2026-11-05-routine-form-text.md).
+  as another routine input. See the follow-up.
 
-The [task packet](../task-packets/2026-11-05-active-inputs.md) records tests, numerical impact and
+The task packet records tests, numerical impact and
 runtime evidence. Future feature changes must update this inventory with their actual consumer and
 activation; a new persisted property alone does not justify a new editable control.

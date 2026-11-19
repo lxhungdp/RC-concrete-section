@@ -17,7 +17,7 @@ The `capacity-fingerprint-v2` exact/portable comparison policy and its tolerance
     planes and the Fixed-P contours at reference level 3, thin-box levels 1–2 and l-shape level 2.
 
   The record is in
-  [the Fixed transition-station task](../../../../docs/task-packets/2026-11-18-fixed-tension-transition-stations.md).
+  the Fixed transition-station task.
 - `capacity-unified-28-baseline.json` is the historical reference for `unified-27-v2` plus the
   explicit `Pure tens 50%` station. It contains 36 directions × 28 states
   for each of the eight benchmark geometries. It was recorded with Node 24.20.0/npm 11.19.0 on
@@ -27,7 +27,7 @@ The `capacity-fingerprint-v2` exact/portable comparison policy and its tolerance
   point-array shape or silently overwritten.
 
 The current reference follows the user-selected sampling change documented in
-[the pure-tension task](../../../../docs/task-packets/2026-11-05-pure-tension-midpoint.md).
+the pure-tension task.
 Before selecting it, the CI synchronization review removed only `pure-tension-transition-50`
 from each current surface and reran the original fixed-P and moment-plane queries. All eight
 historical fingerprints were recovered under the existing policy, including all retained strain
@@ -41,6 +41,6 @@ their original acceptance limits. This reference does not assert that the compac
 accuracy or qualify the unresolved Fixed hardening uncertainty.
 
 The review and gate evidence is recorded in
-[the fixture/CI task](../../../../docs/task-packets/2026-11-05-complex-fixture-ci.md).
+the fixture/CI task.
 `npm run bench:record` writes only the current reference and still requires review of a deliberate
 result-affecting change. A passing regression gate confers no accepted-result or release status.

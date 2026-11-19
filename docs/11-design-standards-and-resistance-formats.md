@@ -287,7 +287,7 @@ borrowing the Main-body cap:
   design-surface proportional utilization —
   never by the inverse solver's fixed-P ratio, which `13` records as diagnostic only. An
   asymmetric section can be governed by a negative sense; offering only the positive senses was
-  finding F-01 of the [2026-11-11 audit](task-packets/2026-11-11-biaxial-pm-audit.md). The two
+  finding F-01 of the 2026-11-11 audit. The two
   mechanics may still select different candidates when they are near-tied, because
   each retains the worse candidate on its own resistance surface;
 - the Main-body state-dependent `phi = 0.65...0.85` and maximum axial-compression cap are therefore

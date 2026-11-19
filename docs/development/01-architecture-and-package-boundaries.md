@@ -227,7 +227,7 @@ project-apply boundary once. The current properties identify a natively opened f
 are not project inputs. An applied-input revision is checked before and after asynchronous decoding;
 successful Updates advance it. Unchanged metadata copies do not invalidate the draft. Formula
 results discard former literal precision notes before unit conversion. No formula cache or duplicate
-project state is trusted. See the [title-row packet](../task-packets/2026-11-05-project-spreadsheet-title-bar.md).
+project state is trusted. See the title-row packet.
 
 ### Transient table spreadsheets
 
@@ -245,7 +245,7 @@ before publication and Apply remains explicit. Rebars resolve steel IDs and vali
 disks/overlap against the applied section before publication. Stored As is never derived from an
 edited diameter. Unknown metadata, invalid cells and stale targets fail without partial updates.
 Formulas and layout remain transient or in saved XLSX, outside project JSON. The contract and
-evidence are tracked in [the task packet](../task-packets/2026-11-05-shared-table-spreadsheet.md).
+evidence are tracked in the task packet.
 
 The web-only Gridcraft integration is pinned to revision
 `919a6b58fe6661de27af0609d02443ac9db467bf` (0.16.0). Its reviewed Rust lockfile, bounded source
@@ -260,7 +260,7 @@ standalone workbook mapping and delegates units, identity allocation and load-re
 to existing package owners. The spreadsheet computes authoring formulas only: no P-M capacity,
 resistance or acceptance calculation imports it. Project JSON contains numeric inputs, with no
 spreadsheet document or formula state. See the
-[implementation evidence](../task-packets/2026-11-05-loadcase-gridcraft-plan.md) for tested behavior
+implementation evidence for tested behavior
 and the upstream alpha compatibility limitation.
 
 ## 10. Physical repository layout

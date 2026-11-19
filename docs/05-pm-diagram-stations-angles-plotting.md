@@ -92,8 +92,8 @@ clamped at the joint limit, the `1` state coincides with it. The two later state
 branch, so it is never a single chord (2026-11-09 review item 8).
 
 The ratios are a project sampling choice, not a code requirement or a new material limit. See the
-[2026-11-05 decision](task-packets/2026-11-05-pure-tension-midpoint.md) and the
-[2026-11-18 Fixed transition stations](task-packets/2026-11-18-fixed-tension-transition-stations.md).
+2026-11-05 decision and the
+2026-11-18 Fixed transition stations.
 
 With endpoint-defined hardening, the analysis owner resolves the Adaptive 50% seed and the Fixed
 edge-strain states from the compatible concrete and per-material steel inequalities. At 50% the
@@ -160,7 +160,7 @@ bar) and the controlling tensile strain have a crease. One row is added at every
 so the rows are bounded by the number of hull edges and therefore by the number of bars. Bridging
 the concave crease with a 10-degree chord over-predicted capacity by up to 4.3 % (fibre) and
 5.0 % (block) on an asymmetric bar layout; see audit finding F-02 and its
-[fix record](task-packets/2026-11-11-f02-tension-control-event-directions.md). Concrete-support
+fix record. Concrete-support
 switches were checked on a control section and do not reproduce the over-prediction; they add no
 row. The geometric rule is owned by `@pm/geometry` (`supportSwitchGradientAngles`); the fibre
 route maps it to `beta = pi/2 - theta` and the block route uses the block normal `theta` directly.
@@ -193,7 +193,7 @@ The block mesher's depth-ordering proxy for a cover gap is `1 - r * 1e-9`, stric
 `eps_s/eps_y = 0` station and `c/D = 1`. A schedule without that adjacent pair, or with every gap
 at most `h_c`, is unchanged. An ordinary 60 mm cover on a 500 mm side has a gap of 0.12 and
 receives one station. The record and gate are in the
-[F-03 task packet](task-packets/2026-11-12-f03-fixed-sampling-supplements.md).
+F-03 task packet.
 
 Adaptive mode instead owns its refined station set per meridian. Rows with unequal station counts
 are connected by explicit geometry/topology using their monotone state coordinates; station array
@@ -270,7 +270,7 @@ The transient contour retains path identity and closure on each point. Adjacency
 surface-edge/vertex identities, including coplanar patch perimeters. Separate components are
 rendered separately. An open or branched component cannot qualify a radial capacity query.
 Physical-station subsets are audit markers and cannot replace the complete segment chain in a
-capacity intersection. The [repair packet](task-packets/2026-11-04-fixed-p-adaptive-repair.md) owns
+capacity intersection. The repair packet owns
 the differential evidence.
 
 The contour is useful for visualization and for a fixed-P diagnostic. It is built from
@@ -395,7 +395,7 @@ Convert semantics are recorded in development/16.
 
 Demand Check shows the **Field at capacity** of the selected check for every classification and
 both mechanics ([engineering/05](engineering/05-loadings-analysis-results-and-reports.md) §3 angle
-convention and §5; [decision record](task-packets/2026-11-19-load-direction-convention.md)): the
+convention and §5; decision record): the
 proportional capacity state on the 3D ray, or the constant-P capacity state at `P = Pu` in the
 direction `thetaLoad`. Its β is the β (N.A.) shown by Demand Check and the reports. The displayed
 capacity multiplier identifies the boundary state relative to the checked demand and selected check

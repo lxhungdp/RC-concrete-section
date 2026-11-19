@@ -94,7 +94,7 @@ the Main-body maximum-axial cap. `minimumEccentricityCandidates` in `@pm/design`
 implementation for both mechanics. For biaxial nonzero moment, `h` is the section depth projected on
 the demand eccentricity direction; a zero-moment axial demand yields four candidates, both senses
 about each principal axis in the order `+Mx`, `−Mx`, `+My`, `−My` (audit finding F-01, recorded in
-[the fix packet](../task-packets/2026-11-11-f01-minimum-eccentricity-signs.md)). Every consumer
+the fix packet). Every consumer
 keeps the first candidate unless a later one has a strictly larger utilization.
 The governing candidate is resolved by design-surface proportional utilization:
 `checkLoadcaseUtilizationFromSurface` owns that choice, and `solveInversePreviewFromPrepared`

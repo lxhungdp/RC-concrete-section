@@ -42,7 +42,7 @@ Adaptive repair retains the combined facet estimator and original resource limit
 KDS finite-steel/pole intervals remain CHECK with explicit `state-stalled` evidence; they need a
 separately reviewed admissible continuation. Two pre-existing AS hollow proportional exact inverse
 cases remain unavailable physical states. Surface convergence does not remove those limitations.
-See [the repair packet](../task-packets/2026-11-04-fixed-p-adaptive-repair.md).
+See the repair packet.
 
 ## 3. Package and input boundaries
 
@@ -89,10 +89,10 @@ v1 input, compares through the documented canonical export boundary and retains 
 
 ## 6. Change records
 
-- [Programming-audit remediation](../task-packets/2026-11-04-programming-audit-remediation.md)
-- [Fixed-P and Adaptive repair](../task-packets/2026-11-04-fixed-p-adaptive-repair.md)
-- [Loadcase Gridcraft modal](../task-packets/2026-11-05-loadcase-gridcraft-plan.md)
-- [Hardening implementation](../task-packets/2026-11-03-reinforcing-steel-post-yield-plan.md)
-- [Constant-P basis](../task-packets/2026-11-04-constant-p-check-basis.md)
-- [Demand verdict matrix](../task-packets/2026-11-04-demand-verdict-matrix.md)
-- [Biaxial P-M audit, findings F-01 to F-08](../task-packets/2026-11-11-biaxial-pm-audit.md)
+- Programming-audit remediation
+- Fixed-P and Adaptive repair
+- Loadcase Gridcraft modal
+- Hardening implementation
+- Constant-P basis
+- Demand verdict matrix
+- Biaxial P-M audit, findings F-01 to F-08

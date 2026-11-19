@@ -2,7 +2,7 @@
 
 Independent re-check of the production `P-Mx-My` Design surfaces and the KDS Appendix minimum
 eccentricity rule. Record and findings:
-[2026-11-11 biaxial P-M audit](../../../docs/task-packets/2026-11-11-biaxial-pm-audit.md).
+2026-11-11 biaxial P-M audit.
 
 ```text
 npm run verify:biaxial-audit                  # all gated rows decide the exit status

@@ -5,13 +5,13 @@ Engineering scope, numerical owners and preview/release states remain governed
 by the control map.
 
 The single visual authority is the canonical skill's
-[design standard](../../.agents/skills/workspace-style-design/references/design-standard.md).
+design standard.
 Read it completely before changing UI. The complete specification lives inside
 the skill so later design work has the same rules; this document only maps the
 implementation. Do not maintain a second copy of visual values here.
 
 For compact engineering forms and reduced input burden, use the standard's
-[engineering input composition](../../.agents/skills/workspace-style-design/references/design-standard.md#engineering-input-composition).
+engineering input composition.
 It owns input classification, dependency review and the minimal sufficient input-set criteria.
 
 | Concern | Owner |

@@ -194,7 +194,7 @@ station/direction/pass budgets, protects the needed node from pruning and remeas
 facet error before accepting the surface. A depth midpoint clamped to an existing endpoint is
 excluded from redundant insertion. Its unresolved error remains in the station estimate and is
 reported as `state-stalled` when it prevents convergence. The repair and independent evidence are
-recorded in [the repair packet](task-packets/2026-11-04-fixed-p-adaptive-repair.md).
+recorded in the repair packet.
 
 ## 6. Error budget hierarchy
 

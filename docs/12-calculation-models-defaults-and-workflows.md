@@ -340,7 +340,7 @@ F-02, 2026-11-11) the same ray is 1.3% conservative and the largest measured blo
 is 1.33% (KDS L-shape). Fixed equivalent-block checks use the 2% margin by project decision of
 2026-11-04; it remains a screening rule and not a bound for this mechanics. Only converged
 Adaptive evidence provides a mechanics-specific estimate, subject to the open finding F-04 of the
-[2026-11-11 audit](task-packets/2026-11-11-biaxial-pm-audit.md).
+2026-11-11 audit.
 
 The benchmark is a regression gate, not design-code validation. Code validation still requires
 independent clause calculations, analytical sections, commercial-program comparisons with matched

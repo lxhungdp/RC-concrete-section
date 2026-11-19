@@ -113,7 +113,7 @@ ExcelJS/uuid chain (GHSA-w5hq-g745-h8pq); inspected ExcelJS calls use the unaffe
 output buffers. The task packet records the call-path evidence and remaining maintenance work.
 These checks do not imply universal dependency safety.
 
-The [initial task packet](../../docs/task-packets/2026-11-05-loadcase-gridcraft-plan.md) and
-[title-row packet](../../docs/task-packets/2026-11-05-project-spreadsheet-title-bar.md) record actual
+The initial task packet and
+title-row packet record actual
 checks and limitations. Engineering quantities continue through `@pm/units` and the project-owned
 load-reference boundary. No formula, layout, compiled workbook or result is added to project JSON.

@@ -67,7 +67,7 @@ Stress and modulus are MPa; strain is dimensionless.
 
 The KDS 14 20 20:2022 main-text §4.1.1(4) plateau remains the KDS default. Selecting the same
 inclined curve family under KDS records a project steel modification, with an explicit project
-cutoff and no inferred bridge or EN coefficient. The [implementation packet](task-packets/2026-11-03-reinforcing-steel-post-yield-plan.md)
+cutoff and no inferred bridge or EN coefficient. The implementation packet
 records the official KDS bridge source as curve-family research only; it does not qualify a bridge
 resistance method. No restricted standard text is reproduced here.
 

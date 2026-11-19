@@ -129,7 +129,7 @@ performs no-op material and demand edits, exports canonical JSON before/after, e
 rejected blank edit, and exports populated custom-unit PDFs for both mechanics.
 
 The five-group control revision and its current verification evidence are recorded in
-[the 2026-11-04 task packet](../task-packets/2026-11-04-unit-controls.md). Evidence below belongs to
+the 2026-11-04 task packet. Evidence below belongs to
 the original units implementation and its subsequent dated corrections.
 
 Canonical inputs and retained worker surface responses remain identical through the display-only

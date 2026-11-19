@@ -75,7 +75,7 @@ not make a pure-axial demand have zero utilization.
 ### Angle convention (2026-11-19)
 
 One convention applies to every check basis, both mechanics, the Demand Check views and the reports
-([decision record](../task-packets/2026-11-19-load-direction-convention.md)):
+(decision record):
 
 1. **Plane.** The demand moment direction `thetaLoad = atan2(Muy, Mux)` selects the only demand
    plane. The proportional ray, the constant-P path and the demand point all lie in the vertical plane
@@ -159,10 +159,10 @@ Every Fixed check uses a 2% screening margin: `UR <= 0.98` is `adequate`, `UR > 
 `inadequate`, and between them is `indeterminate`. The margin comes from the stress-strain
 proportional dense-grid matrix. Using it for equivalent-block, hardening and constant-axial checks
 is a project decision of 2026-11-04, recorded in the
-[task packet](../task-packets/2026-11-04-constant-p-check-basis.md). It is not a formal error bound
+task packet. It is not a formal error bound
 in any domain. An exact block refinement measured a 2.18% unsafe over-prediction before the
 geometric tension-control rows of [root 05 §3.1](../05-pm-diagram-stations-angles-plotting.md);
-with them the independent [2026-11-11 audit](../task-packets/2026-11-11-biaxial-pm-audit.md)
+with them the independent 2026-11-11 audit
 measures at most 1.75% over-prediction (including its oracle error) on its sections, which is a
 measured sample, not a bound. The verdict message says so outside the measured domain. Adaptive mode uses its returned station/direction error
 evidence and is indeterminate if either refinement did not converge.
@@ -173,7 +173,7 @@ sampling, missing/invalid uncertainty, missing intersection, or an undefined con
 A finite UR far from one cannot override missing Adaptive convergence. The table and calculation
 dialog consume that check message; they must not describe every CHECK as a near-boundary case or
 recommend switching to Adaptive when that mode is already unconverged. Cross-profile verification
-is recorded in [the verdict matrix packet](../task-packets/2026-11-04-demand-verdict-matrix.md).
+is recorded in the verdict matrix packet.
 
 The Results module consumes an immutable result DTO; it does not recalculate material factors or
 capacity. It provides:
