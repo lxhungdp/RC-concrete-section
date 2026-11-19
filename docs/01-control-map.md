@@ -1,0 +1,127 @@
+# Single Source Control Map
+
+Status: **authority map for documentation and implementation changes**.
+
+This file prevents overlapping instructions. If a formula, tolerance, mesh parameter, design-code
+factor, workflow rule, or result behavior appears in more than one place, use this map to decide the
+single edit location first, then update downstream summaries, code, and tests.
+
+## 1. How To Use This Map
+
+| Change type | First action |
+|---|---|
+| Engineering formula, design-code rule, admissibility, or acceptance gate | Update the engineering authority named below, then implementation and verification evidence. |
+| Software package/API/schema/workflow change | Update the development authority named below, then implementation and tests. |
+| Mesh size, station schedule, plotting discretization, tolerance, or default | Update the parameter registry in this file before editing code. |
+| Conflict between documents | Apply the authority order in [`00-README.md`](00-README.md), then correct the lower-authority document. |
+
+Numbered root documents keep the detailed knowledge. Role READMEs summarize where to go; they must
+not become separate formula books.
+
+## 2. Topic Authority Map
+
+| Topic | Edit here first | Detailed reference | Current implementation owner |
+|---|---|---|---|
+| Product scope, exclusions, lifecycle, release meaning | [`engineering/01-product-scope-and-workflow.md`](engineering/01-product-scope-and-workflow.md) | [`01-data-model-and-materials.md`](01-data-model-and-materials.md), [`07-integration-edge-cases-and-qa.md`](07-integration-edge-cases-and-qa.md) | Product/UI state only |
+| Units, axes, origin, signs, terminology | [`engineering/02-data-conventions-and-terminology.md`](engineering/02-data-conventions-and-terminology.md) | [`01-data-model-and-materials.md`](01-data-model-and-materials.md), [`development/10-display-units.md`](development/10-display-units.md) | Canonical project schema; `packages/pm-units` boundary conversions and UI/report presentation |
+| Geometry topology, holes, exact boundary, cover, rebar interpretation | [`engineering/03-geometry-and-reinforcement.md`](engineering/03-geometry-and-reinforcement.md) | [`02-meshing-2d.md`](02-meshing-2d.md) | `packages/pm-geometry`, web section editor |
+| Stored rebar area and one-time catalog/equation fills | [`engineering/03-geometry-and-reinforcement.md`](engineering/03-geometry-and-reinforcement.md) | [`development/11-rebar-area-and-catalogs.md`](development/11-rebar-area-and-catalogs.md) | `packages/pm-geometry` area boundary; lazy web reference catalog; project/analysis/report adapters consume stored As |
+| Material definitions and admissibility | [`engineering/04-materials-and-design-standards.md`](engineering/04-materials-and-design-standards.md) | [`01-data-model-and-materials.md`](01-data-model-and-materials.md), [`11-design-standards-and-resistance-formats.md`](11-design-standards-and-resistance-formats.md) | `packages/pm-materials` |
+| Design standard/profile identity and resistance sequencing | [`11-design-standards-and-resistance-formats.md`](11-design-standards-and-resistance-formats.md) | [`engineering/04-materials-and-design-standards.md`](engineering/04-materials-and-design-standards.md), [`10-normative-references-and-change-control.md`](10-normative-references-and-change-control.md) | `packages/pm-design`, code adapters |
+| The two calculation models, formulas, defaults, and workflows | [`12-calculation-models-defaults-and-workflows.md`](12-calculation-models-defaults-and-workflows.md) | [`03-forward-analysis-and-jacobian.md`](03-forward-analysis-and-jacobian.md), [`05-pm-diagram-stations-angles-plotting.md`](05-pm-diagram-stations-angles-plotting.md) | `packages/pm-analysis`, `packages/pm-equivalent-block`, `packages/pm-analysis-equivalent-block` |
+| Forward strain-state mechanics and resultants | [`03-forward-analysis-and-jacobian.md`](03-forward-analysis-and-jacobian.md) | [`06-mesh-sizing-and-convergence.md`](06-mesh-sizing-and-convergence.md) | `packages/pm-analysis` |
+| Service or inverse solver behavior | [`04-initial-guess-feasibility-newton.md`](04-initial-guess-feasibility-newton.md) | [`03-forward-analysis-and-jacobian.md`](03-forward-analysis-and-jacobian.md) | `packages/pm-analysis`, `packages/pm-equivalent-block` |
+| Mesh sizing, convergence, numerical uncertainty | [`06-mesh-sizing-and-convergence.md`](06-mesh-sizing-and-convergence.md) | [`02-meshing-2d.md`](02-meshing-2d.md) | versioned analysis-options DTOs in `packages/pm-project` |
+| P-M surface, shared stations, direction refinement, 2D/3D plot semantics | [`05-pm-diagram-stations-angles-plotting.md`](05-pm-diagram-stations-angles-plotting.md) | [`12-calculation-models-defaults-and-workflows.md`](12-calculation-models-defaults-and-workflows.md), [`06-mesh-sizing-and-convergence.md`](06-mesh-sizing-and-convergence.md) | analysis packages and `ResultsWorkspace.tsx` |
+| Loadcase meaning, demand checks, result/report eligibility | [`engineering/05-loadings-analysis-results-and-reports.md`](engineering/05-loadings-analysis-results-and-reports.md) | [`development/04-loadings-analysis-results-and-report-pipelines.md`](development/04-loadings-analysis-results-and-report-pipelines.md) | Project loadings seed and `Demand Check` workspace |
+| Package boundaries, dependency direction, runtime separation | [`development/01-architecture-and-package-boundaries.md`](development/01-architecture-and-package-boundaries.md) | [`08-software-architecture-and-api.md`](08-software-architecture-and-api.md) | Workspace packages |
+| Project XLSX and transient spreadsheet transport | [`development/01-architecture-and-package-boundaries.md`](development/01-architecture-and-package-boundaries.md) | [`development/02`](development/02-data-contracts-persistence-and-versioning.md), [`development/03`](development/03-geometry-and-material-pipelines.md), [`development/04`](development/04-loadings-analysis-results-and-report-pipelines.md) | `@pm/spreadsheet` project/table adapters; shared modal/modeless app primitive and Gridcraft host; existing geometry/project/units owners retain engineering validation |
+| Mechanics-neutral result/audit contracts | [`development/01-architecture-and-package-boundaries.md`](development/01-architecture-and-package-boundaries.md) | [`development/04`](development/04-loadings-analysis-results-and-report-pipelines.md) | `packages/pm-results` contracts and pure audit assembly; mechanics packages retain all constitutive evaluation and surface construction |
+| Workspace UI design, chrome tokens, controls, menus and theme parity | [`workspace-style-design` standard](../.agents/skills/workspace-style-design/references/design-standard.md) | [`development/09-workspace-design-system.md`](development/09-workspace-design-system.md), [skill workflow](../.agents/skills/workspace-style-design/SKILL.md) | Web workspace tokens/primitives/chrome; CAD palette remains independently owned |
+| Project schema, persistence, versioning, and legacy parser behavior | [`development/02-data-contracts-persistence-and-versioning.md`](development/02-data-contracts-persistence-and-versioning.md) | [`08-software-architecture-and-api.md`](08-software-architecture-and-api.md) | `packages/pm-project`; canonical exports v3 with load reference, explicit centroidal v1/v2 readers; no general migration framework |
+| Geometry/material implementation pipelines | [`development/03-geometry-and-material-pipelines.md`](development/03-geometry-and-material-pipelines.md) | Engineering geometry/material documents | `packages/pm-geometry`, `packages/pm-materials`, web editor |
+| Analysis/results/report implementation pipelines | [`development/04-loadings-analysis-results-and-report-pipelines.md`](development/04-loadings-analysis-results-and-report-pipelines.md) | Engineering loadings/results document | Current web worker, analysis packages, `@pm/report`; accepted-result/report packages remain future work |
+| Tests, coding quality, AI workflow, review discipline | [`development/05-coding-quality-and-ai-workflow.md`](development/05-coding-quality-and-ai-workflow.md) | [`09-verification-validation-and-release.md`](09-verification-validation-and-release.md) | All packages and apps |
+| Current status and roadmap | [`development/06-current-state-and-roadmap.md`](development/06-current-state-and-roadmap.md) | All documents above | Planning only |
+
+## 3. Parameter Registry
+
+These entries are intentionally explicit so engineers know where a number is allowed to change.
+Accepted-analysis parameters must eventually live in versioned package options, not in React.
+
+| Parameter or behavior | Current edit location | Authority | Status |
+|---|---|---|---|
+| Input resource preflight | `packages/pm-geometry/src/resource-limits.ts`, `packages/pm-materials/src/resource-limits.ts`, `packages/pm-project/src/resource-limits.ts` | [`development/02`](development/02-data-contracts-persistence-and-versioning.md) input-resource contract; [`engineering/03`](engineering/03-geometry-and-reinforcement.md) | Bounds are implementation safety limits, independent of numerical tolerances. JSON and direct package callers fail before expensive geometry/material work. |
+| Shared 27-station schedule for both mechanics | `packages/pm-stations/src/index.ts` | [`12-calculation-models-defaults-and-workflows.md`](12-calculation-models-defaults-and-workflows.md) | implemented preview |
+| Fibre pure-tension transition stations and finite hardening boundary | `packages/pm-analysis/src/index.ts` `withTensionTransitionStations`; `packages/pm-analysis/src/steel-strain-boundary.ts` | [`05`](05-pm-diagram-stations-angles-plotting.md) §2.3; [`engineering/04`](engineering/04-materials-and-design-standards.md) §5 | Fixed adds three edge-strain transition states (compression edge at 1, 2/3, 1/3 εcu; `steel-strain-boundary.ts` `atEdgeStrain` with hardening); Adaptive keeps one 50% path seed; finite hardening retains its material-derived compatible boundary |
+| Fixed-P block root admissibility | `packages/pm-equivalent-block/src/inverse.ts`; forward compression-pivot resolver; `resolveSteelStrainLimits` resolves the signed bounds for forward evidence, root filtering and the block workbook | [`engineering/04`](engineering/04-materials-and-design-standards.md) §5 | retained roots enforce each declared signed steel bound with the existing relative 1e-9 strain criterion; trials remain diagnostic |
+| Mutually exclusive sampling modes: editable fixed 27 × 36 base grid, or independent adaptive from 12 base criteria + 2 poles × 12 directions at 1% tolerance | `packages/pm-project/src/analysis-options.ts` | [`05-pm-diagram-stations-angles-plotting.md`](05-pm-diagram-stations-angles-plotting.md) | implemented for both mechanics with the fibre midpoint described above; adaptive meridians own their station sets and are never paired by station-array index |
+| Fixed geometric supplementary rows: tension-control event directions (bar convex-hull edge normals) | rule `packages/pm-geometry/src/sampling-directions.ts`; applied by `fixedSamplingDirections` in `packages/pm-analysis/src/index.ts` and `fixedSupplementaryDirections` in `packages/pm-analysis-equivalent-block/src/index.ts` | [`05`](05-pm-diagram-stations-angles-plotting.md) §3.1 | implemented preview (audit F-02, 2026-11-11); exact geometry only, seeds keep their values, exact meridians and Adaptive receive none |
+| Fixed normalized-gap rows (net-concrete covariance `C^(1/2)`) and cover-gap stations (`c/D = 1` to `eps_s/eps_y = 0`) | `netConcreteAreaCovariance` in `packages/pm-geometry/src/mesh.ts`, `normalizedGapGradientAngles` in `sampling-directions.ts`; `withCoverGapStations` (fibre) and `fixedCoverGapStations` (block bridge); block order proxy in `packages/pm-equivalent-block/src/surface.ts` | [`05`](05-pm-diagram-stations-angles-plotting.md) §3.2–§3.3 | implemented preview (audit F-03, 2026-11-12); mean seed spacing and the schedule's last outside step 0.1; Adaptive unchanged; F-03 gate partly open |
+| Demand check basis: `proportional3D` (default) or `constantAxial` | `inputs.loadings.checkBasis`, `packages/pm-project`; query in `packages/pm-analysis` | [`engineering/05`](engineering/05-loadings-analysis-results-and-reports.md) §3 | Constant-P checks axis containment and transverse exits and reports ambiguous geometry as unavailable. Every Fixed verdict uses the 2% project screening margin. `direct2D` was removed on 2026-11-19; a stored value is read as `proportional3D` with a warning ([development/02](development/02-data-contracts-persistence-and-versioning.md) §7). |
+| Resultant signs | `engineering/02-data-conventions-and-terminology.md`, then each mechanics ledger | [`03-forward-analysis-and-jacobian.md`](03-forward-analysis-and-jacobian.md) | implemented consistently: `Mx = ΣF(y-yc)`, `My = ΣF(x-xc)` in both mechanics, DTOs, plots and exports; asymmetric ledger tests guard the contract |
+| Concrete integration-mesh density | `AnalysisOptions.mesh` and `packages/pm-geometry` | [`06-mesh-sizing-and-convergence.md`](06-mesh-sizing-and-convergence.md) | used only by stress-strain integration |
+| Mesh/refinement tolerances and uncertainty evidence | versioned analysis-options DTOs and returned surface evidence | [`06-mesh-sizing-and-convergence.md`](06-mesh-sizing-and-convergence.md) | implemented preview; accepted-result gate remains open |
+| Fixed-grid utilization screening policy | `packages/pm-results` classification contract, selected by the check owner in `packages/pm-analysis` | [`engineering/05-loadings-analysis-results-and-reports.md`](engineering/05-loadings-analysis-results-and-reports.md) | every Fixed profile/mechanics/basis uses the project-selected 2% screening margin; its measured domain and lack of a universal error bound remain explicit; Adaptive requires converged evidence |
+| Report content and page order | `packages/pm-report/src/model/report-model.ts` (what the report says) and `packages/pm-report/src/pdf/column-report.ts` (how it is laid out) | [`engineering/05-loadings-analysis-results-and-reports.md`](engineering/05-loadings-analysis-results-and-reports.md) §6 | implemented preview; the model formats kernel results and introduces no factor, rounding rule or adequacy test |
+| Governing check composed onto an inverse state | `packages/pm-analysis` `applyDesignCheckToInverse` | [`engineering/05-loadings-analysis-results-and-reports.md`](engineering/05-loadings-analysis-results-and-reports.md) | one owner for worker and report; the inverse's own utilization is the fixed-P diagnostic, not the governing number |
+| Demand Check field display basis | `packages/pm-analysis` `resolveLoadcaseField` | [`05`](05-pm-diagram-stations-angles-plotting.md) §10; [decision record](task-packets/2026-11-19-load-direction-convention.md) | the strength-point (capacity) state of the selected check for every case and both mechanics; typed unavailable when unresolved |
+| Exact axial-cap geometry | stress-strain surface cap owner; equivalent-block surface clipper; shared indexed planar-loop triangulation in `@pm/geometry` | [`05`](05-pm-diagram-stations-angles-plotting.md) §9; [`development/15`](development/15-exact-axial-cap-intersections.md) | geometric half-space intersection; original below-cap vertices/faces and exact source-edge intersections; no radial station projection. Reuse the existing relative 1e-9 cap-plane/welding criterion and indexed-loop 1e-12 orientation criterion, with separate force/moment scales. |
+| Capacity-field state and bounded refinement | lazy `packages/pm-analysis/capacity-field`; block bridge reuses its physical ray state | [`05`](05-pm-diagram-stations-angles-plotting.md) §10, [`04`](04-initial-guess-feasibility-newton.md) §10; [`development/14`](development/14-before-axial-cap-fields.md) | diagnostic only; cap-governed fields use the retained pre-cap Design ray boundary and explicit before-cap evidence; existing evaluators and bounded refinements; no change to UR or adequacy |
+| Workbook defined-name legality | `packages/pm-report/src/excel/workbook-common.ts` `invalidDefinedNameReason` | [`development/04-loadings-analysis-results-and-report-pipelines.md`](development/04-loadings-analysis-results-and-report-pipelines.md) | one rule for both workbooks; deliberately stricter than Excel so a name is legal in every engine that may open the file |
+| KDS derived concrete parameters and defaults | `packages/pm-materials/src/standards/kds.ts` | [`11-design-standards-and-resistance-formats.md`](11-design-standards-and-resistance-formats.md) | preview/unverified |
+| EN 1992 material/design policy | `packages/pm-code-en1992` consumed by `packages/pm-materials` and `packages/pm-design` | [`11-design-standards-and-resistance-formats.md`](11-design-standards-and-resistance-formats.md) | executable draft; no National Annex and incomplete EC2 strain-domain boundary |
+| AS 3600 equivalent block and capacity-factor policy | `packages/pm-code-as3600` through `packages/pm-analysis-equivalent-block` | [`11-design-standards-and-resistance-formats.md`](11-design-standards-and-resistance-formats.md) | executable draft; unverified and not releasable |
+| Concrete and steel material model contracts | `packages/pm-materials/src/*.ts` | [`engineering/04-materials-and-design-standards.md`](engineering/04-materials-and-design-standards.md) | preview |
+| Immediate post-yield steel hardening and signed limits | `packages/pm-materials/src/steel/linear-hardening.ts`; EN recommended strain rule in `packages/pm-code-en1992` | [`engineering/04-materials-and-design-standards.md`](engineering/04-materials-and-design-standards.md) §5 | implemented Class 4 draft; [numerical evidence](task-packets/2026-11-03-reinforcing-steel-post-yield-plan.md), independent release review pending |
+| Unified hardening authoring and defaults | `packages/pm-project/src/steel-hardening.ts`; Class-B reference pair in `packages/pm-code-en1992` | [`engineering/04-materials-and-design-standards.md`](engineering/04-materials-and-design-standards.md) §5 | checkbox; paired epsUk and radio-selected k/fuk; linked epsUd/alphaEpsilon (%) fields; EN 90% recommended preview, KDS/Custom 100% project declaration; no saved-input rewrite or silent physical-bound removal |
+| Rebar quick-generator defaults | `apps/web/features/section-editor/geometry/rebar-generator-state.ts` `createRebarGeneratorState` | [`engineering/03-geometry-and-reinforcement.md`](engineering/03-geometry-and-reinforcement.md) | preview UI default |
+| Loadcase input fields and units display | `apps/web/features/section-editor/loadings/LoadingsPanel.tsx` and project loadings types | [`engineering/02-data-conventions-and-terminology.md`](engineering/02-data-conventions-and-terminology.md), [`engineering/05-loadings-analysis-results-and-reports.md`](engineering/05-loadings-analysis-results-and-reports.md) | preview UI |
+| Transient project/table spreadsheets and resource bounds | `@pm/spreadsheet` project/table adapters, shared `MovableDialog` modal/app window, application Gridcraft client/window adapters, shared `workbook-archive.ts`; pinned engine patch in `tools/gridcraft` | [`development/04`](development/04-loadings-analysis-results-and-report-pipelines.md), [dependency/build contract](../tools/gridcraft/README.md) | formula authoring only; atomic evaluated-value Update through existing project/geometry/unit/reference owners; no project schema or calculation-kernel change |
+| Applied load reference and action translation | `packages/pm-project/src/load-reference.ts`; web draft/Apply adapter | [`engineering/02`](engineering/02-data-conventions-and-terminology.md) §2; [`development/16`](development/16-load-reference-origin.md) | canonical centroidal actions; offset-reference input/view copies; explicit Apply with optional conversion |
+| Plotly adapter and chart interaction behavior | `apps/web/features/section-editor/results/PlotlyChart.tsx`, `ResultsWorkspace.tsx` | [`development/04-loadings-analysis-results-and-report-pipelines.md`](development/04-loadings-analysis-results-and-report-pipelines.md), [`05-pm-diagram-stations-angles-plotting.md`](05-pm-diagram-stations-angles-plotting.md) | preview presentation |
+| Result and mesh audit exports | `packages/pm-report`, `ResultsWorkspace.tsx`, `AnalysisMeshWorkspace.tsx` | [`development/04-loadings-analysis-results-and-report-pipelines.md`](development/04-loadings-analysis-results-and-report-pipelines.md) | both result workbooks, mesh Excel/DXF, shared `ReportModel`, and watermarked preview PDF implemented; accepted-result and released-report gates remain open |
+| Calculation-profile identity: mechanics, material standard, resistance profile | `packages/pm-project/src/calculation-profiles.ts` `CALCULATION_PROFILES` | [`12-calculation-models-defaults-and-workflows.md`](12-calculation-models-defaults-and-workflows.md) | one table; persistence validation and the atomic Materials apply both read it instead of re-deriving from the profile id |
+| User-defined block parameters `beta1`, `alpha`, `epsCu` | `packages/pm-materials` `user-block` concrete model, edited in `apps/web/features/section-editor/materials/MaterialPanel.tsx` | [`12-calculation-models-defaults-and-workflows.md`](12-calculation-models-defaults-and-workflows.md) §3 | implemented preview; the value reaching the kernel is `userBlockCompressionStress`, so display and integration cannot diverge |
+| Resistance-route factors and transition rule | `DesignBasis`; Materials owns material factors and non-AS class/cap inputs; `DesignBasisPanel.tsx` owns remaining active resistance inputs | [`11-design-standards-and-resistance-formats.md`](11-design-standards-and-resistance-formats.md), [UI ownership](development/07-design-resistance-implementation.md#4-ui-behavior) | no duplicate editors or cross-owner reset; code-profile deviations remain `draft` and require an override narrative; `custom-user-defined` remains `user-defined` |
+| Results chart presentation state (angles, visibility, resistance stage) | `apps/web/features/section-editor/results/results-view.ts` | [`05-pm-diagram-stations-angles-plotting.md`](05-pm-diagram-stations-angles-plotting.md) | Capacity and Demand P–M both show the P–M at θ load-direction curve (Capacity θ is a view setting, never a strain angle); preview presentation; stored actions/checks are unchanged |
+| Load-direction P–M curve (physical cut of the surface at `thetaLoad`, each point with its own β) | mechanics-neutral projection `packages/pm-results/src/load-direction.ts`; surface slicing and stress-strain edge families `packages/pm-analysis/src/load-direction.ts`; block edge families `createEquivalentBlockLoadDirectionMechanics` in `packages/pm-analysis-equivalent-block` | [`engineering/05`](engineering/05-loadings-analysis-results-and-reports.md) §3; [`05`](05-pm-diagram-stations-angles-plotting.md) §8 | Brent on the edge parameter τ; plane offset within `|sin|` ≤ 1e-9 or 1e-12 of the cut's moment scale; τ tolerance 1e-13; at most 60 evaluations per crossing; jumps reported as discontinuities; edges with no family geometric, labelled and unresolved; display and diagnostic only |
+
+Rule: before a preview parameter is used for accepted results, move it into a versioned package
+contract, add provenance, and update this registry.
+
+Classic pitfall: a surface-sampling angle or neutral-axis/strain-plane angle is not the load moment
+direction. Loadcase checks and `P-Mtheta` slices must compute `thetaLoad = atan2(Muy, Mux)` and
+query the completed `P-Mx-My` surface geometrically. Do not select a sampled angle row just because
+its label is numerically close to `thetaLoad`.
+
+## 4. No-Duplication Rules
+
+Editable-field applicability follows the workspace standard's current-consumer rule. The
+[active-input inventory](development/17-active-inputs-and-audit.md) records the reviewed consumers
+and activation conditions; it introduces no independent numerical rules or defaults.
+
+- Summaries may describe intent, but formulas, coefficients, mesh numbers, tolerances, and status
+  gates must point to the mapped authority instead of repeating independent values.
+- Code constants that affect results should reference the mapped authority in a short comment or
+  nearby test name.
+- Existing examples and spreadsheets are regression evidence. They do not override standards,
+  engineering authority, or verified design-code profiles.
+- If a future change needs a new owner, update this file in the same change set.
+
+## 5. Preserved Reference Set
+
+The refactor keeps the old knowledge by preserving these detailed references:
+
+`01-data-model-and-materials.md`,
+`02-meshing-2d.md`,
+`03-forward-analysis-and-jacobian.md`,
+`04-initial-guess-feasibility-newton.md`,
+`05-pm-diagram-stations-angles-plotting.md`,
+`06-mesh-sizing-and-convergence.md`,
+`07-integration-edge-cases-and-qa.md`,
+`08-software-architecture-and-api.md`,
+`09-verification-validation-and-release.md`,
+`10-normative-references-and-change-control.md`,
+`11-design-standards-and-resistance-formats.md`,
+all files under `engineering/`, and all files under `development/`.

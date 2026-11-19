@@ -1,0 +1,1541 @@
+{
+  "schema": "pm-verification-traceability",
+  "version": 1,
+  "note": "A passing linkage check does not certify engineering correctness or close declared release gaps.",
+  "requirements": [
+    {
+      "id": "DEV-ARCH-001",
+      "authority": "docs/development/01-architecture-and-package-boundaries.md",
+      "coverage": "implemented-preview",
+      "implementation": [
+        {
+          "file": "tools/architecture/workspace-dependencies.ts",
+          "symbol": "inspectWorkspaceDependencies"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/table.ts",
+          "symbol": "prepareSheetWorkbook"
+        }
+      ],
+      "verification": [
+        {
+          "file": "tools/architecture/workspace-dependencies.test.ts",
+          "oracle": "Synthetic dependency DAG, public-export, relative-bypass and capability rejection cases."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "DEV-ARCH-002",
+      "authority": "docs/development/01-architecture-and-package-boundaries.md",
+      "coverage": "implemented-preview",
+      "implementation": [
+        {
+          "file": "tools/architecture/workspace-dependencies.ts",
+          "symbol": "inspectWorkspaceDependencies"
+        },
+        {
+          "file": "apps/web/application/analysis/execution.ts",
+          "symbol": "createAnalysisExecution"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromSpreadsheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromWorkbookEditor"
+        }
+      ],
+      "verification": [
+        {
+          "file": "tools/architecture/workspace-dependencies.test.ts",
+          "oracle": "Synthetic dependency DAG, public-export, relative-bypass and capability rejection cases."
+        },
+        {
+          "file": "apps/web/test/analysis/execution.test.ts",
+          "oracle": "Both mechanics reproduce kernel checks, preserve cache invalidation and expose typed material failures."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-spreadsheet.test.ts",
+          "oracle": "Complete all-profile/source-unit project equality; simultaneous numeric/option/reference edits; formula precision-note rejection and invalid/error/resource snapshots fail without partial inputs."
+        },
+        {
+          "file": "tools/verification/project-spreadsheet/browser.mjs",
+          "oracle": "Actual single native filename row with Open/Save/Undo/Redo icons only at left, shared Update/window controls right, no extra header, native ribbon below and pointer title drag, no separate address bar, min/max/restore preserves draft, original Open/Save, fresh formulas/helper fill, formatted Save, atomic repeated nine-sheet Update, invalid/stale/generic workbook rejection and values-only reopening."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-project-spreadsheet-dialog.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-native-project-spreadsheet-window.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "DEV-ARCH-003",
+      "authority": "docs/development/01-architecture-and-package-boundaries.md",
+      "coverage": "implemented-preview",
+      "implementation": [
+        {
+          "file": "tools/architecture/workspace-dependencies.ts",
+          "symbol": "inspectWorkspaceDependencies"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromSpreadsheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromWorkbookEditor"
+        }
+      ],
+      "verification": [
+        {
+          "file": "tools/architecture/workspace-dependencies.test.ts",
+          "oracle": "Synthetic dependency DAG, public-export, relative-bypass and capability rejection cases."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-spreadsheet.test.ts",
+          "oracle": "Complete all-profile/source-unit project equality; simultaneous numeric/option/reference edits; formula precision-note rejection and invalid/error/resource snapshots fail without partial inputs."
+        },
+        {
+          "file": "tools/verification/project-spreadsheet/browser.mjs",
+          "oracle": "Actual single native filename row with Open/Save/Undo/Redo icons only at left, shared Update/window controls right, no extra header, native ribbon below and pointer title drag, no separate address bar, min/max/restore preserves draft, original Open/Save, fresh formulas/helper fill, formatted Save, atomic repeated nine-sheet Update, invalid/stale/generic workbook rejection and values-only reopening."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-project-spreadsheet-dialog.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-native-project-spreadsheet-window.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "DEV-ARCH-004",
+      "authority": "docs/development/01-architecture-and-package-boundaries.md",
+      "coverage": "implemented-preview",
+      "implementation": [
+        {
+          "file": "tools/architecture/workspace-dependencies.ts",
+          "symbol": "inspectWorkspaceDependencies"
+        }
+      ],
+      "verification": [
+        {
+          "file": "tools/architecture/workspace-dependencies.test.ts",
+          "oracle": "Synthetic dependency DAG, public-export, relative-bypass and capability rejection cases."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "DEV-ARCH-005",
+      "authority": "docs/development/01-architecture-and-package-boundaries.md",
+      "coverage": "implemented-preview",
+      "implementation": [
+        {
+          "file": "tools/architecture/workspace-dependencies.ts",
+          "symbol": "inspectWorkspaceDependencies"
+        }
+      ],
+      "verification": [
+        {
+          "file": "tools/architecture/workspace-dependencies.test.ts",
+          "oracle": "Synthetic dependency DAG, public-export, relative-bypass and capability rejection cases."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "DEV-ARCH-006",
+      "authority": "docs/development/01-architecture-and-package-boundaries.md",
+      "coverage": "open",
+      "implementation": [
+        {
+          "file": "apps/web/features/section-editor/results/loadcase-calculation-trace.ts",
+          "symbol": "sameLoadcaseAnalysisInputs"
+        }
+      ],
+      "verification": [
+        {
+          "file": "apps/web/test/results/loadcase-calculation-trace.test.ts",
+          "oracle": "Immutable applied-input identity and demand/result/surface replacement reject stale Preview frames."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-demand-navigation-transition.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "The accepted-result/profile/normalization capability required by this gate is not implemented or independently approved."
+    },
+    {
+      "id": "DEV-ARCH-007",
+      "authority": "docs/development/01-architecture-and-package-boundaries.md",
+      "coverage": "implemented-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/mesh.ts",
+          "symbol": "buildConcreteMesh"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromSpreadsheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromWorkbookEditor"
+        },
+        {
+          "file": "apps/web/application/spreadsheets/gridcraft-window.ts",
+          "symbol": "connectGridcraftWindow"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/mesh-spatial.test.ts",
+          "oracle": "Differential all-cell clipping and spatial classifier conservation invariants."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-spreadsheet.test.ts",
+          "oracle": "Complete all-profile/source-unit project equality; simultaneous numeric/option/reference edits; formula precision-note rejection and invalid/error/resource snapshots fail without partial inputs."
+        },
+        {
+          "file": "tools/verification/project-spreadsheet/browser.mjs",
+          "oracle": "Actual single native filename row with Open/Save/Undo/Redo icons only at left, shared Update/window controls right, no extra header, native ribbon below and pointer title drag, no separate address bar, min/max/restore preserves draft, original Open/Save, fresh formulas/helper fill, formatted Save, atomic repeated nine-sheet Update, invalid/stale/generic workbook rejection and values-only reopening."
+        },
+        {
+          "file": "apps/web/test/gridcraft-window.test.ts",
+          "oracle": "Fresh origin/source/session registration before frame navigation, paint readiness/cancellation and owner-window file picker/save/cross-realm cancellation."
+        },
+        {
+          "file": "apps/web/test/project-spreadsheet-state.test.ts",
+          "oracle": "Applied input changes invalidate a draft; unchanged metadata clones do not; every editable identity field invalidates it."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-project-spreadsheet-dialog.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-native-project-spreadsheet-window.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-project-spreadsheet-title-bar.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "UNITS-001",
+      "authority": "docs/engineering/02-data-conventions-and-terminology.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-units/src/index.ts",
+          "symbol": "CANONICAL_UNITS"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-units/test/units.test.ts",
+          "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "UNITS-002",
+      "authority": "docs/engineering/02-data-conventions-and-terminology.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-units/src/index.ts",
+          "symbol": "selectUnit"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-units/test/units.test.ts",
+          "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "UNITS-003",
+      "authority": "docs/engineering/02-data-conventions-and-terminology.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-units/src/index.ts",
+          "symbol": "commitQuantity"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "coordinatesFromSheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromSpreadsheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromWorkbookEditor"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-units/test/units.test.ts",
+          "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-spreadsheet.test.ts",
+          "oracle": "Complete all-profile/source-unit project equality; simultaneous numeric/option/reference edits; formula precision-note rejection and invalid/error/resource snapshots fail without partial inputs."
+        },
+        {
+          "file": "tools/verification/project-spreadsheet/browser.mjs",
+          "oracle": "Actual single native filename row with Open/Save/Undo/Redo icons only at left, shared Update/window controls right, no extra header, native ribbon below and pointer title drag, no separate address bar, min/max/restore preserves draft, original Open/Save, fresh formulas/helper fill, formatted Save, atomic repeated nine-sheet Update, invalid/stale/generic workbook rejection and values-only reopening."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-project-spreadsheet-dialog.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-native-project-spreadsheet-window.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "UNITS-004",
+      "authority": "docs/engineering/02-data-conventions-and-terminology.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-units/src/index.ts",
+          "symbol": "quantityUnit"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-units/test/units.test.ts",
+          "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "UNITS-005",
+      "authority": "docs/engineering/02-data-conventions-and-terminology.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-units/src/index.ts",
+          "symbol": "parseQuantityUnitSelection"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "coordinatesFromSheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromSpreadsheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromWorkbookEditor"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-units/test/units.test.ts",
+          "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-spreadsheet.test.ts",
+          "oracle": "Complete all-profile/source-unit project equality; simultaneous numeric/option/reference edits; formula precision-note rejection and invalid/error/resource snapshots fail without partial inputs."
+        },
+        {
+          "file": "tools/verification/project-spreadsheet/browser.mjs",
+          "oracle": "Actual single native filename row with Open/Save/Undo/Redo icons only at left, shared Update/window controls right, no extra header, native ribbon below and pointer title drag, no separate address bar, min/max/restore preserves draft, original Open/Save, fresh formulas/helper fill, formatted Save, atomic repeated nine-sheet Update, invalid/stale/generic workbook rejection and values-only reopening."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-project-spreadsheet-dialog.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-native-project-spreadsheet-window.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "UNITS-006",
+      "authority": "docs/engineering/02-data-conventions-and-terminology.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-units/src/index.ts",
+          "symbol": "fromCanonical"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-units/test/units.test.ts",
+          "oracle": "Independent declared-unit factors, precision-preserving edits and canonical invariants."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "REBAR-AS-001",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/rebar-area.ts",
+          "symbol": "rebarArea"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "rebarsFromSheet"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-geometry/test/rebar-area.test.ts",
+          "oracle": "Stored-area identity, explicit authoring and legacy-operation-order fixtures."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "REBAR-AS-002",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/rebar-area.ts",
+          "symbol": "equationRebarProperties"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "rebarsFromSheet"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-geometry/test/rebar-area.test.ts",
+          "oracle": "Stored-area identity, explicit authoring and legacy-operation-order fixtures."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "REBAR-AS-003",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/rebar-area.ts",
+          "symbol": "withStoredRebarArea"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "rebarsFromSheet"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-geometry/test/rebar-area.test.ts",
+          "oracle": "Stored-area identity, explicit authoring and legacy-operation-order fixtures."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "REBAR-AS-004",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/rebar-area.ts",
+          "symbol": "rebarAreaSourceLabel"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-geometry/test/rebar-area.test.ts",
+          "oracle": "Stored-area identity, explicit authoring and legacy-operation-order fixtures."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-GEO-001",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/validation.ts",
+          "symbol": "validateGeometryInput"
+        },
+        {
+          "file": "packages/pm-project/src/resource-limits.ts",
+          "symbol": "assertProjectInputResources"
+        },
+        {
+          "file": "apps/web/application/project/import.ts",
+          "symbol": "importProjectJsonAsync"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "coordinatesFromSheet"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/api-boundaries.test.ts",
+          "oracle": "Finite/resource rejection and mismatched-mesh analytical rectangle oracle."
+        },
+        {
+          "file": "packages/pm-project/test/input-resources.test.ts",
+          "oracle": "Oversized raw arrays fail before reading coordinate getters or invoking quadratic topology work."
+        },
+        {
+          "file": "apps/web/test/project-import.test.ts",
+          "oracle": "Worker completion, abort, late-response suppression, failure and bounded fallback evidence."
+        },
+        {
+          "file": "apps/web/test/project-json.test.ts",
+          "oracle": "Oversized file rejection precedes text allocation."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-GEO-002",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/validation.ts",
+          "symbol": "validatePolygonSection"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "coordinatesFromSheet"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-geometry/test/geometry-kernel.test.ts",
+          "oracle": "Analytical topology/containment and invalid ring fixtures."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-GEO-003",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-analysis/src/index.ts",
+          "symbol": "prepareAnalysisFromMesh"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/api-boundaries.test.ts",
+          "oracle": "Exact source-identity mismatch and same-geometry replay."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-GEO-004",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/mesh.ts",
+          "symbol": "netConcreteCentroid"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-geometry/test/geometry-kernel.test.ts",
+          "oracle": "Analytical rectangle/triangle properties and translated geometry."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-GEO-005",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/validation.ts",
+          "symbol": "validatePolygonSection"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/geometry.ts",
+          "symbol": "rebarsFromSheet"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-geometry/test/geometry-kernel.test.ts",
+          "oracle": "Circular disk, hole and overlap boundary fixtures."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/table-pipeline.test.ts",
+          "oracle": "Exact binary64 XLSX no-op, explicit 10 in = 254 mm / 0.5 in2 = 322.58 mm2 tuples, independent diameter/As and geometry/material failure cases."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-shared-table-spreadsheet.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Code-specific detailing and persisted region-parent acceptance remain incomplete."
+    },
+    {
+      "id": "ENG-GEO-006",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-geometry/src/mesh.ts",
+          "symbol": "buildConcreteMesh"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/mesh-spatial.test.ts",
+          "oracle": "Independent all-cell clipping and polynomial quadrature checks."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-GEO-007",
+      "authority": "docs/engineering/03-geometry-and-reinforcement.md",
+      "coverage": "open",
+      "implementation": [],
+      "verification": [],
+      "evidence": [],
+      "reviewer": null,
+      "releaseGap": "The accepted-result/profile/normalization capability required by this gate is not implemented or independently approved."
+    },
+    {
+      "id": "ENG-MAT-001",
+      "authority": "docs/engineering/04-materials-and-design-standards.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-materials/src/validation.ts",
+          "symbol": "materialStoreIssues"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-materials/test/api-validation.test.ts",
+          "oracle": "Invalid-parameter and contradictory-yield failure oracles."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-MAT-002",
+      "authority": "docs/engineering/04-materials-and-design-standards.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-materials/src/compile.ts",
+          "symbol": "compileMaterial"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/tangent.test.ts",
+          "oracle": "Independent central differences and section Jacobian invariants."
+        },
+        {
+          "file": "apps/web/test/material-inputs.test.ts",
+          "oracle": "Independent quadratic half-peak stress/tangent, declared ultimate cutoff and signed tabulated interpolation after authoring edits."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-active-inputs.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-MAT-003",
+      "authority": "docs/engineering/04-materials-and-design-standards.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-materials/src/support.ts",
+          "symbol": "concreteModelSupportIssue"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-project/test/calculation-profiles.test.ts",
+          "oracle": "Explicit cross-mechanics/profile rejection fixtures."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-MAT-004",
+      "authority": "docs/engineering/04-materials-and-design-standards.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-project/src/calculation-profiles.ts",
+          "symbol": "calculationProfile"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-project/test/calculation-profiles.test.ts",
+          "oracle": "Exact declared profile/method/material compatibility checks."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-MAT-005",
+      "authority": "docs/engineering/04-materials-and-design-standards.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-materials/src/compile.ts",
+          "symbol": "compileMaterial"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-materials/test/constitutive-laws.test.ts",
+          "oracle": "Independently written piecewise ordinate and derivative equations."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-MAT-006",
+      "authority": "docs/engineering/04-materials-and-design-standards.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-design/src/index.ts",
+          "symbol": "buildResistanceMaterialSets"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/design-resistance.test.ts",
+          "oracle": "Independent stage factors, ledger identities and anti-double-reduction."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-MAT-007",
+      "authority": "docs/engineering/04-materials-and-design-standards.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-analysis/src/index.ts",
+          "symbol": "buildDesignPreviewSurfaceFromPrepared"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/analysis-options.test.ts",
+          "oracle": "Sampling counts, resource limits and explicit convergence evidence."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-LOAD-001",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-project/src/load-reference.ts",
+          "symbol": "resultantAtCentroid"
+        },
+        {
+          "file": "packages/pm-project/src/validate.ts",
+          "symbol": "parseProjectDocumentValue"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromSpreadsheet"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-spreadsheet.ts",
+          "symbol": "projectFromWorkbookEditor"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-project/test/load-reference.test.ts",
+          "oracle": "Independent force-times-lever-arm and frame round trips."
+        },
+        {
+          "file": "packages/pm-project/test/calculation-profiles.test.ts",
+          "oracle": "Explicit nondefault Appendix eccentricity constant/depth factor survive parsing for both mechanics; malformed/range/unsupported declarations fail and omitted-rule defaults remain explicit."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-spreadsheet.test.ts",
+          "oracle": "Complete all-profile/source-unit project equality; simultaneous numeric/option/reference edits; formula precision-note rejection and invalid/error/resource snapshots fail without partial inputs."
+        },
+        {
+          "file": "tools/verification/project-spreadsheet/browser.mjs",
+          "oracle": "Actual single native filename row with Open/Save/Undo/Redo icons only at left, shared Update/window controls right, no extra header, native ribbon below and pointer title drag, no separate address bar, min/max/restore preserves draft, original Open/Save, fresh formulas/helper fill, formatted Save, atomic repeated nine-sheet Update, invalid/stale/generic workbook rejection and values-only reopening."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-project-spreadsheet-dialog.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-native-project-spreadsheet-window.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-AN-001",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "open",
+      "implementation": [],
+      "verification": [],
+      "evidence": [],
+      "reviewer": null,
+      "releaseGap": "The accepted-result/profile/normalization capability required by this gate is not implemented or independently approved."
+    },
+    {
+      "id": "ENG-AN-002",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-analysis/src/index.ts",
+          "symbol": "buildDesignPreviewSurfaceFromPrepared"
+        },
+        {
+          "file": "packages/pm-geometry/src/sampling-directions.ts",
+          "symbol": "supportSwitchGradientAngles"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/analysis-options.test.ts",
+          "oracle": "Independent dense sampling comparisons and explicit non-convergence."
+        },
+        {
+          "file": "packages/pm-analysis/test/pure-tension-midpoint.test.ts",
+          "oracle": "Independent midpoint strain equalities and per-bar endpoint-law summation, hardening On/Off and Nominal/Design separation."
+        },
+        {
+          "file": "packages/pm-geometry/test/sampling-directions.test.ts",
+          "oracle": "F-02: tension-control directions against a brute-force angular sweep of the arg-min bar, degenerate sets and seed-preserving merge."
+        },
+        {
+          "file": "packages/pm-analysis/test/fixed-supplements.test.ts",
+          "oracle": "F-02: seed rows bit-identical with supplements on/off; a 180-direction reference ray through the crease; no supplement on an exact meridian."
+        },
+        {
+          "file": "packages/pm-analysis-equivalent-block/test/fixed-supplements.test.ts",
+          "oracle": "F-02 block route: seed-row identity, 180-direction reference ray through the crease, exact meridian without supplements."
+        },
+        {
+          "file": "tools/verification/biaxial-audit/audit.ts",
+          "oracle": "F-02 rows: Fixed over-prediction against the independent strip-integration oracle stays inside the screening interval, plus the oracle self-convergence estimate."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-pure-tension-midpoint.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-11-f02-tension-control-event-directions.md"
+        },
+        {
+          "command": "npm run verify:biaxial-audit",
+          "record": "docs/task-packets/2026-11-11-f02-tension-control-event-directions.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Combined integration/utilization uncertainty and independent release qualification remain incomplete."
+    },
+    {
+      "id": "ENG-AN-003",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-analysis/src/index.ts",
+          "symbol": "intersectSurfaceAtConstantAxial"
+        },
+        {
+          "file": "packages/pm-analysis/src/index.ts",
+          "symbol": "buildDemandPmGeometry"
+        },
+        {
+          "file": "packages/pm-results/src/load-direction.ts",
+          "symbol": "projectLoadDirectionCut"
+        },
+        {
+          "file": "packages/pm-analysis/src/load-direction.ts",
+          "symbol": "buildLoadDirectionCurve"
+        },
+        {
+          "file": "packages/pm-analysis/src/load-direction.ts",
+          "symbol": "createStressStrainLoadDirectionMechanics"
+        },
+        {
+          "file": "packages/pm-analysis-equivalent-block/src/index.ts",
+          "symbol": "createEquivalentBlockLoadDirectionMechanics"
+        },
+        {
+          "file": "packages/pm-analysis/src/index.ts",
+          "symbol": "buildDirectMomentSection"
+        },
+        {
+          "file": "packages/pm-analysis/src/demand-pm.ts",
+          "symbol": "directMomentCoordinate"
+        },
+        {
+          "file": "packages/pm-analysis/src/demand-pm.ts",
+          "symbol": "intersectPmLoadPath"
+        },
+        {
+          "file": "packages/pm-analysis/src/surface-topology.ts",
+          "symbol": "IndexedSurfaceTopologyCache"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-analysis/test/constant-axial-intersection.test.ts",
+          "oracle": "Analytical polyhedra, solid-angle containment, tangency and exit-count cases."
+        },
+        {
+          "file": "packages/pm-analysis/test/demand-pm.test.ts",
+          "oracle": "Analytical flattened polyline crossings, tangency, overlap, path breaks and force/moment scaling."
+        },
+        {
+          "file": "apps/web/test/analysis/execution.test.ts",
+          "oracle": "One cached load-direction curve per surface and θ; independent direction residual of every physical point; curve crossing against the unchanged governing ratio; the report draws the same curve, for fibre and block."
+        },
+        {
+          "file": "packages/pm-analysis/test/direct-moment.test.ts",
+          "oracle": "Independent 3-4-5 actions at a different beta, positive magnitudes with signed opposite plot coordinates and source-action immutability."
+        },
+        {
+          "file": "apps/web/test/results/demand-pm-chart.test.ts",
+          "oracle": "Every registered profile, Fixed and Adaptive, on an unsymmetric L section: no unresolved crossing, forward half-plane, independent direction residual tied to reported block discontinuities, curve crossing within 3% of the stored crossing, unchanged governing checks."
+        },
+        {
+          "file": "packages/pm-analysis/test/batch-topology.test.ts",
+          "oracle": "Complete cold/cached result equality and topology/vertex/direction mutation invalidation."
+        },
+        {
+          "file": "packages/pm-results/test/load-direction.test.ts",
+          "oracle": "Synthetic analytic edge families with known roots: ring and meridian roots, 2π wrap, reported jump, missing family, forward clip and axial cap."
+        },
+        {
+          "file": "packages/pm-analysis/test/resistance-state-angle.test.ts",
+          "oracle": "Forward re-evaluation of every physical point from its own β and station identity; doubly symmetric principal-axis curve against the exact meridian within its mesh asymmetry."
+        },
+        {
+          "file": "packages/pm-project/test/check-basis-legacy.test.ts",
+          "oracle": "Stored direct2D reads as proportional3D with the warning, is never written back; other values rejected."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-direct-beta-primary-plan.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-capacity-resultant-moment.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-19-load-direction-convention.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-RES-001",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-results/src/index.ts",
+          "symbol": "classifyUtilization"
+        },
+        {
+          "file": "packages/pm-design/src/index.ts",
+          "symbol": "minimumEccentricityCandidates"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-results/test/classification.test.ts",
+          "oracle": "Independent uncertainty interval and classification boundaries."
+        },
+        {
+          "file": "apps/web/test/results/demand-pm-chart.test.ts",
+          "oracle": "Both mechanics, sampling modes and check bases retain full governing check results under presentation changes."
+        },
+        {
+          "file": "packages/pm-design/test/design-basis.test.ts",
+          "oracle": "F-01: four signed concentric e_min candidates with independent magnitude P (15 + 0.03 h)."
+        },
+        {
+          "file": "tools/verification/biaxial-audit/audit.ts",
+          "oracle": "F-01 rows: governing concentric Appendix UR equals the worst of the four signed candidates intersected directly with the same Design surface, both mechanics."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-direct-beta-primary-plan.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-11-f01-minimum-eccentricity-signs.md"
+        },
+        {
+          "command": "npm run verify:biaxial-audit",
+          "record": "docs/task-packets/2026-11-11-biaxial-pm-audit.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    },
+    {
+      "id": "ENG-RES-002",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "open",
+      "implementation": [
+        {
+          "file": "apps/web/features/section-editor/results/ResultsWorkspace.tsx",
+          "symbol": "ResultsWorkspace"
+        }
+      ],
+      "verification": [
+        {
+          "file": "tools/verification/demand-navigation/transition.mjs",
+          "oracle": "Intermediate browser/compositor frames exclude ray-only menu flashes; complete trace/axis equality and worker-job observations preserve coherent Preview results."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-demand-navigation-transition.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "The accepted-result/profile/normalization capability required by this gate is not implemented or independently approved."
+    },
+    {
+      "id": "ENG-REP-001",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "open",
+      "implementation": [],
+      "verification": [],
+      "evidence": [],
+      "reviewer": null,
+      "releaseGap": "The accepted-result/profile/normalization capability required by this gate is not implemented or independently approved."
+    },
+    {
+      "id": "ENG-REP-002",
+      "authority": "docs/engineering/05-loadings-analysis-results-and-reports.md",
+      "coverage": "partial-preview",
+      "implementation": [
+        {
+          "file": "packages/pm-report/src/model/report-model.ts",
+          "symbol": "buildColumnReportModel"
+        },
+        {
+          "file": "apps/web/features/section-editor/results/demand-chart-text.ts",
+          "symbol": "plottedPointsText"
+        },
+        {
+          "file": "packages/pm-spreadsheet/src/project-xlsx.ts",
+          "symbol": "importProjectWorkbook"
+        }
+      ],
+      "verification": [
+        {
+          "file": "packages/pm-report/test/integration/pdf-report.selftest.ts",
+          "oracle": "DTO-to-report agreement, deterministic bytes, Unicode and PDF structure."
+        },
+        {
+          "file": "tools/verification/demand-data/counts.mjs",
+          "oracle": "Every plotted coordinate matches the SVG path or marker and the Data snapshot; magnitude mapping and unchanged table UR are checked."
+        },
+        {
+          "file": "packages/pm-spreadsheet/test/project-workbook.test.ts",
+          "oracle": "Canonical fixture leaf equality in metric/US units; direct input/option edits, owner-derived yield, explicit eccentricity preservation, unit conflicts, missing required configuration and metadata-shadow/status rejection."
+        }
+      ],
+      "evidence": [
+        {
+          "command": "npm run test:pdf-report",
+          "record": "docs/task-packets/2026-11-04-programming-audit-remediation.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-direct-beta-primary-plan.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-capacity-resultant-moment.md"
+        },
+        {
+          "command": "npm run test:unit",
+          "record": "docs/task-packets/2026-11-05-readable-project-workbook.md"
+        }
+      ],
+      "reviewer": null,
+      "releaseGap": "Preview software evidence is partial; complete scope coverage and independent review remain required."
+    }
+  ]
+}

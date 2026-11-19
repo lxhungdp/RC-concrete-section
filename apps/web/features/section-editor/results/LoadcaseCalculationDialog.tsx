@@ -1,0 +1,327 @@
+'use client'
+
+import { QuantityValue, UnitLabel, useQuantityFormatters } from '../shared/DisplayUnits'
+
+import { TransferIcon } from '../shared/WorkspaceIcons'
+import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react'
+import type {
+  InversePreviewResult,
+  LoadcaseQuickCheckResult,
+  PreviewSurface,
+  Resultant
+} from '@pm/analysis'
+import type { DesignBasis } from '@pm/design'
+import { resultantAtLoadReference, type LoadCombination, type LoadReference } from '@pm/project'
+import { CalculationDialogFrame, Fact, Formula, FormulaPanel, Step } from './CalculationDialogFrame'
+import { TechnicalEquation } from './TechnicalEquation'
+
+type Props = {
+  projectName: string
+  sectionName: string
+  loadcase: LoadCombination
+  loadcases: readonly LoadCombination[]
+  loadReference?: LoadReference
+  check: LoadcaseQuickCheckResult | null
+  inverseResult: InversePreviewResult | null
+  surface: PreviewSurface
+  designBasis: DesignBasis
+  exporting: boolean
+  exportError: string | null
+  analysisError?: string | null
+  onLoadcaseChange: (id: number) => void
+  onExportExcel: () => Promise<void>
+  onClose: () => void
+}
+
+const fmt = (value: number, digits = 3) => {
+  if (!Number.isFinite(value)) return '—'
+  const display = Math.abs(value) < 0.5 * 10 ** -digits ? 0 : value
+  return display.toLocaleString('en-US', { maximumFractionDigits: digits })
+}
+const factorValue = (value: number | null) => value === null ? '—' : fmt(value, 3)
+const utilizationValue = (value: number | null) => value === null ? '—' : fmt(value, 2)
+const percentValue = (value: number | null) => value === null ? '—' : `${fmt(value * 100, 2)}%`
+const strain = (value: number) => Number.isFinite(value) ? value.toExponential(3) : '—'
+const degrees = (radians: number | null) => radians === null ? '—' : `${fmt(radians * 180 / Math.PI, 2)}°`
+
+const ResultantTable = ({ demand, capacity }: { demand: Resultant; capacity: Resultant | null }) => {
+  const { unit, forceValue, momentValue, force, moment } = useQuantityFormatters()
+  return (
+  <div className="pm-calc-table-wrap">
+    <table>
+      <thead><tr><th>Vector</th><th>P ({unit('force')})</th><th>Mx ({unit('moment')})</th><th>My ({unit('moment')})</th></tr></thead>
+      <tbody>
+        <tr><td>Checked demand D</td><td>{forceValue(demand.P)}</td><td>{momentValue(demand.Mx)}</td><td>{momentValue(demand.My)}</td></tr>
+        {capacity ? <tr><td>Design capacity R(λcap)</td><td>{forceValue(capacity.P)}</td><td>{momentValue(capacity.Mx)}</td><td>{momentValue(capacity.My)}</td></tr> : null}
+      </tbody>
+    </table>
+  </div>
+)
+}
+
+const responseStatus = (inverse: InversePreviewResult) => {
+  if (!inverse.converged) return { label: 'Not converged', tone: 'is-error' }
+  if (!inverse.admissibility.evaluated) return { label: 'No unique material state', tone: 'is-warning' }
+  if (!inverse.admissibility.ok) return { label: 'Inadmissible strain state', tone: 'is-error' }
+  return { label: 'Converged diagnostic state', tone: '' }
+}
+
+const uncertaintyLabel = (evidence: LoadcaseQuickCheckResult['utilizationInterval']['evidence']) => {
+  if (evidence === 'fixed-grid-screening-margin') return 'Fixed-grid screening margin'
+  if (evidence === 'adaptive-sampling-estimate') return 'Adaptive sampling estimate'
+  if (evidence === 'axial-outside-design-domain') return 'Pu outside the Design axial range'
+  return 'Missing capacity intersection'
+}
+
+const verdictLabel = (value: LoadcaseQuickCheckResult['adequacy']) =>
+  value === 'adequate' ? 'ADEQUATE' : value === 'inadequate' ? 'INADEQUATE' : 'INDETERMINATE'
+
+export function LoadcaseCalculationDialog({
+  projectName,
+  sectionName,
+  loadcase,
+  loadcases,
+  loadReference,
+  check,
+  inverseResult,
+  surface,
+  designBasis,
+  exporting,
+  exportError,
+  analysisError,
+  onLoadcaseChange,
+  onExportExcel,
+  onClose
+}: Props) {
+  const { qfmt, unit, forceValue, momentValue, force, moment } = useQuantityFormatters()
+
+  const checkedDemand = check?.codeAdjustedDemand ?? loadcase
+  const entered = loadReference ? resultantAtLoadReference(loadcase, loadReference) : loadcase
+  const constantAxial = check?.utilizationDefinition === 'constantAxial'
+  const verdictTone = check?.adequacy === 'inadequate'
+    ? 'is-error'
+    : check?.adequacy === 'indeterminate'
+      ? 'is-warning'
+      : ''
+  const inverseStatus = inverseResult ? responseStatus(inverseResult) : null
+  const resistance = check?.resistance ?? null
+
+  return (
+    <CalculationDialogFrame
+      title="CHECK CALCULATION TRACE"
+      closeLabel="Close loadcase calculation details"
+      bodyKey={String(loadcase.id)}
+      defaultView="document"
+      onClose={onClose}
+      headerAction={<button
+        type="button"
+        className="ws-action pm-calc-excel-button pm-calc-excel-button--report"
+        disabled={exporting}
+        onClick={() => void onExportExcel()}
+        title="Download the existing Demand Check workbook with this combination worked through in full"
+      >
+        <span>Excel</span>
+        {exporting ? <Loader2 size={15} className="pm-spin" /> : <TransferIcon direction="export" />}
+      </button>}
+      controls={<div className="pm-calculation-dialog__selectors pm-calculation-dialog__selectors--loadcase" aria-label="Loadcase calculation trace selection">
+        <label className="pm-calculation-dialog__selector pm-calculation-dialog__selector--row">
+          <span>Loadcase</span>
+          <select
+            aria-label="Calculation trace loadcase"
+            value={loadcase.id}
+            onChange={(event) => onLoadcaseChange(Number(event.target.value))}
+          >
+            {loadcases.map((option, index) => (
+              <option key={option.id} value={option.id}>{index + 1}. {option.name}</option>
+            ))}
+          </select>
+        </label>
+      </div>}
+    >
+      {exportError ? <div className="pm-calc-note is-error" role="alert"><AlertTriangle size={16} /><p><b>Export failed:</b> {exportError}</p></div> : null}
+
+      <Step index={1} title="Load combination and calculation basis">
+        <div className="pm-calc-facts">
+          <Fact label="Project / section">{projectName || 'Untitled project'} · {sectionName}</Fact>
+          <Fact label="Loadcase">#{loadcase.id} · {loadcase.name}</Fact>
+          <Fact label="Action basis">Factored ULS demand</Fact>
+          <Fact label="Mechanics">{surface.mechanics === 'stress-strain-integration' ? 'Stress–strain integration' : 'Equivalent rectangular block'}</Fact>
+          <Fact label="Calculation profile">{surface.calculationProfileId ?? 'Unavailable'}</Fact>
+          <Fact label="Design basis">{designBasis.identity.document} · {designBasis.identity.edition}</Fact>
+        </div>
+        <p className="pm-calc-caption">Compression-positive P; Mx = ΣF·y and My = ΣF·x about the declared analysis origin. Display rounding does not change the full-precision values used by the calculation. This is Preview evidence, not an accepted or released result.</p>
+      </Step>
+
+      <Step index={2} title="Factored demand and code adjustment">
+        <div className="pm-calc-table-wrap"><table>
+          <thead><tr><th>Demand</th><th>Pu ({unit('force')})</th><th>Mux ({unit('moment')})</th><th>Muy ({unit('moment')})</th></tr></thead>
+          <tbody>
+            <tr><td>Entered factored ULS at O</td><td>{forceValue(entered.P)}</td><td>{momentValue(entered.Mx)}</td><td>{momentValue(entered.My)}</td></tr>
+            {loadReference && (loadReference.offsetX !== 0 || loadReference.offsetY !== 0) ? <tr><td>Converted to centroid C</td><td>{forceValue(loadcase.P)}</td><td>{momentValue(loadcase.Mx)}</td><td>{momentValue(loadcase.My)}</td></tr> : null}
+            {check?.codeAdjustedDemand ? <tr><td>Checked after code adjustment</td><td>{forceValue(checkedDemand.P)}</td><td>{momentValue(checkedDemand.Mx)}</td><td>{momentValue(checkedDemand.My)}</td></tr> : null}
+          </tbody>
+        </table></div>
+        <FormulaPanel>
+          {check?.codeAdjustedDemand && check.minimumEccentricityMm !== undefined ? <Formula><span className="pm-calc-math">emin = {qfmt('length', check.minimumEccentricityMm, 2)} {unit('length')}; the governing code-adjusted moment candidate is carried into both the Design-ray check and inverse diagnostic.</span></Formula> : <Formula><span className="pm-calc-math">Dcheck = Dentered; no code demand adjustment governs this combination.</span></Formula>}
+          <Formula id="equation-demand-direction" numbered>
+            {check?.demandMomentDirection !== null && check?.demandMomentDirection !== undefined ? <TechnicalEquation
+              latex={String.raw`\theta_{\mathrm{load}}=\operatorname{atan2}(M_{uy},M_{ux})=${fmt(check.demandMomentDirection * 180 / Math.PI, 2)}^{\circ}`}
+              ariaLabel={`Demand direction equals ${degrees(check.demandMomentDirection)}`}
+            /> : <span className="pm-calc-math">θload = atan2(Muy, Mux) = pending or unavailable</span>}
+            <p>This is the demand direction in Mx–My action space, not a strain-plane β.</p>
+          </Formula>
+        </FormulaPanel>
+      </Step>
+
+      <Step index={3} title={constantAxial ? 'Constant-P Design-surface check' : 'Governing proportional 3D Design-surface check'}>
+        {!check ? <div className="pm-calc-loading"><Loader2 size={17} className="pm-spin" /><span>Checking the current factored demand…</span></div>
+          : constantAxial ? <>
+          <FormulaPanel>
+            <Formula><span className="pm-calc-math">1. Hold the axial force at P = Pu and take the moment vector of Dcheck in that plane.</span></Formula>
+            <Formula id="equation-constant-axial-ray" numbered>
+              <TechnicalEquation
+                latex={String.raw`\mathbf{R}(t)=(P_u,\,t\cos\theta_{\mathrm{load}},\,t\sin\theta_{\mathrm{load}}),\quad t\ge 0`}
+                ariaLabel="Resistance ray at constant axial force through the checked demand"
+              />
+              <p>The ray starts on the Pu axis and passes through Dcheck. P stays fixed; only the moments grow.</p>
+            </Formula>
+            <Formula><span className="pm-calc-math">3. Mb is the value of t at the single exit of this ray from the Design surface. The point (Pu, 0, 0) must lie inside that surface.</span></Formula>
+            {check.utilization !== null && check.constantAxialCapacityMoment != null
+              ? <Formula id="equation-constant-axial-utilization" numbered>
+                  <TechnicalEquation
+                    latex={String.raw`UR=\frac{M_d}{M_b}=\frac{${momentValue(check.fixedPDemandMoment)}}{${momentValue(check.constantAxialCapacityMoment)}}=${utilizationValue(check.utilization)}`}
+                    ariaLabel={`Constant P utilization equals ${utilizationValue(check.utilization)}`}
+                  />
+                  <p>This is moment utilization at Pu, not total utilization.</p>
+                </Formula>
+              : <Formula><span className="pm-calc-math">4. No constant-P ratio is published for this combination.</span></Formula>}
+          </FormulaPanel>
+          <ResultantTable demand={checkedDemand} capacity={check.capacityPoint} />
+          <div className="pm-calc-facts">
+            <Fact label="Definition">{check.utilizationDefinition}</Fact>
+            <Fact label="Moment multiplier">{factorValue(check.capacityMultiplier)}</Fact>
+            <Fact label="Constant-P UR">{utilizationValue(check.utilization)}</Fact>
+            <Fact label="Resistance format">{resistance?.format ?? 'Unavailable'}</Fact>
+            <Fact label="Resistance classification">{resistance?.classification ?? 'Unavailable'}</Fact>
+          </div>
+          {check.utilization === null ? <div className="pm-calc-note is-error"><AlertTriangle size={16} /><p>{check.message}</p></div> : null}
+        </> : <>
+          <FormulaPanel>
+            <Formula><span className="pm-calc-math">1. Place Dcheck = (Pu, Mux, Muy) in the three-dimensional P–Mx–My action space.</span></Formula>
+            <Formula id="equation-proportional-resistance-ray" numbered>
+              <TechnicalEquation
+                latex={String.raw`\mathbf{R}(\lambda)=\lambda\mathbf{D}_{\mathrm{check}}=(\lambda P_u,\lambda M_{ux},\lambda M_{uy})`}
+                ariaLabel="Resistance ray equals lambda times the checked demand vector"
+              />
+              <p>Draw one ray from the origin through Dcheck. P, Mx, and My retain their signs and are scaled by the same factor.</p>
+            </Formula>
+            <Formula><span className="pm-calc-math">3. Starting at λ = 0, increase λ outward. λcap is the smallest positive λ at which this ray meets the Design-resistance surface—the first available resistance boundary in the checked demand direction.</span></Formula>
+            {check.proportionalUtilization === 0 && check.capacityMultiplier === null
+              ? <Formula><span className="pm-calc-math">4. Dcheck = 0 ⇒ UR = 0; an infinite multiplier is not published as numeric engineering data.</span></Formula>
+              : check.capacityMultiplier !== null && check.proportionalUtilization !== null
+                ? <Formula id="equation-governing-utilization" numbered>
+                    <TechnicalEquation
+                      latex={String.raw`UR=\frac{1}{\lambda_{\mathrm{cap}}}=\frac{1}{${factorValue(check.capacityMultiplier)}}=${utilizationValue(check.proportionalUtilization)}`}
+                      ariaLabel={`Utilization ratio equals ${utilizationValue(check.proportionalUtilization)}`}
+                    />
+                    <p>λcap &gt; 1 gives UR &lt; 1, while λcap &lt; 1 gives UR &gt; 1.</p>
+                  </Formula>
+                : <Formula><span className="pm-calc-math">4. UR is unavailable because no valid proportional Design-surface crossing was returned.</span></Formula>}
+          </FormulaPanel>
+          <ResultantTable demand={checkedDemand} capacity={check.capacityPoint} />
+          <div className="pm-calc-facts">
+            <Fact label="Definition">{check.utilizationDefinition}</Fact>
+            <Fact label="Capacity multiplier λcap">{factorValue(check.capacityMultiplier)}</Fact>
+            <Fact label="Governing UR">{utilizationValue(check.proportionalUtilization)}</Fact>
+            <Fact label="Resistance format">{resistance?.format ?? 'Unavailable'}</Fact>
+            <Fact label="Resistance classification">{resistance?.classification ?? 'Unavailable'}</Fact>
+            <Fact label="Axial cap on governing face">{resistance ? (resistance.axialCapApplied ? 'Applied' : 'Not applied') : 'Unavailable'}</Fact>
+          </div>
+          {resistance ? <p className="pm-calc-caption">Resistance stages: {resistance.stages.join(' → ') || 'none recorded'}. A global resultant factor, when present, is applied by the resistance pipeline exactly once.</p> : null}
+          {check.proportionalUtilization === null ? <div className="pm-calc-note is-error"><AlertTriangle size={16} /><p>{check.message}</p></div> : null}
+        </>}
+      </Step>
+
+      <Step index={4} title="Numerical uncertainty and table verdict">
+        {!check ? <div className="pm-calc-note is-warning"><AlertTriangle size={16} /><p>The check verdict is pending for this loadcase revision.</p></div> : <>
+          <div className="pm-calc-facts">
+            <Fact label="Evidence">{uncertaintyLabel(check.utilizationInterval.evidence)}</Fact>
+            <Fact label="Relative uncertainty">{percentValue(check.utilizationInterval.relativeUncertainty)}</Fact>
+            <Fact label="UR interval">{utilizationValue(check.utilizationInterval.lower)} – {utilizationValue(check.utilizationInterval.upper)}</Fact>
+            <Fact label="Decision shown in table">{verdictLabel(check.adequacy)}</Fact>
+          </div>
+          <div className={`pm-calc-note ${verdictTone}`}>
+            {check.adequacy === 'adequate' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+            <p><b>{verdictLabel(check.adequacy)}.</b> {check.message}</p>
+          </div>
+        </>}
+      </Step>
+
+      <Step index={5} title="Inverse equilibrium diagnostic">
+        {analysisError ? <div className="pm-calc-note is-error" role="alert"><AlertTriangle size={16} /><p>{analysisError}</p></div>
+          : !inverseResult ? <div className="pm-calc-loading"><Loader2 size={17} className="pm-spin" /><span>Solving the diagnostic equilibrium state for this loadcase…</span></div> : <>
+          <div className={`pm-calc-note ${inverseStatus?.tone ?? ''}`}>
+            {inverseResult.ok ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+            <p><b>{inverseStatus?.label}.</b> This state explains section response; adequacy remains governed by Step 3, not by inverse convergence{constantAxial ? '' : ' or the fixed-P ratio'}.</p>
+          </div>
+          <div className="pm-calc-facts">
+            <Fact label="ε₀">{strain(inverseResult.state.e0)}</Fact>
+            <Fact label="κx / κy">{qfmt('curvature', inverseResult.state.kx, 8)} / {qfmt('curvature', inverseResult.state.ky, 8)} {unit('curvature')}</Fact>
+            <Fact label="Iterations">{fmt(inverseResult.iterations, 0)}</Fact>
+            <Fact label="Scaled residual norm">{inverseResult.residualNorm.toExponential(3)}</Fact>
+            <Fact label="Concrete compression">{inverseResult.admissibility.evaluated ? `${strain(inverseResult.admissibility.maxConcreteCompression)} / ${strain(inverseResult.admissibility.concreteLimit)}` : 'Not evaluated on geometric cap face'}</Fact>
+            <Fact label="Max steel tension">{inverseResult.admissibility.evaluated ? strain(inverseResult.admissibility.maxSteelTension) : 'Not evaluated on geometric cap face'}</Fact>
+            {inverseResult.admissibility.governingSteelLimit && <>
+              <Fact label="Governing steel limit">{strain(Math.abs(inverseResult.admissibility.governingSteelLimit.strain))} / {strain(inverseResult.admissibility.governingSteelLimit.limit)} ({inverseResult.admissibility.governingSteelLimit.side})</Fact>
+              <Fact label="Governing bar / steel">{inverseResult.admissibility.governingSteelLimit.rebarId} / {inverseResult.admissibility.governingSteelLimit.steelMaterialId}</Fact>
+            </>}
+          </div>
+          {inverseResult.equivalentBlock ? <div className="pm-calc-facts">
+            <Fact label="Neutral-axis depth c">{qfmt('length', inverseResult.equivalentBlock.neutralAxisDepth, 2)} {unit('length')}</Fact>
+            <Fact label="Equivalent block depth a">{qfmt('length', inverseResult.equivalentBlock.blockDepth, 2)} {unit('length')}</Fact>
+            <Fact label="β1">{fmt(inverseResult.equivalentBlock.beta1, 3)}</Fact>
+            <Fact label="Block normal">{degrees(inverseResult.equivalentBlock.neutralAxisAngle)}</Fact>
+          </div> : null}
+          <div className="pm-calc-table-wrap"><table>
+            <thead><tr><th>Equilibrium vector</th><th>P ({unit('force')})</th><th>Mx ({unit('moment')})</th><th>My ({unit('moment')})</th></tr></thead>
+            <tbody>
+              <tr><td>Checked demand</td><td>{forceValue(checkedDemand.P)}</td><td>{momentValue(checkedDemand.Mx)}</td><td>{momentValue(checkedDemand.My)}</td></tr>
+              <tr><td>Section response</td><td>{forceValue(inverseResult.response.P)}</td><td>{momentValue(inverseResult.response.Mx)}</td><td>{momentValue(inverseResult.response.My)}</td></tr>
+              <tr><td>Residual R − D</td><td>{forceValue(inverseResult.residual.P)}</td><td>{momentValue(inverseResult.residual.Mx)}</td><td>{momentValue(inverseResult.residual.My)}</td></tr>
+            </tbody>
+          </table></div>
+          <p className="pm-calc-caption">{inverseResult.message}</p>
+        </>}
+      </Step>
+
+      {constantAxial ? <Step index={6} title="Secondary proportional 3D ratio">
+        {!check ? <div className="pm-calc-note is-warning"><AlertTriangle size={16} /><p>Proportional evidence is pending.</p></div> : <div className="pm-calc-facts">
+          <Fact label="Proportional 3D UR">{utilizationValue(check.proportionalUtilization)}</Fact>
+          <Fact label="Status">Secondary diagnostic only</Fact>
+        </div>}
+      </Step> : <Step index={6} title="Secondary fixed-P moment diagnostic">
+        {!check ? <div className="pm-calc-note is-warning"><AlertTriangle size={16} /><p>Fixed-P evidence is pending.</p></div> : check.fixedPUtilization === null || check.fixedPCapacityMoment === null ? (
+          <div className="pm-calc-note is-warning"><AlertTriangle size={16} /><p>No unique secondary fixed-P moment-ray ratio is available for this combination.</p></div>
+        ) : <>
+          <FormulaPanel><Formula id="equation-fixed-p-utilization" numbered>
+            <TechnicalEquation
+              latex={String.raw`UR_{\mathrm{fixed}\text{-}P}=\frac{M_{\mathrm{check}}}{M_b}=\frac{${momentValue(check.fixedPDemandMoment)}}{${momentValue(check.fixedPCapacityMoment)}}=${utilizationValue(check.fixedPUtilization)}`}
+              ariaLabel={`Fixed P utilization equals ${utilizationValue(check.fixedPUtilization)}`}
+            />
+          </Formula></FormulaPanel>
+          <div className="pm-calc-facts">
+            <Fact label="Demand moment magnitude">{qfmt('moment', check.fixedPDemandMoment, 2)} {unit('moment')}</Fact>
+            <Fact label="Fixed-P boundary Mb">{qfmt('moment', check.fixedPCapacityMoment, 2)} {unit('moment')}</Fact>
+            <Fact label="Fixed-P UR">{utilizationValue(check.fixedPUtilization)}</Fact>
+            <Fact label="Status">Secondary diagnostic only</Fact>
+          </div>
+          {check.contourPoint ? <div className="pm-calc-table-wrap"><table>
+            <thead><tr><th>Fixed-P capacity point</th><th>P ({unit('force')})</th><th>Mx ({unit('moment')})</th><th>My ({unit('moment')})</th></tr></thead>
+            <tbody><tr><td>Moment-ray intersection</td><td>{forceValue(check.contourPoint.P)}</td><td>{momentValue(check.contourPoint.Mx)}</td><td>{momentValue(check.contourPoint.My)}</td></tr></tbody>
+          </table></div> : null}
+          <p className="pm-calc-caption">The complete Excel action above reuses the Demand Check workbook and works this loadcase through inverse, exact vertical-meridian, and fixed-P bracket/interpolation sheets.</p>
+        </>}
+      </Step>}
+    </CalculationDialogFrame>
+  )
+}

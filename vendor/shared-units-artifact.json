@@ -1,0 +1,28 @@
+{
+  "name": "@jscad/engineering-units",
+  "version": "1.0.0",
+  "license": "MIT",
+  "archiveSha256": "d25bc7beb23f67e0f2c2122ad04a412837e1ef4ff029397b0ed698fac089380b",
+  "sourceFiles": [
+    {
+      "file": "README.md",
+      "sha256": "2a4084b74a9ce6144e26b16c18275466cdbfb7be42d7616d82abc6863b2c7977"
+    },
+    {
+      "file": "index.d.ts",
+      "sha256": "cb04ebf0e377ebfa47ad4780b7bd3678ae9dcd109e65cf94ce765bc46040e2cc"
+    },
+    {
+      "file": "index.js",
+      "sha256": "355f99f787877c09a71e0a7f8df4a1e052e4858b5dd2c0637707f3a9e4bf03a1"
+    },
+    {
+      "file": "index.mjs",
+      "sha256": "d295d6d6138384ab7134c48fe277bc2fe5e4f8b4099ecad9ec52454006d49094"
+    },
+    {
+      "file": "package.json",
+      "sha256": "34907b6332fb78eee66dc7f95989f0821c19458ad1b4d6d1ad0fc3b208886b8c"
+    }
+  ]
+}

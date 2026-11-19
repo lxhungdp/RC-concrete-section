@@ -1,0 +1,98 @@
+/**
+ * An integration mesh that failed its own checks must not reach the evaluator.
+ *
+ * Before this gate, `buildConcreteMesh` reported a resource limit by returning an empty mesh, and
+ * the surface build carried on with the reinforcement alone: for the reference section that plots a
+ * complete, plausible interaction diagram whose `P0` is 5 421 kN instead of 33 981 kN.
+ */
+import { strict as assert } from 'node:assert'
+import test from 'node:test'
+import { geometryInputRebars, sectionGeometryFromGeometryInput, type SectionGeometry } from '@pm/geometry'
+import { createDefaultAnalysisOptions } from '@pm/project'
+import { AnalysisInputError, buildPreviewSurface } from '../src/index'
+import { referenceProjectDocument } from './fixtures/reference-case'
+
+const document = referenceProjectDocument()
+const section = sectionGeometryFromGeometryInput(document.inputs.geometry)
+const rebars = geometryInputRebars(document.inputs.geometry)
+const materials = document.inputs.materials
+const gateSampling = (() => {
+  const options = createDefaultAnalysisOptions()
+  options.stations.intermediate = []
+  options.stations.refinement = { type: 'fixed' }
+  options.directions.seed = { type: 'uniform', count: 4, startDeg: 0 }
+  options.directions.refinement = { type: 'fixed', probe: 'all' }
+  return options
+})()
+
+const captureThrow = (run: () => unknown): unknown => {
+  try {
+    run()
+  } catch (error) {
+    return error
+  }
+  return assert.fail('expected the call to throw')
+}
+
+test('a mesh over its cell budget is a typed fatal error, not a steel-only surface', () => {
+  // 640 x 512 cells against the default 250 000 limit.
+  const thrown = captureThrow(() => buildPreviewSurface(section, rebars, materials, { cellSize: 2.344 }))
+
+  assert.ok(thrown instanceof AnalysisInputError, `expected AnalysisInputError, got ${thrown}`)
+  assert.equal(thrown.code, 'MESH_RESOURCE_LIMIT')
+  assert.match(thrown.message, /cell budget/)
+})
+
+test('raising the budget deliberately lets the same section through', () => {
+  // This test exercises only the mesh gate and compression pole. Keep surface sampling minimal so
+  // a 327k-cell mesh is not multiplied by any optional audit refinement schedule.
+  const surface = buildPreviewSurface(
+    section,
+    rebars,
+    materials,
+    { cellSize: 2.344, maxCells: 1_000_000 },
+    gateSampling
+  )
+  // P0 is pure compression: alpha*fck*A_net plus the bars.
+  assert.ok(surface.points[0].P > 3.3e7, `expected the full P0, got ${surface.points[0].P}`)
+})
+
+test('an empty concrete region is rejected instead of integrating nothing', () => {
+  const empty: SectionGeometry = { id: 1, name: 'empty', solids: [] }
+  const thrown = captureThrow(() => buildPreviewSurface(empty, [], materials))
+
+  assert.ok(thrown instanceof AnalysisInputError, `expected AnalysisInputError, got ${thrown}`)
+  assert.equal(thrown.code, 'EMPTY_CONCRETE_SECTION')
+})
+
+test('a bar whose centre is inside but whose disk crosses the boundary is rejected', () => {
+  const square: SectionGeometry = {
+    id: 1,
+    name: 'bar disk gate',
+    solids: [{ outer: [
+      { id: 1, x: -50, y: -50 },
+      { id: 2, x: 50, y: -50 },
+      { id: 3, x: 50, y: 50 },
+      { id: 4, x: -50, y: 50 }
+    ], holes: [] }]
+  }
+  const thrown = captureThrow(() => buildPreviewSurface(
+    square,
+    [{ id: 99, x: 49, y: 0, dia: 20, steelMaterialId: materials.defaults.steelMaterialId, solidIndex: 0 }],
+    materials
+  ))
+  assert.ok(thrown instanceof AnalysisInputError, `expected AnalysisInputError, got ${thrown}`)
+  assert.equal(thrown.code, 'INVALID_REBAR')
+  assert.match(thrown.message, /disk crosses or touches/)
+})
+
+test('a degenerate zero-area outline is rejected', () => {
+  const sliver: SectionGeometry = {
+    id: 1,
+    name: 'collinear',
+    solids: [{ outer: [{ id: 1, x: 0, y: 0 }, { id: 2, x: 100, y: 0 }, { id: 3, x: 200, y: 0 }], holes: [] }]
+  }
+  const thrown = captureThrow(() => buildPreviewSurface(sliver, [], materials))
+  assert.ok(thrown instanceof AnalysisInputError, `expected AnalysisInputError, got ${thrown}`)
+  assert.equal(thrown.code, 'INVALID_GEOMETRY')
+})

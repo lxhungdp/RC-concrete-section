@@ -1,0 +1,1099 @@
+import assert from 'node:assert/strict'
+import { readdirSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import test from 'node:test'
+import { checkLoadcaseUtilizationFromSurface, intersectSurfaceWithDemandRay, sliceMomentPlane } from '@pm/analysis'
+import {
+  projectedOuterExtents,
+  solveProportionalRayCapacity,
+  type CapacityEvaluator,
+  type NominalBlockEvaluation
+} from '@pm/equivalent-block'
+import { geometryInputRebars, netConcreteAreaCovariance, normalizedGapGradientAngles, sectionGeometryFromGeometryInput, type GeometryInput } from '@pm/geometry'
+import { compileSteelMaterial, createDefaultMaterialStore } from '@pm/materials'
+import { createKdsAppendixDesignBasis } from '@pm/design'
+import {
+  applyCalculationProfileToMaterials,
+  createAnalysisOptionsForProfile,
+  createAdaptiveEquivalentBlockAnalysisOptions,
+  createDesignBasisForCalculationProfile,
+  createProjectDocument,
+  parseProjectDocument,
+  serializeProjectDocument,
+  UNIFIED_DEPTH_RATIOS,
+  UNIFIED_STATION_COUNT,
+  UNIFIED_STEEL_STRAIN_YIELD_RATIOS,
+  type EquivalentBlockAnalysisOptions,
+  type EquivalentBlockProfileId
+} from '@pm/project'
+import {
+  buildEquivalentBlockDesignSurfaceFromPrepared,
+  buildEquivalentBlockExactDirectionCurveFromPrepared,
+  buildEquivalentBlockFieldMapFromPrepared,
+  buildEquivalentBlockPointCalculationAudit,
+  buildEquivalentBlockPreviewSurfaceFromPrepared,
+  prepareBlockAnalysis,
+  solveEquivalentBlockDemandFromPrepared,
+  solveEquivalentBlockDemandsFromPrepared
+} from '../src/index'
+
+const adaptiveBlock = () => {
+  const profileId = 'kds-142020-equivalent-block' as const
+  const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
+  const design = createDesignBasisForCalculationProfile(profileId)
+  const options = createAdaptiveEquivalentBlockAnalysisOptions()
+  if (options.neutralAxisStations.refinement.type !== 'adaptive' || options.directions.refinement.type !== 'adaptive') {
+    throw new Error('Adaptive block preset is invalid.')
+  }
+  options.neutralAxisStations.refinement.maxPasses = 2
+  options.neutralAxisStations.refinement.maxStations = 28
+  options.directions.refinement.maxPasses = 1
+  options.directions.refinement.maxDirections = 24
+  const prepared = prepareBlockAnalysis(
+    profileId,
+    sectionGeometryFromGeometryInput(geometry),
+    geometryInputRebars(geometry),
+    materials,
+    design
+  )
+  return { options, prepared }
+}
+
+test('equivalent-block adaptive rows are independent, closed, and bounded in work', () => {
+  const { options, prepared } = adaptiveBlock()
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+  assert.ok((surface.stationError.minStations ?? 0) >= 14)
+  assert.ok((surface.stationError.maxStations ?? 0) > (surface.stationError.minStations ?? 0))
+  assert.ok(surface.triangles?.length)
+  assert.ok((surface.stationError.evaluations ?? Infinity) < surface.points.length * 10)
+
+  const edges = new Map<string, number>()
+  for (const triangle of surface.triangles ?? []) {
+    for (const [left, right] of [[triangle.a, triangle.b], [triangle.b, triangle.c], [triangle.c, triangle.a]]) {
+      const key = left < right ? `${left}:${right}` : `${right}:${left}`
+      edges.set(key, (edges.get(key) ?? 0) + 1)
+    }
+  }
+  assert.equal([...edges.values()].filter((count) => count === 1).length, 0)
+  assert.equal([...edges.values()].filter((count) => count > 2).length, 0)
+  assert.equal(surface.designFixed?.points, surface.points)
+  assert.equal(surface.nominalFixed?.points, surface.nominalPoints)
+  assert.equal(surface.designSurface?.points, surface.points)
+  assert.equal(surface.nominalSurface?.points, surface.nominalPoints)
+  assert.equal(surface.directionError.probedStationIds.length, surface.stations.length - 2)
+  assert.ok(Number.isNaN(surface.directionError.worstBeta) || (
+    surface.directionError.worstBeta >= 0 && surface.directionError.worstBeta < 2 * Math.PI
+  ))
+})
+
+test('equivalent-block arbitrary direction keeps independently adaptive stations', () => {
+  const { options, prepared } = adaptiveBlock()
+  const curve = buildEquivalentBlockExactDirectionCurveFromPrepared(prepared, options, 17.35 * Math.PI / 180)
+  assert.ok(curve.designAdaptive.length > 14)
+  assert.ok(curve.designAdaptive.some((point) => point.stationId?.startsWith('adaptive-station-')))
+  assert.equal(curve.designAdaptive.length, curve.designFixed.length)
+})
+
+test('adaptive block sampling pins the full-block geometry event and prunes its obsolete parent midpoints', () => {
+  const profileId = 'kds-142020-equivalent-block' as const
+  const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
+  const design = createKdsAppendixDesignBasis()
+  const options = createAdaptiveEquivalentBlockAnalysisOptions()
+  if (options.directions.refinement.type !== 'adaptive') throw new Error('Adaptive directions are required.')
+  options.directions.refinement.maxPasses = 0
+  options.directions.refinement.maxDirections = options.directions.seedCount
+  const prepared = prepareBlockAnalysis(
+    profileId,
+    sectionGeometryFromGeometryInput(geometry),
+    geometryInputRebars(geometry),
+    materials,
+    design
+  )
+  const surface = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  const eventRatio = 1 / prepared.designModel.blockLaw.depthFactor
+  const event = surface.stations.find((station) =>
+    station.type === 'depth-ratio' && Math.abs(station.ratio - eventRatio) <= 1e-12)
+  assert.ok(event, `missing full-block event c/D=${eventRatio}`)
+
+  const extents = projectedOuterExtents(prepared.section, 1, 0)
+  const ratios = surface.points
+    .filter((point) => point.kind === 'state' && point.state?.neutralAxisAngle === 0)
+    .map((point) => point.state!.neutralAxisDepth / extents.depth)
+    .filter((ratio) => ratio >= eventRatio - 1e-12 && ratio < 1.5)
+    .sort((left, right) => left - right)
+  assert.deepEqual(
+    ratios,
+    [eventRatio],
+    `obsolete dyadic midpoints survived above the exact c/D=${eventRatio} event: ${ratios.join(', ')}`
+  )
+  assert.equal(surface.stationRefinementConverged, true)
+})
+
+/** F-03(b) hand oracle: cover gap 60/500 = 0.12 c/D > 0.1, so n = ceil(1.2) − 1 = 1 cover-gap station. */
+const COVER_GAP_STATIONS = 1
+const geometry: GeometryInput = {
+  id: 1,
+  name: '500 x 700 verification column',
+  outers: [{
+    id: 1,
+    points: [
+      { id: 1, x: -250, y: -350 }, { id: 2, x: 250, y: -350 },
+      { id: 3, x: 250, y: 350 }, { id: 4, x: -250, y: 350 }
+    ],
+    holes: []
+  }],
+  rebars: [
+    [-190, -290], [190, -290], [190, 290], [-190, 290], [0, -290], [0, 290]
+  ].map(([x, y], index) => ({ id: index + 1, x, y, dia: 25, steelMaterialId: 1 }))
+}
+
+const build = (profileId: EquivalentBlockProfileId) => {
+  const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
+  const design = createDesignBasisForCalculationProfile(profileId)
+  const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
+  options.directions.seedCount = 12
+  options.directions.refinement = { type: 'fixed' }
+  options.neutralAxisStations.refinement = { type: 'fixed' }
+  const section = sectionGeometryFromGeometryInput(geometry)
+  const rebars = geometryInputRebars(geometry)
+  const prepared = prepareBlockAnalysis(profileId, section, rebars, materials, design)
+  return { materials, design, options, prepared }
+}
+
+const assertCardinalSlicesHaveNoCapToTensionChord = (
+  surface: ReturnType<typeof buildEquivalentBlockPreviewSurfaceFromPrepared>,
+  label: string
+) => {
+  const syntheticCapPoints = surface.points.filter((point) => point.surfaceRole === 'axial-cap')
+  assert.ok(syntheticCapPoints.length > 2, `${label}: expected a triangulated axial-cap face`)
+  assert.ok(
+    syntheticCapPoints.every((point) => point.station === -1 && point.stationId === null),
+    `${label}: axial-cap points must not masquerade as physical strain stations`
+  )
+  assert.ok(
+    syntheticCapPoints.some((point) => point.onSampledDirection === true) &&
+    syntheticCapPoints.some((point) => point.onSampledDirection === false),
+    `${label}: cap boundary meridians and internal face vertices must remain distinguishable`
+  )
+  const capP = syntheticCapPoints[0].P
+  const tensionP = Math.min(...surface.points.map((point) => point.P))
+  const forceTolerance = Math.max(1, Math.abs(capP), Math.abs(tensionP)) * 1e-9
+  const near = (value: number, target: number) => Math.abs(value - target) <= forceTolerance
+  const epsilon = 1e-6
+  const angles = [
+    0, epsilon,
+    90 - epsilon, 90, 90 + epsilon,
+    180 - epsilon, 180, 180 + epsilon,
+    270 - epsilon, 270, 270 + epsilon
+  ]
+
+  for (const degrees of angles) {
+    const paths = sliceMomentPlane(surface.points, degrees * Math.PI / 180, surface.triangles)
+    assert.ok(paths.length > 0, `${label} ${degrees} deg: expected a vertical slice`)
+    assert.ok(paths.every((path) => path.closed), `${label} ${degrees} deg: full-plane slice must be closed`)
+    for (const [pathIndex, path] of paths.entries()) {
+      for (let index = 1; index < path.points.length; index += 1) {
+        const left = path.points[index - 1]
+        const right = path.points[index]
+        const capToTension =
+          (near(left.P, capP) && near(right.P, tensionP)) ||
+          (near(right.P, capP) && near(left.P, tensionP))
+        assert.equal(
+          capToTension,
+          false,
+          `${label} ${degrees} deg path ${pathIndex}: axial cap must not connect to the tension pole`
+        )
+      }
+    }
+  }
+}
+
+test('selected-point equivalent-block audit reproduces exact clipped concrete and every bar term', () => {
+  const { prepared, options } = build('kds-142020-equivalent-block')
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+  const point = surface.points.find((candidate) =>
+    candidate.surfaceRole === 'physical-state' &&
+    candidate.equivalentBlock !== undefined &&
+    candidate.resistance?.factor !== null
+  )
+  assert.ok(point)
+  const audit = buildEquivalentBlockPointCalculationAudit(prepared, 'design', point)
+  assert.equal(audit.kind, 'equivalent-block')
+  if (audit.kind !== 'equivalent-block') return
+  assert.equal(audit.reconciliation.ok, true)
+  assert.equal(audit.nominalReferenceReconciliation.ok, true)
+  assert.ok(audit.block.area > 0)
+  assert.equal(audit.rebars.length, geometry.rebars.length)
+  const originTrace = audit.depthProfile.originStrainTrace
+  assert.equal(originTrace.kind, 'neutral-axis-depth')
+  if (originTrace.kind === 'neutral-axis-depth') {
+    assert.ok(Math.abs(
+      originTrace.neutralAxisDepthRatio * originTrace.projectedSectionDepth - originTrace.neutralAxisDepth
+    ) <= Math.max(1, originTrace.neutralAxisDepth) * 1e-12)
+    assert.ok(Math.abs(
+      originTrace.curvatureFromDepth - Math.hypot(audit.state.kx, audit.state.ky)
+    ) <= Math.max(1e-12, originTrace.curvatureFromDepth) * 1e-10)
+    assert.ok(Math.abs(
+      originTrace.calculatedE0 - audit.state.e0
+    ) <= Math.max(1e-12, Math.abs(audit.state.e0)) * 1e-10)
+  }
+  const barNet = audit.rebars.reduce((sum, bar) => sum + bar.net.P, 0)
+  assert.ok(Math.abs(barNet - audit.mechanicalLedger.steel.P) <= Math.max(1, Math.abs(barNet)) * 1e-12)
+  assert.ok(Math.abs(audit.displayedLedger.total.P - point.P) <= Math.max(1, Math.abs(point.P)) * 1e-10)
+  if (audit.block.blockDepth < audit.block.projectedSectionDepth) {
+    assert.ok(audit.depthProfile.samples.some((sample, index, samples) => index > 0 &&
+      Math.abs(sample.depth - samples[index - 1].depth) < 1e-12 &&
+      sample.stress === 0 && samples[index - 1].stress === audit.block.compressionStress
+    ), 'stress diagram must retain the exact equivalent-block discontinuity')
+  }
+  assert.match(audit.provenance.concrete, /KDS 14 20 20:2022/)
+})
+
+test('selected-point equivalent-block audit reproduces an axial-cap edge crossing without inventing a block state', () => {
+  const { prepared, options } = build('kds-142020-equivalent-block')
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+  const point = surface.points.find((candidate) =>
+    candidate.surfaceRole === 'axial-cap' && candidate.axialCapTrace?.source.kind === 'edge-interpolation'
+  )
+  assert.ok(point)
+  const audit = buildEquivalentBlockPointCalculationAudit(prepared, 'design', point)
+  assert.equal(audit.kind, 'axial-cap')
+  if (audit.kind !== 'axial-cap' || audit.trace.source.kind !== 'edge-interpolation') return
+  assert.equal('state' in audit, false, 'a cap-face audit must not invent a neutral-axis state')
+  const source = audit.trace.source
+  const t = (audit.trace.cap - source.compressionSide.P) /
+    (source.admissibleSide.P - source.compressionSide.P)
+  assert.ok(Math.abs(t - source.interpolationRatio) <= 1e-12)
+  const interpolate = (left: number, right: number) => left + t * (right - left)
+  assert.ok(Math.abs(interpolate(source.compressionSide.P, source.admissibleSide.P) - point.P) <= 1e-8)
+  assert.ok(Math.abs(interpolate(source.compressionSide.Mx, source.admissibleSide.Mx) - point.Mx) <= 1e-8)
+  assert.ok(Math.abs(interpolate(source.compressionSide.My, source.admissibleSide.My) - point.My) <= 1e-8)
+  assert.equal(audit.trace.projection.kind, 'identity')
+  assert.equal(audit.reconciliation.ok, true)
+})
+
+test('equivalent-block bar-strain audit follows yield strain, controlling depth, then compatibility', () => {
+  const { materials, prepared, options } = build('kds-142020-equivalent-block')
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+  const station = surface.stations.find((candidate) =>
+    candidate.definition.kind === 'bar-tension-yield-ratio' && candidate.definition.ratio === 1
+  )
+  assert.ok(station)
+  const point = surface.points.find((candidate) =>
+    candidate.surfaceRole === 'physical-state' && candidate.beta === 0 && candidate.stationId === station.id
+  )
+  assert.ok(point)
+
+  const audit = buildEquivalentBlockPointCalculationAudit(prepared, 'design', point, station.definition)
+  assert.equal(audit.kind, 'equivalent-block')
+  if (audit.kind !== 'equivalent-block') return
+  const trace = audit.depthProfile.originStrainTrace
+  assert.equal(trace.kind, 'controlling-bar-strain')
+  if (trace.kind !== 'controlling-bar-strain') return
+
+  const controllingBar = geometry.rebars.reduce((current, candidate) => candidate.y < current.y ? candidate : current)
+  const compressionEdgeY = Math.max(...geometry.outers.flatMap((outer) => outer.points.map((vertex) => vertex.y)))
+  const steelMaterialId = controllingBar.steelMaterialId ?? materials.defaults.steelMaterialId
+  const steelMaterial = materials.steel.find((candidate) => candidate.id === steelMaterialId)
+  assert.ok(steelMaterial)
+  const expectedYieldStrain = compileSteelMaterial(steelMaterial).limits.epsYield
+  assert.ok(expectedYieldStrain !== undefined)
+  const expectedSteelStrain = -expectedYieldStrain
+  const expectedDepth = compressionEdgeY - controllingBar.y
+  const compressionEdgeStrain = audit.depthProfile.samples[0].strain
+  const expectedCurvature = (compressionEdgeStrain - expectedSteelStrain) / expectedDepth
+  const expectedNeutralAxisDepth = compressionEdgeStrain / expectedCurvature
+  const tolerance = 1e-11
+
+  assert.equal(trace.controllingRebarId, controllingBar.id)
+  assert.ok(Math.abs(trace.yieldStrain - expectedYieldStrain) <= tolerance)
+  assert.ok(Math.abs(trace.controllingSteelStrain - expectedSteelStrain) <= tolerance)
+  assert.ok(Math.abs(trace.compressionEdgeToBarDepth - expectedDepth) <= tolerance)
+  assert.ok(Math.abs(trace.curvatureFromCompatibility - expectedCurvature) <= tolerance)
+  assert.ok(Math.abs(trace.neutralAxisDepth - expectedNeutralAxisDepth) <= tolerance)
+  assert.ok(Math.abs(trace.calculatedE0 - audit.state.e0) <= tolerance)
+})
+
+test('KDS block cardinal slices do not weld the axial cap to the tension pole', () => {
+  const parsed = parseProjectDocument(readFileSync(
+    resolve(process.cwd(), 'docs/examples/realistic-sections/KDS-REAL-05-complex-stress-strain.pm-project.json'),
+    'utf8'
+  ))
+  assert.ok(parsed.ok, 'complex stress-strain fixture must parse')
+  if (!parsed.ok) return
+
+  const profileId = 'kds-142020-equivalent-block' as const
+  const projectGeometry = parsed.document.inputs.geometry
+  const materials = applyCalculationProfileToMaterials(parsed.document.inputs.materials, profileId)
+  const design = createDesignBasisForCalculationProfile(profileId)
+  const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
+  const prepared = prepareBlockAnalysis(
+    profileId,
+    sectionGeometryFromGeometryInput(projectGeometry),
+    geometryInputRebars(projectGeometry),
+    materials,
+    design
+  )
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+  assertCardinalSlicesHaveNoCapToTensionChord(surface, 'KDS complex stress-strain fixture')
+})
+
+test('equivalent-block example projects parse and solve with their shipped production options', () => {
+  const directory = resolve(process.cwd(), 'docs/examples/equivalent-block')
+  const files = readdirSync(directory)
+    .filter((file) => /^(KDS|ACI)-EB-\d{2}-.+\.pm-project\.json$/.test(file))
+    .sort()
+  assert.equal(files.length, 8, 'the public audit set must contain 4 geometries x 2 code profiles')
+
+  for (const file of files) {
+    const parsed = parseProjectDocument(readFileSync(resolve(directory, file), 'utf8'))
+    assert.ok(parsed.ok, `${file}: project schema v1 must parse`)
+    if (!parsed.ok) continue
+    assert.deepEqual(parsed.warnings, [], `${file}: import warnings`)
+    const { inputs } = parsed.document
+    assert.equal(parsed.document.version, 1, `${file}: project version`)
+    assert.notEqual(inputs.calculationProfileId, 'kds-2024-stress-strain', `${file}: block profile`)
+    assert.equal(inputs.analysis.methodId, 'equivalent-block-surface-v1', `${file}: analysis method`)
+    const options = inputs.analysis as EquivalentBlockAnalysisOptions
+    const prepared = prepareBlockAnalysis(
+      inputs.calculationProfileId,
+      sectionGeometryFromGeometryInput(inputs.geometry),
+      geometryInputRebars(inputs.geometry),
+      inputs.materials,
+      inputs.design
+    )
+    const designSurface = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+    const preview = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options, designSurface)
+    assert.equal(designSurface.topology.closed, true, `${file}: closed design surface`)
+    assertCardinalSlicesHaveNoCapToTensionChord(preview, file)
+    assert.equal(inputs.loadings.combinations.length, 3, `${file}: audit loadcase count`)
+    for (const loadcase of inputs.loadings.combinations) {
+      const solved = solveEquivalentBlockDemandFromPrepared(prepared, options, loadcase, designSurface)
+      assert.equal(solved.ok, true, `${file}/${loadcase.name}: demand solve`)
+      assert.ok(solved.utilization !== null && solved.utilization < 1, `${file}/${loadcase.name}: inside surface`)
+    }
+  }
+})
+
+test('realistic equivalent-block examples parse and solve with their shipped production options', () => {
+  const directory = resolve(process.cwd(), 'docs/examples/realistic-sections')
+  const files = readdirSync(directory)
+    .filter((file) => /^(KDS|ACI)-REAL-0[1-4]-.+\.pm-project\.json$/.test(file))
+    .sort()
+  assert.equal(files.length, 4, 'the realistic equivalent-block set must contain four examples')
+
+  for (const file of files) {
+    const parsed = parseProjectDocument(readFileSync(resolve(directory, file), 'utf8'))
+    assert.ok(parsed.ok, `${file}: project schema v1 must parse`)
+    if (!parsed.ok) continue
+    assert.deepEqual(parsed.warnings, [], `${file}: import warnings`)
+    const { inputs } = parsed.document
+    assert.equal(parsed.document.version, 1, `${file}: project version`)
+    assert.notEqual(inputs.calculationProfileId, 'kds-2024-stress-strain', `${file}: block profile`)
+    assert.equal(inputs.analysis.methodId, 'equivalent-block-surface-v1', `${file}: analysis method`)
+    const options = inputs.analysis as EquivalentBlockAnalysisOptions
+    const prepared = prepareBlockAnalysis(
+      inputs.calculationProfileId,
+      sectionGeometryFromGeometryInput(inputs.geometry),
+      geometryInputRebars(inputs.geometry),
+      inputs.materials,
+      inputs.design
+    )
+    const designSurface = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+    const preview = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options, designSurface)
+    assert.equal(designSurface.topology.closed, true, `${file}: closed design surface`)
+    assertCardinalSlicesHaveNoCapToTensionChord(preview, file)
+    assert.equal(inputs.loadings.combinations.length, 3, `${file}: design loadcase count`)
+    for (const loadcase of inputs.loadings.combinations) {
+      const solved = solveEquivalentBlockDemandFromPrepared(prepared, options, loadcase, designSurface)
+      assert.equal(solved.ok, true, `${file}/${loadcase.name}: demand solve`)
+      assert.ok(solved.utilization !== null && solved.utilization < 1, `${file}/${loadcase.name}: inside surface`)
+    }
+  }
+})
+
+test('equivalent-block admissibility is reference-point invariant in all moment quadrants', () => {
+  const file = resolve(process.cwd(), 'docs/examples/equivalent-block/KDS-EB-03-l-shape-8-bars.pm-project.json')
+  const parsed = parseProjectDocument(readFileSync(file, 'utf8'))
+  assert.ok(parsed.ok, 'the asymmetric L-shape project must parse')
+  if (!parsed.ok) return
+
+  const { inputs } = parsed.document
+  const options = inputs.analysis as EquivalentBlockAnalysisOptions
+  const prepared = prepareBlockAnalysis(
+    inputs.calculationProfileId,
+    sectionGeometryFromGeometryInput(inputs.geometry),
+    geometryInputRebars(inputs.geometry),
+    inputs.materials,
+    inputs.design
+  )
+  assert.notEqual(prepared.section.referencePoint.x, 0, 'fixture must exercise a translated analysis origin')
+  assert.notEqual(prepared.section.referencePoint.y, 0, 'fixture must exercise a translated analysis origin')
+  const surface = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  const source = inputs.loadings.combinations[0]
+
+  for (const [signX, signY] of [[1, 1], [-1, 1], [-1, -1], [1, -1]] as const) {
+    const result = solveEquivalentBlockDemandFromPrepared(prepared, options, {
+      ...source,
+      id: 100 + signX * 10 + signY,
+      name: `${signX > 0 ? '+' : '-'}Mx ${signY > 0 ? '+' : '-'}My`,
+      Mx: signX * Math.abs(source.Mx),
+      My: signY * Math.abs(source.My)
+    }, surface)
+    assert.equal(result.converged, true, `${result.demand.name}: proportional solve`)
+    assert.equal(result.admissibility.ok, true, `${result.demand.name}: physical strain state`)
+    assert.equal(result.ok, true, `${result.demand.name}: accepted result`)
+    assert.ok(
+      result.admissibility.maxConcreteCompression <= result.admissibility.concreteLimit * (1 + 1e-9),
+      `${result.demand.name}: compression limit`
+    )
+  }
+})
+
+for (const profileId of [
+  'kds-142020-equivalent-block',
+  'aci-318-19-22-equivalent-block',
+  'as-3600-2018-amd2-equivalent-block',
+  'custom-equivalent-block'
+] as const) {
+  test(`${profileId}: surface, inverse and exact block field`, () => {
+    const input = build(profileId)
+    const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(input.prepared, input.options)
+    assert.equal(surface.mechanics, 'equivalent-rectangular-block')
+    assert.ok(surface.points.length > 100)
+    assert.ok(surface.triangles && surface.triangles.length > 100)
+    assert.ok(surface.points.every((point) => Number.isFinite(point.P + point.Mx + point.My)))
+    if (profileId === 'as-3600-2018-amd2-equivalent-block') {
+      assert.equal(
+        surface.points.some((point) => point.surfaceRole === 'axial-cap'),
+        false,
+        'AS 3600 preview applies phi_o at pure compression and does not invent an ACI/KDS axial cap'
+      )
+    } else {
+      assertCardinalSlicesHaveNoCapToTensionChord(surface, profileId)
+    }
+    assert.equal(surface.stations.length, UNIFIED_STATION_COUNT + COVER_GAP_STATIONS)
+    assert.deepEqual(surface.stations.filter(({ id }) => id.startsWith('cover-gap-')).map(({ id }) => id), ['cover-gap-1-of-1'])
+    assert.equal(surface.stations[0].definition.kind, 'pure-compression')
+    assert.equal(surface.stations.at(-1)?.definition.kind, 'pure-tension')
+    assert.equal(
+      surface.warnings.some((warning) => warning.includes('neutral-axis refinement')),
+      false,
+      'a fixed station schedule must not emit an adaptive-refinement warning'
+    )
+    assert.deepEqual(
+      surface.stations.slice(1, 1 + UNIFIED_DEPTH_RATIOS.length).map((station) => station.definition),
+      UNIFIED_DEPTH_RATIOS.map((ratio) => ({ kind: 'block-depth-ratio', ratio }))
+    )
+    // The Fixed cover-gap station sits between depth-ratio 1 and the first yield-ratio station.
+    assert.deepEqual(surface.stations[1 + UNIFIED_DEPTH_RATIOS.length].definition, { kind: 'neutral-axis-control-gap-ratio', ratio: 0.5 })
+    assert.deepEqual(
+      surface.stations.slice(1 + UNIFIED_DEPTH_RATIOS.length + COVER_GAP_STATIONS, -1).map((station) => station.definition),
+      UNIFIED_STEEL_STRAIN_YIELD_RATIOS.map((ratio) => ({ kind: 'bar-tension-yield-ratio', ratio }))
+    )
+    assert.equal(
+      surface.stations.filter((station) => station.definition.kind === 'bar-tension-yield-ratio').length,
+      UNIFIED_STEEL_STRAIN_YIELD_RATIOS.length,
+      'all block models must use the shared controlling-bar yield-ratio schedule'
+    )
+    assert.equal(
+      surface.stations.some((station) => station.definition.kind === 'bar-tension-strain'),
+      false,
+      'transition event stations are not part of the fixed baseline'
+    )
+    const reduced = surface.points.find((point) => point.resistance?.factor && point.equivalentBlock)
+    assert.ok(reduced?.resistance?.factor)
+    assert.ok(Math.abs(reduced.P - reduced.resistance.factor * reduced.resistance.nominalReference.P) < 1e-8)
+    assert.ok(Math.abs(reduced.Mx - reduced.resistance.factor * reduced.resistance.nominalReference.Mx) < 1e-6)
+    assert.ok(Math.abs(reduced.My - reduced.resistance.factor * reduced.resistance.nominalReference.My) < 1e-6)
+    const source = surface.points.find((point) => point.equivalentBlock && Math.hypot(point.Mx, point.My) > 1e6 && point.P > 0)
+    assert.ok(source)
+    const inverse = solveEquivalentBlockDemandFromPrepared(input.prepared, input.options, {
+      id: 1, name: '0.55 x known design ray', actionBasis: 'factoredULS',
+      P: 0.55 * source.P, Mx: 0.55 * source.Mx, My: 0.55 * source.My
+    })
+    assert.equal(inverse.ok, true)
+    assert.ok(inverse.utilization !== null && inverse.utilization > 0 && inverse.utilization < 1)
+    assert.ok(typeof inverse.fixedPUtilization === 'number' && inverse.fixedPUtilization > 0)
+    assert.ok(inverse.equivalentBlock)
+    assert.ok(Math.abs(inverse.equivalentBlock.blockDepth - inverse.equivalentBlock.beta1 * inverse.equivalentBlock.neutralAxisDepth) < 1e-9)
+    const field = buildEquivalentBlockFieldMapFromPrepared(input.prepared, {
+      neutralAxisAngle: inverse.equivalentBlock.neutralAxisAngle,
+      neutralAxisDepth: inverse.equivalentBlock.neutralAxisDepth
+    })
+    assert.equal(field.mechanics, 'equivalent-rectangular-block')
+    assert.ok(field.equivalentBlock?.geometry.length)
+    assert.equal(field.triangles.length, 0, 'equivalent-block field must not imply mesh integration')
+    assert.equal(field.samples.length, 0, 'equivalent-block field is analytic and exactly clipped')
+    assert.equal(field.mesh.triangles, 0)
+  })
+}
+
+test('schema v2 round-trips stored areas and the unchanged block profile', () => {
+  const profileId = 'aci-318-19-22-equivalent-block' as const
+  const input = build(profileId)
+  const document = createProjectDocument({
+    calculationProfileId: profileId,
+    geometry,
+    materials: input.materials,
+    analysis: input.options,
+    design: input.design
+  })
+  const parsed = parseProjectDocument(serializeProjectDocument(document))
+  assert.equal(document.version, 3)
+  assert.equal(parsed.ok, true)
+  if (parsed.ok) {
+    assert.equal(parsed.document.inputs.calculationProfileId, profileId)
+    assert.equal(parsed.document.inputs.analysis.methodId, 'equivalent-block-surface-v1')
+  }
+})
+
+test('ACI default keeps one independent fixed grid of 36 seeds plus geometry rows and solves a practical demand', () => {
+  const profileId = 'aci-318-19-22-equivalent-block' as const
+  const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
+  const design = createDesignBasisForCalculationProfile(profileId)
+  const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
+  assert.deepEqual(options.neutralAxisStations.refinement, { type: 'fixed' })
+  assert.deepEqual(options.directions.refinement, { type: 'fixed' })
+  const prepared = prepareBlockAnalysis(
+    profileId,
+    sectionGeometryFromGeometryInput(geometry),
+    geometryInputRebars(geometry),
+    materials,
+    design
+  )
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+  assert.equal(surface.designFixed?.stations.length, UNIFIED_STATION_COUNT + COVER_GAP_STATIONS)
+  // 36 seeds plus the F-03(a) normalized-gap rows of the 500 x 700 rectangle (no hull-edge event is
+  // off-grid for this symmetric layout). The geometry helper gives the gap count independently.
+  const covariance = netConcreteAreaCovariance(sectionGeometryFromGeometryInput(geometry))
+  assert.ok(covariance)
+  const gaps = normalizedGapGradientAngles(Array.from({ length: 36 }, (_, index) => index * Math.PI / 18), covariance, Math.PI / 18)
+  assert.ok(gaps.length > 0 && gaps.length <= 36)
+  assert.equal(surface.designFixed?.directions.length, 36 + gaps.length)
+  assert.equal(surface.nominalFixed?.stations.length, UNIFIED_STATION_COUNT + COVER_GAP_STATIONS)
+  assert.equal(surface.nominalFixed?.directions.length, 36 + gaps.length)
+  assert.equal(surface.stations.length, UNIFIED_STATION_COUNT + COVER_GAP_STATIONS)
+  assert.equal(surface.stationError.refinementPasses, 0)
+  assert.equal(surface.directionError.refinementPasses, 0)
+  const inverse = solveEquivalentBlockDemandFromPrepared(prepared, options, {
+    id: 9,
+    name: 'Practical ULS demand',
+    actionBasis: 'factoredULS',
+    P: 1_000_000,
+    Mx: 100_000_000,
+    My: 0
+  })
+  assert.ok(surface.points.length > 500)
+  assert.equal(inverse.ok, true)
+  assert.ok(inverse.equivalentBlock)
+})
+
+/**
+ * Historical reproduction of the 2.18 % block over-prediction recorded in engineering/05 §4. With
+ * the seed rows alone the Fixed grid still over-predicts this ray; with the F-02 tension-control
+ * rows (docs/task-packets/2026-11-11-f02-tension-control-event-directions.md) it no longer does.
+ */
+test('ACI L-section unsafe-ray over-prediction is reproduced by the seeds and removed by F-02', () => {
+  const profileId = 'aci-318-19-22-equivalent-block' as const
+  const defaults = createDefaultMaterialStore()
+  const materials = applyCalculationProfileToMaterials({
+    ...defaults,
+    concrete: { ...defaults.concrete, fck: 40 },
+    steel: defaults.steel.map((steel) => ({ ...steel, fy: 420 }))
+  }, profileId)
+  const design = createDesignBasisForCalculationProfile(profileId)
+  const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
+  const diameterForArea400 = Math.sqrt(1_600 / Math.PI)
+  const lSection: GeometryInput = {
+    id: 91,
+    name: 'ACI fixed-grid unsafe-ray regression',
+    outers: [{
+      id: 91,
+      points: [
+        { id: 911, x: -300, y: -250 }, { id: 912, x: 300, y: -250 },
+        { id: 913, x: 300, y: -50 }, { id: 914, x: -50, y: -50 },
+        { id: 915, x: -50, y: 300 }, { id: 916, x: -300, y: 300 }
+      ],
+      holes: []
+    }],
+    rebars: [
+      [-250, -200], [0, -200], [250, -200], [-250, 0],
+      [-250, 250], [-100, -100], [100, -100], [-100, 100]
+    ].map(([x, y], index) => ({
+      id: 920 + index,
+      x,
+      y,
+      dia: diameterForArea400,
+      steelMaterialId: 1
+    }))
+  }
+  const prepared = prepareBlockAnalysis(
+    profileId,
+    sectionGeometryFromGeometryInput(lSection),
+    geometryInputRebars(lSection),
+    materials,
+    design
+  )
+  const core = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options, undefined, false)
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options, core, undefined, false)
+  const exactState = {
+    neutralAxisAngle: 2 * Math.PI * 50 / 80 + 0.017,
+    neutralAxisDepth: 0.30 * prepared.section.characteristicLength
+  }
+  const exact = prepared.model.bindDesignEvaluator(prepared.section)(exactState).resultants
+  const seedDemand = {
+    id: 91,
+    name: 'Fixed-grid unsafe ray',
+    actionBasis: 'factoredULS' as const,
+    P: exact.P / 1.25,
+    Mx: exact.Mx / 1.25,
+    My: exact.My / 1.25
+  }
+  const seedCheck = checkLoadcaseUtilizationFromSurface(surface, seedDemand)
+  assert.ok(seedCheck.proportionalUtilization)
+  // The production adapter uses the section reference point, so this ray is the product-space
+  // counterpart of the core harness's 0.979616/1.001 audit ray rather than the same coordinates.
+  const demandScale = 0.981 / seedCheck.proportionalUtilization
+  const demand = {
+    ...seedDemand,
+    P: seedDemand.P * demandScale,
+    Mx: seedDemand.Mx * demandScale,
+    My: seedDemand.My * demandScale
+  }
+  const check = checkLoadcaseUtilizationFromSurface(surface, demand)
+  const inverse = solveEquivalentBlockDemandFromPrepared(prepared, options, demand, core)
+
+  assert.ok(Math.abs((check.proportionalUtilization ?? 0) - 0.981) < 1e-9)
+  assert.ok(
+    (inverse.inverseProportionalUtilization ?? 0) > 1,
+    `exact refined UR ${inverse.inverseProportionalUtilization} must expose the unsafe Fixed-grid over-prediction`
+  )
+  assert.ok(Math.abs((inverse.inverseProportionalUtilization ?? 0) - 1.001) < 5e-4)
+  assert.equal(check.adequacy, 'indeterminate', 'the known over-prediction stays inside the 2% CHECK band')
+  assert.equal(check.utilizationInterval.evidence, 'fixed-grid-screening-margin')
+  assert.match(check.message, /not a validated bound/)
+
+  const supplementedCore = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  const supplemented = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options, supplementedCore)
+  assert.ok(supplemented.directionSources?.includes('tension-control-event'))
+  const corrected = checkLoadcaseUtilizationFromSurface(supplemented, demand)
+  const correctedInverse = solveEquivalentBlockDemandFromPrepared(prepared, options, demand, supplementedCore)
+  const fixedUr = corrected.proportionalUtilization ?? Number.NaN
+  const exactUr = correctedInverse.inverseProportionalUtilization ?? Number.NaN
+  assert.ok(exactUr <= fixedUr * (1 + 1e-9), `exact UR ${exactUr} must not exceed the supplemented Fixed UR ${fixedUr}`)
+  assert.ok(fixedUr / exactUr - 1 < 0.01, 'the supplemented grid stays within 1 % of the exact refinement')
+})
+
+test('an exact equivalent-block direction uses only fixed stations on the requested meridian', () => {
+  const profileId = 'aci-318-19-22-equivalent-block' as const
+  const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
+  const design = createDesignBasisForCalculationProfile(profileId)
+  const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
+  const prepared = prepareBlockAnalysis(
+    profileId,
+    sectionGeometryFromGeometryInput(geometry),
+    geometryInputRebars(geometry),
+    materials,
+    design
+  )
+  const beta = 17.35 * Math.PI / 180
+  const curve = buildEquivalentBlockExactDirectionCurveFromPrepared(prepared, options, beta)
+
+  assert.ok(Math.abs(curve.beta - beta) < 1e-14)
+  assert.equal(
+    curve.nominalFixed.length,
+    UNIFIED_STATION_COUNT + COVER_GAP_STATIONS,
+    curve.nominalFixed.map((point) => point.stationId ?? point.surfaceRole ?? point.id).join(', ')
+  )
+  assert.ok(curve.designFixed.some((point) => point.surfaceRole === 'axial-cap'))
+  assert.equal(
+    curve.designFixed.filter((point) => point.surfaceRole === 'axial-cap').length,
+    1,
+    'an exact meridian must contain its one cap crossing, not internal vertices of the cap face'
+  )
+  assert.ok(curve.designFixed.every((point) =>
+    point.surfaceRole !== 'axial-cap' || point.onSampledDirection === true
+  ))
+  assert.ok(curve.designFixed.every((point) => point.stationId?.startsWith('adaptive-') !== true))
+  assert.equal(curve.stations.filter((station) => station.fixed).length, UNIFIED_STATION_COUNT + COVER_GAP_STATIONS)
+  assert.deepEqual(curve.designAdaptive, curve.designFixed)
+  assert.ok(curve.designAdaptive
+    .filter((point) => point.surfaceRole !== 'pure-compression' && point.surfaceRole !== 'pure-tension')
+    .every((point) => Math.abs(point.beta - beta) < 1e-10))
+  assert.equal(curve.stationError.refinementPasses, 0)
+})
+
+test('equivalent-block inverse reports evaluated steel admissibility and honours epsU', () => {
+  const profileId = 'aci-318-19-22-equivalent-block' as const
+  const base = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
+  const materials = {
+    ...base,
+    steel: base.steel.map((steel) => ({
+      ...steel,
+      limits: { ...steel.limits, epsU: 0.02 }
+    }))
+  }
+  const design = createDesignBasisForCalculationProfile(profileId)
+  const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
+  options.directions.seedCount = 12
+  options.directions.refinement = { type: 'fixed' }
+  options.neutralAxisStations.refinement = { type: 'fixed' }
+  const prepared = prepareBlockAnalysis(
+    profileId,
+    sectionGeometryFromGeometryInput(geometry),
+    geometryInputRebars(geometry),
+    materials,
+    design
+  )
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+  const source = surface.points.find((point) => point.equivalentBlock && point.P > 0 && Math.hypot(point.Mx, point.My) > 1e6)
+  assert.ok(source)
+  const inverse = solveEquivalentBlockDemandFromPrepared(prepared, options, {
+    id: 17,
+    name: 'epsU admissibility ray',
+    actionBasis: 'factoredULS',
+    P: 0.6 * source.P,
+    Mx: 0.6 * source.Mx,
+    My: 0.6 * source.My
+  })
+  assert.equal(inverse.ok, true, inverse.message)
+  assert.equal(inverse.admissibility.evaluated, true)
+  assert.equal(inverse.admissibility.ok, true)
+  assert.equal(inverse.admissibility.steelTensionLimit, 0.02)
+  assert.ok(inverse.admissibility.maxSteelTension <= 0.02 * (1 + 1e-9))
+  assert.deepEqual(inverse.admissibility.violations, [])
+})
+
+test('a prepared design surface is reused across inverse load combinations', () => {
+  const input = build('aci-318-19-22-equivalent-block')
+  const original = input.prepared.model.buildDesignSurface
+  let builds = 0
+  input.prepared.model.buildDesignSurface = (...args) => {
+    builds += 1
+    return original(...args)
+  }
+  const loadcases = Array.from({ length: 4 }, (_, index) => ({
+      id: 100 + index,
+      name: `cached demand ${index + 1}`,
+      actionBasis: 'factoredULS' as const,
+      P: 300_000 + index * 50_000,
+      Mx: 80_000_000,
+      My: 20_000_000
+    }))
+  const inverses = solveEquivalentBlockDemandsFromPrepared(input.prepared, input.options, loadcases)
+  assert.equal(inverses.length, loadcases.length)
+  assert.ok(inverses.every((inverse) => inverse.utilization !== null))
+  assert.equal(builds, 1, 'the batch API must build one loadcase-independent surface')
+})
+
+test('KDS Appendix block route reevaluates materials, uses eps_c0, omits phi/cap, and enforces e_min', () => {
+  const profileId = 'kds-142020-equivalent-block' as const
+  const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
+  const design = createKdsAppendixDesignBasis()
+  const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
+  options.directions.seedCount = 12
+  options.directions.refinement = { type: 'fixed' }
+  options.neutralAxisStations.refinement = { type: 'fixed' }
+  const prepared = prepareBlockAnalysis(
+    profileId,
+    sectionGeometryFromGeometryInput(geometry),
+    geometryInputRebars(geometry),
+    materials,
+    design
+  )
+
+  assert.ok(Math.abs(
+    prepared.designModel.blockLaw.compressionStress /
+    prepared.referenceModel.blockLaw.compressionStress - 0.65
+  ) < 1e-12)
+  const referenceSteel = prepared.referenceModel.steelLaws['1']!
+  const designSteel = prepared.designModel.steelLaws['1']!
+  assert.equal(designSteel.stressAt(0.0005), referenceSteel.stressAt(0.0005), 'Es remains unchanged')
+  assert.ok(Math.abs(designSteel.stressAt(0.01) / referenceSteel.stressAt(0.01) - 0.90) < 1e-12)
+  assert.equal(
+    prepared.designModel.blockLaw.compressionPivotStrain,
+    materials.concrete.limits.eps0
+  )
+  assert.equal(prepared.designModel.blockLaw.extremeCompressionStrain, materials.concrete.limits.epsCu)
+
+  const designSurface = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options, designSurface)
+  assert.equal(designSurface.topology.closed, true)
+  const allCompressionState = designSurface.points.find((point) =>
+    point.state && point.state.neutralAxisDepth > 1.1 * 700
+  )?.state
+  assert.ok(allCompressionState)
+  const allCompressionEvaluation = prepared.designModel
+    .bindNominalEvaluator(prepared.section)(allCompressionState).source as NominalBlockEvaluation
+  assert.ok(allCompressionEvaluation.diagnostics.extremeCompressionStrain > materials.concrete.limits.eps0!)
+  assert.ok(allCompressionEvaluation.diagnostics.extremeCompressionStrain < materials.concrete.limits.epsCu)
+  assert.ok(surface.points.every((point) => point.surfaceRole !== 'axial-cap'))
+  assert.ok(surface.points.every((point) => point.resistance?.factor == null))
+  assert.ok(surface.nominalPoints.length > 0, 'the characteristic reference surface remains available')
+  const materialFactorPoint = surface.points.find((point) => point.surfaceRole === 'physical-state' && point.equivalentBlock)
+  assert.ok(materialFactorPoint)
+  const materialFactorAudit = buildEquivalentBlockPointCalculationAudit(prepared, 'design', materialFactorPoint)
+  assert.equal(materialFactorAudit.kind, 'equivalent-block')
+  if (materialFactorAudit.kind === 'equivalent-block') {
+    assert.equal(materialFactorAudit.nominalReferenceReconciliation.ok, true)
+    assert.equal(materialFactorAudit.resistanceFactorCalculation, null)
+    assert.notEqual(materialFactorAudit.nominalReferenceLedger.total.P, materialFactorAudit.mechanicalLedger.total.P)
+  }
+
+  const compression = surface.points.reduce((maximum, point) => point.P > maximum.P ? point : maximum)
+  const solved = solveEquivalentBlockDemandFromPrepared(prepared, options, {
+    id: 81,
+    name: 'Appendix minimum eccentricity',
+    actionBasis: 'factoredULS',
+    P: 0.25 * compression.P,
+    Mx: 0,
+    My: 0
+  }, designSurface)
+  assert.ok(solved.codeAdjustedDemand)
+  assert.ok(
+    solved.minimumEccentricityMm === 15 + 0.03 * 500 ||
+    solved.minimumEccentricityMm === 15 + 0.03 * 700,
+    'zero-moment demand checks both principal projected depths and retains the governing direction'
+  )
+  assert.ok(Math.hypot(solved.codeAdjustedDemand!.Mx, solved.codeAdjustedDemand!.My) > 0)
+
+  const check = checkLoadcaseUtilizationFromSurface(surface, {
+    id: 81,
+    name: 'Appendix minimum eccentricity',
+    actionBasis: 'factoredULS',
+    P: 0.25 * compression.P,
+    Mx: 0,
+    My: 0
+  })
+  assert.equal(
+    check.minimumEccentricityMm,
+    solved.minimumEccentricityMm,
+    'the loadcase table and the inverse must resolve the same governing principal axis'
+  )
+  assert.deepEqual(check.codeAdjustedDemand, solved.codeAdjustedDemand)
+  const ratio = Number(check.utilization)
+  assert.equal(check.adequacy, ratio <= 0.98 ? 'adequate' : ratio > 1.02 ? 'inadequate' : 'indeterminate')
+  assert.equal(check.utilizationInterval.evidence, 'fixed-grid-screening-margin')
+  assert.equal(check.utilizationInterval.relativeUncertainty, 0.02)
+})
+
+/**
+ * F-01 (docs/task-packets/2026-11-11-f01-minimum-eccentricity-signs.md): the block route shares the
+ * same e_min candidates. Bars along the top and right faces make a negative sense govern; the
+ * oracle is each signed candidate intersected with the same Design surface.
+ */
+test('F-01: the block route checks both e_min senses about each principal axis', () => {
+  const profileId = 'kds-142020-equivalent-block' as const
+  const input: GeometryInput = {
+    id: 1,
+    name: 'F-01 mirrored L layout',
+    outers: [{
+      id: 1,
+      points: [{ id: 1, x: -250, y: -250 }, { id: 2, x: 250, y: -250 }, { id: 3, x: 250, y: 250 }, { id: 4, x: -250, y: 250 }],
+      holes: []
+    }],
+    rebars: [[-190, 190], [0, 190], [190, 190], [190, 0], [190, -190]].map(([x, y], index) =>
+      ({ id: index + 1, steelMaterialId: 1, dia: 32, area: 800, x, y }))
+  }
+  const materials = applyCalculationProfileToMaterials(createDefaultMaterialStore(), profileId)
+  const prepared = prepareBlockAnalysis(profileId, sectionGeometryFromGeometryInput(input), geometryInputRebars(input),
+    materials, createKdsAppendixDesignBasis())
+  const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
+  const designSurface = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options, designSurface)
+  const P = 0.75 * surface.bounds.P[1]
+  const eccentricity = 15 + 0.03 * 500
+  const signed = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([sx, sy]) => {
+    const hit = intersectSurfaceWithDemandRay(surface, { P, Mx: sx * P * eccentricity, My: sy * P * eccentricity })
+    assert.ok(hit)
+    return 1 / hit.lambda
+  })
+  const worst = Math.max(...signed)
+  assert.ok(worst > 1.05 * Math.max(signed[0], signed[2]), 'the fixture must be governed by a negative sense')
+  const demand = { id: 82, name: 'Concentric', actionBasis: 'factoredULS' as const, P, Mx: 0, My: 0 }
+  const check = checkLoadcaseUtilizationFromSurface(surface, demand)
+  assert.ok(check.codeAdjustedDemand)
+  assert.ok(Math.abs(Number(check.utilization) / worst - 1) <= 1e-12)
+  assert.ok(check.codeAdjustedDemand.Mx < 0 || check.codeAdjustedDemand.My < 0)
+  const solved = solveEquivalentBlockDemandFromPrepared(prepared, options, demand, designSurface)
+  assert.ok(solved.codeAdjustedDemand)
+  assert.ok(solved.codeAdjustedDemand.Mx < 0 || solved.codeAdjustedDemand.My < 0,
+    'the block inverse must also retain a negative governing sense')
+})
+
+/**
+ * KDS Appendix 3.2(1) equations (3-2) and (3-3) carry no eta, so the concentric design axial
+ * strength is model independent. Below fck = 40 MPa eta is 1.00 and the defect this covers is
+ * invisible, which is why the fixture runs at fck = 60 MPa where Table 4.1-2 gives eta = 0.95.
+ */
+for (const [fck, fy, equation] of [[30, 400, '(3-2)'], [60, 400, '(3-2)'], [60, 600, '(3-3)']] as const) {
+  test(`KDS Appendix block route reports clause ${equation} design axial strength at fck ${fck} / fy ${fy}`, () => {
+    const profileId = 'kds-142020-equivalent-block' as const
+    const store = createDefaultMaterialStore()
+    const materials = applyCalculationProfileToMaterials({
+      ...store,
+      concrete: { ...store.concrete, fck },
+      steel: store.steel.map((steel) => ({
+        ...steel,
+        fy,
+        limits: { ...steel.limits, epsY: fy / steel.elasticModulus }
+      }))
+    }, profileId)
+    const design = createKdsAppendixDesignBasis()
+    const options = createAnalysisOptionsForProfile(profileId) as EquivalentBlockAnalysisOptions
+    options.directions.seedCount = 12
+    options.directions.refinement = { type: 'fixed' }
+    options.neutralAxisStations.refinement = { type: 'fixed' }
+    const prepared = prepareBlockAnalysis(
+      profileId,
+      sectionGeometryFromGeometryInput(geometry),
+      geometryInputRebars(geometry),
+      materials,
+      design
+    )
+
+    const Ag = 500 * 700
+    const Ast = geometryInputRebars(geometry).reduce(
+      (sum, bar) => sum + (Math.PI / 4) * bar.dia * bar.dia,
+      0
+    )
+    const steel = materials.steel[0]!
+    const eps0 = materials.concrete.limits.eps0!
+    const designYieldStrain = (0.9 * steel.fy) / steel.elasticModulus
+    assert.equal(designYieldStrain <= eps0 ? '(3-2)' : '(3-3)', equation, 'clause branch under test')
+    const steelStress = designYieldStrain <= eps0 ? 0.9 * steel.fy : eps0 * steel.elasticModulus
+    const Pdo = 0.65 * 0.85 * fck * (Ag - Ast) + steelStress * Ast
+
+    const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+    const compression = Math.max(...surface.points.map((point) => point.P))
+    assert.ok(
+      Math.abs(compression / Pdo - 1) < 1e-9,
+      `Appendix ${equation} expects ${Pdo} N, the block surface reported ${compression} N`
+    )
+
+    const etaDisclosure = surface.warnings.some((warning) => warning.includes('carry no eta'))
+    assert.equal(
+      etaDisclosure,
+      prepared.appendixPoleDivergesFromBlockLimit,
+      'the interpolated band above the block limit must be disclosed exactly when eta < 1'
+    )
+    assert.equal(etaDisclosure, fck > 40)
+  })
+}
+
+test('canonical My migration preserves the physical ray load factor and utilization', () => {
+  const parsed = parseProjectDocument(readFileSync(
+    resolve(process.cwd(), 'docs/examples/equivalent-block/ACI-EB-03-l-shape-8-bars.pm-project.json'),
+    'utf8'
+  ))
+  assert.ok(parsed.ok, 'asymmetric sign-migration fixture must parse')
+  if (!parsed.ok) return
+  const { inputs } = parsed.document
+  const options = inputs.analysis as EquivalentBlockAnalysisOptions
+  const prepared = prepareBlockAnalysis(
+    inputs.calculationProfileId,
+    sectionGeometryFromGeometryInput(inputs.geometry),
+    geometryInputRebars(inputs.geometry),
+    inputs.materials,
+    inputs.design
+  )
+  const canonicalSurface = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  const canonicalEvaluator = prepared.model.bindDesignEvaluator(prepared.section)
+  const reflectMy = (value: { P: number; Mx: number; My: number }) => ({
+    P: value.P,
+    Mx: value.Mx,
+    My: -value.My
+  })
+  const legacySurface = {
+    ...canonicalSurface,
+    points: canonicalSurface.points.map((point) => ({
+      ...point,
+      resultants: reflectMy(point.resultants)
+    }))
+  }
+  const legacyEvaluator: CapacityEvaluator = (state) => {
+    const evaluation = canonicalEvaluator(state)
+    return { ...evaluation, resultants: reflectMy(evaluation.resultants) }
+  }
+  const canonicalDemand = inputs.loadings.combinations[0]
+  const legacyDemand = reflectMy(canonicalDemand)
+  const canonical = solveProportionalRayCapacity(
+    canonicalSurface,
+    canonicalDemand,
+    canonicalEvaluator
+  )
+  const legacy = solveProportionalRayCapacity(legacySurface, legacyDemand, legacyEvaluator)
+  assert.equal(canonical.status, legacy.status)
+  assert.equal(canonical.loadFactor, legacy.loadFactor)
+  assert.equal(canonical.utilization, legacy.utilization)
+  assert.equal(canonical.residualNorm, legacy.residualNorm)
+  assert.deepEqual(
+    canonical.capacity && reflectMy(canonical.capacity),
+    legacy.capacity,
+    'only the coordinate representation of My may change'
+  )
+})
+
+
+test('block factor audits explain the active KDS/ACI/custom branches and preserve stored results', () => {
+  for (const profile of ['kds-142020-equivalent-block', 'aci-318-19-22-equivalent-block', 'custom-equivalent-block'] as const) {
+    const { prepared, options } = build(profile)
+    const basis = prepared.designBasis
+    assert.equal(basis.format, 'globalResultantFactor')
+    if (basis.format !== 'globalResultantFactor') continue
+    const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+    const original = JSON.stringify(surface)
+    for (const branch of ['compression-controlled', 'transition', 'tension-controlled'] as const) {
+      const point = surface.points.find(point => point.surfaceRole === 'physical-state' && point.equivalentBlock && String(point.resistance?.classification) === branch)
+      assert.ok(point, `${profile}: ${branch}`)
+      const audit = buildEquivalentBlockPointCalculationAudit(prepared, 'design', point)
+      assert.ok(audit.kind === 'equivalent-block')
+      if (audit.kind !== 'equivalent-block') continue
+      const factor = audit.resistanceFactorCalculation
+      assert.ok(factor && factor.kind === 'strain-controlled')
+      if (factor.kind !== 'strain-controlled') continue
+      assert.equal(factor.factor, audit.resistanceFactor)
+      assert.equal(factor.classification, branch)
+      assert.ok(audit.rebars.some(bar => bar.id === factor.controllingRebarId && bar.steelMaterialId === factor.steelMaterialId))
+      const limit: number = basis.transition.type === 'yield-plus-strain' ? factor.yieldStrain + basis.transition.extraStrain
+        : factor.yieldStress <= basis.transition.yieldStressThreshold ? basis.transition.fixedStrainLimit
+          : basis.transition.highStrengthYieldMultiple * factor.yieldStrain
+      assert.equal(factor.tensionLimit, limit)
+      if (factor.interpolation) {
+        const hand = factor.compressionFactor + (factor.tensionFactor - factor.compressionFactor)
+          * (factor.tensileStrain - factor.yieldStrain) / (limit - factor.yieldStrain)
+        assert.ok(Math.abs(factor.factor - hand) < 1e-14)
+      }
+      const nominal = surface.nominalPoints.find(item => item.id === point.id)
+      assert.ok(nominal)
+      const nominalAudit = buildEquivalentBlockPointCalculationAudit(prepared, 'nominal', nominal)
+      assert.ok(nominalAudit.kind === 'equivalent-block' && nominalAudit.resistanceFactorCalculation === null)
+    }
+    assert.equal(JSON.stringify(surface), original)
+  }
+})
+
+test('AS block factor audit retains its own bending bounds and axial interaction operands', () => {
+  const { prepared, options } = build('as-3600-2018-amd2-equivalent-block')
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, options)
+  const original = JSON.stringify(surface)
+  for (const branch of ['axial-compression-controlled', 'combined-compression', 'combined-tension'] as const) {
+    const point = surface.points.find(point => point.surfaceRole === 'physical-state' && point.equivalentBlock && String(point.resistance?.classification) === branch)
+    assert.ok(point, branch)
+    const audit = buildEquivalentBlockPointCalculationAudit(prepared, 'design', point)
+    assert.ok(audit.kind === 'equivalent-block')
+    if (audit.kind !== 'equivalent-block') continue
+    const factor = audit.resistanceFactorCalculation
+    assert.ok(factor && factor.kind === 'axial-bending')
+    if (factor.kind !== 'axial-bending') continue
+    const bending = Math.min(0.85, Math.max(0.65, 1.24 - 13 * factor.neutralAxisRatio / 12))
+    assert.equal(factor.bending.factor, bending)
+    const hand = branch === 'axial-compression-controlled' ? 0.6
+      : branch === 'combined-compression' ? 0.6 + (bending - 0.6) * (1 - factor.nominalAxial / factor.balancedAxial)
+        : bending + (0.85 - bending) * Math.max(0, Math.min(1, factor.nominalAxial / factor.pureTensionAxial))
+    assert.ok(Math.abs(factor.factor - hand) < 1e-14)
+    assert.equal(factor.factor, audit.resistanceFactor)
+  }
+  assert.equal(JSON.stringify(surface), original)
+})

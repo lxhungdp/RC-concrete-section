@@ -1,0 +1,33 @@
+/* Preserve the pre-refactor CAD palette independently of workspace neutrals.
+   Existing drawing-role rules and renderer palettes remain unchanged. */
+:root {
+  --canvas-bg: #f6f8fa;
+  --drawing-grid-minor: color-mix(in srgb, #f6f8fa 20%, #d7e0e7 80%);
+  --drawing-grid-major: color-mix(in srgb, #c3d0da 72%, #646b75 28%);
+  --mockup-inner: var(--canvas-bg);
+}
+
+.pm-cad-surface {
+  --background: #dbe5ed;
+  --foreground: #101113;
+  --foreground-secondary: #3f4550;
+  --foreground-muted: #646b75;
+  --border: #c3d0da;
+  --border-subtle: #d7e0e7;
+}
+
+body[data-jscad-theme='dark'] {
+  --canvas-bg: #1e2126;
+  --drawing-grid-minor: color-mix(in srgb, #1e2126 50%, #30353d 50%);
+  --drawing-grid-major: color-mix(in srgb, #1e2126 32%, #3d434c 68%);
+  --mockup-inner: var(--canvas-bg);
+}
+
+body[data-jscad-theme='dark'] .pm-cad-surface {
+  --background: #181a1f;
+  --foreground: #f0f9ff;
+  --foreground-secondary: #e0f2fe;
+  --foreground-muted: #bae6fd;
+  --border: #3d434c;
+  --border-subtle: #30353d;
+}

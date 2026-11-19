@@ -1,0 +1,90 @@
+{
+  "name": "pm-column-designer",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Modular web platform for reinforced concrete column P-M-M section design.",
+  "homepage": "https://pmdesigner.vercel.app/",
+  "engines": {
+    "node": "24.x",
+    "npm": "11.x"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "24.x",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": "11.x",
+      "onFail": "error"
+    }
+  },
+  "scripts": {
+    "check:runtime": "node tools/runtime/check-runtime.mjs",
+    "dev": "npm run check:runtime && npm run dev -w @pm/web",
+    "start": "npm run check:runtime && npm run start -w @pm/web",
+    "build": "npm run check:runtime && npm run check:gridcraft && npm run build -w @pm/web",
+    "build:gridcraft": "npm run check:runtime && node tools/gridcraft/build.mjs",
+    "check:gridcraft": "npm run check:runtime && node tools/gridcraft/check.mjs",
+    "check:web-bundle": "npm run check:runtime && node tools/performance/check-web-bundle.mjs",
+    "lint": "npm run check:runtime && npm run check:structure && npm run check:docs && npm run check:traceability && npm run typecheck",
+    "check:structure": "npm run check:runtime && tsx tools/architecture/check-repository-layout.ts",
+    "check:security": "npm run check:runtime && npm audit --omit=dev --audit-level=high",
+    "typecheck": "npm run check:runtime && tsc --noEmit",
+    "test": "npm run check:runtime && npm run lint && npm run test:unit && npm run test:adsec && npm run test:cad && npm run test:roundtrip && npm run test:excel-export && npm run test:excel-block && npm run test:demand-check && npm run test:pdf-report",
+    "test:unit": "npm run check:runtime && node --import tsx --test tools/runtime/*.test.mjs tools/architecture/*.test.ts tools/verification/*.test.ts packages/pm-spreadsheet/test/*.test.ts packages/pm-units/test/*.test.ts packages/pm-results/test/*.test.ts packages/pm-equivalent-block/test/*.test.ts packages/pm-code-kds142020/test/*.test.ts packages/pm-code-aci318/test/*.test.ts packages/pm-code-en1992/test/*.test.ts packages/pm-code-as3600/test/*.test.ts packages/pm-code-custom/test/*.test.ts packages/pm-materials/test/*.test.ts packages/pm-design/test/*.test.ts packages/pm-geometry/test/*.test.ts packages/pm-stations/test/*.test.ts packages/pm-project/test/*.test.ts packages/pm-analysis-equivalent-block/test/*.test.ts packages/pm-analysis/test/*.test.ts packages/pm-report/test/*.test.ts apps/web/test/*.test.ts apps/web/test/analysis/*.test.ts apps/web/test/geometry/*.test.ts apps/web/test/results/*.test.ts",
+    "test:adsec": "npm run check:runtime && node --import tsx --test tools/verification/adsec/*.test.ts",
+    "test:cad": "npm run check:runtime && npm run test -w @structures/cad-drawing",
+    "test:roundtrip": "npm run check:runtime && tsx packages/pm-project/test/integration/roundtrip.selftest.ts",
+    "test:excel-export": "npm run check:runtime && tsx packages/pm-report/test/integration/excel.selftest.ts",
+    "fixture:complex-section-json": "npm run check:runtime && tsx packages/pm-analysis/test/fixtures/write-complex-section.ts",
+    "bench": "npm run check:runtime && tsx packages/pm-analysis/bench/run.ts",
+    "bench:materials": "npm run check:runtime && tsx packages/pm-analysis/bench/material.ts",
+    "bench:forward-loop": "npm run check:runtime && tsx packages/pm-analysis/bench/forward-loop.ts",
+    "bench:mesh": "npm run check:runtime && tsx packages/pm-analysis/bench/mesh.ts",
+    "bench:equivalent-block": "npm run check:runtime && tsx bench/equivalent-block/run.ts",
+    "bench:equivalent-block-geometry": "npm run check:runtime && tsx bench/equivalent-block/geometry-retention.ts",
+    "bench:pipelines": "npm run check:runtime && tsx bench/cross-model/pipeline-comparison.ts",
+    "bench:strain-sampling": "npm run check:runtime && tsx bench/stress-strain/strain-domain-sampling.ts",
+    "bench:sampling-modes": "npm run check:runtime && tsx bench/sampling-modes.ts",
+    "bench:record": "npm run check:runtime && tsx packages/pm-analysis/bench/run.ts --repeats 1 --fingerprint-out packages/pm-analysis/bench/baselines/capacity-unified-30-baseline.json",
+    "bench:verify": "npm run check:runtime && tsx packages/pm-analysis/bench/run.ts --repeats 1 --baseline packages/pm-analysis/bench/baselines/capacity-unified-30-baseline.json",
+    "bench:verify:portable": "npm run check:runtime && tsx packages/pm-analysis/bench/run.ts --repeats 1 --baseline packages/pm-analysis/bench/baselines/capacity-unified-30-baseline.json --comparison portable",
+    "verify:p16": "npm run check:runtime && tsx tools/verification/p16/verify.ts --check",
+    "verify:p16:update": "npm run check:runtime && tsx tools/verification/p16/verify.ts --update",
+    "verify:adsec": "npm run check:runtime && tsx tools/verification/adsec/audit.ts --check",
+    "verify:adsec:update": "npm run check:runtime && tsx tools/verification/adsec/audit.ts --update",
+    "verify:biaxial-audit": "npm run check:runtime && tsx tools/verification/biaxial-audit/audit.ts",
+    "test:excel-block": "npm run check:runtime && tsx packages/pm-report/test/integration/equivalent-block.selftest.ts",
+    "test:demand-check": "npm run check:runtime && tsx packages/pm-report/test/integration/demand-check.selftest.ts",
+    "test:pdf-report": "npm run check:runtime && tsx packages/pm-report/test/integration/pdf-report.selftest.ts",
+    "check:docs": "npm run check:runtime && tsx tools/architecture/check-documentation.ts",
+    "check:traceability": "npm run check:runtime && tsx tools/architecture/check-traceability.ts"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "dependencies": {
+    "@jscad/regl-renderer": "2.6.15",
+    "exceljs": "4.4.0",
+    "gl-mat4": "1.2.0",
+    "gl-vec3": "1.2.0",
+    "jszip": "3.10.1",
+    "lucide-react": "1.25.0",
+    "next": "16.4.6",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "hyperformula": "3.3.0",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  },
+  "packageManager": "npm@11.19.0"
+}

@@ -1,0 +1,18 @@
+{
+  "name": "@pm/project",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@pm/design": "0.1.0",
+    "@pm/geometry": "0.1.0",
+    "@pm/ids": "0.1.0",
+    "@pm/materials": "0.1.0",
+    "@pm/stations": "0.1.0"
+  }
+}

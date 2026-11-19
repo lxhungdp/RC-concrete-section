@@ -1,0 +1,38 @@
+/* Geometry-only chrome shares the workspace contract. Its drawing palette is retained. */
+#geometry-workspace {
+  --geometry-canvas-bg: #fafbfc;
+  .geometry-preview-label { display: flex; align-items: center; gap: var(--sp-3); color: var(--foreground-muted); font-size: var(--fs-xs); white-space: nowrap; }
+  .geometry-preview-label > span { padding: 1px var(--sp-1); border: 1px solid var(--border); border-radius: var(--r-sm); }
+  .geometry-drawing-heading { position: absolute; inset: 0 0 auto; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-5); height: 44px; padding: 0 var(--sp-5); border-bottom: 1px solid var(--group-separator); background: var(--menu-surface); }
+  .geometry-drawing-heading > div { display: flex; align-items: center; gap: var(--sp-5); min-width: 0; }
+  .geometry-drawing-heading strong { font-size: var(--fs-md); font-weight: 600; white-space: nowrap; }
+  .geometry-drawing-heading span { overflow: hidden; color: var(--foreground-muted); font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; }
+  .pm-cad-surface { inset: 44px 0 31px; height: calc(100% - 75px); background: var(--geometry-canvas-bg); }
+  .pm-canvas-toolbox { top: 52px; }
+  .pm-boundary-hud { bottom: 43px; }
+  .geometry-drawing-footer { position: absolute; inset: auto 0 0; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-5); min-height: 31px; padding: var(--sp-1) var(--sp-5); border-top: 1px solid var(--group-separator); background: var(--menu-surface); color: var(--foreground-muted); font-size: var(--fs-xs); }
+  .geometry-drawing-footer > span:last-child { white-space: nowrap; }
+  .pm-canvas-bg { fill: #fafbfc; }
+  .pm-grid line { stroke: #e9ecef; stroke-width: .6; }
+  .pm-grid line.is-major { stroke: #d9dfe3; stroke-width: .8; }
+  .pm-workspace-boundary { fill: #e7eaed; fill-opacity: .75; stroke: #808990; stroke-width: 1.2; stroke-dasharray: none; }
+  .pm-workspace-boundary.is-selected, & .pm-workspace-boundary.is-active { fill: #dfe4e8; stroke: #39464f; stroke-width: 1.5; }
+  .pm-workspace-boundary.is-locked { stroke-dasharray: 4 3; }
+  .pm-workspace-boundary.is-applied { fill: #e3e7ea; stroke: #30383e; stroke-width: 1.5; stroke-dasharray: none; }
+  .pm-applied-section { fill: #e6e9ec; stroke: #858d93; stroke-width: 1; stroke-dasharray: 5 4; opacity: .6; }
+  .pm-drawing-preview { fill: #e5e9ec; fill-opacity: .6; stroke: #424e57; stroke-width: 1.3; stroke-dasharray: 5 4; }
+  .pm-handles circle { fill: #fff; stroke: #4b5862; stroke-width: 1.2; cursor: move; }
+  .pm-handles circle.is-selected { fill: #30383e; stroke: #30383e; }
+  :is(.pm-point-label, .pm-rebar-label, .pm-snap-cursor text) { fill: #4f5d67; stroke: #fafbfc; stroke-width: 3px; paint-order: stroke; font: 10px 'SFMono-Regular', Consolas, monospace; pointer-events: none; }
+  .pm-rebar-dot { fill: #4c5963; stroke: #fff; stroke-width: 1; }
+  .pm-rebar-layer .is-selected .pm-rebar-dot { fill: #222a30; stroke: #8998a4; stroke-width: 3; }
+  .pm-centroid line { stroke: #697781; stroke-width: 1; }
+  .pm-snap-cursor :is(line, circle) { stroke: #526573; stroke-width: 1; fill: none; }
+}
+@media (max-width: 1100px) {
+  #geometry-workspace .geometry-preview-label { display: none; }
+}
+@media (max-width: 760px) {
+  #geometry-workspace .geometry-drawing-heading > div { flex-direction: column; align-items: flex-start; gap: 0; }
+  #geometry-workspace .geometry-drawing-footer > span:first-child { max-width: 75%; }
+}

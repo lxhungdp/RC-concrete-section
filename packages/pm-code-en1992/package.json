@@ -1,0 +1,14 @@
+{
+  "name": "@pm/code-en1992",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node ../../tools/runtime/check-runtime.mjs && node --import tsx --test test/*.test.ts"
+  }
+}

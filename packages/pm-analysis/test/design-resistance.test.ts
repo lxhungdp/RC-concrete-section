@@ -1,0 +1,867 @@
+import { strict as assert } from 'node:assert'
+import test from 'node:test'
+import { geometryInputRebars, netConcreteCentroid, sectionGeometryFromGeometryInput } from '@pm/geometry'
+import {
+  buildResistanceMaterialSets,
+  createAci318DesignBasis,
+  createCustomDesignBasis,
+  createEn1992DesignBasis,
+  createKdsAppendixDesignBasis,
+  createKdsBasicDesignBasis,
+  designBasisIssues,
+  designBasisRequiresOverrideReason,
+  evaluateGlobalStrengthReduction
+} from '@pm/design'
+import {
+  applyKdsConcreteDerived,
+  compileConcreteMaterial,
+  compileSteelMaterial,
+  type MaterialStore
+} from '@pm/materials'
+import {
+  applyCalculationProfileToMaterials,
+  createLoadCombination,
+  createDefaultAnalysisOptions
+} from '@pm/project'
+import {
+  AnalysisInputError,
+  buildCalculationAuditOriginStrainTrace,
+  buildDesignPreviewSurfaceFromPrepared,
+  buildStressStrainPointCalculationAudit,
+  checkLoadcaseUtilizationFromSurface,
+  codeAdjustedDemandOfCheck,
+  intersectSurfaceWithDemandRay,
+  prepareAnalysis,
+  sliceFixedPContour,
+  solveInversePreviewFromPrepared
+} from '../src/index'
+import { referenceProjectDocument } from './fixtures/reference-case'
+
+const document = referenceProjectDocument()
+const section = sectionGeometryFromGeometryInput(document.inputs.geometry)
+const rebars = geometryInputRebars(document.inputs.geometry)
+const materials = document.inputs.materials
+
+const compactOptions = () => {
+  const options = createDefaultAnalysisOptions()
+  options.directions.seed = { type: 'uniform', count: 8, startDeg: 0 }
+  options.directions.refinement = { type: 'fixed', probe: { stationIds: [] } }
+  return options
+}
+
+test('uniform-strain audit trace derives epsilon at the origin without inventing a neutral axis', () => {
+  const trace = buildCalculationAuditOriginStrainTrace({
+    projectedSectionDepth: 700,
+    neutralAxisDepth: null,
+    compressionEdgeProjection: 350
+  }, 0.0021)
+  assert.deepEqual(trace, {
+    kind: 'uniform-strain',
+    compressionEdgeStrain: 0.0021,
+    calculatedE0: 0.0021
+  })
+})
+
+test('declared depth-ratio audit trace derives c from the criterion instead of reverse-labelling the state', () => {
+  const trace = buildCalculationAuditOriginStrainTrace({
+    projectedSectionDepth: 700,
+    neutralAxisDepth: 350,
+    compressionEdgeProjection: 350
+  }, 0.003, {
+    kind: 'depth-ratio',
+    criterionLabel: 'c/D = 0.5',
+    ratio: 0.5
+  })
+  assert.equal(trace.kind, 'neutral-axis-depth')
+  if (trace.kind !== 'neutral-axis-depth') return
+  assert.equal(trace.derivation, 'declared-depth-ratio')
+  assert.equal(trace.neutralAxisDepth, 350)
+  assert.equal(trace.curvatureFromDepth, 0.003 / 350)
+  assert.ok(Math.abs(trace.calculatedE0) <= 1e-15)
+})
+
+test('KDS current profile identifies the 2024 code set without misdating its resistance clauses', () => {
+  const basis = createKdsBasicDesignBasis()
+  assert.equal(basis.profileId, 'kds-2024-current-set')
+  assert.match(basis.identity.document, /KDS 2024 current set/)
+  assert.match(basis.identity.document, /KDS 14 20 10:2021/)
+  assert.match(basis.identity.amendment ?? '', /2024-879/)
+})
+
+test('profiles that expose the optional axial compression limit enable it by default', () => {
+  for (const basis of [
+    createKdsBasicDesignBasis(),
+    createAci318DesignBasis(),
+    createCustomDesignBasis()
+  ]) {
+    assert.equal(basis.axialCapEnabled, true, basis.profileId)
+  }
+})
+
+test('disabling only the optional axial limit does not require an override reason', () => {
+  const basis = createKdsBasicDesignBasis()
+  basis.axialCapEnabled = false
+  basis.modified = true
+  assert.equal(designBasisRequiresOverrideReason(basis), false)
+  assert.equal(
+    designBasisIssues(basis).some((issue) => issue.includes('reason')),
+    false
+  )
+
+  basis.factors.phiCompressionOther = 0.66
+  assert.equal(designBasisRequiresOverrideReason(basis), true)
+  assert.equal(
+    designBasisIssues(basis).some((issue) => issue.includes('reason')),
+    true
+  )
+})
+
+test('selecting qualifying spiral reinforcement does not require an override reason', () => {
+  const basis = createKdsBasicDesignBasis()
+  basis.transverseReinforcement = 'qualifying-spiral'
+  basis.modified = true
+
+  assert.equal(designBasisRequiresOverrideReason(basis), false)
+  assert.equal(
+    designBasisIssues(basis).some((issue) => issue.includes('reason')),
+    false
+  )
+})
+
+test('global strength reduction is classified and interpolated at the declared strain limits', () => {
+  const basis = createKdsBasicDesignBasis()
+  const epsY = 0.002
+
+  const compression = evaluateGlobalStrengthReduction(basis, epsY, epsY, 400)
+  assert.equal(compression.classification, 'compression-controlled')
+  assert.equal(compression.phi, 0.65)
+
+  const transition = evaluateGlobalStrengthReduction(basis, epsY + 0.0015, epsY, 400)
+  assert.equal(transition.classification, 'transition')
+  assert.ok(Math.abs(transition.phi - 0.75) < 1e-12)
+
+  const tension = evaluateGlobalStrengthReduction(basis, epsY + 0.003, epsY, 400)
+  assert.equal(tension.classification, 'tension-controlled')
+  assert.equal(tension.phi, 0.85)
+})
+
+test('global-factor profiles remove embedded material factors before applying one resultant factor', () => {
+  const source = structuredClone(materials)
+  source.concrete.factors = { ...source.concrete.factors, gammaC: 1.5 }
+  source.steel = source.steel.map((steel) => ({
+    ...steel,
+    factors: { ...steel.factors, gammaS: 1.15 }
+  }))
+  const sets = buildResistanceMaterialSets(source, createKdsBasicDesignBasis())
+
+  assert.equal(sets.referenceMaterials.concrete.factors?.gammaC, undefined)
+  assert.equal(sets.designMaterials.concrete.factors?.gammaC, undefined)
+  assert.ok(sets.referenceMaterials.steel.every((steel) => steel.factors?.gammaS === undefined))
+  assert.deepEqual(sets.referenceMaterials, sets.designMaterials)
+})
+
+test('design surface preserves IDs and pairs every uncapped design state with its nominal reference', () => {
+  const basis = createKdsBasicDesignBasis()
+  const sets = buildResistanceMaterialSets(materials, basis)
+  const surface = buildDesignPreviewSurfaceFromPrepared(
+    prepareAnalysis(section, rebars, sets.stateMaterials),
+    materials,
+    basis,
+    compactOptions()
+  )
+
+  assert.ok(surface.beforeAxialCap)
+  assert.equal(surface.beforeAxialCap.points.length, surface.nominalPoints.length)
+  assert.deepEqual(
+    surface.beforeAxialCap.points.map((point) => point.id),
+    surface.nominalPoints.map((point) => point.id)
+  )
+  for (const point of surface.points.filter((item) => !item.resistance?.axialCapApplied)) {
+    const nominalAtState = surface.nominalPoints.find((item) => item.id === point.id)
+    assert.deepEqual(point.state, nominalAtState?.state)
+  }
+
+  const uncapped = surface.points.find(
+    (point) => point.resistance && !point.resistance.axialCapApplied && Math.abs(point.P) > 1
+  )
+  assert.ok(uncapped?.resistance?.factor)
+  const nominal = surface.nominalPoints.find((point) => point.id === uncapped?.id)
+  assert.ok(nominal)
+  assert.ok(Math.abs(uncapped.P - nominal.P * uncapped.resistance.factor) < Math.abs(uncapped.P) * 1e-10 + 1e-6)
+  assert.ok(Math.abs(uncapped.Mx - nominal.Mx * uncapped.resistance.factor) < Math.abs(uncapped.Mx) * 1e-10 + 1e-6)
+  assert.ok(surface.points.some((point) => point.resistance?.axialCapApplied))
+  const capped = surface.points.filter((point) => point.resistance?.axialCapApplied)
+  assert.ok(capped.length > 0)
+  assert.ok(capped.every((point) => point.surfaceRole === 'axial-cap'))
+  assert.ok(capped.every((point) => point.stationId === null))
+  assert.ok(capped.some((point) => point.onSampledDirection === true))
+  assert.ok(capped.every((point) => point.axialCapTrace?.projection.kind === 'identity'))
+  for (const point of capped) {
+    assert.equal(surface.nominalPoints.some(item => item.id === point.id), false,
+      'geometric cap intersections must not impersonate physical station IDs')
+    assert.deepEqual(point, { ...point, ...point.axialCapTrace?.source.crossing })
+  }
+  const compression = checkLoadcaseUtilizationFromSurface(surface, createLoadCombination({ id:1, P:1e9, Mx:0, My:0 }))
+  assert.equal(compression.capacityPoint?.P, surface.bounds.P[1])
+})
+
+test('selected-point stress-strain audit reproduces every contribution and the stored Design point', () => {
+  const basis = createKdsBasicDesignBasis()
+  const sets = buildResistanceMaterialSets(materials, basis)
+  const prepared = prepareAnalysis(section, rebars, sets.stateMaterials)
+  const surface = buildDesignPreviewSurfaceFromPrepared(prepared, materials, basis, compactOptions())
+  const point = surface.points.find((candidate) =>
+    candidate.surfaceRole === 'physical-state' &&
+    candidate.resistance?.factor !== null &&
+    Math.abs(candidate.Mx) + Math.abs(candidate.My) > 1
+  )
+  assert.ok(point)
+  const audit = buildStressStrainPointCalculationAudit(prepared, materials, basis, 'design', point)
+  assert.equal(audit.kind, 'stress-strain')
+  if (audit.kind !== 'stress-strain') return
+  assert.equal(audit.reconciliation.ok, true)
+  assert.equal(audit.nominalReferenceReconciliation.ok, true)
+  assert.ok(audit.concreteGroups.length >= 2)
+  assert.equal(audit.rebars.length, rebars.length)
+  assert.equal(audit.concreteGroups.reduce((sum, group) => sum + group.count, 0), audit.mesh.points)
+  assert.ok(audit.concreteLaw.parameters.some((parameter) => parameter.symbol === 'αeff'))
+  assert.ok(audit.concreteLaw.parameters.some((parameter) => parameter.symbol === 'γc'))
+  const originTrace = audit.depthProfile.originStrainTrace
+  assert.equal(originTrace.kind, 'neutral-axis-depth')
+  if (originTrace.kind === 'neutral-axis-depth') {
+    assert.ok(Math.abs(
+      originTrace.neutralAxisDepthRatio * originTrace.projectedSectionDepth - originTrace.neutralAxisDepth
+    ) <= Math.max(1, originTrace.neutralAxisDepth) * 1e-12)
+    assert.ok(Math.abs(
+      originTrace.curvatureFromDepth - Math.hypot(audit.state.kx, audit.state.ky)
+    ) <= Math.max(1e-12, originTrace.curvatureFromDepth) * 1e-10)
+    assert.ok(Math.abs(
+      originTrace.calculatedE0 - audit.state.e0
+    ) <= Math.max(1e-12, Math.abs(audit.state.e0)) * 1e-10)
+  }
+  const groupedConcrete = audit.concreteGroups.reduce((sum, group) => sum + group.resultant.P, 0)
+  const barNet = audit.rebars.reduce((sum, bar) => sum + bar.net.P, 0)
+  assert.ok(Math.abs(groupedConcrete - audit.mechanicalLedger.concrete.P) <= Math.max(1, Math.abs(groupedConcrete)) * 1e-12)
+  assert.ok(Math.abs(barNet - audit.mechanicalLedger.steel.P) <= Math.max(1, Math.abs(barNet)) * 1e-12)
+  assert.ok(Math.abs(audit.displayedLedger.total.P - point.P) <= Math.max(1, Math.abs(point.P)) * 1e-10)
+})
+
+test('bar-strain station audit derives steel strain and edge-to-bar depth before c and epsilon0', () => {
+  const basis = createKdsBasicDesignBasis()
+  const sets = buildResistanceMaterialSets(materials, basis)
+  const prepared = prepareAnalysis(section, rebars, sets.stateMaterials)
+  const surface = buildDesignPreviewSurfaceFromPrepared(prepared, materials, basis, compactOptions())
+  const station = surface.stations.find((candidate) =>
+    candidate.definition.kind === 'bar-tension-yield-ratio' && candidate.definition.ratio === 1
+  )
+  assert.ok(station)
+  const point = surface.points.find((candidate) =>
+    candidate.surfaceRole === 'physical-state' && candidate.beta === 0 && candidate.stationId === station.id
+  )
+  assert.ok(point)
+
+  const audit = buildStressStrainPointCalculationAudit(
+    prepared,
+    materials,
+    basis,
+    'design',
+    point,
+    station.definition
+  )
+  assert.equal(audit.kind, 'stress-strain')
+  if (audit.kind !== 'stress-strain') return
+  const trace = audit.depthProfile.originStrainTrace
+  assert.equal(trace.kind, 'controlling-bar-strain')
+  if (trace.kind !== 'controlling-bar-strain') return
+
+  const controllingBar = rebars.reduce((current, candidate) => candidate.y < current.y ? candidate : current)
+  const compressionEdgeY = Math.max(...section.solids.flatMap((solid) => solid.outer.map((vertex) => vertex.y)))
+  const steelMaterialId = controllingBar.steelMaterialId ?? sets.stateMaterials.defaults.steelMaterialId
+  const steelMaterial = sets.stateMaterials.steel.find((candidate) => candidate.id === steelMaterialId)
+  assert.ok(steelMaterial)
+  const expectedYieldStrain = compileSteelMaterial(steelMaterial).limits.epsYield
+  assert.ok(expectedYieldStrain !== undefined)
+  const expectedSteelStrain = -expectedYieldStrain
+  const expectedDepth = compressionEdgeY - controllingBar.y
+  const compressionEdgeStrain = audit.depthProfile.samples[0].strain
+  const expectedCurvature = (compressionEdgeStrain - expectedSteelStrain) / expectedDepth
+  const expectedNeutralAxisDepth = compressionEdgeStrain / expectedCurvature
+  const tolerance = 1e-11
+
+  assert.equal(trace.controllingRebarId, controllingBar.id)
+  assert.ok(Math.abs(trace.yieldStrain - expectedYieldStrain) <= tolerance)
+  assert.ok(Math.abs(trace.controllingSteelStrain - expectedSteelStrain) <= tolerance)
+  assert.ok(Math.abs(trace.compressionEdgeToBarDepth - expectedDepth) <= tolerance)
+  assert.ok(Math.abs(trace.curvatureFromCompatibility - expectedCurvature) <= tolerance)
+  assert.ok(Math.abs(trace.neutralAxisDepth - expectedNeutralAxisDepth) <= tolerance)
+  assert.ok(Math.abs(trace.calculatedE0 - audit.state.e0) <= tolerance)
+  assert.equal(audit.concreteSummary.pointCount, audit.mesh.points)
+  assert.equal(audit.concreteSummary.resultant.P, audit.mechanicalLedger.concrete.P)
+})
+
+test('selected-point audit derives a synthetic axial-cap point from its exact source-edge crossing', () => {
+  const basis = createKdsBasicDesignBasis()
+  const sets = buildResistanceMaterialSets(materials, basis)
+  const prepared = prepareAnalysis(section, rebars, sets.stateMaterials)
+  const surface = buildDesignPreviewSurfaceFromPrepared(prepared, materials, basis, compactOptions())
+  const point = surface.points.find((candidate) => candidate.surfaceRole === 'axial-cap')
+  assert.ok(point)
+  const audit = buildStressStrainPointCalculationAudit(prepared, materials, basis, 'design', point)
+  assert.equal(audit.kind, 'axial-cap')
+  if (audit.kind !== 'axial-cap') return
+  assert.equal('state' in audit, false, 'a geometric cap audit must not invent a compatible strain state')
+  assert.ok(audit.preCap, 'a capped criterion row must retain its physical pre-cap calculation')
+  assert.equal(audit.preCap.audit.kind, 'stress-strain')
+  assert.equal(audit.preCap.audit.reconciliation.ok, true)
+  assert.equal(audit.preCap.comparison.capGoverns, true)
+  assert.ok(audit.preCap.comparison.calculatedAxialResistance > audit.preCap.comparison.maximumAxialResistance)
+  assert.equal(audit.preCap.comparison.maximumAxialResistance, audit.trace.cap)
+  assert.equal(audit.preCap.comparison.selectedAxialResistance, audit.trace.cap)
+  assert.equal(audit.trace.source.kind, 'edge-interpolation')
+  assert.equal(audit.trace.projection.kind, 'identity')
+  if (audit.trace.source.kind !== 'edge-interpolation') return
+  const source = audit.trace.source
+  const t = (audit.trace.cap - source.compressionSide.P) /
+    (source.admissibleSide.P - source.compressionSide.P)
+  assert.ok(Math.abs(t - source.interpolationRatio) <= 1e-12)
+  const interpolate = (left: number, right: number) => left + t * (right - left)
+  assert.ok(Math.abs(interpolate(source.compressionSide.P, source.admissibleSide.P) - source.crossing.P) <= 1e-8)
+  assert.ok(Math.abs(interpolate(source.compressionSide.Mx, source.admissibleSide.Mx) - source.crossing.Mx) <= 1e-8)
+  assert.ok(Math.abs(interpolate(source.compressionSide.My, source.admissibleSide.My) - source.crossing.My) <= 1e-8)
+  assert.equal(source.crossing.Mx, point.Mx)
+  assert.equal(source.crossing.My, point.My)
+  assert.equal(audit.reconciliation.ok, true)
+})
+
+test('design-material format reevaluates the same strain states with design material strengths', () => {
+  const basis = createEn1992DesignBasis()
+  const sets = buildResistanceMaterialSets(materials, basis)
+  const surface = buildDesignPreviewSurfaceFromPrepared(
+    prepareAnalysis(section, rebars, sets.stateMaterials),
+    materials,
+    basis,
+    compactOptions()
+  )
+  const point = surface.points.find((item) => Math.abs(item.P) > 1)
+  assert.ok(point)
+  assert.equal(point.resistance?.factor, null)
+  assert.equal(point.resistance?.format, 'designMaterialReevaluation')
+  assert.ok(point.resistance?.stages.includes('design-material-reevaluation'))
+  const audit = buildStressStrainPointCalculationAudit(
+    prepareAnalysis(section, rebars, sets.stateMaterials),
+    materials,
+    basis,
+    'design',
+    point
+  )
+  assert.equal(audit.kind, 'stress-strain')
+  if (audit.kind === 'stress-strain') {
+    assert.equal(audit.nominalReferenceReconciliation.ok, true)
+    assert.notEqual(audit.nominalReferenceLedger.total.P, audit.mechanicalLedger.total.P)
+  }
+})
+
+test('EN 1992 domain 5 rotates about eps_c2 and joins the eps_cu2 boundary continuously', () => {
+  const enMaterials = applyCalculationProfileToMaterials(materials, 'en-1992-1-1-2004-stress-strain')
+  const basis = createEn1992DesignBasis()
+  const sets = buildResistanceMaterialSets(enMaterials, basis)
+  const surface = buildDesignPreviewSurfaceFromPrepared(
+    prepareAnalysis(section, rebars, sets.stateMaterials),
+    enMaterials,
+    basis,
+    compactOptions()
+  )
+  const epsC2 = enMaterials.concrete.limits.eps0!
+  const epsCu2 = enMaterials.concrete.limits.epsCu
+  assert.equal(basis.compressionEndpoint, 'peak-stress-strain')
+
+  const atBetaZero = (label: string) => {
+    const station = surface.stations.find((item) => item.label === label)
+    assert.ok(station, `missing ${label}`)
+    const point = surface.points.find((item) => item.beta === 0 && item.stationId === station.id)
+    assert.ok(point, `missing beta=0 point for ${label}`)
+    return point
+  }
+  const origin = netConcreteCentroid(section)
+  const ordinates = section.solids.flatMap((solid) =>
+    solid.outer.map((vertex) => vertex.y - origin.y)
+  )
+  const maxY = Math.max(...ordinates)
+  const minY = Math.min(...ordinates)
+  const strainAt = (point: ReturnType<typeof atBetaZero>, ordinate: number) =>
+    point.state.e0 + point.state.kx * ordinate
+  const close = (actual: number, expected: number) =>
+    assert.ok(Math.abs(actual - expected) < 1e-12, `${actual} != ${expected}`)
+
+  const pole = surface.points.find((point) => point.surfaceRole === 'pure-compression')
+  assert.ok(pole)
+  close(pole.state.e0, epsC2)
+
+  const boundary = atBetaZero('c/D = 1')
+  close(strainAt(boundary, maxY), epsCu2)
+  close(strainAt(boundary, minY), 0)
+
+  const domainFive = atBetaZero('c/D = 1.5')
+  const ratio = 1.5
+  const pivotDepthRatio = 1 - epsC2 / epsCu2
+  const expectedCompression = epsC2 * ratio / (ratio - pivotDepthRatio)
+  close(strainAt(domainFive, maxY), expectedCompression)
+  close(strainAt(domainFive, minY), expectedCompression * (1 - 1 / ratio))
+  assert.ok(expectedCompression > epsC2 && expectedCompression < epsCu2)
+})
+
+test('KDS Appendix compiles reduced strength ordinates without changing Es or fck-based strain parameters', () => {
+  const basis = createKdsAppendixDesignBasis()
+  const sets = buildResistanceMaterialSets(materials, basis)
+  const referenceConcrete = compileConcreteMaterial(sets.referenceMaterials.concrete)
+  const designConcrete = compileConcreteMaterial(sets.designMaterials.concrete)
+  const eps0 = materials.concrete.limits.eps0 ?? 0.002
+  assert.ok(Math.abs(designConcrete.stress(eps0) / referenceConcrete.stress(eps0) - 0.65) < 1e-12)
+  assert.equal(sets.designMaterials.concrete.fck, sets.referenceMaterials.concrete.fck)
+  assert.equal(sets.designMaterials.concrete.limits.eps0, sets.referenceMaterials.concrete.limits.eps0)
+  assert.equal(sets.designMaterials.concrete.limits.epsCu, sets.referenceMaterials.concrete.limits.epsCu)
+
+  const referenceSteel = compileSteelMaterial(sets.referenceMaterials.steel[0]!)
+  const designSteel = compileSteelMaterial(sets.designMaterials.steel[0]!)
+  assert.equal(designSteel.stress(0.0005), referenceSteel.stress(0.0005))
+  assert.ok(Math.abs(designSteel.stress(0.01) / referenceSteel.stress(0.01) - 0.90) < 1e-12)
+  assert.ok(Math.abs((designSteel.limits.epsYield ?? 0) - 0.9 * (referenceSteel.limits.epsYield ?? 0)) < 1e-15)
+})
+
+test('KDS Appendix uses eps_c0 at pure compression, has no global phi/cap, and applies e_min to demand', () => {
+  const basis = createKdsAppendixDesignBasis()
+  const sets = buildResistanceMaterialSets(materials, basis)
+  const surface = buildDesignPreviewSurfaceFromPrepared(
+    prepareAnalysis(section, rebars, sets.stateMaterials),
+    materials,
+    basis,
+    compactOptions()
+  )
+  const compression = surface.points.find((point) => point.surfaceRole === 'pure-compression')
+  assert.ok(compression)
+  assert.equal(compression.state.e0, materials.concrete.limits.eps0)
+  const allCompression = surface.points.find((point) => point.station === 1 && point.beta === 0)
+  assert.ok(allCompression)
+  const origin = netConcreteCentroid(section)
+  const strains = section.solids.flatMap((solid) => solid.outer.map((vertex) =>
+    allCompression.state.e0 +
+    allCompression.state.kx * (vertex.y - origin.y) +
+    allCompression.state.ky * (vertex.x - origin.x)
+  ))
+  assert.ok(Math.min(...strains) > 0, 'the first bending station remains in the all-compression domain')
+  assert.ok(Math.max(...strains) > (materials.concrete.limits.eps0 ?? 0))
+  assert.ok(Math.max(...strains) < materials.concrete.limits.epsCu)
+  assert.ok(surface.points.every((point) => point.surfaceRole !== 'axial-cap'))
+  assert.ok(surface.points.every((point) => point.resistance?.factor == null))
+
+  const result = checkLoadcaseUtilizationFromSurface(
+    surface,
+    createLoadCombination({ name: 'Appendix minimum eccentricity', P: compression.P * 0.25, Mx: 0, My: 0 })
+  )
+  assert.ok(result.codeAdjustedDemand)
+  assert.ok((result.minimumEccentricityMm ?? 0) > 15)
+  assert.ok(Math.hypot(result.codeAdjustedDemand.Mx, result.codeAdjustedDemand.My) > 0)
+})
+
+test('KDS Main and Appendix retain their expected pure-tension relation and distinct compression treatment', () => {
+  const main = createKdsBasicDesignBasis()
+  const appendix = createKdsAppendixDesignBasis()
+  const mainSets = buildResistanceMaterialSets(materials, main)
+  const appendixSets = buildResistanceMaterialSets(materials, appendix)
+  const mainSurface = buildDesignPreviewSurfaceFromPrepared(
+    prepareAnalysis(section, rebars, mainSets.stateMaterials), materials, main, compactOptions()
+  )
+  const appendixSurface = buildDesignPreviewSurfaceFromPrepared(
+    prepareAnalysis(section, rebars, appendixSets.stateMaterials), materials, appendix, compactOptions()
+  )
+  const mainTension = Math.min(...mainSurface.points.map((point) => point.P))
+  const appendixTension = Math.min(...appendixSurface.points.map((point) => point.P))
+  assert.ok(Math.abs(appendixTension / mainTension - 0.90 / 0.85) < 1e-10)
+  assert.ok(Math.max(...appendixSurface.points.map((point) => point.P)) > Math.max(...mainSurface.points.map((point) => point.P)))
+
+  const mainP0 = sliceFixedPContour(mainSurface.points, 0, mainSurface.triangles)
+  const appendixP0 = sliceFixedPContour(appendixSurface.points, 0, appendixSurface.triangles)
+  const maxMoment = (contour: typeof mainP0) => Math.max(...contour.map((point) => Math.hypot(point.Mx, point.My)))
+  const ratio = maxMoment(appendixP0) / maxMoment(mainP0)
+  assert.ok(ratio > 0.8 && ratio < 1.25, `Unexpected zero-axial KDS method ratio: ${ratio}`)
+})
+
+/**
+ * KDS 14 20 20:2022 Appendix 3.2(1). Written out independently of the engine so the assertions
+ * below are a clause check, not a restatement of the implementation.
+ */
+const appendixDesignAxialStrength = (store: MaterialStore) => {
+  const ring = (points: ReadonlyArray<{ x: number; y: number }>) => {
+    let twiceArea = 0
+    for (let index = 0; index < points.length; index += 1) {
+      const current = points[index]!
+      const next = points[(index + 1) % points.length]!
+      twiceArea += current.x * next.y - next.x * current.y
+    }
+    return Math.abs(twiceArea) / 2
+  }
+  const Ag = section.solids.reduce(
+    (sum, solid) => sum + ring(solid.outer) - solid.holes.reduce((holes, hole) => holes + ring(hole), 0),
+    0
+  )
+  const Ast = rebars.reduce((sum, bar) => sum + (Math.PI / 4) * bar.dia * bar.dia, 0)
+  const steel = store.steel[0]!
+  const eps0 = store.concrete.limits.eps0!
+  const phiC = 0.65
+  const phiS = 0.90
+  const designYieldStrain = (phiS * steel.fy) / steel.elasticModulus
+  // (3-2) when the design yield strain is reached at eps_c0, otherwise (3-3).
+  const steelStress = designYieldStrain <= eps0 ? phiS * steel.fy : eps0 * steel.elasticModulus
+  return {
+    Pdo: phiC * 0.85 * store.concrete.fck * (Ag - Ast) + steelStress * Ast,
+    equation: designYieldStrain <= eps0 ? '(3-2)' : '(3-3)'
+  }
+}
+
+const kdsMaterialsAt = (fck: number, fy: number): MaterialStore => ({
+  ...materials,
+  concrete: applyKdsConcreteDerived({ ...materials.concrete, fck }),
+  steel: materials.steel.map((steel) => ({
+    ...steel,
+    fy,
+    limits: { ...steel.limits, epsY: fy / steel.elasticModulus }
+  }))
+})
+
+for (const [fck, fy, expected] of [[30, 400, '(3-2)'], [60, 400, '(3-2)'], [60, 600, '(3-3)']] as const) {
+  test(`stress-strain KDS Appendix reproduces clause ${expected} design axial strength at fck ${fck} / fy ${fy}`, () => {
+    const store = kdsMaterialsAt(fck, fy)
+    const clause = appendixDesignAxialStrength(store)
+    assert.equal(clause.equation, expected, 'the fixture must exercise the intended clause branch')
+    const basis = createKdsAppendixDesignBasis()
+    const sets = buildResistanceMaterialSets(store, basis)
+    const surface = buildDesignPreviewSurfaceFromPrepared(
+      prepareAnalysis(section, rebars, sets.stateMaterials),
+      store,
+      basis,
+      compactOptions()
+    )
+    const compression = Math.max(...surface.points.map((point) => point.P))
+    assert.ok(
+      Math.abs(compression / clause.Pdo - 1) < 1e-9,
+      `Appendix ${clause.equation} expects ${clause.Pdo} N, the surface reported ${compression} N`
+    )
+  })
+}
+
+test('KDS Appendix rejects a concrete material with no eps_c0 instead of falling back to eps_cu', () => {
+  const store: MaterialStore = {
+    ...materials,
+    concrete: { ...materials.concrete, limits: { ...materials.concrete.limits, eps0: undefined } }
+  }
+  const basis = createKdsAppendixDesignBasis()
+  const sets = buildResistanceMaterialSets(store, basis)
+  assert.throws(
+    () => buildDesignPreviewSurfaceFromPrepared(
+      prepareAnalysis(section, rebars, sets.stateMaterials),
+      store,
+      basis,
+      compactOptions()
+    ),
+    (error: unknown) =>
+      error instanceof AnalysisInputError &&
+      error.code === 'INVALID_MATERIAL' &&
+      /eps_c0/.test(error.message)
+  )
+  // The Main body never reads eps_c0, so the same material stays usable there.
+  assert.ok(buildDesignPreviewSurfaceFromPrepared(
+    prepareAnalysis(section, rebars, buildResistanceMaterialSets(store, createKdsBasicDesignBasis()).stateMaterials),
+    store,
+    createKdsBasicDesignBasis(),
+    compactOptions()
+  ).points.length > 0)
+})
+
+test('the stress-strain inverse solves the same minimum-eccentricity demand the design check governs', () => {
+  const basis = createKdsAppendixDesignBasis()
+  const sets = buildResistanceMaterialSets(materials, basis)
+  const prepared = prepareAnalysis(section, rebars, sets.stateMaterials)
+  const surface = buildDesignPreviewSurfaceFromPrepared(prepared, materials, basis, compactOptions())
+  const concentric = createLoadCombination({
+    name: 'Concentric',
+    P: 0.25 * Math.max(...surface.points.map((point) => point.P)),
+    Mx: 0,
+    My: 0
+  })
+
+  const check = checkLoadcaseUtilizationFromSurface(surface, concentric)
+  const contour = sliceFixedPContour(surface.points, concentric.P, surface.triangles)
+  const inverse = solveInversePreviewFromPrepared(
+    prepared,
+    concentric,
+    contour,
+    codeAdjustedDemandOfCheck(check)
+  )
+
+  assert.ok(check.codeAdjustedDemand, 'the design check must apply e_min to a concentric demand')
+  assert.equal(inverse.minimumEccentricityMm, check.minimumEccentricityMm)
+  assert.deepEqual(inverse.codeAdjustedDemand, check.codeAdjustedDemand)
+  assert.deepEqual(inverse.demand, concentric, 'the raw demand stays reported alongside the adjusted one')
+  // The solved equilibrium belongs to the adjusted demand, not to the raw concentric one.
+  const adjustedMoment = Math.hypot(check.codeAdjustedDemand!.Mx, check.codeAdjustedDemand!.My)
+  const responseMoment = Math.hypot(inverse.response.Mx, inverse.response.My)
+  assert.ok(adjustedMoment > 0)
+  assert.ok(
+    Math.abs(responseMoment / adjustedMoment - 1) < 1e-6,
+    `equilibrium moment ${responseMoment} does not match the checked demand ${adjustedMoment}`
+  )
+  assert.match(inverse.message, /minimum eccentricity/)
+
+  // Omitting the resolved demand keeps the historical raw-demand behaviour.
+  const raw = solveInversePreviewFromPrepared(prepared, concentric, contour)
+  assert.equal(raw.codeAdjustedDemand, undefined)
+  assert.ok(Math.hypot(raw.response.Mx, raw.response.My) < 1e-6 * adjustedMoment)
+})
+
+test('minimum eccentricity does not touch a demand that already exceeds it, nor a tensile demand', () => {
+  const basis = createKdsAppendixDesignBasis()
+  const sets = buildResistanceMaterialSets(materials, basis)
+  const surface = buildDesignPreviewSurfaceFromPrepared(
+    prepareAnalysis(section, rebars, sets.stateMaterials),
+    materials,
+    basis,
+    compactOptions()
+  )
+  const P = 0.25 * Math.max(...surface.points.map((point) => point.P))
+  const eccentric = checkLoadcaseUtilizationFromSurface(
+    surface,
+    createLoadCombination({ name: 'Eccentric', P, Mx: P * 400, My: 0 })
+  )
+  assert.equal(eccentric.codeAdjustedDemand, undefined)
+  const tensile = checkLoadcaseUtilizationFromSurface(
+    surface,
+    createLoadCombination({ name: 'Tension', P: -1e5, Mx: 0, My: 0 })
+  )
+  assert.equal(tensile.codeAdjustedDemand, undefined)
+})
+
+/**
+ * F-01 (docs/task-packets/2026-11-11-f01-minimum-eccentricity-signs.md). Five bars along the top and
+ * right faces of a 500 mm square are asymmetric about both principal axes, so a concentric KDS
+ * Appendix demand is governed by a negative sense. Oracle: the e_min = 15 + 0.03 h candidates in
+ * all four senses, each intersected directly with the same Design surface.
+ */
+const mirroredLGeometry = {
+  id: 1,
+  name: 'F-01 mirrored L layout',
+  outers: [{
+    id: 1,
+    points: [{ id: 1, x: -250, y: -250 }, { id: 2, x: 250, y: -250 }, { id: 3, x: 250, y: 250 }, { id: 4, x: -250, y: 250 }],
+    holes: []
+  }],
+  rebars: [[-190, 190], [0, 190], [190, 190], [190, 0], [190, -190]].map(([x, y], index) =>
+    ({ id: index + 1, steelMaterialId: 1, dia: 32, area: 800, x, y }))
+}
+
+test('F-01: a concentric Appendix demand is governed by the worst signed e_min sense', () => {
+  const basis = createKdsAppendixDesignBasis()
+  const sets = buildResistanceMaterialSets(materials, basis)
+  const prepared = prepareAnalysis(
+    sectionGeometryFromGeometryInput(mirroredLGeometry),
+    geometryInputRebars(mirroredLGeometry),
+    sets.stateMaterials
+  )
+  const surface = buildDesignPreviewSurfaceFromPrepared(prepared, materials, basis, compactOptions())
+  const P = 0.75 * surface.bounds.P[1]
+  const eccentricity = 15 + 0.03 * 500
+  const signed = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([sx, sy]) => {
+    const hit = intersectSurfaceWithDemandRay(surface, { P, Mx: sx * P * eccentricity, My: sy * P * eccentricity })
+    assert.ok(hit)
+    return 1 / hit.lambda
+  })
+  const worst = Math.max(...signed)
+  assert.ok(worst > 1.05 * Math.max(signed[0], signed[2]), 'the fixture must be governed by a negative sense')
+  const check = checkLoadcaseUtilizationFromSurface(surface, createLoadCombination({ name: 'Concentric', P, Mx: 0, My: 0 }))
+  assert.ok(check.codeAdjustedDemand)
+  assert.ok(Math.abs(Number(check.utilization) / worst - 1) <= 1e-12)
+  assert.ok(check.codeAdjustedDemand.Mx < 0 || check.codeAdjustedDemand.My < 0)
+  assert.equal(check.minimumEccentricityMm, eccentricity)
+  const inverse = solveInversePreviewFromPrepared(
+    prepared,
+    createLoadCombination({ name: 'Concentric', P, Mx: 0, My: 0 }),
+    sliceFixedPContour(surface.points, P, surface.triangles),
+    codeAdjustedDemandOfCheck(check)
+  )
+  assert.deepEqual(inverse.codeAdjustedDemand, check.codeAdjustedDemand)
+})
+
+test('EN two-pass migration preserves recommended fcd and fyd exactly', () => {
+  const enMaterials = applyCalculationProfileToMaterials(materials, 'en-1992-1-1-2004-stress-strain')
+  const basis = createEn1992DesignBasis()
+  const sets = buildResistanceMaterialSets(enMaterials, basis)
+  const designConcrete = compileConcreteMaterial(sets.designMaterials.concrete)
+  const designSteel = compileSteelMaterial(sets.designMaterials.steel[0]!)
+  const epsC2 = enMaterials.concrete.limits.eps0 ?? 0.002
+  assert.ok(Math.abs(designConcrete.stress(epsC2) - enMaterials.concrete.fck / 1.5) < 1e-12)
+  assert.ok(Math.abs(designSteel.stress(0.01) - enMaterials.steel[0]!.fy / 1.15) < 1e-12)
+  assert.equal(sets.referenceMaterials.concrete.factors?.resistanceScale, undefined)
+  assert.equal(sets.referenceMaterials.steel[0]!.factors?.resistanceScale, undefined)
+})
+
+test('factored ULS utilization uses the 3D proportional demand ray', () => {
+  const basis = createKdsBasicDesignBasis()
+  const sets = buildResistanceMaterialSets(materials, basis)
+  const surface = buildDesignPreviewSurfaceFromPrepared(
+    prepareAnalysis(section, rebars, sets.stateMaterials),
+    materials,
+    basis,
+    compactOptions()
+  )
+  const tensionPole = surface.points.reduce((minimum, point) => (point.P < minimum.P ? point : minimum))
+  const loadcase = createLoadCombination({
+    name: 'Half pure-tension resistance',
+    P: tensionPole.P / 2,
+    Mx: 0,
+    My: 0
+  })
+  const result = checkLoadcaseUtilizationFromSurface(surface, loadcase)
+
+  assert.ok(result.proportionalUtilization != null)
+  assert.ok(Math.abs(result.proportionalUtilization - 0.5) < 0.02)
+  assert.equal(result.utilization, result.proportionalUtilization)
+  assert.equal(result.adequate, true)
+  assert.equal(result.utilizationDefinition, 'proportional3D')
+  assert.ok(result.capacityMultiplier != null)
+  assert.ok(Math.abs(result.capacityMultiplier * result.proportionalUtilization - 1) < 1e-12)
+  assert.equal(result.demandMomentDirection, null)
+  assert.equal(result.fixedPDemandMoment, 0)
+  assert.equal(result.fixedPCapacityMoment, null)
+  assert.ok(result.capacityPoint)
+  assert.ok(Math.abs(result.capacityPoint.P - result.capacityMultiplier * loadcase.P) < 1e-6)
+
+  const compressionResult = checkLoadcaseUtilizationFromSurface(
+    surface,
+    createLoadCombination({
+      name: 'Half capped compression resistance',
+      P: surface.bounds.P[1] / 2,
+      Mx: 0,
+      My: 0
+    })
+  )
+  assert.ok(compressionResult.proportionalUtilization != null)
+  assert.ok(Math.abs(compressionResult.proportionalUtilization - 0.5) < 0.02)
+
+  const biaxialPoint = surface.points.find(
+    (point) => Math.abs(point.P) > 1 && Math.abs(point.Mx) > 1_000_000 && Math.abs(point.My) > 1_000_000
+  )
+  assert.ok(biaxialPoint)
+  const biaxialDemand = createLoadCombination({
+    name: 'Half biaxial resistance',
+    P: biaxialPoint.P / 2,
+    Mx: biaxialPoint.Mx / 2,
+    My: biaxialPoint.My / 2
+  })
+  const biaxialResult = checkLoadcaseUtilizationFromSurface(surface, biaxialDemand)
+  const checkedBiaxialDemand = biaxialResult.codeAdjustedDemand ?? biaxialDemand
+  assert.ok(biaxialResult.demandMomentDirection != null)
+  assert.ok(
+    Math.abs(
+      biaxialResult.demandMomentDirection - Math.atan2(checkedBiaxialDemand.My, checkedBiaxialDemand.Mx)
+    ) < 1e-12
+  )
+  assert.ok(
+    Math.abs(
+      biaxialResult.fixedPDemandMoment - Math.hypot(checkedBiaxialDemand.Mx, checkedBiaxialDemand.My)
+    ) < 1e-6
+  )
+  assert.ok(biaxialResult.fixedPUtilization != null)
+  assert.ok(biaxialResult.fixedPCapacityMoment != null)
+  assert.ok(
+    Math.abs(
+      biaxialResult.fixedPUtilization -
+      biaxialResult.fixedPDemandMoment / biaxialResult.fixedPCapacityMoment
+    ) < 1e-12
+  )
+
+  const zeroResult = checkLoadcaseUtilizationFromSurface(
+    surface,
+    createLoadCombination({ name: 'Zero demand', P: 0, Mx: 0, My: 0 })
+  )
+  assert.equal(zeroResult.proportionalUtilization, 0)
+  assert.equal(zeroResult.capacityMultiplier, null, 'the public DTO must not publish Infinity')
+  assert.equal(zeroResult.demandMomentDirection, null)
+  assert.equal(zeroResult.fixedPDemandMoment, 0)
+  assert.equal(zeroResult.fixedPCapacityMoment, null)
+})
+
+
+test('lazy KDS factor evidence retains every strain branch and leaves the surface and UR unchanged', () => {
+  for (const spiral of [false, true]) {
+    const basis = createKdsBasicDesignBasis()
+    basis.transverseReinforcement = spiral ? 'qualifying-spiral' : 'other'
+    const sets = buildResistanceMaterialSets(materials, basis)
+    const prepared = prepareAnalysis(section, rebars, sets.stateMaterials)
+    const surface = buildDesignPreviewSurfaceFromPrepared(prepared, materials, basis, compactOptions())
+    const original = JSON.stringify(surface)
+    const load = createLoadCombination({ id: 1, P: 2e6, Mx: 300e6, My: 150e6 })
+    const check = checkLoadcaseUtilizationFromSurface(surface, load)
+    for (const branch of ['compression-controlled', 'transition', 'tension-controlled'] as const) {
+      const point = surface.points.find(point => point.surfaceRole === 'physical-state' && point.resistance?.classification === branch)
+      assert.ok(point, branch)
+      const audit = buildStressStrainPointCalculationAudit(prepared, materials, basis, 'design', point)
+      assert.equal(audit.kind, 'stress-strain')
+      if (audit.kind !== 'stress-strain') continue
+      const factor = audit.resistanceFactorCalculation
+      assert.ok(factor && factor.kind === 'strain-controlled')
+      if (factor.kind !== 'strain-controlled') continue
+      assert.equal(factor.classification, branch)
+      assert.equal(factor.factor, point.resistance?.factor)
+      assert.equal(factor.compressionFactor, spiral ? 0.70 : 0.65)
+      assert.equal(factor.tensionFactor, 0.85)
+      const limit = factor.yieldStress <= 400 ? 0.005 : 2.5 * factor.yieldStrain
+      assert.equal(factor.tensionLimit, limit)
+      const hand = branch === 'compression-controlled' ? factor.compressionFactor
+        : branch === 'tension-controlled' ? 0.85
+          : factor.compressionFactor + (0.85 - factor.compressionFactor) * (factor.tensileStrain - factor.yieldStrain) / (limit - factor.yieldStrain)
+      assert.ok(Math.abs(factor.factor - hand) < 1e-14)
+      assert.equal(factor.interpolation !== null, branch === 'transition')
+    }
+    const nominal = surface.nominalPoints.find(point => point.surfaceRole === 'physical-state')
+    assert.ok(nominal)
+    const audit = buildStressStrainPointCalculationAudit(prepared, materials, basis, 'nominal', nominal)
+    assert.ok(audit.kind === 'stress-strain' && audit.resistanceFactorCalculation === null)
+    assert.equal(JSON.stringify(surface), original)
+    assert.deepEqual(checkLoadcaseUtilizationFromSurface(surface, load), check)
+  }
+})
+
+
+test('factor audit uses high-strength KDS limits and authored coefficient overrides', () => {
+  const highMaterials = structuredClone(materials)
+  for (const steel of highMaterials.steel) {
+    steel.fy = 600
+    steel.limits = { ...steel.limits, epsY: steel.fy / steel.elasticModulus }
+  }
+  const basis = createKdsBasicDesignBasis()
+  basis.factors.phiCompressionOther = 0.61
+  basis.factors.phiTension = 0.82
+  basis.modified = true
+  basis.overrideReason = 'Authored-factor audit fixture'
+  const sets = buildResistanceMaterialSets(highMaterials, basis)
+  const prepared = prepareAnalysis(section, rebars, sets.stateMaterials)
+  const surface = buildDesignPreviewSurfaceFromPrepared(prepared, highMaterials, basis, compactOptions())
+  const point = surface.points.find(point => point.surfaceRole === 'physical-state' && point.resistance?.classification === 'transition')
+  assert.ok(point)
+  const audit = buildStressStrainPointCalculationAudit(prepared, highMaterials, basis, 'design', point)
+  assert.ok(audit.kind === 'stress-strain')
+  if (audit.kind !== 'stress-strain') return
+  const factor = audit.resistanceFactorCalculation
+  assert.ok(factor && factor.kind === 'strain-controlled')
+  if (factor.kind !== 'strain-controlled') return
+  assert.equal(factor.yieldStress, 600)
+  assert.equal(factor.tensionLimit, 2.5 * factor.yieldStrain)
+  assert.equal(factor.compressionFactor, 0.61)
+  assert.equal(factor.tensionFactor, 0.82)
+  const hand = 0.61 + (0.82 - 0.61) * (factor.tensileStrain - factor.yieldStrain) / (2.5 * factor.yieldStrain - factor.yieldStrain)
+  assert.ok(Math.abs(factor.factor - hand) < 1e-14)
+  const storedResistance = point.resistance
+  assert.ok(storedResistance)
+  assert.throws(() => buildStressStrainPointCalculationAudit(prepared, highMaterials, basis, 'design', {
+    ...point, resistance: { ...storedResistance, factor: 0.5 }
+  }), error => error instanceof AnalysisInputError && error.code === 'AUDIT_RECONCILIATION_FAILED')
+})

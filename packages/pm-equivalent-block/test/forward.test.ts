@@ -1,0 +1,280 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import {
+  EquivalentBlockInputError,
+  bindEquivalentBlockForwardEvaluator,
+  createElasticPerfectlyPlasticSteelLaw,
+  evaluateEquivalentBlock,
+  evaluateUniformSectionState,
+  prepareEquivalentBlockSection,
+  uniformSteelEndpointStrain,
+  type EquivalentBlockSection,
+  type Point2
+} from '../src/index'
+
+const close = (actual: number, expected: number, relative = 1e-10) => {
+  const scale = Math.max(1, Math.abs(actual), Math.abs(expected))
+  assert.ok(Math.abs(actual - expected) <= relative * scale, `${actual} != ${expected}`)
+}
+
+const rectangle = (width: number, height: number, center: Point2 = { x: 0, y: 0 }): Point2[] => [
+  { x: center.x - width / 2, y: center.y - height / 2 },
+  { x: center.x + width / 2, y: center.y - height / 2 },
+  { x: center.x + width / 2, y: center.y + height / 2 },
+  { x: center.x - width / 2, y: center.y + height / 2 }
+]
+
+const section = (patch: Partial<EquivalentBlockSection> = {}): EquivalentBlockSection => ({
+  solids: [{ outer: rectangle(300, 500) }],
+  rebars: [],
+  referencePoint: { x: 0, y: 0 },
+  units: 'N-mm-MPa',
+  signConvention: 'compression-positive',
+  ...patch
+})
+
+test('declared steel rupture strain is validated and governs the finite axial endpoint', () => {
+  assert.throws(() => createElasticPerfectlyPlasticSteelLaw(200_000, 400, 0.001))
+  const prepared = prepareEquivalentBlockSection(section({
+    rebars: [{ id: 'b1', x: 0, y: 200, area: 400, steelLawId: 'steel' }]
+  }))
+  const steel = createElasticPerfectlyPlasticSteelLaw(200_000, 400, 0.02)
+  close(uniformSteelEndpointStrain(prepared, { steel }), 0.02)
+})
+
+test('a new finite design cutoff is not truncated by an unbounded plateau sampling strain', () => {
+  const prepared = prepareEquivalentBlockSection(section({ rebars: [
+    { id: 'b1', x: 0, y: 200, area: 400, steelLawId: 'bounded' },
+    { id: 'b2', x: 0, y: -200, area: 400, steelLawId: 'plateau' }
+  ] }))
+  const bounded = { ...createElasticPerfectlyPlasticSteelLaw(200000, 400, 0.12),
+    strainLimits: { tension: 0.12 } }
+  assert.equal(uniformSteelEndpointStrain(prepared, { bounded, plateau: createElasticPerfectlyPlasticSteelLaw(200000, 400) }), 0.12)
+})
+
+const law = {
+  compressionStress: 0.85 * 30,
+  depthFactor: 0.8,
+  extremeCompressionStrain: 0.003,
+  subtractDisplacedConcrete: true
+} as const
+
+test('forward evaluator reproduces the analytical rectangular concrete block', () => {
+  const prepared = prepareEquivalentBlockSection(section())
+  const result = evaluateEquivalentBlock(prepared, law, {}, {
+    neutralAxisAngle: Math.PI / 2,
+    neutralAxisDepth: 200
+  })
+  const area = 300 * 160
+  const force = law.compressionStress * area
+  close(result.state.blockDepth, 160)
+  close(result.concrete.area, area)
+  close(result.concrete.centroid.x, 0)
+  close(result.concrete.centroid.y, 170)
+  close(result.resultants.P, force)
+  close(result.resultants.Mx, force * 170)
+  close(result.resultants.My, 0)
+  close(result.diagnostics.componentForceResidual, 0)
+  close(result.diagnostics.componentMomentXResidual, 0)
+})
+
+test('asymmetric concrete and steel ledgers use the project-wide positive My convention', () => {
+  const prepared = prepareEquivalentBlockSection(section({
+    solids: [{ outer: rectangle(300, 500, { x: 40, y: 0 }) }],
+    rebars: [{ id: 'right', x: 120, y: 0, area: 500, steelLawId: 'steel' }]
+  }))
+  const steel = createElasticPerfectlyPlasticSteelLaw(200_000, 400)
+  const result = evaluateEquivalentBlock(prepared, law, { steel }, {
+    neutralAxisAngle: Math.PI / 2,
+    neutralAxisDepth: 200
+  })
+  const concreteForce = law.compressionStress * 300 * 160
+  const bar = result.bars[0]
+  close(result.concrete.My, concreteForce * 40)
+  close(bar.My, bar.force * 120)
+  close(result.resultants.My, result.concrete.My + bar.My)
+  assert.ok(result.resultants.My > 0, 'positive force eccentricity along +x must produce +My')
+
+  const uniform = evaluateUniformSectionState(prepared, { steel }, {
+    concreteStress: law.compressionStress,
+    steelStrain: 0.003,
+    subtractDisplacedConcrete: true
+  })
+  close(uniform.concrete.My, uniform.concrete.force * 40)
+  close(uniform.bars[0].My, uniform.bars[0].force * 120)
+  close(uniform.resultants.My, uniform.concrete.My + uniform.bars[0].My)
+})
+
+test('bound forward evaluator preserves exact results while reusing angle-only projection data', () => {
+  const prepared = prepareEquivalentBlockSection(section())
+  const bound = bindEquivalentBlockForwardEvaluator(prepared, law, {})
+  const states = [
+    { neutralAxisAngle: 0.37, neutralAxisDepth: 80 },
+    { neutralAxisAngle: 0.37, neutralAxisDepth: 200 },
+    { neutralAxisAngle: 0.37, neutralAxisDepth: 700 },
+    { neutralAxisAngle: 1.21, neutralAxisDepth: 175 }
+  ]
+  for (const state of states) {
+    const direct = evaluateEquivalentBlock(prepared, law, {}, state)
+    const cached = bound(state)
+    close(cached.resultants.P, direct.resultants.P)
+    close(cached.resultants.Mx, direct.resultants.Mx)
+    close(cached.resultants.My, direct.resultants.My)
+    close(cached.diagnostics.projectedSectionDepth, direct.diagnostics.projectedSectionDepth)
+    close(cached.diagnostics.compressionEdgeProjection, direct.diagnostics.compressionEdgeProjection)
+  }
+})
+
+test('surface evaluator omits retained clipping geometry without changing any numerical ordinate', () => {
+  const prepared = prepareEquivalentBlockSection(section({
+    solids: [
+      { outer: rectangle(420, 560), holes: [rectangle(120, 180, { x: 35, y: -20 })] },
+      { outer: rectangle(90, 160, { x: 320, y: 40 }) }
+    ],
+    rebars: [
+      { id: 'left', x: -150, y: -220, area: 420, steelLawId: 'steel' },
+      { id: 'right', x: 320, y: 40, area: 420, steelLawId: 'steel' }
+    ]
+  }))
+  const steel = createElasticPerfectlyPlasticSteelLaw(200_000, 400)
+  const full = bindEquivalentBlockForwardEvaluator(prepared, law, { steel })
+  const compact = bindEquivalentBlockForwardEvaluator(prepared, law, { steel }, {
+    retainConcreteGeometry: false
+  })
+  for (let angleIndex = 0; angleIndex < 24; angleIndex += 1) {
+    for (const depthRatio of [0.01, 0.08, 0.25, 0.8, 1, 2.5, 8]) {
+      const state = {
+        neutralAxisAngle: angleIndex * 2 * Math.PI / 24 + 0.007,
+        neutralAxisDepth: prepared.characteristicLength * depthRatio
+      }
+      const expected = full(state)
+      const actual = compact(state)
+      assert.deepEqual(actual.resultants, expected.resultants)
+      assert.deepEqual(actual.concrete, { ...expected.concrete, geometry: [] })
+      assert.deepEqual(actual.bars, expected.bars)
+      assert.deepEqual(actual.diagnostics, expected.diagnostics)
+    }
+  }
+})
+
+test('forward evaluator applies strain compatibility and displaced-concrete correction to bars', () => {
+  const prepared = prepareEquivalentBlockSection(section({
+    rebars: [
+      { id: 'top', x: 0, y: 200, area: 500, steelLawId: 'steel' },
+      { id: 'bottom', x: 0, y: -200, area: 500, steelLawId: 'steel' }
+    ]
+  }))
+  const steel = createElasticPerfectlyPlasticSteelLaw(200_000, 400)
+  const result = evaluateEquivalentBlock(prepared, law, { steel }, {
+    neutralAxisAngle: Math.PI / 2,
+    neutralAxisDepth: 200
+  })
+  const top = result.bars.find((bar) => bar.id === 'top')!
+  const bottom = result.bars.find((bar) => bar.id === 'bottom')!
+  close(top.strain, 0.00225)
+  close(top.steelStress, 400)
+  close(top.displacedConcreteStress, law.compressionStress)
+  close(top.force, 500 * (400 - law.compressionStress))
+  assert.equal(top.insideBlock, true)
+  close(bottom.strain, -0.00375)
+  close(bottom.steelStress, -400)
+  close(bottom.displacedConcreteStress, 0)
+  close(bottom.force, -200_000)
+  assert.equal(bottom.insideBlock, false)
+  assert.equal(result.controllingBarId, 'bottom')
+  close(result.controllingTensileStrain, 0.00375)
+})
+
+test('half-plane integration subtracts clipped holes exactly', () => {
+  const prepared = prepareEquivalentBlockSection(section({
+    solids: [{ outer: rectangle(200, 200), holes: [rectangle(100, 100)] }]
+  }))
+  const result = evaluateEquivalentBlock(prepared, {
+    ...law,
+    depthFactor: 1
+  }, {}, {
+    neutralAxisAngle: Math.PI / 2,
+    neutralAxisDepth: 100
+  })
+  close(prepared.grossArea, 30_000)
+  close(result.concrete.area, 15_000)
+  close(result.concrete.centroid.x, 0)
+  close(result.concrete.centroid.y, 875_000 / 15_000)
+})
+
+test('multiple solids are integrated without a fiber mesh', () => {
+  const prepared = prepareEquivalentBlockSection(section({
+    solids: [
+      { outer: rectangle(100, 200, { x: -100, y: 0 }) },
+      { outer: rectangle(100, 200, { x: 100, y: 0 }) }
+    ]
+  }))
+  const result = evaluateEquivalentBlock(prepared, { ...law, depthFactor: 1 }, {}, {
+    neutralAxisAngle: Math.PI / 2,
+    neutralAxisDepth: 100
+  })
+  close(prepared.grossArea, 40_000)
+  close(result.concrete.area, 20_000)
+  close(result.concrete.centroid.x, 0)
+  close(result.concrete.centroid.y, 50)
+})
+
+test('translation with the reference point preserves section resultants', () => {
+  const base = prepareEquivalentBlockSection(section())
+  const shifted = prepareEquivalentBlockSection(section({
+    solids: [{ outer: rectangle(300, 500, { x: 1234, y: -876 }) }],
+    referencePoint: { x: 1234, y: -876 }
+  }))
+  const state = { neutralAxisAngle: 0.37, neutralAxisDepth: 240 }
+  const baseResult = evaluateEquivalentBlock(base, law, {}, state)
+  const shiftedResult = evaluateEquivalentBlock(shifted, law, {}, state)
+  close(shiftedResult.resultants.P, baseResult.resultants.P, 1e-9)
+  close(shiftedResult.resultants.Mx, baseResult.resultants.Mx, 1e-9)
+  close(shiftedResult.resultants.My, baseResult.resultants.My, 1e-9)
+})
+
+test('invalid self-intersections and rebars in voids are rejected', () => {
+  assert.throws(
+    () => prepareEquivalentBlockSection(section({
+      solids: [{ outer: [{ x: 0, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }, { x: 100, y: 0 }] }]
+    })),
+    (error: unknown) => error instanceof EquivalentBlockInputError && error.code === 'INVALID_GEOMETRY'
+  )
+  assert.throws(
+    () => prepareEquivalentBlockSection(section({
+      solids: [{ outer: rectangle(200, 200), holes: [rectangle(100, 100)] }],
+      rebars: [{ id: 'void', x: 0, y: 0, area: 100, steelLawId: 'steel' }]
+    })),
+    (error: unknown) => error instanceof EquivalentBlockInputError && error.code === 'INVALID_REBAR'
+  )
+  assert.throws(
+    () => prepareEquivalentBlockSection(section({
+      solids: [{ outer: rectangle(100, 100) }],
+      rebars: [{ id: 'crossing', x: 49, y: 0, area: Math.PI * 10 ** 2, steelLawId: 'steel' }]
+    })),
+    (error: unknown) => error instanceof EquivalentBlockInputError && error.code === 'INVALID_REBAR'
+  )
+})
+
+test('the per-bar trace is built on demand and agrees with the summed resultants and controlling bar', () => {
+  const prepared = prepareEquivalentBlockSection(section({ rebars: [
+    { id: 'top', x: 0, y: 200, area: 400, steelLawId: 'a' },
+    { id: 'mid', x: 100, y: 0, area: 300, steelLawId: 'b' },
+    { id: 'bottom', x: -50, y: -200, area: 500, steelLawId: 'b' }
+  ] }))
+  const steelLaws = { a: createElasticPerfectlyPlasticSteelLaw(200_000, 400), b: createElasticPerfectlyPlasticSteelLaw(200_000, 500) }
+  const result = evaluateEquivalentBlock(prepared, law, steelLaws, { neutralAxisAngle: Math.PI / 2 + 0.2, neutralAxisDepth: 180 })
+  const bars = result.bars
+  assert.equal(result.bars, bars, 'the trace is built once')
+  const sum = (key: 'force' | 'Mx' | 'My') => bars.reduce((total, bar) => total + bar[key], 0)
+  // The former per-bar reduce, applied to the trace, reproduces the loop's sums exactly.
+  assert.equal(result.resultants.P, result.concrete.force + sum('force'))
+  assert.equal(result.resultants.Mx, result.concrete.Mx + sum('Mx'))
+  assert.equal(result.resultants.My, result.concrete.My + sum('My'))
+  const controlling = bars.reduce((best, bar) => bar.tensileStrain > best.tensileStrain ? bar : best)
+  assert.equal(result.controllingBarId, controlling.id)
+  assert.equal(result.controllingSteelLawId, controlling.steelLawId)
+  assert.equal(result.controllingTensileStrain, controlling.tensileStrain)
+  assert.equal(result.controllingYieldStrain, controlling.yieldStrain)
+  assert.equal(JSON.stringify(JSON.parse(JSON.stringify(result)).bars), JSON.stringify(bars), 'serialisation materialises the trace')
+})

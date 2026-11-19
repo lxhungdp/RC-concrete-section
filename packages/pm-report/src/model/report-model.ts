@@ -1,0 +1,1539 @@
+import { UNIT_PRESETS, parseUnitSelection, toCanonical, fromCanonical, quantityUnit, type Quantity, type UnitSelection } from '@pm/units'
+/**
+ * Format-neutral report model.
+ *
+ * `docs/development/00-README.md` §3 puts `ReportModel` between the result view model and the
+ * output format, and that separation is the point of this file: nothing here imports a PDF, an
+ * Excel writer or a plotting library, so the same model can drive a second format later without
+ * either format becoming a second calculation.
+ *
+ * The rule the model enforces on itself: **it formats, it does not decide**. Every number below is
+ * either copied from a kernel result or is a presentation-only derivation (a polyline sampled from
+ * a surface the kernel already produced, a drawing-only clip of the compression zone). No factor,
+ * rounding rule, interpolation or adequacy test is introduced here — that is
+ * `docs/engineering/05` §6, and it is what keeps a report from disagreeing with the software that
+ * produced it.
+ */
+import {
+  activeDesignDirectionPoints,
+  activeDesignSurfaceDataset,
+  activeNominalDirectionPoints,
+  activeNominalSurfaceDataset,
+  contourStrainAngleSamples,
+  evaluatePreparedState,
+  intersectFixedPContourWithMomentRay,
+  fixedPContourPaths,
+  buildDemandPmGeometry,
+  prepareAnalysis,
+  sliceFixedPContour,
+  stationDefinitionLabel,
+  resolveLoadcaseField,
+  type InversePreviewResult,
+  type LoadDirectionCurve,
+  type LoadDirectionPoint,
+  type PreviewSurface,
+  type PreviewSurfacePoint,
+  type StationDefinition,
+  type StrainState
+} from '@pm/analysis'
+import { prepareBlockAnalysis } from '@pm/analysis-equivalent-block'
+import {
+  clipPreparedSectionToHalfPlane,
+  prepareEquivalentBlockSection,
+  projectedOuterExtents,
+  type NominalBlockEvaluation,
+  type PreparedEquivalentBlockSection
+} from '@pm/equivalent-block'
+import {
+  buildResistanceMaterialSets,
+  withSteelModelModification,
+  designBasisRequiresOverrideReason,
+  resolveTensionControlledStrainLimit,
+  type DesignBasis
+} from '@pm/design'
+import {
+  netConcreteCentroid,
+  summarizeSection,
+  rebarArea,
+  rebarAreaSourceLabel,
+  type GeometryInputRebarView,
+  type SectionGeometry
+} from '@pm/geometry'
+import {
+  compileConcreteMaterial,
+  compileSteelMaterial,
+  resolveLinearHardeningSteel,
+  userBlockCompressionStress,
+  type MaterialStore
+} from '@pm/materials'
+import {
+  calculationProfile,
+  isEquivalentBlockProfileId,
+  resultantAtLoadReference,
+  type LoadReference,
+  type CalculationAnalysisOptions,
+  type CalculationProfileId,
+  type LoadCombination,
+  type ProjectInformation
+} from '@pm/project'
+import { ExcelExportError } from '../excel/workbook-common'
+import { solveLoadcases } from './loadcase-solutions'
+import { checkBasisLabels, checkBasisOfResult } from './check-basis'
+import { DEFAULT_DEMAND_CHECK_BASIS, type DemandCheckBasis } from '@pm/project'
+
+export type ReportInput = {
+  loadReference?: LoadReference
+  presentationUnits?: UnitSelection
+  projectName: string
+  projectInformation: ProjectInformation
+  sectionName: string
+  calculationProfileId: CalculationProfileId
+  section: SectionGeometry
+  rebars: GeometryInputRebarView[]
+  materialStore: MaterialStore
+  designBasis: DesignBasis
+  analysisOptions: CalculationAnalysisOptions
+  /** Governing surface already built by the app. Exact demand meridians reuse these settings. */
+  surface: PreviewSurface
+  loadcases: readonly LoadCombination[]
+  checkBasis?: DemandCheckBasis
+  /**
+   * Combinations the user asked to see worked through. May be empty (summary-only report), a
+   * subset, or all of them.
+   */
+  detailLoadcaseIds: readonly number[]
+  /** Omit for byte-identical output; supply to stamp a generation time. */
+  generatedAt?: Date
+}
+
+export type LabelledValue = readonly [string, string]
+
+/**
+ * A plain coordinate.
+ *
+ * Deliberately not `@pm/geometry`'s `XY`: that carries an editor id, and a report model has no
+ * business round-tripping editor identity into a drawing.
+ */
+export type XY = { x: number; y: number }
+
+export type SectionDrawing = {
+  solids: ReadonlyArray<{ outer: XY[]; holes: XY[][] }>
+  bars: ReadonlyArray<{ id: string; x: number; y: number; dia: number; steel: string }>
+  bounds: { minX: number; maxX: number; minY: number; maxY: number }
+  origin: XY
+}
+
+export type InteractionCurve = {
+  /** Capacity overview: geometric plane cut; per combination: the load-direction curve (engineering/05 §3). */
+  kind: 'load-direction'
+  thetaDeg: number
+  /** Moment and axial force in the declared presentation units. */
+  nominal: ReadonlyArray<{ m: number; p: number }>
+  design: ReadonlyArray<{ m: number; p: number }>
+}
+
+/**
+ * A landmark on the published capacity meridian.
+ *
+ * The overview diagram is the one picture most reviewers read first, and a bare outline tells them
+ * nothing about *where* on it the section changes behaviour. These are the states an engineer looks
+ * for by name — the compression pole, the axial cap, first yield, the balanced point, the tension
+ * pole — carried as model data so the drawing and the table beside it cannot disagree.
+ */
+export type CurveMarker = {
+  /** Short symbol drawn on the diagram, e.g. `fs = fy`. */
+  label: string
+  /** The station criterion the point comes from, e.g. `εₛ/εy = 1`. */
+  station: string
+  design: { m: number; p: number } | null
+  nominal: { m: number; p: number } | null
+  phi: number | null
+  classification: string
+}
+
+/**
+ * The horizontal companion of the vertical meridian: the Mx-My contour cut at the combination's own
+ * axial force. Together the two views bracket a biaxial check — the meridian shows how much axial
+ * force the section still has in hand, the contour shows how much moment it has in every direction
+ * at exactly this one.
+ */
+export type FixedPCurve = {
+  /** Axial level of the cut in presentation force units. Always the combination's own Pu. */
+  p: number
+  /** Flattened path coordinates for bounds/tables. Rendering consumes the individual paths. */
+  nominal: ReadonlyArray<{ mx: number; my: number }>
+  design: ReadonlyArray<{ mx: number; my: number }>
+  nominalPaths: ReadonlyArray<ReadonlyArray<{ mx: number; my: number }>>
+  designPaths: ReadonlyArray<ReadonlyArray<{ mx: number; my: number }>>
+  demand: { mx: number; my: number }
+  /** Where the demand moment direction meets the Design contour at this P. */
+  capacity: { mx: number; my: number } | null
+}
+
+/** A table the renderer prints as-is; the model owns the columns and the formatting. */
+export type CurveTable = {
+  title: string
+  note: string
+  columns: ReadonlyArray<{ title: string; width: number; align?: 'left' | 'right' }>
+  rows: ReadonlyArray<ReadonlyArray<string>>
+}
+
+export type CombinationRow = {
+  id: number
+  name: string
+  p: number
+  mx: number
+  my: number
+  thetaDeg: number
+  utilization: number | null
+  utilizationInterval: {
+    lower: number | null
+    upper: number | null
+    relativeUncertainty: number | null
+    evidence: string
+  } | null
+  fixedPUtilization: number | null
+  proportionalUtilization: number | null
+  checkBasis: DemandCheckBasis
+  phi: number | null
+  classification: string
+  verdict: 'adequate' | 'inadequate' | 'indeterminate' | 'not-checked'
+  note: string
+}
+
+export type BarState = {
+  id: string
+  x: number
+  y: number
+  dia: number
+  area: number
+  /** Depth from the extreme compression fibre along the neutral-axis normal, mm. */
+  depth: number
+  strain: number
+  stressMpa: number
+  force: number
+  insideBlock: boolean | null
+}
+
+export type CompressionZone = {
+  /** `block` is the code's `a = β1·c` region; `fibre` is simply where the strain is compressive. */
+  kind: 'block' | 'fibre'
+  polygons: ReadonlyArray<{ outer: XY[]; holes: XY[][] }>
+  label: string
+}
+
+export type DepthProfile = {
+  /** Section depth measured along the neutral-axis normal, mm. */
+  projectedDepth: number
+  neutralAxisDepth: number
+  blockDepth: number | null
+  extremeCompressionStrain: number
+  /** Strain at the extreme tension fibre; negative in tension. */
+  extremeTensionStrain: number
+  blockStressMpa: number | null
+  /** Sampled concrete stress against depth from the compression edge, for the fibre route. */
+  stressSamples: ReadonlyArray<{ depth: number; stressMpa: number }>
+}
+
+export type CombinationDetail = {
+  row: CombinationRow
+  /**
+   * True when the user selected this combination to be worked through. Every combination gets its
+   * two curves and its solved state; only a selected one also gets the section/elevation spread,
+   * the bar ledger and the point tables behind the curves.
+   */
+  detailed: boolean
+  converged: boolean
+  admissible: boolean
+  message: string
+  /** Converged strain plane; null when the solver produced none worth publishing. */
+  state: { e0: number; kx: number; ky: number } | null
+  /** Compact parameter block for the per-combination check page. */
+  basics: LabelledValue[]
+  /** Neutral-axis line direction in section coordinates, degrees CCW from +x. */
+  neutralAxisAngleDeg: number
+  neutralAxisLine: readonly [XY, XY] | null
+  compressionZone: CompressionZone | null
+  depthProfile: DepthProfile | null
+  bars: readonly BarState[]
+  concrete: LabelledValue[]
+  resultants: LabelledValue[]
+  evidence: LabelledValue[]
+  /** Exact direct-β meridian when equilibrium defines β; otherwise a labelled fixed-plane diagnostic. */
+  interaction: InteractionCurve & {
+    loadPath: 'proportional' | 'constant-axial'
+    demand: { m: number; p: number }
+    capacity: { m: number; p: number } | null
+  }
+  /** Mx-My contour at this combination's own axial force, with the load point on it. */
+  fixedP: FixedPCurve
+  /** Points behind the two curves above; empty unless this combination was selected. */
+  curveTables: readonly CurveTable[]
+}
+
+export type ColumnReportModel = {
+  presentationUnits: UnitSelection
+  checkBasis: DemandCheckBasis
+  project: {
+    name: string
+    sectionName: string
+    information: ProjectInformation
+  }
+  projectInformation: LabelledValue[]
+  identity: LabelledValue[]
+  status: string
+  watermark?: string
+  scopeStatements: readonly string[]
+  warnings: readonly string[]
+  drawing: SectionDrawing
+  sectionProperties: LabelledValue[]
+  concreteMaterial: LabelledValue[]
+  steelMaterial: LabelledValue[]
+  resistanceBasis: LabelledValue[]
+  sampling: LabelledValue[]
+  barSchedule: ReadonlyArray<readonly string[]>
+  curves: readonly InteractionCurve[]
+  /** The single overview diagram; the principal plane every reviewer reads first. */
+  capacityCurve: InteractionCurve
+  /** Named states on `capacityCurve`, in meridian order from the compression pole down. */
+  capacityMarkers: readonly CurveMarker[]
+  axialCap: number | null
+  combinations: readonly CombinationRow[]
+  details: readonly CombinationDetail[]
+  generated: string
+}
+
+function createReportBuilder(displayUnits: UnitSelection) {
+const unit = (quantity: Quantity) => quantity === 'curvature' ? `1/${quantityUnit('length', displayUnits)}` : quantityUnit(quantity, displayUnits)
+const qfmt = (quantity: Quantity, value: number, digits = 2) => fmt(fromCanonical(quantity, value, displayUnits), digits)
+const q = (quantity: Quantity, value: number) => `${qfmt(quantity, value)} ${unit(quantity)}`
+
+const fmt = (value: number, digits = 2) =>
+  Number.isFinite(value)
+    ? value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+    : '—'
+
+const sci = (value: number, digits = 3) =>
+  Number.isFinite(value) ? value.toExponential(digits) : '—'
+
+const deg = (radians: number) => (radians * 180) / Math.PI
+
+/**
+ * Curve directions to publish.
+ *
+ * The principal planes are what a reviewer checks first; the demand directions are what the project
+ * is actually loaded in. Publishing both means the diagram a reader compares a combination against
+ * is the plane that combination lies in, not the nearest principal one.
+ */
+const curveAngles = (loadcases: readonly LoadCombination[]) => {
+  const angles = new Set<number>([0, 90])
+  for (const loadcase of loadcases) {
+    if (Math.abs(loadcase.Mx) < 1e-9 && Math.abs(loadcase.My) < 1e-9) continue
+    angles.add(Math.round(deg(Math.atan2(loadcase.My, loadcase.Mx)) * 100) / 100)
+  }
+  return [...angles].sort((a, b) => a - b)
+}
+
+/**
+ * engineering/05 §3: the published P–M diagram at θ, as Capacity draws it. The θ half is the physical
+ * load-direction curve at positive Mθ; the θ + 180° half is the same construction drawn at negative
+ * Mθ, so the polyline closes through both poles. Every point is a compatible state with its own β.
+ */
+const planeInteraction = (thetaDeg: number, curveAt: (theta: number) => LoadDirectionCurve): InteractionCurve => {
+  const theta = (thetaDeg * Math.PI) / 180
+  const forward = curveAt(theta)
+  const back = curveAt((((thetaDeg + 180) % 360) * Math.PI) / 180)
+  const half = (curve: LoadDirectionCurve, stage: 'design' | 'nominal', sign: 1 | -1) =>
+    (stage === 'design' ? curve.designPaths : curve.nominalPaths).flat().map((point) => ({
+      m: sign * fromCanonical('moment', point.Mtheta, displayUnits),
+      p: fromCanonical('force', point.P, displayUnits)
+    }))
+  const loop = (stage: 'design' | 'nominal') => [...half(forward, stage, 1), ...half(back, stage, -1).reverse()]
+  return { kind: 'load-direction', thetaDeg, design: loop('design'), nominal: loop('nominal') }
+}
+
+/**
+ * Short symbol for a station a reviewer looks for by name, or null for a routine sampling station.
+ *
+ * The filter is deliberately narrow. Every station is already published in the point tables; what
+ * belongs on the diagram is the handful of states that change how the section behaves, because a
+ * diagram carrying all twenty-seven labels is a diagram nobody reads.
+ */
+const stationSymbol = (definition: StationDefinition | null): string | null => {
+  if (!definition) return null
+  if (definition.kind === 'pure-compression') return 'P0'
+  if (definition.kind === 'pure-tension') return 'Pure tension'
+  if (definition.kind === 'bar-tension-yield-ratio' || definition.kind === 'steel-stress-ratio') {
+    if (Math.abs(definition.ratio) < 1e-9) return 'fs = 0'
+    if (Math.abs(definition.ratio - 1) < 1e-9) return 'fs = fy'
+    return null
+  }
+  if (definition.kind === 'steel-strain' && Math.abs(definition.strain) < 1e-12) return 'fs = 0'
+  if (definition.kind === 'neutral-axis-depth-ratio' && Math.abs(definition.ratio - 1) < 1e-9) return 'c = D'
+  if (definition.kind === 'block-depth-ratio' && Math.abs(definition.ratio - 1) < 1e-9) return 'c = D'
+  return null
+}
+
+const markerSymbol = (
+  surfaceRole: PreviewSurfacePoint['surfaceRole'],
+  definition: StationDefinition | null
+): string | null => {
+  // A capped station is still that station: the cap moved where it sits, it did not replace what it
+  // is. Saying both is what lets a reader see that the compression pole is the cap. A cap point that
+  // is not a named station gets no mark — it only repeats the flat top the diagram already shows.
+  const symbol = stationSymbol(definition)
+  if (!symbol) return null
+  return surfaceRole === 'axial-cap' ? `${symbol} · Pmax` : symbol
+}
+
+type CurveStation = {
+  key: string
+  station: string
+  definition: StationDefinition | null
+  surfaceRole: PreviewSurfacePoint['surfaceRole']
+  phi: number | null
+  classification: string
+  point: { m: number; p: number }
+}
+
+/**
+ * The station points of one stage of the published P–M at θ curve, in curve order: ring points with
+ * their station identity and the poles. States between stations and geometric points carry no station
+ * a reader looks for by name, so they are not candidates for a mark.
+ */
+const curveStations = (
+  paths: readonly (readonly LoadDirectionPoint[])[],
+  stations: ReadonlyArray<{ id: string; definition: StationDefinition }>
+): CurveStation[] => {
+  const descriptors = new Map(stations.map((station) => [station.id, station.definition]))
+  return paths.flat()
+    .filter((point) => point.stationId !== null &&
+      (point.role === 'physical-station' || point.role === 'pure-compression' || point.role === 'pure-tension'))
+    .map((point) => {
+      const definition = descriptors.get(point.stationId!) ?? null
+      return {
+        key: point.stationId!,
+        station: definition ? stationDefinitionLabel(definition) : point.role,
+        definition,
+        surfaceRole: point.role === 'physical-station' ? 'physical-state' as const : point.role as 'pure-compression' | 'pure-tension',
+        phi: point.resistance?.factor ?? null,
+        classification: point.resistance?.classification ?? '—',
+        point: { m: fromCanonical('moment', point.Mtheta, displayUnits), p: fromCanonical('force', point.P, displayUnits) }
+      }
+    })
+}
+
+/**
+ * Short mark for the first station of a resistance class.
+ *
+ * The class name itself is already the row's own column; on the diagram it only has to say which
+ * φ regime starts here, and a mark wide enough to spell "compression-controlled" would crowd out
+ * the curve it points at.
+ */
+const classificationSymbol = (classification: string) => {
+  if (classification === 'compression-controlled') return 'φ = φc'
+  if (classification === 'tension-controlled') return 'φ = φt'
+  if (classification === 'transition') return 'φ ramp'
+  return classification
+}
+
+/**
+ * Landmarks on the overview meridian, paired across the two published stages.
+ *
+ * A resistance-classification change is included on top of the named states because that is where
+ * φ starts moving, and a reader who cannot see that boundary cannot explain the shape of the curve.
+ */
+/**
+ * Landmarks on the overview P–M at θ curve, paired across the two published stages by station.
+ *
+ * A resistance-classification change is included on top of the named states because that is where
+ * φ starts moving, and a reader who cannot see that boundary cannot explain the shape of the curve.
+ * Where the axial cap governs, the cap face replaces the compression pole and is marked Pmax.
+ */
+const capacityMarkersFor = (surface: PreviewSurface, curve: LoadDirectionCurve): CurveMarker[] => {
+  const design = curveStations(curve.designPaths, activeDesignSurfaceDataset(surface).stations)
+  const nominal = new Map(curveStations(curve.nominalPaths, activeNominalSurfaceDataset(surface).stations).map(
+    (station) => [station.key, station.point] as const
+  ))
+  const markers: CurveMarker[] = []
+  const capAxis = curve.designPaths.flat().find((point) => point.role === 'axial-center')
+  if (capAxis) {
+    markers.push({
+      label: 'Pmax', station: 'Maximum axial resistance (cap face)',
+      design: { m: 0, p: fromCanonical('force', capAxis.P, displayUnits) },
+      nominal: nominal.get('pure-compression') ?? null, phi: null, classification: '—'
+    })
+  }
+  const claimed = new Set<string>(markers.map((marker) => marker.label))
+  design.forEach((station, index) => {
+    const previous = design[index - 1]
+    const symbol =
+      markerSymbol(station.surfaceRole, station.definition) ??
+      (previous && previous.classification !== station.classification && station.classification !== '—'
+        ? classificationSymbol(station.classification)
+        : null)
+    if (symbol === null || claimed.has(symbol)) return
+    claimed.add(symbol)
+    markers.push({
+      label: symbol,
+      station: station.station,
+      design: station.point,
+      nominal: nominal.get(station.key) ?? null,
+      phi: station.phi,
+      classification: station.classification
+    })
+  })
+  return markers
+}
+
+/** engineering/05 §3: the combination's load-direction curve in presentation units (Mθ coordinate). */
+const loadDirectionInteraction = (curve: LoadDirectionCurve): InteractionCurve => {
+  const project = (point: LoadDirectionPoint) => ({
+    m: fromCanonical('moment', point.Mtheta, displayUnits),
+    p: fromCanonical('force', point.P, displayUnits)
+  })
+  return {
+    kind: 'load-direction',
+    thetaDeg: deg(curve.theta),
+    design: curve.designPaths.flatMap(path => path.map(project)),
+    nominal: curve.nominalPaths.flatMap(path => path.map(project))
+  }
+}
+
+const verdictOf = (result: InversePreviewResult | null): CombinationRow['verdict'] =>
+  result?.designCheck.evaluated ? result.designCheck.adequacy : 'not-checked'
+
+const combinationRow = (loadcase: LoadCombination, result: InversePreviewResult | null): CombinationRow => {
+  return {
+    id: loadcase.id,
+    name: loadcase.name,
+    p: fromCanonical('force', loadcase.P, displayUnits),
+    mx: fromCanonical('moment', loadcase.Mx, displayUnits),
+    my: fromCanonical('moment', loadcase.My, displayUnits),
+    thetaDeg:
+      Math.abs(loadcase.Mx) < 1e-9 && Math.abs(loadcase.My) < 1e-9
+        ? 0
+        : deg(Math.atan2(loadcase.My, loadcase.Mx)),
+    utilization: result?.utilization ?? null,
+    utilizationInterval: result?.designCheck.evaluated
+      ? { ...result.designCheck.utilizationInterval }
+      : null,
+    fixedPUtilization: result?.fixedPUtilization ?? null,
+    proportionalUtilization: result?.proportionalUtilization ?? null,
+    checkBasis: result ? checkBasisOfResult(result) : DEFAULT_DEMAND_CHECK_BASIS,
+    phi: result?.resistance?.factor ?? null,
+    classification: result?.resistance?.classification ?? '—',
+    verdict: verdictOf(result),
+    note: result?.message ?? 'Not solved.'
+  }
+}
+
+/** Neutral-axis line, long enough to cross the whole section, for the cross-section drawing. */
+const neutralAxisLine = (
+  bounds: { minX: number; maxX: number; minY: number; maxY: number },
+  origin: XY,
+  normalX: number,
+  normalY: number,
+  offset: number
+): readonly [XY, XY] => {
+  const span = Math.hypot(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY)
+  // A point on the line, then walk along its direction (the normal rotated 90°).
+  const baseX = normalX * offset
+  const baseY = normalY * offset
+  const dirX = -normalY
+  const dirY = normalX
+  void origin
+  return [
+    { x: baseX - dirX * span, y: baseY - dirY * span },
+    { x: baseX + dirX * span, y: baseY + dirY * span }
+  ]
+}
+
+const drawingOf = (
+  section: SectionGeometry,
+  rebars: GeometryInputRebarView[],
+  materialStore: MaterialStore,
+  origin: XY
+): SectionDrawing => {
+  const solids = section.solids.map((solid) => ({
+    outer: solid.outer.map((point) => ({ x: point.x - origin.x, y: point.y - origin.y })),
+    holes: solid.holes.map((hole) => hole.map((point) => ({ x: point.x - origin.x, y: point.y - origin.y })))
+  }))
+  const steelName = (id: number | undefined) =>
+    materialStore.steel.find((item) => item.id === (id ?? materialStore.defaults.steelMaterialId))?.name ?? '—'
+  const bars = rebars.map((bar) => ({
+    id: String(bar.id),
+    x: bar.x - origin.x,
+    y: bar.y - origin.y,
+    dia: bar.dia,
+    steel: steelName(bar.steelMaterialId)
+  }))
+  const xs = solids.flatMap((solid) => solid.outer.map((point) => point.x))
+  const ys = solids.flatMap((solid) => solid.outer.map((point) => point.y))
+  return {
+    solids,
+    bars,
+    origin,
+    bounds: {
+      minX: Math.min(...xs),
+      maxX: Math.max(...xs),
+      minY: Math.min(...ys),
+      maxY: Math.max(...ys)
+    }
+  }
+}
+
+/**
+ * Compression zone for the drawing.
+ *
+ * For the block route this *is* the region the kernel integrated. For the fibre route no such
+ * polygon exists in the calculation, so the shading is the strain-sign half-plane clipped to the
+ * section — a drawing aid, labelled as one, that never re-enters a resultant.
+ */
+const clipCompressionZone = (
+  prepared: PreparedEquivalentBlockSection,
+  normalX: number,
+  normalY: number,
+  offset: number,
+  origin: XY
+) =>
+  clipPreparedSectionToHalfPlane(prepared, normalX, normalY, offset).geometry.map((solid) => ({
+    outer: solid.outer.map((point) => ({ x: point.x - origin.x, y: point.y - origin.y })),
+    holes: solid.holes.map((hole) => hole.map((point) => ({ x: point.x - origin.x, y: point.y - origin.y })))
+  }))
+
+const interactionFor = (
+  rawLoadcase: LoadCombination,
+  loadCurve: LoadDirectionCurve | null,
+  result: InversePreviewResult
+) => {
+  const loadcase = result.codeAdjustedDemand ?? rawLoadcase
+  const demandTheta =
+    Math.abs(loadcase.Mx) < 1e-9 && Math.abs(loadcase.My) < 1e-9 ? 0 : Math.atan2(loadcase.My, loadcase.Mx)
+  const curve: InteractionCurve = loadCurve
+    ? loadDirectionInteraction(loadCurve)
+    : { kind: 'load-direction', thetaDeg: deg(demandTheta), design: [], nominal: [] }
+  const constantAxial = checkBasisOfResult(result) === 'constantAxial'
+  const capacityPoint = result.designCapacityPoint
+  return {
+    ...curve,
+    loadPath: constantAxial ? 'constant-axial' as const : 'proportional' as const,
+    demand: {
+      m: fromCanonical('moment', Math.hypot(loadcase.Mx, loadcase.My), displayUnits),
+      p: fromCanonical('force', loadcase.P, displayUnits)
+    },
+    capacity: capacityPoint
+      ? {
+          m: fromCanonical('moment', Math.hypot(capacityPoint.Mx, capacityPoint.My), displayUnits),
+          p: fromCanonical('force', capacityPoint.P, displayUnits)
+        }
+      : null
+  }
+}
+
+/**
+ * Mx-My contour at the combination's own axial force.
+ *
+ * The polyline is the kernel's own cut of the triangulated Design and Nominal surfaces, in the
+ * order the kernel returns it. The report closes the ring for drawing and does nothing else to it:
+ * where the contour opens or doubles back is result evidence, not a drawing defect to smooth away.
+ */
+const fixedPCurveFor = (surface: PreviewSurface, loadcase: LoadCombination): FixedPCurve => {
+  const design = activeDesignSurfaceDataset(surface)
+  const nominal = activeNominalSurfaceDataset(surface)
+  const designContour = sliceFixedPContour(design.points, loadcase.P, design.triangles)
+  const nominalContour = sliceFixedPContour(nominal.points, loadcase.P, nominal.triangles)
+  const ring = (contour: typeof designContour) => {
+    const points = contour.map((point) => ({ mx: fromCanonical('moment', point.Mx, displayUnits), my: fromCanonical('moment', point.My, displayUnits) }))
+    return points.length > 2 && contour[0].pathClosed !== false ? [...points, points[0]] : points
+  }
+  // The ray query uses the sampled-direction subset, exactly as the Demand Check chart does.
+  const samples = designContour
+  const capacity =
+    Math.hypot(loadcase.Mx, loadcase.My) < 1e-9 || samples.length < 2
+      ? null
+      : intersectFixedPContourWithMomentRay(samples, Math.atan2(loadcase.My, loadcase.Mx))
+  const designPaths = fixedPContourPaths(designContour).map(ring)
+  const nominalPaths = fixedPContourPaths(nominalContour).map(ring)
+  return {
+    p: fromCanonical('force', loadcase.P, displayUnits),
+    designPaths,
+    nominalPaths,
+    design: designPaths.flat(),
+    nominal: nominalPaths.flat(),
+    demand: { mx: fromCanonical('moment', loadcase.Mx, displayUnits), my: fromCanonical('moment', loadcase.My, displayUnits) },
+    capacity: capacity ? { mx: fromCanonical('moment', capacity.Mx, displayUnits), my: fromCanonical('moment', capacity.My, displayUnits) } : null
+  }
+}
+
+/**
+ * Outer join of the Design and Nominal rows of one curve on a shared row identity.
+ *
+ * Design and Nominal are the same curve computed at two resistance stages: same stations, same
+ * directions, differing only in P and M. Printing them as two stacked blocks doubled the row count
+ * and left the reader subtracting across half a page, so they are joined into one row per identity
+ * and the stage becomes a pair of column groups. Design order leads because Design is what the
+ * check uses; a Nominal-only identity (or a Design-only one such as the axial cap) still gets its
+ * own row, with the missing stage shown as absent rather than silently dropped.
+ */
+const joinStages = <T>(
+  design: ReadonlyArray<{ key: string; value: T }>,
+  nominal: ReadonlyArray<{ key: string; value: T }>
+) => {
+  const nominalByKey = new Map(nominal.map((entry) => [entry.key, entry.value]))
+  const seen = new Set(design.map((entry) => entry.key))
+  return [
+    ...design.map((entry) => ({
+      key: entry.key,
+      design: entry.value,
+      nominal: nominalByKey.get(entry.key) ?? null
+    })),
+    ...nominal
+      .filter((entry) => !seen.has(entry.key))
+      .map((entry) => ({ key: entry.key, design: null, nominal: entry.value }))
+  ]
+}
+
+/** Occurrence-suffixed key, so two contour branches at one angle stay two rows rather than merging. */
+const branchKeyed = <T>(values: readonly T[], keyOf: (value: T) => string) => {
+  const counts = new Map<string, number>()
+  return values.map((value) => {
+    const base = keyOf(value)
+    const occurrence = (counts.get(base) ?? 0) + 1
+    counts.set(base, occurrence)
+    return { key: `${base}#${occurrence}`, value }
+  })
+}
+
+/**
+ * Every point behind the two published curves.
+ *
+ * A drawn curve is a picture of a calculation; these tables are the calculation. When the meridian
+ * is the exact direct-β one, each row carries the station identity that produced it, so a reader
+ * can re-derive the point rather than measure it off the diagram.
+ */
+const curveTablesFor = (
+  interaction: CombinationDetail['interaction'],
+  fixedP: FixedPCurve,
+  loadCurve: LoadDirectionCurve | null,
+  surface: PreviewSurface,
+  loadcase: LoadCombination
+): CurveTable[] => {
+  const tables: CurveTable[] = []
+
+  const verticalColumns = [
+    { title: '#', width: 5, align: 'right' as const },
+    { title: 'Criterion', width: 26 },
+    { title: `P design (${unit('force')})`, width: 15, align: 'right' as const },
+    { title: `Mθ design (${unit('moment')})`, width: 17, align: 'right' as const },
+    { title: `P nominal (${unit('force')})`, width: 15, align: 'right' as const },
+    { title: `Mθ nominal (${unit('moment')})`, width: 17, align: 'right' as const }
+  ]
+  const verticalRow = (
+    index: number,
+    criterion: string,
+    entry: { design: { m: number; p: number } | null; nominal: { m: number; p: number } | null }
+  ): readonly string[] => [
+    String(index + 1),
+    criterion,
+    entry.design ? fmt(entry.design.p, 1) : '—',
+    entry.design ? fmt(entry.design.m, 2) : '—',
+    entry.nominal ? fmt(entry.nominal.p, 1) : '—',
+    entry.nominal ? fmt(entry.nominal.m, 2) : '—'
+  ]
+
+  if (loadCurve) {
+    const labels = new Map(surface.stations.map((station) => [station.id, stationDefinitionLabel(station.definition)]))
+    const label = (id: string) => labels.get(id as LoadDirectionPoint['stationId'] & string) ?? id
+    // A between-stations row is keyed by its two stations, so Design and Nominal rows join only on the
+    // same surface edge, never by occurrence.
+    const keyOf = (point: LoadDirectionPoint) =>
+      point.between ? `between:${point.between.from}>${point.between.to}` : point.stationId ?? point.role
+    const criterion = (point: LoadDirectionPoint) => point.between
+      ? `between ${label(point.between.from)} and ${label(point.between.to)}`
+      : point.stationId ? label(point.stationId)
+        : point.role === 'interpolated' ? 'geometric cut (no state)' : point.role
+    const staged = (paths: readonly (readonly LoadDirectionPoint[])[]) => branchKeyed(paths.flat(), keyOf).map((entry) => ({
+      key: entry.key,
+      value: { m: fromCanonical('moment', entry.value.Mtheta, displayUnits), p: fromCanonical('force', entry.value.P, displayUnits),
+        beta: entry.value.beta, label: criterion(entry.value) }
+    }))
+    const joined = joinStages(staged(loadCurve.designPaths), staged(loadCurve.nominalPaths))
+    const betaText = (value: { beta: number | null } | null) => value?.beta == null ? '—' : fmt(deg(value.beta), 3)
+    tables.push({
+      title: `Vertical curve points — load direction θ = ${fmt(deg(loadCurve.theta), 3)}°`,
+      note: 'The physical cut of the surface by the plane of θ: each row is a compatible ultimate state whose moment points along θ, on a station ring (station row) or between two stations (between row), with its own strain direction β (Design and Nominal cut separately). Poles, cap edges, the zero-moment crossing and the cap axis point are geometric.' +
+        (loadCurve.unresolved.length ? ` Geometric cut points with no physical state: ${loadCurve.unresolved.map((item) => `${item.stage} ${item.label} (${item.reason})`).join('; ')}.` : '') +
+        (loadCurve.discontinuities.length ? ` Model discontinuities across θ, nearer exact state kept: ${loadCurve.discontinuities.map((item) => `${item.stage} ${item.label} (direction error ${item.directionResidual.toExponential(1)})`).join('; ')}.` : ''),
+      columns: [
+        { title: '#', width: 5, align: 'right' as const },
+        { title: 'Criterion', width: 22 },
+        { title: 'β design (°)', width: 11, align: 'right' as const },
+        { title: `P design (${unit('force')})`, width: 13, align: 'right' as const },
+        { title: `Mθ design (${unit('moment')})`, width: 14, align: 'right' as const },
+        { title: 'β nominal (°)', width: 11, align: 'right' as const },
+        { title: `P nominal (${unit('force')})`, width: 13, align: 'right' as const },
+        { title: `Mθ nominal (${unit('moment')})`, width: 14, align: 'right' as const }
+      ],
+      rows: joined.map((entry, index) => [
+        String(index + 1),
+        (entry.design ?? entry.nominal)?.label ?? '—',
+        betaText(entry.design),
+        entry.design ? fmt(entry.design.p, 1) : '—',
+        entry.design ? fmt(entry.design.m, 2) : '—',
+        betaText(entry.nominal),
+        entry.nominal ? fmt(entry.nominal.p, 1) : '—',
+        entry.nominal ? fmt(entry.nominal.m, 2) : '—'
+      ])
+    })
+  }
+
+  const emptyStages = [
+    ...(fixedP.design.length === 0 ? ['Design'] : []),
+    ...(fixedP.nominal.length === 0 ? ['Nominal'] : [])
+  ]
+  const contourAngle = (point: { mx: number; my: number }) => deg(Math.atan2(point.my, point.mx))
+  const contourJoined = joinStages(
+    branchKeyed(fixedP.design, (point) => contourAngle(point).toFixed(6)),
+    branchKeyed(fixedP.nominal, (point) => contourAngle(point).toFixed(6))
+  )
+  tables.push({
+    title: `Fixed-P curve points — Mx-My contour at Pu = ${fmt(fromCanonical('force', loadcase.P, displayUnits), 1)} ${unit('force')}`,
+    note: `Cut of the ${surface.analysisOptions.samplingMode} triangulated surface at this combination's own axial force, Design and Nominal paired on the moment direction. The last row repeats the first because the contour is drawn closed.` +
+      (emptyStages.length > 0
+        ? ` The ${emptyStages.join(' and ')} surface does not reach this axial force, so it contributes no rows and is absent from the diagram.`
+        : ''),
+    columns: [
+      { title: '#', width: 5, align: 'right' as const },
+      { title: 'θM (°)', width: 11, align: 'right' as const },
+      { title: 'Mx design', width: 14, align: 'right' as const },
+      { title: 'My design', width: 14, align: 'right' as const },
+      { title: '|M| design', width: 14, align: 'right' as const },
+      { title: 'Mx nominal', width: 14, align: 'right' as const },
+      { title: 'My nominal', width: 14, align: 'right' as const },
+      { title: '|M| nominal', width: 14, align: 'right' as const }
+    ],
+    rows: contourJoined.map((entry, index) => {
+      const point = entry.design ?? entry.nominal!
+      return [
+        String(index + 1),
+        fmt(contourAngle(point), 3),
+        entry.design ? fmt(entry.design.mx, 2) : '—',
+        entry.design ? fmt(entry.design.my, 2) : '—',
+        entry.design ? fmt(Math.hypot(entry.design.mx, entry.design.my), 2) : '—',
+        entry.nominal ? fmt(entry.nominal.mx, 2) : '—',
+        entry.nominal ? fmt(entry.nominal.my, 2) : '—',
+        entry.nominal ? fmt(Math.hypot(entry.nominal.mx, entry.nominal.my), 2) : '—'
+      ] as readonly string[]
+    })
+  })
+
+  return tables
+}
+
+/** Parameter block printed beside the two curves on a combination's check page. */
+/**
+ * engineering/05 §3: the published state of a combination is the strength point of its check (the
+ * Demand Check field), never the equilibrium at the entered demand.
+ */
+type StrengthPoint =
+  | (Extract<ReturnType<typeof resolveLoadcaseField>, { status: 'available' }> & { available: true })
+  | { available: false; message: string }
+
+const strengthPointOf = (result: InversePreviewResult): StrengthPoint => {
+  const field = resolveLoadcaseField(result)
+  return field.status === 'available' ? { ...field, available: true } : { available: false, message: field.message }
+}
+
+const basicsFor = (
+  row: CombinationRow,
+  point: StrengthPoint,
+  fixedP: FixedPCurve,
+  neutralAxisDepth: number | null
+): LabelledValue[] => {
+  const state = point.available ? point.state : { e0: 0, kx: 0, ky: 0 }
+  const curvature = Math.hypot(state.kx, state.ky)
+  return [
+    ['Pu', `${fmt(row.p, 1)} ${unit('force')}`],
+    ['Mux', `${fmt(row.mx, 1)} ${unit('moment')}`],
+    ['Muy', `${fmt(row.my, 1)} ${unit('moment')}`],
+    ['Moment direction θL', `${fmt(row.thetaDeg, 2)}°`],
+    ['Resultant moment', `${fmt(Math.hypot(row.mx, row.my), 1)} ${unit('moment')}`],
+    ['Strain-plane ε0', sci(state.e0, 4)],
+    ['Curvature κx', `${sci(fromCanonical('curvature', state.kx, displayUnits), 4)} ${unit('curvature')}`],
+    ['Curvature κy', `${sci(fromCanonical('curvature', state.ky, displayUnits), 4)} ${unit('curvature')}`],
+    ['Strength-point β', !point.available ? 'unavailable' : curvature > 1e-14 ? `${fmt(deg(Math.atan2(state.ky, state.kx)), 3)}°` : 'uniform strain'],
+    ['Strength-point multiplier λ', point.available ? fmt(point.loadFactor, 4) : '—'],
+    ['Neutral-axis depth c', neutralAxisDepth === null ? '—' : `${qfmt('length', neutralAxisDepth, 1)} ${unit('length')}`],
+    [row.checkBasis === 'constantAxial' ? 'Capacity at Pu' : 'Secondary capacity at Pu', fixedP.capacity === null
+      ? '—'
+      : `Mx ${fmt(fixedP.capacity.mx, 1)} · My ${fmt(fixedP.capacity.my, 1)} ${unit('moment')}`],
+    ['φ', row.phi === null ? '—' : fmt(row.phi, 4)],
+    ['Classification', row.classification],
+    ['Utilization UR', row.utilization === null ? '—' : fmt(row.utilization, 4)],
+    ['UR screening interval', row.utilizationInterval === null ||
+      row.utilizationInterval.lower === null || row.utilizationInterval.upper === null
+      ? 'unavailable'
+      : `${fmt(row.utilizationInterval.lower, 4)} – ${fmt(row.utilizationInterval.upper, 4)}`],
+    ['Uncertainty evidence', row.utilizationInterval?.evidence ?? 'not evaluated'],
+    ['Check basis', checkBasisLabels(row.checkBasis).title],
+    ...(row.checkBasis === 'constantAxial'
+      ? [['Proportional 3D UR', row.proportionalUtilization === null ? '—' : fmt(row.proportionalUtilization, 4)] as LabelledValue]
+      : [['Fixed-P ratio', row.fixedPUtilization === null ? '—' : fmt(row.fixedPUtilization, 4)] as LabelledValue]),
+    ['Verdict', row.verdict === 'adequate'
+      ? 'ADEQUATE'
+      : row.verdict === 'inadequate'
+        ? 'INADEQUATE'
+        : row.verdict === 'indeterminate'
+          ? 'INDETERMINATE'
+          : 'NOT CHECKED']
+  ]
+}
+
+const build = (input: ReportInput): ColumnReportModel => {
+  const profile = calculationProfile(input.calculationProfileId)
+  const basis = withSteelModelModification(input.designBasis, input.materialStore)
+  const { section, rebars, materialStore } = input
+  if (rebars.length === 0) throw new ExcelExportError('The section has no reinforcement to report.')
+  const origin = netConcreteCentroid(section)
+  const reference = input.loadReference
+  const referenceIdentity: LabelledValue[] = reference ? [
+    ['Load reference offsets', `X=${q('length', reference.offsetX)}; Y=${q('length', reference.offsetY)}. Calculation moments and curves below are about the centroid.`],
+    ...input.loadcases.map(load => {
+      const atO = resultantAtLoadReference(load, reference)
+      return [`Input at O · ${load.name}`, `P=${q('force', atO.P)}; Mux=${q('moment', atO.Mx)}; Muy=${q('moment', atO.My)}`] as const
+    })
+  ] : []
+  const summary = summarizeSection(section)
+  const areaOfBar = (bar: GeometryInputRebarView) => rebarArea(bar,
+    profile.mechanics === 'equivalent-rectangular-block' ? 'equivalent-block' : 'stress-strain')
+  const steelArea = rebars.reduce((sum, bar) => sum + areaOfBar(bar), 0)
+  const concrete = materialStore.concrete
+  const steel =
+    materialStore.steel.find((item) => item.id === materialStore.defaults.steelMaterialId) ?? materialStore.steel[0]
+  if (!steel) throw new ExcelExportError('No steel material is defined.')
+
+  const isBlock = isEquivalentBlockProfileId(input.calculationProfileId)
+  const drawing = drawingOf(section, rebars, materialStore, origin)
+  const bounds = drawing.bounds
+
+  // One prepared block section for drawing-only clipping, whichever mechanics is in use.
+  const drawingSection = prepareEquivalentBlockSection({
+    solids: section.solids.map((solid) => ({
+      outer: solid.outer.map(({ x, y }) => ({ x, y })),
+      holes: solid.holes.map((hole) => hole.map(({ x, y }) => ({ x, y })))
+    })),
+    rebars: rebars.map((bar) => ({
+      id: String(bar.id),
+      x: bar.x,
+      y: bar.y,
+      dia: bar.dia,
+      area: areaOfBar(bar),
+      steelLawId: String(bar.steelMaterialId ?? materialStore.defaults.steelMaterialId)
+    })),
+    referencePoint: origin,
+    units: 'N-mm-MPa',
+    signConvention: 'compression-positive'
+  })
+
+  const results = new Map<number, InversePreviewResult>()
+  const detail: CombinationDetail[] = []
+  const wanted = new Set(input.detailLoadcaseIds)
+
+  // One solve, shared with the demand-check workbook, so the two documents cannot disagree.
+  const solved = solveLoadcases({
+    calculationProfileId: input.calculationProfileId,
+    section,
+    rebars,
+    materialStore,
+    designBasis: basis,
+    analysisOptions: input.analysisOptions,
+    surface: input.surface,
+    loadcases: input.loadcases,
+    checkBasis: input.checkBasis
+  })
+  // Published P–M diagrams at the principal and demand directions, from the same physical curves.
+  const curves = curveAngles(input.loadcases).map((thetaDeg) => planeInteraction(thetaDeg, solved.loadDirectionCurve))
+  // θ = 0 is always published by `curveAngles`, so the overview diagram never has to be synthesised.
+  const capacityCurve = curves.find((curve) => Math.abs(curve.thetaDeg) < 1e-9) ?? curves[0]
+
+  for (const solution of solved.solutions) {
+    const { loadcase, result } = solution
+    results.set(loadcase.id, result)
+    const detailed = wanted.has(loadcase.id)
+    // engineering/05 §3: every combination is drawn against the load-direction curve of its own θ.
+    const loadCurve = solution.theta === null ? null : solved.loadDirectionCurve(solution.theta)
+    detail.push(
+      solved.blockPrepared
+        ? blockDetail(
+            solved.blockPrepared,
+            drawingSection,
+            origin,
+            loadcase,
+            result,
+            input.surface,
+            loadCurve,
+            detailed
+          )
+        : fibreDetail(
+            solved.prepared!,
+            drawingSection,
+            origin,
+            materialStore,
+            loadcase,
+            result,
+            input.surface,
+            loadCurve,
+            detailed
+          )
+    )
+  }
+
+  const combinations = input.loadcases.map((loadcase) =>
+    combinationRow(loadcase, results.get(loadcase.id) ?? null)
+  )
+  const axialCapPoint = activeDesignSurfaceDataset(input.surface).points
+    .filter((point) => point.surfaceRole === 'axial-cap')
+    .reduce<number | null>((current, point) => (current === null ? point.P : Math.max(current, point.P)), null)
+
+  const epsY = steel.limits?.epsY ?? steel.fy / steel.elasticModulus
+  const tensionLimit =
+    basis.format === 'globalResultantFactor'
+      ? resolveTensionControlledStrainLimit(basis, epsY, steel.fy)
+      : null
+
+  return {
+    presentationUnits: displayUnits,
+    checkBasis: input.checkBasis ?? DEFAULT_DEMAND_CHECK_BASIS,
+    project: {
+      name: input.projectName,
+      sectionName: input.sectionName,
+      information: { ...input.projectInformation }
+    },
+    projectInformation: [
+      ['Project Name', input.projectName || '-'],
+      ['Client', input.projectInformation.client || '-'],
+      ['Company', input.projectInformation.company || '-'],
+      ['Designed by', input.projectInformation.designedBy || '-'],
+      ['Checked by', input.projectInformation.checkedBy || '-'],
+      ['Address', input.projectInformation.address || '-'],
+      ['Date', input.projectInformation.date || '-']
+    ],
+    status:
+      basis.verificationStatus === 'user-defined'
+        ? 'PREVIEW — user-defined profile, not a code check'
+        : 'PREVIEW — not an accepted design result',
+    watermark: 'PREVIEW',
+    generated: input.generatedAt
+      ? input.generatedAt.toISOString().slice(0, 19).replace('T', ' ')
+      : 'not stamped (deterministic output)',
+    identity: [
+      ['Section', input.sectionName],
+      ['Calculation profile', profile.label],
+      ['Mechanics', profile.mechanics === 'equivalent-rectangular-block' ? 'Equivalent rectangular stress block' : 'Stress-strain integration'],
+      ['Resistance profile', basis.identity.document],
+      ['Profile edition', basis.identity.edition],
+      ['Verification status', basis.verificationStatus],
+      ['Concrete model basis', basis.materialModelModified ? 'User-defined / modified' : 'Code-default'],
+      ['Steel model basis', basis.steelModelModified ? 'Project-modified' : 'Profile-supported'],
+      ['Method id', basis.identity.methodId],
+      ['Units', `Calculation: mm · N · MPa · N·mm. Display: length ${unit('length')}; bar diameter ${unit('barDiameter')}; force ${unit('force')}; moment ${unit('moment')}; stress ${unit('stress')}; modulus ${unit('modulus')}; mass density ${unit('density')}.`],
+      ['Sign convention', 'Compression positive; Mx = ΣF·(y−yc); My = ΣF·(x−xc)'],
+      ...referenceIdentity
+    ],
+    scopeStatements: [
+      'This document reports a preview calculation. It is not an accepted design result and must not be released as a design report.',
+      `Resistance is reported in two stages: Nominal is the reference before the resistance treatment, Design is the usable resistance. Only the Design surface is compared with factored ULS demand.`,
+      profile.mechanics === 'equivalent-rectangular-block'
+        ? profile.code === 'AS'
+          ? "Concrete compression uses the AS 3600 equivalent block σc = α₂·f'c over a = γ·c, obtained by exact polygon clipping. There is no concrete integration mesh, and stress is zero outside the compression block."
+          : 'Concrete compression is the code-equivalent rectangular block over a = β1·c, obtained by exact polygon clipping. There is no concrete integration mesh, and the stress between a and c is zero.'
+        : 'Concrete compression is integrated from the material stress-strain law over a verified triangle/quadrature mesh of the section.',
+      ...(profile.code === 'EN'
+        ? [input.surface.strainDomain === 'steel-limited-ultimate'
+          ? 'EN 1992 preview uses recommended material factors without a National Annex. Finite steel design limits govern the compatible tensile boundary.'
+          : 'EN 1992 preview uses recommended material factors without a National Annex. The legacy tension-controlled surface boundary is not a complete EC2 strain-domain implementation.']
+        : []),
+      ...(profile.code === 'AS'
+        ? [
+            'AS 3600 preview assumes a general prismatic stress block. Circular/narrowing-width modifiers, minimum eccentricity, slenderness, second-order effects and independent clause verification are outside this section report.'
+          ]
+        : []),
+      ...(basis.verificationStatus === 'user-defined'
+        ? ['The resistance rules and material parameters in this report were declared by the project. They carry no clause traceability, and this software makes no claim that they satisfy any design standard.']
+        : []),
+      ...(designBasisRequiresOverrideReason(basis) && basis.overrideReason.trim().length > 0
+        ? [`Modified resistance profile. Stated basis: ${basis.overrideReason}`]
+        : []),
+      input.surface.analysisOptions.samplingMode === 'fixed'
+        ? `Overview interaction diagrams cut the active fixed surface (${input.surface.stations.length} stations, ${input.surface.directions.length} directions). An arbitrary exact direction is calculated only when it is requested.`
+        : 'Overview interaction diagrams cut the active independently adaptive surface and its explicit triangle topology. An arbitrary exact direction is calculated only when it is requested.'
+    ],
+    warnings: input.surface.warnings ?? [],
+    drawing,
+    sectionProperties: [
+      ['Gross concrete area Ag', `${qfmt('area', summary.area, 0)} ${unit('area')}`],
+      ['Reinforcement area As', `${qfmt('area', steelArea, 0)} ${unit('area')}`],
+      ['Reinforcement ratio ρ', `${fmt((steelArea / Math.max(1, summary.area)) * 100, 3)} %`],
+      ['Bar count', String(rebars.length)],
+      ['Net centroid', `(${qfmt('length', origin.x, 1)}, ${qfmt('length', origin.y, 1)}) ${unit('length')}`],
+      ['Bounding box', `${qfmt('length', bounds.maxX - bounds.minX, 1)} × ${qfmt('length', bounds.maxY - bounds.minY, 1)} ${unit('length')}`],
+      ['Solids / holes', `${section.solids.length} / ${section.solids.reduce((sum, solid) => sum + solid.holes.length, 0)}`],
+      ['Perimeter', `${qfmt('length', summary.perimeter, 1)} ${unit('length')}`]
+    ],
+    concreteMaterial: [
+      ['Name', concrete.name],
+      ['Standard', concrete.standard],
+      ['fck', `${qfmt('stress', concrete.fck, 1)} ${unit('stress')}`],
+      ['Model', concrete.stressStrain.type],
+      ['εcu', fmt(concrete.limits.epsCu, 5)],
+      ...(concrete.limits.eps0 !== undefined ? [['εc0', fmt(concrete.limits.eps0, 5)] as LabelledValue] : []),
+      ...('alpha' in concrete.stressStrain ? [['α', fmt(concrete.stressStrain.alpha, 4)] as LabelledValue] : []),
+      ...(concrete.stressStrain.type === 'user-block'
+        ? ([
+            ['β1', fmt(concrete.stressStrain.beta1, 4)],
+            ['σblock', `${qfmt('stress', userBlockCompressionStress(concrete), 3)} ${unit('stress')}`]
+          ] as LabelledValue[])
+        : []),
+      ...(concrete.stressStrain.type === 'as3600-equivalent-block'
+        ? ([
+            ['alpha2', fmt(concrete.stressStrain.alpha2, 4)],
+            ['gamma', fmt(concrete.stressStrain.gamma, 4)],
+            ["sigma_block", `${qfmt('stress', concrete.stressStrain.alpha2 * concrete.fck, 3)} ${unit('stress')}`]
+          ] as LabelledValue[])
+        : []),
+      ['Tension', concrete.stressStrain.type !== 'user-curve' ||
+        (concrete.stressStrain.zeroTension ?? concrete.limits.ignoreTension) ? 'ignored' : 'included']
+    ],
+    steelMaterial: [
+      ['Name', steel.name],
+      ['Standard', steel.standard],
+      ['fy', `${qfmt('stress', steel.fy, 1)} ${unit('stress')}`],
+      ['Es', `${qfmt('modulus', steel.elasticModulus, 0)} ${unit('modulus')}`],
+      ['Model', steel.stressStrain.type],
+      ['εy', fmt(epsY, 6)],
+      ['εu', steel.limits?.epsU === undefined ? 'not declared' : fmt(steel.limits.epsU, 5)],
+      ['Grades used', String(new Set(rebars.map((bar) => bar.steelMaterialId ?? materialStore.defaults.steelMaterialId)).size)],
+      ...materialStore.steel.flatMap((item): LabelledValue[] => {
+        if (item.stressStrain.type !== 'linear-hardening') return []
+        const sets = buildResistanceMaterialSets(materialStore, basis)
+        const stages = basis.format === 'designMaterialReevaluation'
+          ? [{ label: 'Reference', store: sets.referenceMaterials }, { label: 'Design', store: sets.designMaterials }]
+          : [{ label: 'Reference', store: sets.referenceMaterials }]
+        return [
+          [`Steel ${item.id} post-yield`, 'Immediate linear hardening'],
+          ...stages.flatMap(({ label, store }): LabelledValue[] => {
+            const definition = store.steel.find((candidate) => candidate.id === item.id)
+            if (!definition) throw new ExcelExportError(`Steel material ${item.id} is missing.`)
+            const p = resolveLinearHardeningSteel(definition)
+            return [
+              [`Steel ${item.id} ${label} fu`, `${qfmt('stress', p.ultimateStress, 3)} ${unit('stress')}`],
+              [`Steel ${item.id} ${label} εuk`, fmt(p.epsUk, 6)],
+              [`Steel ${item.id} ${label} εlimit`, fmt(p.epsUd, 6)],
+              [`Steel ${item.id} ${label} Eh`, `${qfmt('modulus', p.hardeningModulus, 3)} ${unit('modulus')}`]
+            ]
+          })
+        ]
+      })
+    ],
+    resistanceBasis:
+      basis.format === 'globalResultantFactor'
+        ? profile.code === 'AS'
+          ? [
+              ['Format', 'AS 3600 action/state-dependent capacity factor'],
+              ['Compression-factor class', basis.transverseReinforcement === 'qualifying-spiral'
+                ? 'short column with Q/G >= 0.25'
+                : 'ordinary column'],
+              ['phi_o ordinary', fmt(basis.factors.phiCompressionOther, 3)],
+              ['phi_o short column Q/G >= 0.25', fmt(basis.factors.phiCompressionSpiral, 3)],
+              ['phi bending range', `${fmt(basis.factors.phiCompressionSpiral, 3)} to ${fmt(basis.factors.phiTension, 3)}`],
+              ['phi tension', fmt(basis.factors.phiTension, 3)],
+              ['Axial cap', 'not applied; phi_o governs the compression pole']
+            ]
+          : [
+            ['Format', 'Global resultant strength-reduction factor'],
+            ['Transverse reinforcement', basis.transverseReinforcement],
+            ['φ compression (ties)', fmt(basis.factors.phiCompressionOther, 3)],
+            ['φ compression (spiral)', fmt(basis.factors.phiCompressionSpiral, 3)],
+            ['φ tension', fmt(basis.factors.phiTension, 3)],
+            ['εt,limit', tensionLimit === null ? '—' : fmt(tensionLimit, 5)],
+            ['Transition rule', basis.transition.type],
+            ['Axial cap', basis.axialCapEnabled
+              ? `${fmt(basis.transverseReinforcement === 'qualifying-spiral' ? basis.factors.axialCapSpiral : basis.factors.axialCapOther, 3)} × factored compression pole`
+              : 'not applied']
+            ]
+        : [
+            ['Format', 'Design material reevaluation'],
+            ...basis.factors.concrete.components.map((component) => [
+              `${component.symbol} · concrete`,
+              `${fmt(component.value, 3)} (${component.operation})`
+            ] as LabelledValue),
+            ...basis.factors.reinforcement.components.map((component) => [
+              `${component.symbol} · reinforcement`,
+              `${fmt(component.value, 3)} (${component.operation})`
+            ] as LabelledValue),
+            ['Compression endpoint', basis.compressionEndpoint],
+            ['Minimum eccentricity', basis.minimumEccentricity
+              ? `${qfmt('length', basis.minimumEccentricity.constantMm)} + ${basis.minimumEccentricity.depthFactor}h ${unit('length')}`
+              : 'not prescribed by this profile']
+          ],
+    sampling: [
+      ['Sampling mode', input.surface.analysisOptions.samplingMode],
+      ['Active Design points', String(activeDesignSurfaceDataset(input.surface).points.length)],
+      ['Active Design directions', String(activeDesignSurfaceDataset(input.surface).directions.length)],
+      ['Active Design stations', String(activeDesignSurfaceDataset(input.surface).stations.length)],
+      ['Active Nominal points', String(activeNominalSurfaceDataset(input.surface).points.length)],
+      ['Active Nominal directions', String(activeNominalSurfaceDataset(input.surface).directions.length)],
+      ['Active Nominal stations', String(activeNominalSurfaceDataset(input.surface).stations.length)],
+      ['Direction tolerance', fmt(input.surface.directionError.tolerance * 100, 3) + ' %'],
+      ['Worst interpolation error', fmt(Math.max(input.surface.directionError.maxRelativeP, input.surface.directionError.maxRelativeMoment) * 100, 4) + ' %'],
+      ['Tolerance reached', input.surface.directionError.withinTolerance ? 'yes' : 'NO'],
+      ['Concrete discretization', isBlock ? 'exact polygon clipping' : `${input.surface.mesh.cells} cells / ${input.surface.mesh.points} points`],
+      ['Strain domain', input.surface.strainDomain]
+    ],
+    barSchedule: rebars.map((bar, index) => [
+      String(index + 1),
+      String(bar.id),
+      qfmt('barDiameter', bar.dia, 1),
+      qfmt('length', bar.x - origin.x, 1),
+      qfmt('length', bar.y - origin.y, 1),
+      qfmt('area', areaOfBar(bar), 1),
+      materialStore.steel.find((item) => item.id === (bar.steelMaterialId ?? materialStore.defaults.steelMaterialId))?.name ?? '—',
+      rebarAreaSourceLabel(bar)
+    ]),
+    curves,
+    capacityCurve,
+    capacityMarkers: capacityMarkersFor(input.surface, solved.loadDirectionCurve((capacityCurve.thetaDeg * Math.PI) / 180)),
+    axialCap: axialCapPoint === null ? null : fromCanonical('force', axialCapPoint, displayUnits),
+    combinations,
+    details: detail
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Per-combination detail, one builder per mechanics
+// ---------------------------------------------------------------------------
+
+const declaredDiameter = (bar: { dia?: number }): number => {
+  if (bar.dia === undefined || !Number.isFinite(bar.dia) || bar.dia <= 0) throw new ExcelExportError('The report requires the declared rebar diameter.')
+  return bar.dia
+}
+
+const blockDetail = (
+  prepared: ReturnType<typeof prepareBlockAnalysis>,
+  drawingSection: PreparedEquivalentBlockSection,
+  origin: XY,
+  loadcase: LoadCombination,
+  result: InversePreviewResult,
+  surface: PreviewSurface,
+  loadCurve: LoadDirectionCurve | null,
+  detailed: boolean
+): CombinationDetail => {
+  const row = combinationRow(loadcase, result)
+  const point = strengthPointOf(result)
+  const trace = point.available ? point.equivalentBlock ?? null : null
+  const interaction = interactionFor(loadcase, loadCurve, result)
+  const fixedP = fixedPCurveFor(surface, loadcase)
+  const base = {
+    row,
+    detailed,
+    converged: point.available,
+    admissible: point.available,
+    message: point.available ? result.message : `${result.message} ${point.message}`,
+    state: point.available ? { e0: point.state.e0, kx: point.state.kx, ky: point.state.ky } : null,
+    interaction,
+    fixedP,
+    curveTables: detailed ? curveTablesFor(interaction, fixedP, loadCurve, surface, loadcase) : []
+  }
+  if (!trace) {
+    return {
+      ...base,
+      basics: basicsFor(row, point, fixedP, null),
+      neutralAxisAngleDeg: 0,
+      neutralAxisLine: null,
+      compressionZone: null,
+      depthProfile: null,
+      bars: [],
+      concrete: [],
+      resultants: [],
+      evidence: [['Strength point', point.available ? result.message : point.message]]
+    }
+  }
+  const state = { neutralAxisAngle: trace.neutralAxisAngle, neutralAxisDepth: trace.neutralAxisDepth }
+  const nominal = prepared.model.bindNominalEvaluator(prepared.section)(state).source as NominalBlockEvaluation
+  const normalX = Math.cos(trace.neutralAxisAngle)
+  const normalY = Math.sin(trace.neutralAxisAngle)
+  const extents = projectedOuterExtents(drawingSection, normalX, normalY)
+  const originProjection = normalX * origin.x + normalY * origin.y
+  const neutralOffsetWorld = extents.maximum - trace.neutralAxisDepth
+  const neutralOffsetLocal = neutralOffsetWorld - originProjection
+  const blockOffset = extents.maximum - trace.blockDepth
+
+  return {
+    ...base,
+    basics: basicsFor(row, point, fixedP, trace.neutralAxisDepth),
+    // The drawn line is the ε = 0 line, which is at depth c, not at the block boundary.
+    neutralAxisAngleDeg: deg(trace.neutralAxisAngle) + 90,
+    neutralAxisLine: neutralAxisLine(
+      { minX: drawingSection.bounds.minX, maxX: drawingSection.bounds.maxX, minY: drawingSection.bounds.minY, maxY: drawingSection.bounds.maxY },
+      origin,
+      normalX,
+      normalY,
+      neutralOffsetLocal
+    ),
+    compressionZone: {
+      kind: 'block',
+      polygons: clipCompressionZone(drawingSection, normalX, normalY, blockOffset, origin),
+      label: `Equivalent block, a = β1·c = ${qfmt('length', trace.blockDepth, 1)} ${unit('length')}`
+    },
+    depthProfile: {
+      projectedDepth: trace.projectedSectionDepth,
+      neutralAxisDepth: trace.neutralAxisDepth,
+      blockDepth: trace.blockDepth,
+      extremeCompressionStrain: prepared.model.blockLaw.extremeCompressionStrain,
+      extremeTensionStrain:
+        prepared.model.blockLaw.extremeCompressionStrain *
+        (1 - trace.projectedSectionDepth / trace.neutralAxisDepth),
+      blockStressMpa: trace.compressionStress,
+      stressSamples: []
+    },
+    bars: nominal.bars.map((bar) => ({
+      id: bar.id,
+      x: bar.x - origin.x,
+      y: bar.y - origin.y,
+      dia: declaredDiameter(bar),
+      area: bar.area,
+      depth: bar.projectedDepth,
+      strain: bar.strain,
+      stressMpa: bar.steelStress,
+      force: fromCanonical('force', bar.force, displayUnits),
+      insideBlock: bar.insideBlock
+    })),
+    concrete: [
+      ['Block area Ac,blk', `${qfmt('area', nominal.concrete.area, 1)} ${unit('area')}`],
+      ['Block centroid', `(${qfmt('length', nominal.concrete.centroid.x - origin.x, 1)}, ${qfmt('length', nominal.concrete.centroid.y - origin.y, 1)}) ${unit('length')}`],
+      ['Block stress σblock', `${qfmt('stress', nominal.concrete.stress, 3)} ${unit('stress')}`],
+      ['Concrete force Cc', `${fmt(fromCanonical('force', nominal.concrete.force, displayUnits), 1)} ${unit('force')}`],
+      ['Concrete Mcx', `${fmt(fromCanonical('moment', nominal.concrete.Mx, displayUnits), 1)} ${unit('moment')}`],
+      ['Concrete Mcy', `${fmt(fromCanonical('moment', nominal.concrete.My, displayUnits), 1)} ${unit('moment')}`]
+    ],
+    resultants: [
+      ['Nominal Pn', `${fmt(fromCanonical('force', nominal.resultants.P, displayUnits), 1)} ${unit('force')}`],
+      ['Nominal Mnx', `${fmt(fromCanonical('moment', nominal.resultants.Mx, displayUnits), 1)} ${unit('moment')}`],
+      ['Nominal Mny', `${fmt(fromCanonical('moment', nominal.resultants.My, displayUnits), 1)} ${unit('moment')}`],
+      ['φ', row.phi === null ? '—' : fmt(row.phi, 4)],
+      ['Design φPn', row.phi === null ? '—' : `${fmt(fromCanonical('force', (nominal.resultants.P * row.phi), displayUnits), 1)} ${unit('force')}`],
+      ['Design φMnx', row.phi === null ? '—' : `${fmt(fromCanonical('moment', (nominal.resultants.Mx * row.phi), displayUnits), 1)} ${unit('moment')}`],
+      ['Design φMny', row.phi === null ? '—' : `${fmt(fromCanonical('moment', (nominal.resultants.My * row.phi), displayUnits), 1)} ${unit('moment')}`]
+    ],
+    evidence: [
+      ['Neutral-axis angle θ', `${fmt(deg(trace.neutralAxisAngle), 4)}°`],
+      ['Neutral-axis depth c', `${qfmt('length', trace.neutralAxisDepth, 3)} ${unit('length')}`],
+      ['Block depth a', `${qfmt('length', trace.blockDepth, 3)} ${unit('length')}`],
+      ['β1', fmt(trace.beta1, 4)],
+      ['Projected depth Dθ', `${qfmt('length', trace.projectedSectionDepth, 2)} ${unit('length')}`],
+      ['Controlling εt', trace.controllingTensileStrain === undefined ? '—' : fmt(trace.controllingTensileStrain, 6)],
+      ['Controlling bar', trace.controllingBarId ?? '—'],
+      ['Classification', row.classification],
+      ['Axial cap governs', result.resistance?.axialCapApplied ? 'yes' : 'no'],
+      ['Component residual', trace.componentForceResidual === undefined ? '—' : sci(trace.componentForceResidual, 2)],
+      ['Strain admissibility', point.available && point.admissibility.ok ? 'admissible' : 'INADMISSIBLE'],
+      ['Governing utilization', row.utilization === null ? '—' : fmt(row.utilization, 4)]
+    ]
+  }
+}
+
+const fibreDetail = (
+  prepared: ReturnType<typeof prepareAnalysis>,
+  drawingSection: PreparedEquivalentBlockSection,
+  origin: XY,
+  materialStore: MaterialStore,
+  loadcase: LoadCombination,
+  result: InversePreviewResult,
+  surface: PreviewSurface,
+  loadCurve: LoadDirectionCurve | null,
+  detailed: boolean
+): CombinationDetail => {
+  const row = combinationRow(loadcase, result)
+  const point = strengthPointOf(result)
+  const interaction = interactionFor(loadcase, loadCurve, result)
+  const fixedP = fixedPCurveFor(surface, loadcase)
+  const base = {
+    row,
+    detailed,
+    converged: point.available,
+    admissible: point.available,
+    message: point.available ? result.message : `${result.message} ${point.message}`,
+    state: point.available ? { e0: point.state.e0, kx: point.state.kx, ky: point.state.ky } : null,
+    interaction,
+    fixedP,
+    curveTables: detailed ? curveTablesFor(interaction, fixedP, loadCurve, surface, loadcase) : []
+  }
+  const state: StrainState = point.available ? point.state : { e0: 0, kx: 0, ky: 0 }
+  const curvature = Math.hypot(state.kx, state.ky)
+  if (!point.available || curvature < 1e-14) {
+    return {
+      ...base,
+      basics: basicsFor(row, point, fixedP, null),
+      neutralAxisAngleDeg: 0,
+      neutralAxisLine: null,
+      compressionZone: null,
+      depthProfile: null,
+      bars: [],
+      concrete: [],
+      resultants: point.available ? [
+        ['Strength-point P', `${fmt(fromCanonical('force', point.response.P, displayUnits), 1)} ${unit('force')}`],
+        ['Strength-point Mx', `${fmt(fromCanonical('moment', point.response.Mx, displayUnits), 1)} ${unit('moment')}`],
+        ['Strength-point My', `${fmt(fromCanonical('moment', point.response.My, displayUnits), 1)} ${unit('moment')}`]
+      ] : [],
+      evidence: [['Strength point', point.available ? result.message : point.message]]
+    }
+  }
+
+  // eps(x, y) = e0 + kx·y + ky·x, so the strain gradient direction is (ky, kx) and the
+  // compression half-plane is the side of the eps = 0 line the gradient points to.
+  const normalX = state.ky / curvature
+  const normalY = state.kx / curvature
+  const extents = projectedOuterExtents(drawingSection, normalX, normalY)
+  const originProjection = normalX * origin.x + normalY * origin.y
+  const zeroStrainOffsetLocal = -state.e0 / curvature
+  const zeroStrainOffsetWorld = originProjection + zeroStrainOffsetLocal
+  const compressionDepth = extents.maximum - zeroStrainOffsetWorld
+
+  // The report never re-solves: it re-evaluates the plane the solver converged on, so the ledger it
+  // publishes is that state's own decomposition rather than a second calculation of it.
+  const ledger = evaluatePreparedState(prepared, state)
+  const compiledSteel = new Map(
+    materialStore.steel.map((item) => [String(item.id), compileSteelMaterial(item)])
+  )
+  const strainAt = (x: number, y: number) => state.e0 + state.kx * (y - origin.y) + state.ky * (x - origin.x)
+  const bars = drawingSection.rebars.map((bar) => {
+    const strain = strainAt(bar.x, bar.y)
+    const law = compiledSteel.get(bar.steelLawId) ?? [...compiledSteel.values()][0]
+    const stress = law ? law.stress(strain) : 0
+    return {
+      id: bar.id,
+      x: bar.x - origin.x,
+      y: bar.y - origin.y,
+      dia: declaredDiameter(bar),
+      area: bar.area,
+      depth: extents.maximum - (normalX * bar.x + normalY * bar.y),
+      strain,
+      stressMpa: stress,
+      force: fromCanonical('force', (stress * bar.area), displayUnits),
+      insideBlock: null
+    }
+  })
+
+  return {
+    ...base,
+    basics: basicsFor(row, point, fixedP, compressionDepth),
+    neutralAxisAngleDeg: deg(Math.atan2(normalY, normalX)) + 90,
+    neutralAxisLine: neutralAxisLine(
+      { minX: drawingSection.bounds.minX, maxX: drawingSection.bounds.maxX, minY: drawingSection.bounds.minY, maxY: drawingSection.bounds.maxY },
+      origin,
+      normalX,
+      normalY,
+      zeroStrainOffsetLocal
+    ),
+    compressionZone: {
+      kind: 'fibre',
+      polygons: clipCompressionZone(drawingSection, normalX, normalY, zeroStrainOffsetWorld, origin),
+      label: 'Compression zone, ε > 0 (drawing aid; the kernel integrates the mesh, not this polygon)'
+    },
+    depthProfile: {
+      projectedDepth: extents.depth,
+      neutralAxisDepth: compressionDepth,
+      blockDepth: null,
+      extremeCompressionStrain: strainAtProjection(state, origin, normalX, normalY, extents.maximum),
+      extremeTensionStrain: strainAtProjection(state, origin, normalX, normalY, extents.minimum),
+      blockStressMpa: null,
+      stressSamples: sampleFibreStress(materialStore, state, origin, normalX, normalY, extents)
+    },
+    bars,
+    concrete: [
+      ['Concrete force', `${fmt(fromCanonical('force', ledger.concrete.P, displayUnits), 1)} ${unit('force')}`],
+      ['Concrete Mx', `${fmt(fromCanonical('moment', ledger.concrete.Mx, displayUnits), 1)} ${unit('moment')}`],
+      ['Concrete My', `${fmt(fromCanonical('moment', ledger.concrete.My, displayUnits), 1)} ${unit('moment')}`],
+      ['Steel force (gross)', `${fmt(fromCanonical('force', ledger.steelGross.P, displayUnits), 1)} ${unit('force')}`],
+      ['Displaced concrete', `${fmt(fromCanonical('force', ledger.displacedConcrete.P, displayUnits), 1)} ${unit('force')}`],
+      ['Steel net', `${fmt(fromCanonical('force', ledger.steel.P, displayUnits), 1)} ${unit('force')}`]
+    ],
+    resultants: [
+      ['Strength-point P', `${fmt(fromCanonical('force', point.response.P, displayUnits), 1)} ${unit('force')}`],
+      ['Strength-point Mx', `${fmt(fromCanonical('moment', point.response.Mx, displayUnits), 1)} ${unit('moment')}`],
+      ['Strength-point My', `${fmt(fromCanonical('moment', point.response.My, displayUnits), 1)} ${unit('moment')}`],
+      ['Multiplier λ (state / checked demand)', fmt(point.loadFactor, 4)],
+      ['Residual |ΔP|', `${sci(fromCanonical('force', Math.abs(point.residual.P), displayUnits), 2)} ${unit('force')}`],
+      ['Residual |ΔMx|', `${sci(fromCanonical('moment', Math.abs(point.residual.Mx), displayUnits), 2)} ${unit('moment')}`],
+      ['Residual |ΔMy|', `${sci(fromCanonical('moment', Math.abs(point.residual.My), displayUnits), 2)} ${unit('moment')}`]
+    ],
+    evidence: [
+      ['Strain plane ε0', sci(state.e0, 4)],
+      ['Curvature kx', `${sci(fromCanonical('curvature', state.kx, displayUnits), 4)} ${unit('curvature')}`],
+      ['Curvature ky', `${sci(fromCanonical('curvature', state.ky, displayUnits), 4)} ${unit('curvature')}`],
+      ['Neutral-axis line', `${fmt(deg(Math.atan2(normalY, normalX)) + 90, 4)}°`],
+      ['Compression depth c', `${qfmt('length', compressionDepth, 3)} ${unit('length')}`],
+      ['Iterations', String(point.iterations)],
+      ['Relative residual', sci(point.residualNorm, 3)],
+      ['Max concrete compression', fmt(point.admissibility.maxConcreteCompression, 6)],
+      ['Concrete limit', fmt(point.admissibility.concreteLimit, 6)],
+      ['Max steel tension', fmt(point.admissibility.maxSteelTension, 6)],
+      ['Smallest tensile limit', point.admissibility.steelTensionLimit === null ? 'not declared' : fmt(point.admissibility.steelTensionLimit, 6)],
+      ...(point.admissibility.governingSteelLimit ? [
+        ['Governing steel limit', `${point.admissibility.governingSteelLimit.side}: ${fmt(Math.abs(point.admissibility.governingSteelLimit.strain), 6)} / ${fmt(point.admissibility.governingSteelLimit.limit, 6)}`],
+        ['Governing bar / steel', `${point.admissibility.governingSteelLimit.rebarId} / ${point.admissibility.governingSteelLimit.steelMaterialId}`]
+      ] as LabelledValue[] : []),
+      ['Strain admissibility', point.admissibility.ok ? 'admissible' : 'INADMISSIBLE'],
+      ['Governing utilization', row.utilization === null ? '—' : fmt(row.utilization, 4)]
+    ]
+  }
+}
+
+const strainAtProjection = (
+  state: StrainState,
+  origin: XY,
+  normalX: number,
+  normalY: number,
+  projection: number
+) => {
+  // Every point at the same projection has the same strain, so one representative point suffices.
+  const x = normalX * projection
+  const y = normalY * projection
+  return state.e0 + state.kx * (y - origin.y) + state.ky * (x - origin.x)
+}
+
+/** Concrete stress against depth for the elevation diagram; presentation only. */
+const sampleFibreStress = (
+  materialStore: MaterialStore,
+  state: StrainState,
+  origin: XY,
+  normalX: number,
+  normalY: number,
+  extents: { minimum: number; maximum: number }
+) => {
+  // The same compiler the kernel integrates with, so the drawn curve is that law rather than a
+  // second approximation of it.
+  const law = compileConcreteMaterial(materialStore.concrete)
+  // A strength-point state puts the extreme fibre exactly on the declared compression limit. Its
+  // strain recomputed here by projection can overshoot that limit by round-off, where the law is
+  // already zero; a sample within round-off of the limit is drawn at the limit, so the edge of the
+  // profile does not depend on the coordinate origin.
+  const limit = law.limits.epsCompressionUltimate
+  const atLimit = (strain: number) =>
+    limit !== undefined && strain > limit && strain - limit <= 1e-12 * Math.abs(limit) ? limit : strain
+  const samples: Array<{ depth: number; stressMpa: number }> = []
+  const steps = 40
+  for (let index = 0; index <= steps; index += 1) {
+    const projection = extents.maximum - ((extents.maximum - extents.minimum) * index) / steps
+    const strain = atLimit(strainAtProjection(state, origin, normalX, normalY, projection))
+    samples.push({ depth: extents.maximum - projection, stressMpa: law.stress(strain) })
+  }
+  return samples
+}
+
+return build
+}
+
+export const buildColumnReportModel = (input: ReportInput): ColumnReportModel =>
+  createReportBuilder(parseUnitSelection(input.presentationUnits ?? UNIT_PRESETS.metric))(input)

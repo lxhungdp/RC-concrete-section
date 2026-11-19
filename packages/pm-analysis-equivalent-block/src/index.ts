@@ -1,0 +1,2121 @@
+import { AnalysisInputError } from '@pm/results/errors'
+import {
+  buildCalculationAuditOriginStrainTrace,
+  projectedBoundaryDepth,
+  reconcileCalculationAuditResultant,
+  sectionBoundaryPoints,
+  stationDefinitionLabel,
+  strainResistanceFactorAudit,
+  selectGoverningSteelStrainLimit
+} from '@pm/results/audit'
+import { activeDesignSurfaceDataset, activeNominalSurfaceDataset } from '@pm/results/audit'
+import { edgeBeta, type LoadDirectionMechanics, type LoadDirectionParametrisation } from '@pm/results/load-direction'
+import type {
+  SteelStrainLimitEvidence,
+  CalculationAuditResistanceFactor,
+  AxialCapProjectionTrace,
+  CapacityFieldResult,
+  DesignResistanceTrace,
+  CalculationAuditDepthProfile,
+  CalculationAuditRebar,
+  CalculationAuditStage,
+  EquivalentBlockStateTrace,
+  ExactDirectionCurve,
+  InversePreviewResult,
+  LoadDirectionCurve,
+  PreviewSurface,
+  PreviewSurfaceDataset,
+  PreviewSurfacePoint,
+  PointCalculationAudit,
+  ResultantLedger,
+  SectionFieldMap,
+  StrainAdmissibility,
+  StrainState,
+  StationDefinition,
+  SurfaceStation,
+  SurfaceStationId
+} from '@pm/results/contracts'
+import { ACI_318_19_PROVENANCE, createAci318Model } from '@pm/code-aci318'
+import { AS_3600_2018_PROVENANCE, AS3600_BENDING_FACTOR_EXPRESSION, as3600BendingPhi, createAs3600Model } from '@pm/code-as3600'
+import {
+  CUSTOM_BLOCK_PROVENANCE,
+  createCustomBlockModel,
+  type CustomBlockDefinition,
+  type CustomSteelLawDefinition
+} from '@pm/code-custom'
+import { KDS_142020_PROVENANCE, createKds142020Model } from '@pm/code-kds142020'
+import {
+  buildResistanceMaterialSets,
+  withSteelModelModification,
+  minimumEccentricityCandidates,
+  minimumEccentricityMessage,
+  assertDesignMaterialApplicability,
+  resolveMaterialFactorExpression,
+  type DesignBasis,
+  type GlobalStrengthReductionBasis
+} from '@pm/design'
+import {
+  createCapacityStationStates,
+  createFixedAxialMemo,
+  prepareEquivalentBlockSection,
+  projectedOuterExtents,
+  resolveEquivalentBlockExtremeCompressionStrain,
+  solveFixedAxialCapacity,
+  solveProportionalRayCapacity,
+  steelStrainLimitAt,
+  type BlockSectionState,
+  type CapacityEvaluation,
+  type CapacityStation,
+  type CapacityEvaluator,
+  type CapacitySurface,
+  type EquivalentBlockLaw,
+  type FixedAxialMemo,
+  type NominalBlockEvaluation,
+  type PreparedEquivalentBlockSection
+} from '@pm/equivalent-block'
+import { mergeSamplingDirections, netConcreteAreaCovariance, netConcreteCentroid, normalizedGapGradientAngles, rebarArea, rebarAreaSourceLabel,
+  supportSwitchGradientAngles, type GeometryInputRebarView, type SamplingDirectionSource, type SectionGeometry } from '@pm/geometry'
+import {
+  assertValidMaterialStore,
+  compileSteelMaterial,
+  describeSteelMaterialLaw,
+  effectiveSteelYieldStress,
+  userBlockCompressionStress,
+  type MaterialStore
+} from '@pm/materials'
+import {
+  cloneCalculationAnalysisOptions,
+  isEquivalentBlockProfileId,
+  UNIFIED_DEPTH_RATIOS,
+  type CalculationProfileId,
+  type EquivalentBlockProfileId,
+  type EquivalentBlockAnalysisOptions,
+  type DemandCheckBasis,
+  type LoadCombination
+} from '@pm/project'
+
+type PreparedBlockModel =
+  | ReturnType<typeof createAci318Model>
+  | ReturnType<typeof createAs3600Model>
+  | ReturnType<typeof createKds142020Model>
+  | ReturnType<typeof createCustomBlockModel>
+
+export type PreparedBlockAnalysis = {
+  profileId: EquivalentBlockProfileId
+  section: PreparedEquivalentBlockSection
+  materialStore: MaterialStore
+  designBasis: DesignBasis
+  referenceModel: PreparedBlockModel
+  designModel: PreparedBlockModel
+  /** Design model retained under the historical name for field-map and inverse consumers. */
+  model: PreparedBlockModel
+  /**
+   * True when the Appendix concentric design axial strength and the block's own `eta`-reduced
+   * concentric limit are different points, so the last surface band between them is an
+   * interpolation the block law itself does not evaluate.
+   */
+  appendixPoleDivergesFromBlockLimit: boolean
+  geometry: SectionGeometry
+  rebars: GeometryInputRebarView[]
+}
+
+/** Worker-cacheable core surface. It is independent of any load combination. */
+export type EquivalentBlockDesignSurface = CapacitySurface
+
+const TAU = 2 * Math.PI
+const wrap = (angle: number) => ((angle % TAU) + TAU) % TAU
+
+/**
+ * Read the user's block law off the concrete material.
+ *
+ * A custom block profile has no code table to fall back on, so a concrete model without `β1` is a
+ * typed input error rather than a silently defaulted one.
+ */
+const customBlockDefinition = (concrete: MaterialStore['concrete']): CustomBlockDefinition => {
+  if (concrete.stressStrain.type !== 'user-block') {
+    throw new Error(
+      `The custom equivalent-block profile requires a user-block concrete model; material ${concrete.id} is ${concrete.stressStrain.type}.`
+    )
+  }
+  return {
+    /**
+     * Through the material helper, not `stressStrain.alpha` directly, so the block stress the
+     * kernel integrates is the same number the Materials panel and the workbook display. The two
+     * differ whenever a partial factor is present.
+     */
+    stressFactor: userBlockCompressionStress(concrete) / concrete.fck,
+    depthFactor: concrete.stressStrain.beta1,
+    extremeCompressionStrain: concrete.stressStrain.epsCu,
+    subtractDisplacedConcrete: true
+  }
+}
+
+const customSteelLaw = (steel: MaterialStore['steel'][number]): CustomSteelLawDefinition => {
+  if (steel.stressStrain.type === 'linear-hardening') {
+    const compiled = compileSteelMaterial(steel)
+    return { type: 'compiled', law: {
+      stressAt: compiled.stress,
+      yieldStrain: compiled.limits.epsYield,
+      ultimateStrain: compiled.limits.epsTensionUltimate,
+      strainLimits: { tension: compiled.limits.epsTensionUltimate, compression: compiled.limits.epsCompressionUltimate }
+    } }
+  }
+  if (steel.stressStrain.type === 'bilinear') {
+    return { type: 'bilinear', hardeningRatio: steel.stressStrain.hardeningRatio }
+  }
+  if (steel.stressStrain.type === 'user-curve') {
+    return { type: 'user-curve', points: steel.stressStrain.points }
+  }
+  return { type: 'elastic-perfectly-plastic' }
+}
+
+type BlockModelResolutionInput = {
+  materialStore: MaterialStore
+  basis: GlobalStrengthReductionBasis
+  common: {
+    concreteStrength: number
+    steel: Record<string, {
+      elasticModulus: number
+      yieldStress: number
+      ultimateStrain: number | undefined
+      compileLaw?: (strengthMultiplier: number) => import('@pm/equivalent-block').SteelLaw
+    }>
+  }
+}
+
+type BlockModelResolver = (input: BlockModelResolutionInput) => PreparedBlockModel
+
+/**
+ * Code-specific policy registry at the project bridge. The equivalent-block mechanics package
+ * receives only the resolved model and remains independent of KDS, ACI, or future AS adapters.
+ */
+const BLOCK_MODEL_RESOLVERS: Record<EquivalentBlockProfileId, BlockModelResolver> = {
+  'custom-equivalent-block': ({ materialStore, basis }) => createCustomBlockModel({
+    concreteStrength: materialStore.concrete.fck,
+    block: customBlockDefinition(materialStore.concrete),
+    steel: Object.fromEntries(materialStore.steel.map((item) => [String(item.id), {
+      elasticModulus: item.elasticModulus,
+      yieldStress: item.fy,
+      ultimateStrain: item.limits?.epsU,
+      law: customSteelLaw(item)
+    }])),
+    resistanceFactors: basis.factors,
+    transitionRule: basis.transition,
+    transverseReinforcement: basis.transverseReinforcement
+  }),
+  'aci-318-19-22-equivalent-block': ({ common, basis }) => {
+    if (basis.transition.type !== 'yield-plus-strain') {
+      throw new Error('The ACI 318 profile requires a yield-plus-strain transition rule.')
+    }
+    return createAci318Model({
+      ...common,
+      resistanceFactors: {
+        ...basis.factors,
+        transitionExtraStrain: basis.transition.extraStrain
+      },
+      transverseReinforcement: basis.transverseReinforcement === 'qualifying-spiral'
+        ? 'qualifying-spiral'
+        : 'tied'
+    })
+  },
+  'as-3600-2018-amd2-equivalent-block': ({ common, basis }) => {
+    if (basis.transition.type !== 'yield-plus-strain') {
+      throw new Error('The AS 3600 preview profile requires its declared capacity-factor policy.')
+    }
+    return createAs3600Model({
+      ...common,
+      compressionPhiClass: basis.transverseReinforcement === 'qualifying-spiral'
+        ? 'short-column-high-permanent-load'
+        : 'ordinary',
+      resistanceFactors: {
+        phiCompressionOrdinary: basis.factors.phiCompressionOther,
+        phiCompressionShortColumnHighPermanentLoad: basis.factors.phiCompressionSpiral,
+        phiBendingMinimum: basis.factors.phiCompressionSpiral,
+        phiBendingMaximum: basis.factors.phiTension,
+        phiTension: basis.factors.phiTension
+      }
+    })
+  },
+  'kds-142020-equivalent-block': ({ common, basis }) => {
+    if (basis.transition.type !== 'fixed-or-yield-multiple') {
+      throw new Error('The KDS profile requires a fixed-or-yield-multiple transition rule.')
+    }
+    return createKds142020Model({
+      ...common,
+      resistanceFactors: basis.factors,
+      transitionLimitRule: {
+        yieldStressThreshold: basis.transition.yieldStressThreshold,
+        fixedStrainLimit: basis.transition.fixedStrainLimit,
+        highStrengthYieldMultiple: basis.transition.highStrengthYieldMultiple
+      },
+      transverseReinforcement: basis.transverseReinforcement
+    })
+  }
+}
+
+/**
+ * The reference and design block models of a profile. They depend on materials and the design
+ * basis only, never on geometry; `prepareBlockAnalysis` and `resolveEquivalentBlockLaws` share them.
+ */
+const resolveBlockModels = (
+  profileId: EquivalentBlockProfileId,
+  materialStore: MaterialStore,
+  designBasis: DesignBasis
+) => {
+  const isCustom = profileId === 'custom-equivalent-block'
+  const steel = Object.fromEntries(materialStore.steel.map((item) => {
+    if (profileId === 'kds-142020-equivalent-block' && item.stressStrain.type === 'user-curve') {
+      throw new AnalysisInputError('INVALID_MATERIAL', 'The KDS block route requires a plateau or a declared straight hardening branch for steel.')
+    }
+    /**
+     * KDS also accepts an explicitly recorded project steel modification. ACI and AS keep their
+     * existing plateau-only scope; their adapters cannot silently acquire a new material law.
+     */
+    if (!isCustom && profileId !== 'kds-142020-equivalent-block' && item.stressStrain.type !== 'elastic-perfectly-plastic') {
+      throw new Error(`Equivalent-block code profiles currently require elastic-perfectly-plastic steel; material ${item.id} is ${item.stressStrain.type}.`)
+    }
+    return [String(item.id), {
+      elasticModulus: item.elasticModulus,
+      yieldStress: item.fy,
+      ultimateStrain: item.limits?.epsU,
+      ...(profileId === 'kds-142020-equivalent-block' && item.stressStrain.type !== 'elastic-perfectly-plastic' ? {
+        compileLaw: (strengthMultiplier: number) => {
+          const compiled = compileSteelMaterial({
+            ...item,
+            limits: { ...item.limits, epsY: item.fy * strengthMultiplier / item.elasticModulus },
+            factors: { gammaS: undefined, resistanceScale: strengthMultiplier }
+          })
+          return {
+            stressAt: compiled.stress,
+            yieldStrain: compiled.limits.epsYield,
+            ultimateStrain: compiled.limits.epsTensionUltimate,
+            strainLimits: { tension: compiled.limits.epsTensionUltimate, compression: compiled.limits.epsCompressionUltimate }
+          }
+        }
+      } : {})
+    }]
+  }))
+  const common = {
+    concreteStrength: materialStore.concrete.fck,
+    steel
+  }
+  let referenceModel: PreparedBlockModel
+  let designModel: PreparedBlockModel
+  let appendixPoleDivergesFromBlockLimit = false
+  if (designBasis.format === 'designMaterialReevaluation') {
+    if (profileId !== 'kds-142020-equivalent-block') {
+      throw new Error(`${profileId} does not declare an equivalent-block design-material recipe.`)
+    }
+    const identityFactors = {
+      phiCompressionOther: 1,
+      phiCompressionSpiral: 1,
+      phiTension: 1,
+      axialCapOther: 1,
+      axialCapSpiral: 1
+    }
+    const commonInput = {
+      ...common,
+      transverseReinforcement: 'other' as const,
+      resistanceFactors: identityFactors,
+      compressionEndpoint: designBasis.compressionEndpoint === 'peak-stress-strain'
+        ? 'peak-stress-strain' as const
+        : 'steel-plateau' as const
+    }
+    referenceModel = createKds142020Model({
+      ...commonInput,
+      materialStrengthMultipliers: { concrete: 1, reinforcement: 1 }
+    })
+    const kdsDesignModel = createKds142020Model({
+      ...commonInput,
+      materialStrengthMultipliers: {
+        concrete: resolveMaterialFactorExpression(designBasis.factors.concrete),
+        reinforcement: resolveMaterialFactorExpression(designBasis.factors.reinforcement)
+      }
+    })
+    appendixPoleDivergesFromBlockLimit = kdsDesignModel.appendixPoleDivergesFromBlockLimit
+    designModel = kdsDesignModel
+  } else {
+    const model = BLOCK_MODEL_RESOLVERS[profileId]({ materialStore, basis: designBasis, common })
+    referenceModel = model
+    designModel = model
+  }
+  return { referenceModel, designModel, appendixPoleDivergesFromBlockLimit }
+}
+
+/**
+ * Block laws for presentation (Materials σ–ε view): stress level, depth factor and extreme strain of
+ * the reference and design models, resolved by the same code adapters as the analysis.
+ */
+export const resolveEquivalentBlockLaws = (
+  profileId: CalculationProfileId,
+  materialStore: MaterialStore,
+  designBasis: DesignBasis
+): { reference: EquivalentBlockLaw; design: EquivalentBlockLaw } => {
+  if (!isEquivalentBlockProfileId(profileId)) {
+    throw new Error(`The ${profileId} profile uses stress-strain integration and has no equivalent block law.`)
+  }
+  const basis = withSteelModelModification(designBasis, materialStore)
+  assertValidMaterialStore(materialStore)
+  assertDesignMaterialApplicability(materialStore, basis)
+  const { referenceModel, designModel } = resolveBlockModels(profileId, materialStore, basis)
+  return { reference: referenceModel.blockLaw, design: designModel.blockLaw }
+}
+
+export const prepareBlockAnalysis = (
+  profileId: CalculationProfileId,
+  section: SectionGeometry,
+  rebars: GeometryInputRebarView[],
+  materialStore: MaterialStore,
+  designBasis: DesignBasis
+): PreparedBlockAnalysis => {
+  designBasis = withSteelModelModification(designBasis, materialStore)
+  if (!isEquivalentBlockProfileId(profileId)) {
+    throw new Error(`The ${profileId} profile uses stress-strain integration and cannot be routed to the equivalent-block backend.`)
+  }
+  assertValidMaterialStore(materialStore)
+  assertDesignMaterialApplicability(materialStore, designBasis)
+  const origin = netConcreteCentroid(section)
+  const preparedSection = prepareEquivalentBlockSection({
+    solids: section.solids.map((solid) => ({
+      outer: solid.outer.map(({ x, y }) => ({ x, y })),
+      holes: solid.holes.map((hole) => hole.map(({ x, y }) => ({ x, y })))
+    })),
+    rebars: rebars.map((bar) => ({
+      id: String(bar.id),
+      x: bar.x,
+      y: bar.y,
+      dia: bar.dia,
+      area: rebarArea(bar, 'equivalent-block'),
+      steelLawId: String(bar.steelMaterialId ?? materialStore.defaults.steelMaterialId)
+    })),
+    referencePoint: origin,
+    units: 'N-mm-MPa',
+    signConvention: 'compression-positive'
+  })
+  const { referenceModel, designModel, appendixPoleDivergesFromBlockLimit } = resolveBlockModels(profileId, materialStore, designBasis)
+  const usedSteel = new Set(preparedSection.rebars.map((bar) => bar.steelLawId))
+  for (const id of usedSteel) {
+    const law = designModel.steelLaws[id]
+    if (law?.strainLimits?.compression !== undefined && law.strainLimits.compression < designModel.blockLaw.extremeCompressionStrain) {
+      throw new AnalysisInputError('INVALID_MATERIAL',
+        'The physical steel compression limit is below the extreme strain of this equivalent block. Use fibre mechanics to construct the compatible steel-controlled compression boundary.',
+        { steelMaterialId: Number(id), limit: law.strainLimits.compression, concreteLimit: designModel.blockLaw.extremeCompressionStrain })
+    }
+  }
+  return {
+    profileId,
+    section: preparedSection,
+    materialStore,
+    designBasis,
+    referenceModel,
+    designModel,
+    model: designModel,
+    appendixPoleDivergesFromBlockLimit,
+    geometry: section,
+    rebars
+  }
+}
+
+const componentResultants = (evaluation: CapacityEvaluation<unknown>) => {
+  const source = evaluation.source as { nominal?: NominalBlockEvaluation } | NominalBlockEvaluation | undefined
+  const nominal = source && 'nominal' in source ? source.nominal : source as NominalBlockEvaluation | undefined
+  if (!nominal) return []
+  const steel = nominal.bars.reduce(
+    (sum, bar) => ({ P: sum.P + bar.force, Mx: sum.Mx + bar.Mx, My: sum.My + bar.My }),
+    { P: 0, Mx: 0, My: 0 }
+  )
+  return [
+    { P: nominal.concrete.force, Mx: nominal.concrete.Mx, My: nominal.concrete.My },
+    steel
+  ]
+}
+
+/**
+ * Fixed-mode geometry supplements (root 05 §3). The block normal angle equals the gradient angle
+ * theta of the geometry helpers, so no conversion is needed. F-02: the deepest bar changes on
+ * every bar convex-hull edge normal.
+ */
+const fixedSupplementaryDirections = (prepared: PreparedBlockAnalysis, options: EquivalentBlockAnalysisOptions) => {
+  const events = supportSwitchGradientAngles(prepared.rebars).map((angle) => ({ angle, source: 'tension-control-event' as SamplingDirectionSource }))
+  // F-03(a): the builder's own seed rule (same count and start), so gaps are measured on its rows.
+  const count = Math.max(4, Math.round(options.directions.seedCount))
+  const start = options.directions.startDeg * Math.PI / 180
+  const rows = mergeSamplingDirections(
+    Array.from({ length: count }, (_, index) => ({ angle: start + 2 * Math.PI * index / count, source: 'seed' as const })), events)
+  const covariance = netConcreteAreaCovariance(prepared.geometry)
+  if (!covariance) throw new AnalysisInputError('INVALID_GEOMETRY', 'Net-concrete covariance could not be resolved for Fixed sampling.')
+  const gaps = normalizedGapGradientAngles(rows.map(({ angle }) => angle), covariance, 2 * Math.PI / count)
+  return [...events, ...gaps.map((angle) => ({ angle, source: 'normalized-gap' as SamplingDirectionSource }))]
+}
+
+/**
+ * F-03(b), root 05 §3.3: Fixed cover-gap stations between `depth-ratio 1` and `εs/εy = 0`, with the
+ * fibre rule `n = max over rows of ceil(gap/h) − 1`, `h` the schedule's last outside step. Each row
+ * resolves `cover-gap-ratio` with its own projected depth and controlling bar. Returned in the
+ * block mesher's order of increasing neutral-axis depth.
+ */
+const fixedCoverGapStations = (
+  prepared: PreparedBlockAnalysis,
+  options: EquivalentBlockAnalysisOptions,
+  directions: ReturnType<typeof fixedSupplementaryDirections>
+): CapacityStation[] => {
+  const values = options.neutralAxisStations.values
+  const at = values.findIndex((station) => station.type === 'depth-ratio' && Math.abs(station.ratio - 1) <= 1e-12)
+  const next = values[at + 1]
+  if (at < 0 || !(next?.type === 'bar-tension-yield-ratio' && next.ratio === 0) || prepared.rebars.length === 0) return []
+  const step = UNIFIED_DEPTH_RATIOS[UNIFIED_DEPTH_RATIOS.length - 2] - UNIFIED_DEPTH_RATIOS[UNIFIED_DEPTH_RATIOS.length - 1]
+  const count = Math.max(4, Math.round(options.directions.seedCount))
+  const start = options.directions.startDeg * Math.PI / 180
+  const angles = [...Array.from({ length: count }, (_, index) => start + 2 * Math.PI * index / count), ...directions.map(({ angle }) => angle)]
+  const vertices = prepared.geometry.solids.flatMap((solid) => [solid.outer, ...solid.holes].flat())
+  let gaps = 0
+  for (const angle of angles) {
+    const project = (point: { x: number; y: number }) => point.x * Math.cos(angle) + point.y * Math.sin(angle)
+    const max = Math.max(...vertices.map(project)), min = Math.min(...vertices.map(project))
+    const bar = Math.min(...prepared.rebars.map(project))
+    if (!(max > min)) continue
+    gaps = Math.max(gaps, Math.ceil((bar - min) / (max - min) / step - 1e-9) - 1)
+  }
+  return Array.from({ length: Math.max(0, gaps) }, (_, index) => ({ type: 'cover-gap-ratio' as const, ratio: (gaps - index) / (gaps + 1) }))
+}
+
+/** Inserts cover-gap stations after `εs/εy = 0` in the mesher's increasing-depth list. */
+const withBlockCoverGaps = (stations: CapacityStation[], gaps: readonly CapacityStation[]) => {
+  const at = stations.findIndex((station) => station.type === 'bar-tension-yield-ratio' && station.ratio === 0)
+  return at < 0 || gaps.length === 0 ? stations : [...stations.slice(0, at + 1), ...gaps, ...stations.slice(at + 1)]
+}
+
+const surfaceOptions = (
+  options: EquivalentBlockAnalysisOptions,
+  componentAware = false,
+  stationProbeAngles?: readonly number[],
+  blockDepthFactor?: number,
+  supplementaryDirections?: ReturnType<typeof fixedSupplementaryDirections>,
+  coverGapStations: readonly CapacityStation[] = []
+) => ({
+  samplingMode: options.samplingMode,
+  // Project/report order is compression -> tension, shared with the strain-domain DTO.
+  // The low-level block mesher traverses increasing neutral-axis depth, so it consumes the reverse.
+  stations: withBlockCoverGaps([...options.neutralAxisStations.values].reverse(),
+    options.samplingMode !== 'adaptive' && options.neutralAxisStations.refinement.type === 'fixed' ? coverGapStations : []),
+  seedDirections: options.directions.seedCount,
+  startAngle: options.directions.startDeg * Math.PI / 180,
+  directionTolerance: options.directions.refinement.type === 'adaptive'
+    ? options.directions.refinement.tolerance
+    : 0,
+  maxRefinementPasses: options.directions.refinement.type === 'adaptive'
+    ? options.directions.refinement.maxPasses
+    : 0,
+  maxDirections: options.directions.refinement.type === 'adaptive'
+    ? options.directions.refinement.maxDirections
+    : options.directions.seedCount,
+  stationTolerance: options.neutralAxisStations.refinement.type === 'adaptive'
+    ? options.neutralAxisStations.refinement.tolerance
+    : 0,
+  maxStationRefinementPasses: options.neutralAxisStations.refinement.type === 'adaptive'
+    ? options.neutralAxisStations.refinement.maxPasses
+    : 0,
+  maxStations: options.neutralAxisStations.refinement.type === 'adaptive'
+    ? Math.max(
+        options.neutralAxisStations.values.length,
+        options.neutralAxisStations.refinement.maxStations - 2
+      )
+    : options.neutralAxisStations.values.length + coverGapStations.length,
+  ...(options.samplingMode === 'adaptive' && blockDepthFactor && blockDepthFactor > 0
+    ? { adaptiveStationEvents: [{ type: 'depth-ratio' as const, ratio: 1 / blockDepthFactor }] }
+    : {}),
+  ...(stationProbeAngles?.length ? { stationProbeAngles } : {}),
+  ...(options.samplingMode !== 'adaptive' && supplementaryDirections?.length ? { supplementaryDirections } : {}),
+  ...(componentAware ? { componentResultants } : {})
+})
+
+const projectedDepth = (section: PreparedEquivalentBlockSection, angle: number) => {
+  const nx = Math.cos(angle)
+  const ny = Math.sin(angle)
+  return projectedOuterExtents(section, nx, ny).depth
+}
+
+const strainState = (
+  section: PreparedEquivalentBlockSection,
+  state: BlockSectionState | undefined,
+  law: EquivalentBlockLaw
+): StrainState => {
+  if (!state) return { e0: 0, kx: 0, ky: 0 }
+  const nx = Math.cos(state.neutralAxisAngle)
+  const ny = Math.sin(state.neutralAxisAngle)
+  const extents = projectedOuterExtents(section, nx, ny)
+  const edge = extents.maximum
+  const neutralAxis = edge - state.neutralAxisDepth
+  const extremeCompressionStrain = resolveEquivalentBlockExtremeCompressionStrain(
+    law,
+    state.neutralAxisDepth,
+    extents.depth
+  )
+  const scale = extremeCompressionStrain / state.neutralAxisDepth
+  return {
+    e0: scale * (nx * section.referencePoint.x + ny * section.referencePoint.y - neutralAxis),
+    kx: scale * ny,
+    ky: scale * nx
+  }
+}
+
+const zeroLedger = (resultants: { P: number; Mx: number; My: number }): ResultantLedger => {
+  const zero = { P: 0, Mx: 0, My: 0 }
+  return {
+    concrete: zero,
+    steelGross: zero,
+    displacedConcrete: zero,
+    steel: zero,
+    total: { ...resultants }
+  }
+}
+
+const resistanceTrace = (
+  point: CapacitySurface['points'][number]
+): DesignResistanceTrace | undefined => {
+  const phi = typeof point.metadata?.phi === 'number' ? point.metadata.phi : null
+  if (phi === null && point.kind !== 'axial-cap') return undefined
+  const nominal = phi !== null && phi > 0
+    ? {
+        P: point.resultants.P / phi,
+        Mx: point.resultants.Mx / phi,
+        My: point.resultants.My / phi
+      }
+    : point.resultants
+  return {
+    nominalReference: { ...nominal },
+    format: 'globalResultantFactor',
+    factor: phi,
+    classification: (point.metadata?.classification as DesignResistanceTrace['classification']) ?? 'compression-controlled',
+    controllingTensileStrain: null,
+    yieldStrain: null,
+    axialCapApplied: point.kind === 'axial-cap',
+    stages: point.kind === 'axial-cap'
+      ? ['Nominal equivalent block', 'Code strength reduction', 'Maximum axial design strength cap']
+      : ['Nominal equivalent block', 'Code strength reduction']
+  }
+}
+
+const blockTrace = (
+  section: PreparedEquivalentBlockSection,
+  state: BlockSectionState | undefined,
+  depthFactor: number,
+  compressionStress: number
+): EquivalentBlockStateTrace | undefined => state ? {
+  neutralAxisAngle: state.neutralAxisAngle,
+  neutralAxisDepth: state.neutralAxisDepth,
+  blockDepth: depthFactor * state.neutralAxisDepth,
+  beta1: depthFactor,
+  projectedSectionDepth: projectedDepth(section, state.neutralAxisAngle),
+  compressionStress
+} : undefined
+
+const axialCapTrace = (
+  point: CapacitySurface['points'][number]
+): AxialCapProjectionTrace | undefined => {
+  const trace = point.axialCapTrace
+  if (!trace) return undefined
+  const convert = (source: { pointId: number; resultants: { P: number; Mx: number; My: number } }) => ({
+    pointId: `block-source-${source.pointId}`,
+    stationId: null,
+    ...source.resultants
+  })
+  return {
+    maximumAxialResistance: trace.maximumAxialResistance,
+    capRatio: trace.capRatio,
+    cap: trace.cap,
+    source: trace.source.kind === 'source-vertex'
+      ? {
+          kind: 'source-vertex',
+          point: convert(trace.source.point),
+          crossing: { ...trace.source.crossing }
+        }
+      : {
+          kind: 'edge-interpolation',
+          compressionSide: convert(trace.source.compressionSide),
+          admissibleSide: convert(trace.source.admissibleSide),
+          interpolationRatio: trace.source.interpolationRatio,
+          crossing: { ...trace.source.crossing }
+        },
+    projection: { kind: 'identity', factor: 1 }
+  }
+}
+
+const nearestStation = (
+  surface: CapacitySurface,
+  section: PreparedEquivalentBlockSection,
+  point: CapacitySurface['points'][number],
+  epsCu: number
+) => {
+  const state = point.state
+  if (!state) return 0
+  if (point.station) {
+    const sourceKey = JSON.stringify(point.station)
+    const exactIndex = surface.stations.findIndex((station) => JSON.stringify(station) === sourceKey)
+    if (exactIndex >= 0) return surface.stations.length - exactIndex
+  }
+  const ratio = state.neutralAxisDepth / projectedDepth(section, state.neutralAxisAngle)
+  const stationRatio = (station: CapacitySurface['stations'][number]) => station.type === 'depth-ratio'
+    ? station.ratio
+    : station.type === 'bar-tension-yield-ratio'
+      ? 1 / (1 + station.ratio * 0.002 / epsCu)
+      : station.type === 'extreme-tension-strain' || station.type === 'bar-tension-strain'
+        ? 1 / (1 + station.strain / epsCu)
+        : Number.POSITIVE_INFINITY
+  let best = 0
+  for (let index = 1; index < surface.stations.length; index += 1) {
+    if (Math.abs(stationRatio(surface.stations[index]) - ratio) < Math.abs(stationRatio(surface.stations[best]) - ratio)) best = index
+  }
+  return surface.stations.length - best
+}
+
+const convertSurfacePoints = (
+  surface: CapacitySurface,
+  section: PreparedEquivalentBlockSection,
+  law: EquivalentBlockLaw,
+  beta1: number,
+  compressionStress: number,
+  includeResistance = false,
+  fixedValues?: EquivalentBlockAnalysisOptions['neutralAxisStations']['values'],
+  coverGaps = 0
+): PreviewSurfacePoint[] => surface.points.map((point) => {
+  const state = strainState(section, point.state, law)
+  const surfaceRole = point.kind === 'state'
+    ? 'physical-state'
+    : point.kind === 'tension-pole'
+      ? 'pure-tension'
+      : point.kind === 'compression-pole'
+        ? 'pure-compression'
+        : point.kind
+  // Poles and the synthetic axial-cap face have no unique neutral-axis direction. The zero value is
+  // only a finite plotting placeholder; topology and station diagnostics must use surfaceRole.
+  const meridianAngle = typeof point.metadata?.meridianAngle === 'number'
+    ? point.metadata.meridianAngle
+    : null
+  const beta = point.state
+    ? wrap(Math.PI / 2 - point.state.neutralAxisAngle)
+    : meridianAngle === null
+      ? 0
+      : wrap(Math.PI / 2 - meridianAngle)
+  const resultants = point.resultants
+  const legacyStation = nearestStation(surface, section, point, law.extremeCompressionStrain)
+  const physicalCoordinate = point.stationCoordinate === undefined
+    ? legacyStation / Math.max(1, surface.stations.length + 1)
+    : 1 - point.stationCoordinate
+  const sourceStation = point.station
+  const stationId = sourceStation ? blockStationId(sourceStation, fixedValues, coverGaps) : null
+  return {
+    id: `block-${point.kind}-${point.id}`,
+    beta,
+    station: point.kind === 'tension-pole'
+      ? 1
+      : point.kind === 'compression-pole'
+        ? 0
+        : point.kind === 'axial-cap'
+          ? -1
+          : physicalCoordinate,
+    stationCoordinate: point.kind === 'tension-pole'
+      ? 1
+      : point.kind === 'compression-pole'
+        ? 0
+        : point.kind === 'axial-cap'
+          ? undefined
+          : physicalCoordinate,
+    stationId: point.kind === 'tension-pole'
+      ? 'pure-tension'
+      : point.kind === 'compression-pole'
+        ? 'pure-compression'
+        : point.kind === 'axial-cap'
+          ? null
+          : stationId,
+    surfaceRole,
+    onSampledDirection: point.kind === 'state' || (
+      point.kind === 'axial-cap' && meridianAngle !== null
+    ),
+    state,
+    ledger: zeroLedger(resultants),
+    axialCapTrace: axialCapTrace(point),
+    ...resultants,
+    equivalentBlock: blockTrace(section, point.state, beta1, compressionStress),
+    resistance: includeResistance ? resistanceTrace(point) : undefined
+  }
+})
+
+const blockStationLabel = (station: CapacitySurface['stations'][number]) => {
+  if (station.type === 'cover-gap-ratio') return `cover-gap = ${station.ratio}`
+  if (station.type === 'tension-depth-ratio') return `c→0 = ${station.ratio}`
+  if (station.type === 'adaptive-depth-interpolation') return `adaptive c = ${station.ratio}`
+  return station.type
+}
+
+const stableStationHash = (value: unknown) => {
+  const text = JSON.stringify(value)
+  let hash = 0x811c9dc5
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(36)
+}
+
+/** Fixed cover-gap stations present in a surface (F-03(b)); adaptive midpoints are never counted. */
+const fixedCoverGapCount = (surface: CapacitySurface, options: EquivalentBlockAnalysisOptions) =>
+  options.samplingMode !== 'adaptive' && options.neutralAxisStations.refinement.type === 'fixed'
+    ? surface.stations.filter((station) => station.type === 'cover-gap-ratio').length : 0
+
+/** Options stations keep `station-n`; Fixed cover-gap stations are `cover-gap-k-of-n`, as in fibre. */
+const blockStationId = (
+  station: CapacityStation,
+  fixedValues: EquivalentBlockAnalysisOptions['neutralAxisStations']['values'] | undefined,
+  coverGaps: number
+): SurfaceStationId => {
+  const fixedIndex = fixedValues ? fixedValues.findIndex((value) => JSON.stringify(value) === JSON.stringify(station)) : -1
+  if (fixedIndex >= 0) return `station-${fixedIndex + 1}`
+  if (station.type === 'cover-gap-ratio' && coverGaps > 0) {
+    const k = station.ratio * (coverGaps + 1)
+    if (Math.abs(k - Math.round(k)) <= 1e-9 && Math.round(k) >= 1 && Math.round(k) <= coverGaps) return `cover-gap-${Math.round(k)}-of-${coverGaps}`
+  }
+  return `adaptive-station-block-${stableStationHash(station)}`
+}
+
+const blockStations = (
+  surface: CapacitySurface,
+  fixedValues: EquivalentBlockAnalysisOptions['neutralAxisStations']['values'],
+  coverGaps = 0
+): SurfaceStation[] => [
+  { id: 'pure-compression', label: 'Pure compression', definition: { kind: 'pure-compression' }, fixed: true },
+  ...[...surface.stations].reverse().map((station) => {
+    const definition = station.type === 'depth-ratio'
+      ? { kind: 'block-depth-ratio' as const, ratio: station.ratio }
+      : station.type === 'bar-tension-yield-ratio'
+        ? { kind: 'bar-tension-yield-ratio' as const, ratio: station.ratio }
+      : station.type === 'bar-tension-strain'
+        ? { kind: 'bar-tension-strain' as const, strain: station.strain }
+      : station.type === 'extreme-tension-strain'
+        ? { kind: 'extreme-tension-strain' as const, strain: station.strain }
+      // The shared cover-gap definition: same fraction of the far-edge-to-controlling-bar gap as fibre.
+      : station.type === 'cover-gap-ratio'
+        ? { kind: 'neutral-axis-control-gap-ratio' as const, ratio: station.ratio }
+        : { kind: 'block-adaptive' as const, label: blockStationLabel(station) }
+    const id = blockStationId(station, fixedValues, coverGaps)
+    return { id, label: stationDefinitionLabel(definition), definition, fixed: !id.startsWith('adaptive-station-') }
+  }),
+  { id: 'pure-tension', label: 'Pure tension', definition: { kind: 'pure-tension' }, fixed: true }
+]
+
+const bounds = (points: PreviewSurfacePoint[]) => {
+  const result = {
+    P: [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY] as [number, number],
+    Mx: [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY] as [number, number],
+    My: [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY] as [number, number]
+  }
+  for (const point of points) {
+    result.P[0] = Math.min(result.P[0], point.P)
+    result.P[1] = Math.max(result.P[1], point.P)
+    result.Mx[0] = Math.min(result.Mx[0], point.Mx)
+    result.Mx[1] = Math.max(result.Mx[1], point.Mx)
+    result.My[0] = Math.min(result.My[0], point.My)
+    result.My[1] = Math.max(result.My[1], point.My)
+  }
+  return result
+}
+
+export const buildEquivalentBlockDesignSurfaceFromPrepared = (
+  prepared: PreparedBlockAnalysis,
+  options: EquivalentBlockAnalysisOptions,
+  stationProbeAngles?: readonly number[],
+  /** false restricts Fixed rows to the configured seeds (exact-direction support surface). */
+  samplingSupplements = true
+): EquivalentBlockDesignSurface => {
+  const supplements = samplingSupplements && options.samplingMode !== 'adaptive' ? fixedSupplementaryDirections(prepared, options) : undefined
+  const coverGaps = fixedCoverGapStations(prepared, options, supplements ?? [])
+  return prepared.designBasis.format === 'designMaterialReevaluation'
+    ? prepared.designModel.buildNominalSurface(
+        prepared.section,
+        surfaceOptions(options, false, stationProbeAngles, prepared.designModel.blockLaw.depthFactor, supplements, coverGaps)
+      )
+    : prepared.designModel.buildDesignSurface(prepared.section, {
+        ...surfaceOptions(options, false, stationProbeAngles, prepared.designModel.blockLaw.depthFactor, supplements, coverGaps),
+        applyAxialCap: prepared.designBasis.axialCapEnabled
+      })
+}
+
+/** Settings of the Nominal block surface of a preview; shared with the load-direction mechanics. */
+const nominalSurfaceSettings = (
+  prepared: PreparedBlockAnalysis,
+  options: EquivalentBlockAnalysisOptions,
+  stationProbeAngles?: readonly number[],
+  samplingSupplements = true
+) => {
+  const supplements = samplingSupplements && options.samplingMode !== 'adaptive' ? fixedSupplementaryDirections(prepared, options) : undefined
+  return surfaceOptions(
+    options,
+    false,
+    stationProbeAngles,
+    prepared.referenceModel.blockLaw.depthFactor,
+    supplements,
+    fixedCoverGapStations(prepared, options, supplements ?? [])
+  )
+}
+
+export const buildEquivalentBlockPreviewSurfaceFromPrepared = (
+  prepared: PreparedBlockAnalysis,
+  options: EquivalentBlockAnalysisOptions,
+  preparedDesignSurface?: EquivalentBlockDesignSurface,
+  stationProbeAngles?: readonly number[],
+  /** false restricts Fixed rows to the configured seeds (exact-direction support surface). */
+  samplingSupplements = true
+): PreviewSurface => {
+  const nominal = prepared.referenceModel.buildNominalSurface(prepared.section,
+    nominalSurfaceSettings(prepared, options, stationProbeAngles, samplingSupplements))
+  const design = preparedDesignSurface ?? buildEquivalentBlockDesignSurfaceFromPrepared(
+    prepared,
+    options,
+    stationProbeAngles,
+    samplingSupplements
+  )
+  const beta1 = prepared.designModel.blockLaw.depthFactor
+  const compressionStress = prepared.designModel.blockLaw.compressionStress
+  const nominalStationDescriptors = blockStations(nominal, options.neutralAxisStations.values, fixedCoverGapCount(nominal, options))
+  const designStationDescriptors = blockStations(design, options.neutralAxisStations.values, fixedCoverGapCount(design, options))
+  const nominalPoints = convertSurfacePoints(
+    nominal,
+    prepared.section,
+    prepared.referenceModel.blockLaw,
+    prepared.referenceModel.blockLaw.depthFactor,
+    prepared.referenceModel.blockLaw.compressionStress,
+    false,
+    options.neutralAxisStations.values,
+    fixedCoverGapCount(nominal, options)
+  )
+  const points = convertSurfacePoints(
+    design,
+    prepared.section,
+    prepared.designModel.blockLaw,
+    beta1,
+    compressionStress,
+    prepared.designBasis.format === 'globalResultantFactor',
+    options.neutralAxisStations.values,
+    fixedCoverGapCount(design, options)
+  )
+  if (prepared.designBasis.format === 'designMaterialReevaluation') {
+    const referenceEvaluator = prepared.referenceModel.bindNominalEvaluator(prepared.section)
+    const referenceEndpoints = prepared.referenceModel.nominalEndpoints(prepared.section)
+    const referenceCompressionPole = nominal.points.find((point) => point.kind === 'compression-pole')
+    for (let index = 0; index < points.length; index += 1) {
+      const designPoint = design.points[index]
+      const referenceResultants = designPoint.state
+        ? referenceEvaluator(designPoint.state).resultants
+        : designPoint.kind === 'tension-pole'
+          ? referenceEndpoints.tension.resultants
+          : designPoint.kind === 'compression-pole'
+            ? referenceCompressionPole?.resultants ?? referenceEndpoints.compression.resultants
+            : designPoint.resultants
+      points[index].resistance = {
+        nominalReference: { ...referenceResultants },
+        format: 'designMaterialReevaluation',
+        factor: null,
+        classification: 'design-material',
+        controllingTensileStrain: null,
+        yieldStrain: null,
+        axialCapApplied: false,
+        stages: ['reference-equivalent-block', 'design-material-reevaluation']
+      }
+    }
+  }
+  const nominalP0 = prepared.referenceModel.nominalEndpoints(prepared.section).compression.resultants
+  const warnings = [
+    ...(options.directions.refinement.type === 'adaptive' && !design.directionRefinementConverged
+      ? ['Equivalent-block direction refinement did not reach its requested tolerance.']
+      : []),
+    ...(options.neutralAxisStations.refinement.type === 'adaptive' && !design.stationRefinementConverged
+      ? ['Equivalent-block neutral-axis refinement did not reach its requested tolerance.']
+      : []),
+    ...(!design.topology.closed ? [`Equivalent-block surface is not closed (${design.topology.boundaryEdges} boundary edges).`] : []),
+    ...(prepared.appendixPoleDivergesFromBlockLimit
+      ? ['KDS Appendix 3.2(1) equations (3-2) and (3-3) carry no eta, so the concentric design axial strength closing this surface is above the equivalent block\'s own concentric limit. The final band up to that point is an interpolation between the two.']
+      : [])
+  ]
+  const tolerance = options.directions.refinement.type === 'adaptive'
+    ? options.directions.refinement.tolerance
+    : 0
+  const designSurface: PreviewSurfaceDataset = {
+    points,
+    triangles: design.triangles,
+    directions: design.directions.map((angle) => wrap(Math.PI / 2 - angle)).sort((a, b) => a - b),
+    stations: designStationDescriptors
+  }
+  const nominalSurface: PreviewSurfaceDataset = {
+    points: nominalPoints,
+    triangles: nominal.triangles,
+    directions: nominal.directions.map((angle) => wrap(Math.PI / 2 - angle)).sort((a, b) => a - b),
+    stations: nominalStationDescriptors
+  }
+  const beforeCap = design.beforeAxialCap
+  const beforeAxialCap: PreviewSurfaceDataset | undefined = beforeCap ? {
+    points: convertSurfacePoints(beforeCap, prepared.section, prepared.designModel.blockLaw,
+      beta1, compressionStress, true, options.neutralAxisStations.values, fixedCoverGapCount(beforeCap, options)),
+    triangles: beforeCap.triangles,
+    directions: beforeCap.directions.map(angle => wrap(Math.PI / 2 - angle)).sort((a, b) => a - b),
+    stations: blockStations(beforeCap, options.neutralAxisStations.values, fixedCoverGapCount(beforeCap, options))
+  } : undefined
+  return {
+    mechanics: 'equivalent-rectangular-block',
+    points,
+    nominalPoints,
+    triangles: design.triangles,
+    nominalTriangles: nominal.triangles,
+    designSurface,
+    nominalSurface,
+    designFixed: designSurface,
+    nominalFixed: nominalSurface,
+    ...(beforeAxialCap ? { beforeAxialCap } : {}),
+    codeReferencePoints: [{
+      id: 'nominal-p0',
+      label: prepared.designBasis.format === 'designMaterialReevaluation'
+        ? 'Characteristic concentric compression reference'
+        : 'Nominal concentric compression P0',
+      kind: 'code-endpoint',
+      ...nominalP0
+    }],
+    sectionBoundaryPoints: sectionBoundaryPoints(prepared.section),
+    bounds: bounds(points),
+    mesh: {
+      cellSize: 0,
+      minCaliperWidth: prepared.section.characteristicLength,
+      gridX: 0,
+      gridY: 0,
+      cells: 0,
+      components: prepared.section.solids.length,
+      triangles: 0,
+      points: 0,
+      exact: { area: prepared.section.grossArea, firstMomentX: 0, firstMomentY: 0 },
+      meshed: { area: prepared.section.grossArea, firstMomentX: 0, firstMomentY: 0 },
+      areaError: 0,
+      firstMomentXError: 0,
+      firstMomentYError: 0,
+      discardedArea: 0,
+      ok: true,
+      warnings: ['No integration mesh: concrete compression is evaluated by exact polygon clipping.']
+    },
+    stations: designStationDescriptors,
+    directions: design.directions.map((angle) => wrap(Math.PI / 2 - angle)).sort((a, b) => a - b),
+    ...(design.directionSources ? {
+      directionSources: design.directions
+        .map((angle, index) => ({ beta: wrap(Math.PI / 2 - angle), source: design.directionSources?.[index] ?? 'seed' }))
+        .sort((left, right) => left.beta - right.beta)
+        .map(({ source }) => source)
+    } : {}),
+    analysisOptions: cloneCalculationAnalysisOptions(options),
+    directionError: {
+      directions: design.directions.length,
+      probedStations: design.stations.map((_, index) => index + 1),
+      probedStationIds: designStationDescriptors.slice(1, -1).map((station) => station.id),
+      maxRelativeP: design.maxDirectionalInterpolationError,
+      maxRelativeMoment: design.maxDirectionalInterpolationError,
+      maxRelativeComponent: design.maxDirectionalInterpolationError,
+      worstBeta: design.worstDirection === undefined
+        ? Number.NaN
+        : wrap(Math.PI / 2 - design.worstDirection),
+      refinementPasses: design.directionRefinementPasses,
+      withinTolerance: design.directionRefinementConverged,
+      tolerance
+    },
+    stationError: {
+      ...(design.stationRefinementStalled ? { reason: 'state-stalled' as const } : {}),
+      stations: design.maxStationsPerDirection ?? design.stations.length + 2,
+      fixedStations: options.neutralAxisStations.values.length + 2,
+      minStations: design.minStationsPerDirection ?? design.stations.length + 2,
+      maxStations: design.maxStationsPerDirection ?? design.stations.length + 2,
+      averageStations: design.averageStationsPerDirection ?? design.stations.length + 2,
+      totalStates: points.length,
+      evaluations: design.evaluationCount ?? points.length,
+      maxRelative: design.maxStationInterpolationError,
+      refinementPasses: design.stationRefinementPasses,
+      withinTolerance: design.stationRefinementConverged,
+      tolerance: options.neutralAxisStations.refinement.type === 'adaptive'
+        ? options.neutralAxisStations.refinement.tolerance
+        : Number.POSITIVE_INFINITY
+    },
+    strainDomain: 'concrete-pivot-ultimate',
+    warnings,
+    designBasis: JSON.parse(JSON.stringify(prepared.designBasis)) as DesignBasis
+  }
+}
+
+export const buildEquivalentBlockPreviewSurface = (
+  profileId: CalculationProfileId,
+  section: SectionGeometry,
+  rebars: GeometryInputRebarView[],
+  materialStore: MaterialStore,
+  designBasis: DesignBasis,
+  options: EquivalentBlockAnalysisOptions
+) => buildEquivalentBlockPreviewSurfaceFromPrepared(
+  prepareBlockAnalysis(profileId, section, rebars, materialStore, designBasis),
+  options
+)
+
+const angularDistance = (left: number, right: number) => {
+  const difference = Math.abs(wrap(left) - wrap(right))
+  return Math.min(difference, TAU - difference)
+}
+
+/**
+ * Evaluate the requested β exactly. The low-level closed mesher needs four support meridians for
+ * topology, but only the requested meridian is returned and no angular interpolation enters it.
+ */
+/**
+ * engineering/05 §3, root 05 §8: equivalent-block edge families for the load-direction curve. On a
+ * station ring the block angle moves along the short arc with the station's own depth rule; across
+ * stations the depth is the adaptive depth interpolation of the two station rules at the interpolated
+ * angle, as in block station refinement. β = π/2 − block angle, as on the surfaces. The poles have no
+ * block-state family, so a pole edge stays geometric.
+ */
+export const createEquivalentBlockLoadDirectionMechanics = (
+  prepared: PreparedBlockAnalysis,
+  options: EquivalentBlockAnalysisOptions,
+  core: EquivalentBlockDesignSurface
+): LoadDirectionMechanics => {
+  const section = prepared.section
+  const designEvaluator = prepared.designBasis.format === 'designMaterialReevaluation'
+    ? prepared.designModel.bindNominalEvaluator(section)
+    : prepared.designModel.bindDesignEvaluator(section)
+  const nominalEvaluator = prepared.referenceModel.bindNominalEvaluator(section)
+  const designStates = createCapacityStationStates(section, {
+    extremeCompressionStrain: prepared.designModel.blockLaw.extremeCompressionStrain, steelLaws: prepared.designModel.steelLaws })
+  const nominalStates = createCapacityStationStates(section, {
+    extremeCompressionStrain: prepared.referenceModel.blockLaw.extremeCompressionStrain, steelLaws: prepared.referenceModel.steelLaws })
+  const fixedValues = options.neutralAxisStations.values
+  // Fixed ids decode from the options; adaptive midpoints are looked up on the computed surfaces. The
+  // Nominal surface refines its own stations, so it is rebuilt with the preview's settings only when an
+  // adaptive Nominal id is asked for; an id found on neither surface has no family and stays geometric.
+  const register = (target: Map<string, CapacityStation>, source: CapacitySurface | undefined) => {
+    if (!source) return
+    const coverGaps = fixedCoverGapCount(source, options)
+    for (const point of source.points) {
+      if (point.station) target.set(blockStationId(point.station, fixedValues, coverGaps), point.station)
+    }
+  }
+  const designKnown = new Map<string, CapacityStation>()
+  register(designKnown, core)
+  register(designKnown, core.beforeAxialCap)
+  let nominalKnown: Map<string, CapacityStation> | null = null
+  const nominalStations = () => {
+    if (!nominalKnown) {
+      nominalKnown = new Map()
+      register(nominalKnown, prepared.referenceModel.buildNominalSurface(section, nominalSurfaceSettings(prepared, options)))
+    }
+    return nominalKnown
+  }
+  const stationOf = (id: PreviewSurfacePoint['stationId'], stage: 'design' | 'nominal'): CapacityStation | null => {
+    if (id === null) return null
+    const fixed = /^station-(\d+)$/.exec(id)
+    if (fixed) return fixedValues[Number(fixed[1]) - 1] ?? null
+    const gap = /^cover-gap-(\d+)-of-(\d+)$/.exec(id)
+    if (gap) return { type: 'cover-gap-ratio', ratio: Number(gap[1]) / (Number(gap[2]) + 1) }
+    return (stage === 'design' ? designKnown : nominalStations()).get(id) ?? null
+  }
+  const parametrisation = (stage: 'design' | 'nominal'): LoadDirectionParametrisation => {
+    const evaluator = stage === 'design' ? designEvaluator : nominalEvaluator
+    const statesAt = stage === 'design' ? designStates : nominalStates
+    const law = stage === 'design' ? prepared.designModel.blockLaw : prepared.referenceModel.blockLaw
+    return (a, b) => {
+      if (a.surfaceRole !== 'physical-state' || b.surfaceRole !== 'physical-state') return null
+      const left = stationOf(a.stationId, stage)
+      const right = stationOf(b.stationId, stage)
+      if (!left || !right) return null
+      const same = a.stationId === b.stationId
+      return (tau) => {
+        const beta = edgeBeta(a, b, tau)
+        const station: CapacityStation = same || tau === 0 ? left : tau === 1 ? right
+          : { type: 'adaptive-depth-interpolation', left, right, ratio: tau }
+        const blockState = statesAt(wrap(Math.PI / 2 - beta), station)
+        const evaluation = evaluator(blockState)
+        // The Design stage carries the resistance evidence the surface's own Design points carry
+        // (φ and its classification, or the Nominal reference of design-material reevaluation),
+        // built only when read, i.e. for an accepted root.
+        let resistance: DesignResistanceTrace | undefined
+        const designResistance = (): DesignResistanceTrace | undefined => {
+          if (stage !== 'design') return undefined
+          if (resistance) return resistance
+          if (prepared.designBasis.format === 'designMaterialReevaluation') {
+            resistance = {
+              nominalReference: { ...nominalEvaluator(blockState).resultants },
+              format: 'designMaterialReevaluation',
+              factor: null,
+              classification: 'design-material',
+              controllingTensileStrain: null,
+              yieldStrain: null,
+              axialCapApplied: false,
+              stages: ['reference-equivalent-block', 'design-material-reevaluation']
+            }
+          } else {
+            resistance = resistanceTrace({ id: 0, kind: 'state', resultants: evaluation.resultants, state: blockState,
+              metadata: evaluation.metadata })
+          }
+          return resistance
+        }
+        return {
+          ...evaluation.resultants, beta,
+          state: strainState(section, blockState, law),
+          ledger: zeroLedger(evaluation.resultants),
+          equivalentBlock: blockTrace(section, blockState, law.depthFactor, law.compressionStress),
+          get resistance() { return designResistance() }
+        }
+      }
+    }
+  }
+  return { design: parametrisation('design'), nominal: parametrisation('nominal') }
+}
+
+export const buildEquivalentBlockExactDirectionCurveFromPrepared = (
+  prepared: PreparedBlockAnalysis,
+  options: EquivalentBlockAnalysisOptions,
+  beta: number
+): ExactDirectionCurve => {
+  const normalizedBeta = wrap(beta)
+  const exactOptions = cloneCalculationAnalysisOptions(options)
+  exactOptions.directions.seedCount = 4
+  exactOptions.directions.startDeg = wrap(Math.PI / 2 - normalizedBeta) * 180 / Math.PI
+  if (exactOptions.samplingMode === 'adaptive') {
+    const refinement = exactOptions.directions.refinement
+    if (refinement.type !== 'adaptive') throw new Error('Adaptive mode requires adaptive directions.')
+    exactOptions.directions.refinement = { ...refinement, maxPasses: 0, maxDirections: 4 }
+  } else {
+    exactOptions.neutralAxisStations.refinement = { type: 'fixed' }
+    exactOptions.directions.refinement = { type: 'fixed' }
+  }
+  const exactNeutralAxisAngle = wrap(Math.PI / 2 - normalizedBeta)
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(
+    prepared,
+    exactOptions,
+    undefined,
+    [exactNeutralAxisAngle],
+    false
+  )
+  const meridian = (points: PreviewSurfacePoint[]) => points
+    .filter((point) =>
+      point.surfaceRole === 'pure-compression' ||
+      point.surfaceRole === 'pure-tension' ||
+      (point.onSampledDirection !== false && angularDistance(point.beta, normalizedBeta) <= 1e-10)
+    )
+    .sort((left, right) => left.station - right.station)
+  const designSurface = activeDesignSurfaceDataset(surface)
+  const nominalSurface = activeNominalSurfaceDataset(surface)
+  return {
+    beta: normalizedBeta,
+    designCurve: meridian(designSurface.points),
+    nominalCurve: meridian(nominalSurface.points),
+    ...(surface.beforeAxialCap ? { beforeAxialCap: meridian(surface.beforeAxialCap.points) } : {}),
+    designAdaptive: meridian(surface.points),
+    designFixed: meridian(designSurface.points),
+    nominalFixed: meridian(nominalSurface.points),
+    stations: surface.stations,
+    nominalStations: nominalSurface.stations,
+    stationError: surface.stationError
+  }
+}
+
+const evaluationTrace = (
+  prepared: PreparedBlockAnalysis,
+  state: BlockSectionState,
+  evaluation: CapacityEvaluation
+): EquivalentBlockStateTrace => {
+  const source = (evaluation.source as { nominal?: NominalBlockEvaluation } | NominalBlockEvaluation | undefined)
+  const nominal = source && 'nominal' in source ? source.nominal : source as NominalBlockEvaluation | undefined
+  const base = blockTrace(
+    prepared.section,
+    state,
+    prepared.model.blockLaw.depthFactor,
+    prepared.model.blockLaw.compressionStress
+  )!
+  return nominal ? {
+    ...base,
+    concreteBlockArea: nominal.concrete.area,
+    concreteForce: nominal.concrete.force,
+    controllingTensileStrain: nominal.controllingTensileStrain,
+    controllingBarId: nominal.controllingBarId,
+    componentForceResidual: nominal.diagnostics.componentForceResidual,
+    componentMomentXResidual: nominal.diagnostics.componentMomentXResidual,
+    componentMomentYResidual: nominal.diagnostics.componentMomentYResidual
+  } : base
+}
+
+const nominalEvaluationFrom = (evaluation: CapacityEvaluation | undefined) => {
+  const source = evaluation?.source as { nominal?: NominalBlockEvaluation } | NominalBlockEvaluation | undefined
+  return source && 'nominal' in source ? source.nominal : source as NominalBlockEvaluation | undefined
+}
+
+const blockAuditProvenance = (prepared: PreparedBlockAnalysis) => {
+  if (prepared.profileId === 'aci-318-19-22-equivalent-block') return ACI_318_19_PROVENANCE
+  if (prepared.profileId === 'as-3600-2018-amd2-equivalent-block') return AS_3600_2018_PROVENANCE
+  if (prepared.profileId === 'custom-equivalent-block') return CUSTOM_BLOCK_PROVENANCE
+  return {
+    document: prepared.designBasis.identity.document,
+    ...KDS_142020_PROVENANCE
+  }
+}
+
+const blockAuditScale = (ledger: ResultantLedger, factor: number): ResultantLedger => {
+  const scale = (value: { P: number; Mx: number; My: number }) => ({
+    P: value.P * factor,
+    Mx: value.Mx * factor,
+    My: value.My * factor
+  })
+  return {
+    concrete: scale(ledger.concrete),
+    steelGross: scale(ledger.steelGross),
+    displacedConcrete: scale(ledger.displacedConcrete),
+    steel: scale(ledger.steel),
+    total: scale(ledger.total)
+  }
+}
+
+const blockAuditLedger = (
+  evaluation: NominalBlockEvaluation,
+  referencePoint: { x: number; y: number }
+): ResultantLedger => {
+  const concrete = {
+    P: evaluation.concrete.force,
+    Mx: evaluation.concrete.Mx,
+    My: evaluation.concrete.My
+  }
+  const steelGross = { P: 0, Mx: 0, My: 0 }
+  const displacedConcrete = { P: 0, Mx: 0, My: 0 }
+  for (const bar of evaluation.bars) {
+    const grossForce = bar.steelStress * bar.area
+    const displacedForce = -bar.displacedConcreteStress * bar.area
+    steelGross.P += grossForce
+    steelGross.Mx += grossForce * (bar.y - referencePoint.y)
+    steelGross.My += grossForce * (bar.x - referencePoint.x)
+    displacedConcrete.P += displacedForce
+    displacedConcrete.Mx += displacedForce * (bar.y - referencePoint.y)
+    displacedConcrete.My += displacedForce * (bar.x - referencePoint.x)
+  }
+  const steel = {
+    P: steelGross.P + displacedConcrete.P,
+    Mx: steelGross.Mx + displacedConcrete.Mx,
+    My: steelGross.My + displacedConcrete.My
+  }
+  return {
+    concrete,
+    steelGross,
+    displacedConcrete,
+    steel,
+    total: {
+      P: concrete.P + steel.P,
+      Mx: concrete.Mx + steel.Mx,
+      My: concrete.My + steel.My
+    }
+  }
+}
+
+/** Lazy exact-clipping calculation trace for one stored equivalent-block surface vertex. */
+export const buildEquivalentBlockPointCalculationAudit = (
+  prepared: PreparedBlockAnalysis,
+  stage: CalculationAuditStage,
+  point: PreviewSurfacePoint,
+  stationDefinition: StationDefinition | null = null
+): PointCalculationAudit => {
+  if (point.surfaceRole === 'axial-cap') {
+    const trace = point.axialCapTrace
+    if (trace) {
+      const expected = trace.source.crossing
+      return {
+        kind: 'axial-cap',
+        pointId: point.id,
+        stage,
+        trace,
+        displayedLedger: point.ledger,
+        reconciliation: reconcileCalculationAuditResultant(
+          expected,
+          point,
+          Math.max(1, Math.abs(trace.maximumAxialResistance), Math.abs(point.P)),
+          Math.max(1, Math.abs(point.Mx / Math.max(1, point.P)), Math.abs(point.My / Math.max(1, point.P)))
+        )
+      }
+    }
+    return {
+      kind: 'unavailable',
+      pointId: point.id,
+      stage,
+      reason: 'synthetic-axial-cap',
+      message: 'The maximum-axial-resistance cap is a geometric face and has no unique neutral-axis state. Audit the physical source station and the cap stage instead.'
+    }
+  }
+  const trace = point.equivalentBlock
+  if (!trace) {
+    return {
+      kind: 'unavailable',
+      pointId: point.id,
+      stage,
+      reason: 'missing-physical-state',
+      message: 'This pole/reference point has no unique neutral-axis depth. The software will not invent a block geometry for it.'
+    }
+  }
+  const blockState: BlockSectionState = {
+    neutralAxisAngle: trace.neutralAxisAngle,
+    neutralAxisDepth: trace.neutralAxisDepth
+  }
+  const evaluation = stage === 'nominal'
+    ? prepared.referenceModel.bindNominalEvaluator(prepared.section)(blockState)
+    : prepared.designBasis.format === 'designMaterialReevaluation'
+      ? prepared.designModel.bindNominalEvaluator(prepared.section)(blockState)
+      : prepared.designModel.bindDesignEvaluator(prepared.section)(blockState)
+  const nominal = nominalEvaluationFrom(evaluation)
+  if (!nominal) {
+    throw new AnalysisInputError(
+      'AUDIT_RECONCILIATION_FAILED',
+      'The equivalent-block evaluator did not retain its nominal component calculation.',
+      { pointId: point.id }
+    )
+  }
+  const zero = () => ({ P: 0, Mx: 0, My: 0 })
+  const add = (target: { P: number; Mx: number; My: number }, value: { P: number; Mx: number; My: number }) => {
+    target.P += value.P
+    target.Mx += value.Mx
+    target.My += value.My
+  }
+  const concrete = {
+    P: nominal.concrete.force,
+    Mx: nominal.concrete.Mx,
+    My: nominal.concrete.My
+  }
+  const steelGross = zero()
+  const displacedConcrete = zero()
+  const materialSets = buildResistanceMaterialSets(prepared.materialStore, prepared.designBasis)
+  const calculationMaterials = stage === 'nominal'
+    ? materialSets.referenceMaterials
+    : prepared.designBasis.format === 'designMaterialReevaluation'
+      ? materialSets.designMaterials
+      : materialSets.referenceMaterials
+  const rebars: CalculationAuditRebar[] = nominal.bars.map((bar) => {
+    const source = prepared.rebars.find((candidate) => String(candidate.id) === bar.id)
+    if (!source) {
+      throw new AnalysisInputError('AUDIT_RECONCILIATION_FAILED', `Equivalent-block audit rebar ${bar.id} is missing from the input.`, { pointId: point.id })
+    }
+    const grossForce = bar.steelStress * bar.area
+    const displacedForce = -bar.displacedConcreteStress * bar.area
+    const gross = {
+      P: grossForce,
+      Mx: grossForce * (bar.y - prepared.section.referencePoint.y),
+      My: grossForce * (bar.x - prepared.section.referencePoint.x)
+    }
+    const displaced = {
+      P: displacedForce,
+      Mx: displacedForce * (bar.y - prepared.section.referencePoint.y),
+      My: displacedForce * (bar.x - prepared.section.referencePoint.x)
+    }
+    const net = {
+      P: gross.P + displaced.P,
+      Mx: gross.Mx + displaced.Mx,
+      My: gross.My + displaced.My
+    }
+    add(steelGross, gross)
+    add(displacedConcrete, displaced)
+    return {
+      id: source.id,
+      diameter: source.dia,
+      areaSource: rebarAreaSourceLabel(source),
+      storedArea: source.area !== undefined,
+      steelMaterialId: source.steelMaterialId ?? calculationMaterials.defaults.steelMaterialId,
+      x: bar.x - prepared.section.referencePoint.x,
+      y: bar.y - prepared.section.referencePoint.y,
+      area: bar.area,
+      strain: bar.strain,
+      stress: bar.netStress,
+      force: bar.force,
+      Mx: bar.Mx,
+      My: bar.My,
+      steelStress: bar.steelStress,
+      displacedConcreteStress: -bar.displacedConcreteStress,
+      netStress: bar.netStress,
+      steelGross: gross,
+      displacedConcrete: displaced,
+      net
+    }
+  })
+  const steel = {
+    P: steelGross.P + displacedConcrete.P,
+    Mx: steelGross.Mx + displacedConcrete.Mx,
+    My: steelGross.My + displacedConcrete.My
+  }
+  const mechanicalLedger: ResultantLedger = {
+    concrete,
+    steelGross,
+    displacedConcrete,
+    steel,
+    total: {
+      P: concrete.P + steel.P,
+      Mx: concrete.Mx + steel.Mx,
+      My: concrete.My + steel.My
+    }
+  }
+  const resistanceFactor = stage === 'design' && prepared.designBasis.format === 'globalResultantFactor'
+    ? point.resistance?.factor ?? null
+    : null
+  if (stage === 'design' && prepared.designBasis.format === 'globalResultantFactor' && resistanceFactor === null) {
+    throw new AnalysisInputError(
+      'AUDIT_RECONCILIATION_FAILED',
+      'A Design equivalent-block state has no stored strength-reduction factor.',
+      { pointId: point.id }
+    )
+  }
+  let resistanceFactorCalculation: CalculationAuditResistanceFactor | null = null
+  if (resistanceFactor !== null && prepared.designBasis.format === 'globalResultantFactor') {
+    const source = evaluation.source
+    if (!source || !('resistance' in source) || source.resistance.phi !== resistanceFactor) {
+      throw new AnalysisInputError('AUDIT_RECONCILIATION_FAILED', 'Resistance-factor evidence does not reproduce the stored equivalent-block factor.', { pointId: point.id })
+    }
+    const evaluated = source.resistance
+    const basis = prepared.designBasis
+    if ('tensionControlledLimit' in evaluated) {
+      const bar = nominal.bars.find(candidate => candidate.id === nominal.controllingBarId)
+      const steel = calculationMaterials.steel.find(material => String(material.id) === bar?.steelLawId)
+      const inputBar = prepared.rebars.find(candidate => String(candidate.id) === bar?.id)
+      if (!bar || !steel || !inputBar) {
+        throw new AnalysisInputError('AUDIT_RECONCILIATION_FAILED', 'The factor-controlling bar or steel material is unavailable.', { pointId: point.id })
+      }
+      resistanceFactorCalculation = strainResistanceFactorAudit({
+        factor: evaluated.phi, classification: evaluated.classification,
+        tensileStrain: evaluated.tensileStrain, yieldStrain: evaluated.yieldStrain,
+        tensionLimit: evaluated.tensionControlledLimit, yieldStress: steel.fy,
+        elasticModulus: steel.elasticModulus, steelMaterialId: steel.id,
+        controllingRebarId: inputBar.id,
+        compressionFactor: basis.transverseReinforcement === 'qualifying-spiral'
+          ? basis.factors.phiCompressionSpiral : basis.factors.phiCompressionOther,
+        tensionFactor: basis.factors.phiTension,
+        transverseReinforcement: basis.transverseReinforcement, limitRule: basis.transition,
+        transitionDenominator: evaluated.tensionControlledLimit - evaluated.yieldStrain,
+        minimumTransitionSpan: null,
+        // The published block evaluators use this boundary tolerance when classifying a state.
+        classificationTolerance: 1e-12 * Math.max(1, evaluated.tensionControlledLimit)
+      })
+    } else {
+      const model = prepared.designModel
+      if (!('compressionPhiClass' in model)) {
+        throw new AnalysisInputError('AUDIT_RECONCILIATION_FAILED', 'Axial/bending factor evidence has no matching AS capacity-factor model.', { pointId: point.id })
+      }
+      const factors = model.resistanceFactors
+      resistanceFactorCalculation = {
+        kind: 'axial-bending', factor: evaluated.phi, classification: evaluated.classification,
+        compressionClass: model.compressionPhiClass,
+        compressionFactor: model.compressionPhiClass === 'ordinary'
+          ? factors.phiCompressionOrdinary : factors.phiCompressionShortColumnHighPermanentLoad,
+        tensionFactor: factors.phiTension,
+        neutralAxisRatio: evaluated.neutralAxisRatio,
+        nominalAxial: evaluated.nominalAxial, balancedAxial: evaluated.balancedAxial,
+        pureTensionAxial: evaluated.pureTensionAxial,
+        bending: { ...AS3600_BENDING_FACTOR_EXPRESSION, minimum: factors.phiBendingMinimum,
+          maximum: factors.phiBendingMaximum, factor: as3600BendingPhi(evaluated.neutralAxisRatio, factors) },
+        axialRatio: evaluated.classification === 'combined-compression'
+          ? evaluated.nominalAxial / evaluated.balancedAxial
+          : evaluated.classification === 'combined-tension'
+            ? Math.max(0, Math.min(1, evaluated.nominalAxial / evaluated.pureTensionAxial)) : null
+      }
+    }
+  }
+  const displayedLedger = resistanceFactor === null
+    ? mechanicalLedger
+    : blockAuditScale(mechanicalLedger, resistanceFactor)
+  const nominalReferenceEvaluation = nominalEvaluationFrom(
+    prepared.referenceModel.bindNominalEvaluator(prepared.section)(blockState)
+  )
+  if (!nominalReferenceEvaluation) {
+    throw new AnalysisInputError(
+      'AUDIT_RECONCILIATION_FAILED',
+      'The reference equivalent-block evaluator did not retain its component calculation.',
+      { pointId: point.id }
+    )
+  }
+  const nominalReferenceLedger = blockAuditLedger(
+    nominalReferenceEvaluation,
+    prepared.section.referencePoint
+  )
+  const storedNominalReference = stage === 'nominal'
+    ? point.ledger.total
+    : point.resistance?.nominalReference
+  if (!storedNominalReference) {
+    throw new AnalysisInputError(
+      'AUDIT_RECONCILIATION_FAILED',
+      'A Design equivalent-block point has no stored nominal/reference resultant.',
+      { pointId: point.id }
+    )
+  }
+  const forceScale = Math.max(1, Math.abs(mechanicalLedger.total.P), nominal.concrete.stress * prepared.section.grossArea)
+  const nominalReferenceReconciliation = reconcileCalculationAuditResultant(
+    nominalReferenceLedger.total,
+    storedNominalReference,
+    forceScale,
+    prepared.section.characteristicLength
+  )
+  const reconciliation = reconcileCalculationAuditResultant(
+    displayedLedger.total,
+    { P: point.P, Mx: point.Mx, My: point.My },
+    forceScale,
+    prepared.section.characteristicLength
+  )
+  if (!nominalReferenceReconciliation.ok || !reconciliation.ok) {
+    throw new AnalysisInputError(
+      'AUDIT_RECONCILIATION_FAILED',
+      `The exact-block audit does not reproduce its stored reference/selected result (relative deltas ${nominalReferenceReconciliation.relativeMaximum}/${reconciliation.relativeMaximum}).`,
+      { pointId: point.id, nominalReferenceReconciliation, reconciliation }
+    )
+  }
+  const depth = nominal.diagnostics.projectedSectionDepth
+  const blockDepth = nominal.state.blockDepth
+  const profileDepths = [...Array.from({ length: 41 }, (_, index) => depth * index / 40), blockDepth]
+    .filter((value) => value >= 0 && value <= depth)
+    .sort((left, right) => left - right)
+    .filter((value, index, values) => index === 0 || Math.abs(value - values[index - 1]) > 1e-10 * Math.max(1, depth))
+  const samples: CalculationAuditDepthProfile['samples'] = profileDepths.flatMap((sampleDepth) => {
+    const sample = {
+      depth: sampleDepth,
+      strain: nominal.diagnostics.extremeCompressionStrain * (1 - sampleDepth / blockState.neutralAxisDepth),
+      stress: sampleDepth <= blockDepth ? nominal.concrete.stress : 0
+    }
+    return Math.abs(sampleDepth - blockDepth) <= 1e-10 * Math.max(1, depth) && blockDepth < depth
+      ? [sample, { ...sample, stress: 0 }]
+      : [sample]
+  })
+  const depthProfileBasis = {
+    normalX: Math.cos(blockState.neutralAxisAngle),
+    normalY: Math.sin(blockState.neutralAxisAngle),
+    tensionEdgeProjection: nominal.diagnostics.compressionEdgeProjection - depth - (
+      Math.cos(blockState.neutralAxisAngle) * prepared.section.referencePoint.x +
+      Math.sin(blockState.neutralAxisAngle) * prepared.section.referencePoint.y
+    ),
+    compressionEdgeProjection: nominal.diagnostics.compressionEdgeProjection - (
+      Math.cos(blockState.neutralAxisAngle) * prepared.section.referencePoint.x +
+      Math.sin(blockState.neutralAxisAngle) * prepared.section.referencePoint.y
+    ),
+    projectedSectionDepth: depth,
+    neutralAxisProjection: nominal.diagnostics.neutralAxisProjection - (
+      Math.cos(blockState.neutralAxisAngle) * prepared.section.referencePoint.x +
+      Math.sin(blockState.neutralAxisAngle) * prepared.section.referencePoint.y
+    ),
+    neutralAxisDepth: blockState.neutralAxisDepth,
+    neutralAxisInsideSection: blockState.neutralAxisDepth <= depth,
+    samples
+  }
+  const originStrainContext = (() => {
+    if (
+      stationDefinition?.kind === 'neutral-axis-depth-ratio' ||
+      stationDefinition?.kind === 'block-depth-ratio'
+    ) {
+      return {
+        kind: 'depth-ratio' as const,
+        criterionLabel: stationDefinitionLabel(stationDefinition),
+        ratio: stationDefinition.ratio
+      }
+    }
+    if (stationDefinition?.kind !== 'bar-tension-yield-ratio') {
+      return {
+        kind: 'resolved-compatible-state' as const,
+        criterionLabel: stationDefinition ? stationDefinitionLabel(stationDefinition) : null
+      }
+    }
+    const controllingBar = nominal.controllingBarId === undefined
+      ? undefined
+      : nominal.bars.find((bar) => bar.id === nominal.controllingBarId)
+    const sourceRebar = controllingBar
+      ? prepared.rebars.find((bar) => String(bar.id) === controllingBar.id)
+      : undefined
+    const steelMaterialId = sourceRebar?.steelMaterialId ?? calculationMaterials.defaults.steelMaterialId
+    const steel = calculationMaterials.steel.find((material) => material.id === steelMaterialId)
+    if (!controllingBar || controllingBar.yieldStrain === undefined || !steel) {
+      return {
+        kind: 'resolved-compatible-state' as const,
+        criterionLabel: stationDefinitionLabel(stationDefinition)
+      }
+    }
+    const effectiveYieldStress = effectiveSteelYieldStress(steel)
+    const yieldFromStress = effectiveYieldStress / steel.elasticModulus
+    const yieldStrainBasis = Math.abs(controllingBar.yieldStrain - yieldFromStress) <=
+      1e-12 * Math.max(1, Math.abs(controllingBar.yieldStrain))
+      ? 'effective-yield-stress-over-elastic-modulus' as const
+      : 'declared-material-limit' as const
+    return {
+      kind: 'controlling-bar-strain' as const,
+      criterionLabel: stationDefinitionLabel(stationDefinition),
+      ratio: stationDefinition.ratio,
+      controllingRebarId: Number(controllingBar.id),
+      steelMaterialId,
+      effectiveYieldStress,
+      elasticModulus: steel.elasticModulus,
+      yieldStrain: controllingBar.yieldStrain,
+      yieldStrainBasis,
+      requestedSteelStrain: -stationDefinition.ratio * controllingBar.yieldStrain,
+      controllingSteelStrain: controllingBar.strain,
+      controllingBarProjection: depthProfileBasis.compressionEdgeProjection - controllingBar.projectedDepth,
+      compressionEdgeToBarDepth: controllingBar.projectedDepth
+    }
+  })()
+  const depthProfile: CalculationAuditDepthProfile = {
+    ...depthProfileBasis,
+    originStrainTrace: buildCalculationAuditOriginStrainTrace(
+      depthProfileBasis,
+      samples[0].strain,
+      originStrainContext
+    )
+  }
+  return {
+    kind: 'equivalent-block',
+    pointId: point.id,
+    stage,
+    origin: { ...prepared.section.referencePoint },
+    state: { ...point.state },
+    depthProfile,
+    provenance: blockAuditProvenance(prepared),
+    block: {
+      neutralAxisAngle: blockState.neutralAxisAngle,
+      neutralAxisDepth: blockState.neutralAxisDepth,
+      projectedSectionDepth: depth,
+      extremeCompressionStrain: nominal.diagnostics.extremeCompressionStrain,
+      beta1: nominal.state.blockDepth / blockState.neutralAxisDepth,
+      blockDepth: nominal.state.blockDepth,
+      compressionStress: nominal.concrete.stress,
+      compressionEdgeProjection: nominal.diagnostics.compressionEdgeProjection,
+      neutralAxisProjection: nominal.diagnostics.neutralAxisProjection,
+      blockBoundaryProjection: nominal.diagnostics.blockBoundaryProjection,
+      area: nominal.concrete.area,
+      centroidX: nominal.concrete.centroid.x - prepared.section.referencePoint.x,
+      centroidY: nominal.concrete.centroid.y - prepared.section.referencePoint.y,
+      geometry: nominal.concrete.geometry,
+      resultant: concrete
+    },
+    steelLaws: calculationMaterials.steel.map((material) => ({
+      materialId: material.id,
+      name: material.name,
+      law: describeSteelMaterialLaw(material)
+    })),
+    rebars,
+    mechanicalLedger,
+    nominalReferenceLedger,
+    displayedLedger,
+    resistanceFactor,
+    resistanceFactorCalculation,
+    nominalReferenceReconciliation,
+    reconciliation
+  }
+}
+
+const evaluateBlockAdmissibility = (
+  prepared: PreparedBlockAnalysis,
+  state: BlockSectionState | undefined,
+  nominal: NominalBlockEvaluation | undefined,
+  codeEnvelopeAccepted: boolean
+): StrainAdmissibility => {
+  const concreteLimit = prepared.model.blockLaw.extremeCompressionStrain
+  if (!state || !nominal) {
+    return {
+      evaluated: false,
+      ok: codeEnvelopeAccepted,
+      maxConcreteCompression: 0,
+      concreteLimit,
+      maxSteelTension: 0,
+      steelTensionLimit: null,
+      governingSteelLimit: null,
+      violations: []
+    }
+  }
+  const strain = strainState(prepared.section, state, prepared.model.blockLaw)
+  let maxConcreteCompression = 0
+  for (const solid of prepared.section.solids) {
+    for (const point of solid.outer) {
+      const localX = point.x - prepared.section.referencePoint.x
+      const localY = point.y - prepared.section.referencePoint.y
+      maxConcreteCompression = Math.max(
+        maxConcreteCompression,
+        strain.e0 + strain.kx * localY + strain.ky * localX
+      )
+    }
+  }
+  let maxSteelTension = 0
+  let steelTensionLimit: number | null = null
+  let governingSteelLimit: SteelStrainLimitEvidence | null = null
+  const violations: StrainAdmissibility['violations'] = []
+  for (const bar of nominal.bars) {
+    maxSteelTension = Math.max(maxSteelTension, Math.max(0, -bar.strain))
+    if (bar.ultimateStrain !== undefined) steelTensionLimit = steelTensionLimit === null
+      ? bar.ultimateStrain : Math.min(steelTensionLimit, bar.ultimateStrain)
+    const limit = steelStrainLimitAt({ tension: bar.ultimateStrain, compression: bar.compressionUltimateStrain }, bar.strain)
+    if (limit !== undefined) governingSteelLimit = selectGoverningSteelStrainLimit(governingSteelLimit, {
+      steelMaterialId: Number(bar.steelLawId), rebarId: Number(bar.id),
+      side: bar.strain < 0 ? 'tension' : 'compression', strain: bar.strain, limit
+    })
+    if (limit === undefined || Math.abs(bar.strain) <= limit * (1 + 1e-9)) continue
+    const sourceBar = prepared.rebars.find((candidate) => String(candidate.id) === bar.id)
+    violations.push({
+      code: 'STEEL_STRAIN_EXCEEDS_ULTIMATE',
+      rebarId: sourceBar?.id ?? Number(bar.id),
+      value: bar.strain,
+      limit
+    })
+  }
+  if (maxConcreteCompression > concreteLimit * (1 + 1e-9)) {
+    violations.unshift({
+      code: 'CONCRETE_STRAIN_EXCEEDS_ULTIMATE',
+      value: maxConcreteCompression,
+      limit: concreteLimit
+    })
+  }
+  return {
+    evaluated: true,
+    ok: violations.length === 0,
+    maxConcreteCompression,
+    concreteLimit,
+    maxSteelTension,
+    steelTensionLimit,
+    governingSteelLimit,
+    violations
+  }
+}
+
+/** Diagnostic physical boundary query; capped solver/check outputs are not replaced. */
+const blockCapacityResidual = (
+  response: CapacityEvaluation['resultants'], demand: LoadCombination, multiplier: number, checkBasis: DemandCheckBasis
+): CapacityEvaluation['resultants'] => ({
+  P: response.P - (checkBasis === 'constantAxial' ? demand.P : multiplier * demand.P),
+  Mx: response.Mx - multiplier * demand.Mx,
+  My: response.My - multiplier * demand.My
+})
+
+const blockResidualNorm = (residual: CapacityEvaluation['resultants'], surface: EquivalentBlockDesignSurface) => Math.hypot(
+  residual.P / surface.normalization.P, residual.Mx / surface.normalization.Mx, residual.My / surface.normalization.My
+)
+
+const equivalentBlockCapacityField = (
+  prepared: PreparedBlockAnalysis,
+  designSurface: EquivalentBlockDesignSurface,
+  demand: LoadCombination,
+  evaluator: CapacityEvaluator,
+  governingSolve: ReturnType<typeof solveProportionalRayCapacity>,
+  checkBasis: DemandCheckBasis
+): CapacityFieldResult => {
+  const onCap = governingSolve.status === 'cap-face-governed'
+  if (onCap && !designSurface.beforeAxialCap) return {
+    status: 'unavailable', reason: 'axial-cap', iterations: 0,
+    message: 'The original Design boundary before the axial cap is unavailable.'
+  }
+  const solved = onCap && designSurface.beforeAxialCap
+    ? solveProportionalRayCapacity(designSurface.beforeAxialCap, demand, evaluator) : governingSolve
+  if (solved.status !== 'converged' || !solved.state || solved.loadFactor === undefined || solved.loadFactor <= 0) {
+    return { status: 'unavailable', reason: 'non-converged', iterations: solved.iterations,
+      message: 'Physical capacity refinement did not converge; geometric checks remain available.' }
+  }
+  const exact = evaluator(solved.state)
+  const nominal = nominalEvaluationFrom(exact)
+  const admissibility = evaluateBlockAdmissibility(prepared, solved.state, nominal, false)
+  if (!admissibility.evaluated || !admissibility.ok) {
+    // The block law keeps the extreme fibre at its ultimate strain, so a crossing on the facet between
+    // the rupture-limited state and uniform tension has no block state; name the violated limit.
+    const steel = admissibility.violations.find((violation) => violation.code === 'STEEL_STRAIN_EXCEEDS_ULTIMATE')
+    return {
+      status: 'unavailable', reason: 'inadmissible', iterations: solved.iterations,
+      message: steel && 'rebarId' in steel
+        ? `No equivalent-block field: at this crossing bar ${steel.rebarId} would reach ε = ${Math.abs(steel.value).toPrecision(3)}, beyond its limit ${steel.limit}. The block keeps the extreme fibre at its ultimate strain, so no block state lies between the rupture-limited state and uniform tension. UR and verdict are unchanged.`
+        : 'The refined capacity state leaves the material domain.'
+    }
+  }
+  const response = exact.resultants
+  const factor = typeof exact.metadata?.phi === 'number' ? exact.metadata.phi : null
+  const equivalentBlock = evaluationTrace(prepared, solved.state, exact)
+  const reference = prepared.referenceModel.bindNominalEvaluator(prepared.section)(solved.state).resultants
+  const resistance: DesignResistanceTrace = prepared.designBasis.format === 'designMaterialReevaluation'
+    ? { nominalReference: reference, format: 'designMaterialReevaluation', factor: null,
+        classification: 'design-material', controllingTensileStrain: equivalentBlock.controllingTensileStrain ?? null,
+        yieldStrain: null, axialCapApplied: false, stages: ['Reference equivalent block', 'Design-material reevaluation'] }
+    : { nominalReference: reference, format: 'globalResultantFactor', factor,
+        classification: (exact.metadata?.classification as DesignResistanceTrace['classification']) ?? 'compression-controlled',
+        controllingTensileStrain: equivalentBlock.controllingTensileStrain ?? null,
+        yieldStrain: null, axialCapApplied: false, stages: ['Nominal equivalent block', 'Code strength reduction'] }
+  const limit = designSurface.axialCap
+  const beforeCap = limit !== undefined && response.P > limit
+  const residual = blockCapacityResidual(response, demand, solved.loadFactor, checkBasis)
+  return { status: 'available', boundary: beforeCap ? { kind: 'before-axial-cap', limit } : { kind: 'design' },
+    state: strainState(prepared.section, solved.state, prepared.model.blockLaw), response,
+    loadFactor: solved.loadFactor,
+    residual,
+    residualNorm: checkBasis === 'constantAxial' ? blockResidualNorm(residual, designSurface) : solved.residualNorm ?? 0,
+    iterations: solved.iterations, admissibility, resistance, equivalentBlock,
+    message: beforeCap
+      ? 'Physical equivalent-block Design boundary before the axial cap on the same load ray; exceeds permitted Design resistance. Governing UR is unchanged.'
+      : 'Compatible physical equivalent-block capacity state.' }
+}
+
+/** Express the exact constant-P solve in the ray-result shape shared by the block result fields. */
+const constantAxialCapacity = (
+  fixedAxial: ReturnType<typeof solveFixedAxialCapacity> | null
+): ReturnType<typeof solveProportionalRayCapacity> => fixedAxial?.status === 'converged' && fixedAxial.capacityFactor !== undefined
+  ? {
+      status: 'converged',
+      loadFactor: fixedAxial.capacityFactor,
+      utilization: fixedAxial.utilization,
+      capacity: fixedAxial.capacity,
+      state: fixedAxial.state,
+      iterations: fixedAxial.innerIterations
+    }
+  : { status: 'no-intersection', iterations: fixedAxial?.innerIterations ?? 0 }
+
+/**
+ * One constant-P axial memo per prepared model and Design surface: both fix the evaluator (Design,
+ * or Nominal for material reevaluation) and the event stations of the scan, so every loadcase on that
+ * surface shares the loadcase-independent P(angle, depth) grid.
+ */
+const fixedAxialMemos = new WeakMap<EquivalentBlockDesignSurface, WeakMap<PreparedBlockAnalysis, FixedAxialMemo>>()
+const fixedAxialMemoFor = (prepared: PreparedBlockAnalysis, surface: EquivalentBlockDesignSurface): FixedAxialMemo => {
+  let byPrepared = fixedAxialMemos.get(surface)
+  if (!byPrepared) {
+    byPrepared = new WeakMap()
+    fixedAxialMemos.set(surface, byPrepared)
+  }
+  let memo = byPrepared.get(prepared)
+  if (!memo) {
+    memo = createFixedAxialMemo()
+    byPrepared.set(prepared, memo)
+  }
+  return memo
+}
+
+export const solveEquivalentBlockDemandRaw = (
+  prepared: PreparedBlockAnalysis,
+  options: EquivalentBlockAnalysisOptions,
+  loadcase: LoadCombination,
+  preparedDesignSurface: EquivalentBlockDesignSurface | undefined,
+  checkBasis: DemandCheckBasis
+): InversePreviewResult => {
+  if (loadcase.P === 0 && loadcase.Mx === 0 && loadcase.My === 0) {
+    // The geometric check owns UR=0. A zero ray has no block capacity state; the legacy required
+    // state/response slots below are explicitly unevaluated and must never supply a field.
+    const zero = { P: 0, Mx: 0, My: 0 }
+    return { ok: false, converged: false, admissibility: evaluateBlockAdmissibility(prepared, undefined, undefined, false),
+      loadcaseId: loadcase.id, demand: loadcase, state: { e0: 0, kx: 0, ky: 0 }, response: zero,
+      residual: zero, residualNorm: 0, iterations: 0, utilization: null, contourPoint: null,
+      designCheck: { evaluated: false }, capacityField: { status: 'unavailable', reason: 'zero-demand',
+        iterations: 0, message: 'Zero demand has no unique capacity-field direction.' },
+      message: 'Zero demand has no capacity ray or unique block state; inverse evaluation is not applicable.' }
+  }
+  const designSurface = preparedDesignSurface ?? buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  const evaluator = (
+    prepared.designBasis.format === 'designMaterialReevaluation'
+      ? prepared.designModel.bindNominalEvaluator(prepared.section)
+      : prepared.designModel.bindDesignEvaluator(prepared.section)
+  ) as CapacityEvaluator
+  const proportional = solveProportionalRayCapacity(designSurface, loadcase, evaluator)
+  const fixedAxial = Math.hypot(loadcase.Mx, loadcase.My) > 0
+    ? solveFixedAxialCapacity(
+        prepared.section,
+        evaluator,
+        loadcase.P,
+        { Mx: loadcase.Mx, My: loadcase.My },
+        {
+          axialCap: designSurface.axialCap,
+          eventStations: designSurface.stations,
+          extremeCompressionStrain: prepared.model.blockLaw.extremeCompressionStrain,
+          compressionPivotStrain: prepared.model.blockLaw.compressionPivotStrain,
+          steelLaws: prepared.model.steelLaws,
+          axialMemo: fixedAxialMemoFor(prepared, designSurface)
+        }
+      )
+    : null
+  const atConstantAxial = checkBasis === 'constantAxial'
+  const solved = atConstantAxial ? constantAxialCapacity(fixedAxial) : proportional
+  const diagnostic = solved.refinement
+  const state = diagnostic?.state ?? solved.state
+  const response = diagnostic?.capacity ?? solved.capacity ?? { P: 0, Mx: 0, My: 0 }
+  const lambda = diagnostic?.loadFactor ?? solved.loadFactor ?? 0
+  const residual = diagnostic?.residual ?? blockCapacityResidual(response, loadcase, lambda, checkBasis)
+  const strain = strainState(prepared.section, state, prepared.model.blockLaw)
+  const exact = state ? evaluator(state) : undefined
+  const nominal = nominalEvaluationFrom(exact)
+  const metadata = exact?.metadata
+  const factor = typeof metadata?.phi === 'number' ? metadata.phi : null
+  const equivalentBlock = state && exact ? evaluationTrace(prepared, state, exact) : null
+  const utilization = solved.utilization ?? null
+  const converged = solved.status === 'converged' || solved.status === 'cap-face-governed'
+  const admissibility = evaluateBlockAdmissibility(
+    prepared,
+    state,
+    nominal,
+    solved.status === 'cap-face-governed'
+  )
+  const referenceAtState = state
+    ? prepared.referenceModel.bindNominalEvaluator(prepared.section)(state).resultants
+    : response
+  const resistance: DesignResistanceTrace | null = converged
+    ? prepared.designBasis.format === 'designMaterialReevaluation'
+      ? {
+          nominalReference: { ...referenceAtState },
+          format: 'designMaterialReevaluation',
+          factor: null,
+          classification: 'design-material',
+          controllingTensileStrain: equivalentBlock?.controllingTensileStrain ?? null,
+          yieldStrain: null,
+          axialCapApplied: false,
+          stages: ['Reference equivalent block', 'Design-material reevaluation']
+        }
+      : {
+          nominalReference: exact && factor ? {
+            P: exact.resultants.P / factor,
+            Mx: exact.resultants.Mx / factor,
+            My: exact.resultants.My / factor
+          } : response,
+          format: 'globalResultantFactor',
+          factor,
+          classification: (metadata?.classification as DesignResistanceTrace['classification']) ?? 'compression-controlled',
+          controllingTensileStrain: equivalentBlock?.controllingTensileStrain ?? null,
+          yieldStrain: null,
+          axialCapApplied: solved.status === 'cap-face-governed',
+          stages: solved.status === 'cap-face-governed'
+            ? ['Nominal equivalent block', 'Code strength reduction', 'Maximum axial design strength cap']
+            : ['Nominal equivalent block', 'Code strength reduction']
+        }
+    : null
+  return {
+    ok: converged && utilization !== null && admissibility.ok,
+    converged,
+    admissibility,
+    loadcaseId: loadcase.id,
+    demand: loadcase,
+    state: strain,
+    response,
+    residual,
+    residualNorm: atConstantAxial ? blockResidualNorm(residual, designSurface) : solved.residualNorm ?? 0,
+    iterations: solved.iterations,
+    utilization,
+    proportionalUtilization: proportional.utilization ?? null,
+    inverseProportionalUtilization: utilization,
+    fixedPUtilization: fixedAxial?.utilization ?? null,
+    designCheck: { evaluated: false },
+    designCapacityPoint: solved.capacity ?? null,
+    resistance,
+    equivalentBlock,
+    contourPoint: null,
+    capacityField: equivalentBlockCapacityField(prepared, designSurface, loadcase, evaluator, solved, checkBasis),
+    message: solved.status === 'cap-face-governed'
+      ? 'Factored ULS demand is governed by the code axial-cap face; no unique physical neutral-axis state exists on that face.'
+      : solved.status === 'mesh-fallback'
+        ? 'An approximate capacity was found on the faceted surface, but exact equilibrium refinement did not converge. The result is not accepted as an equilibrium state.'
+      : converged
+        ? atConstantAxial
+          ? 'Factored ULS demand checked by the equivalent-block constant-P solver.'
+          : 'Factored ULS demand checked by the equivalent-block proportional-ray solver.'
+        : atConstantAxial
+          ? 'No unique constant-P equivalent-block capacity state was found.'
+          : 'No intersection was found on the equivalent-block design surface.'
+  }
+}
+
+export const solveEquivalentBlockDemandFromPrepared = (
+  prepared: PreparedBlockAnalysis,
+  options: EquivalentBlockAnalysisOptions,
+  loadcase: LoadCombination,
+  preparedDesignSurface?: EquivalentBlockDesignSurface,
+  checkBasis: DemandCheckBasis = 'proportional3D'
+): InversePreviewResult => {
+  const designSurface = preparedDesignSurface ?? buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  const boundary = sectionBoundaryPoints(prepared.section)
+  const candidates = minimumEccentricityCandidates(prepared.designBasis, loadcase, (nx, ny) =>
+    projectedBoundaryDepth(boundary, nx, ny))
+  if (candidates.length === 0) {
+    return solveEquivalentBlockDemandRaw(prepared, options, loadcase, designSurface, checkBasis)
+  }
+
+  const solved = candidates.map((candidate) => {
+    const adjusted = { ...loadcase, Mx: candidate.Mx, My: candidate.My }
+    const result = solveEquivalentBlockDemandRaw(prepared, options, adjusted, designSurface, checkBasis)
+    return {
+      ...result,
+      demand: loadcase,
+      codeAdjustedDemand: adjusted,
+      minimumEccentricityMm: candidate.eccentricityMm,
+      message: `${result.message} ${minimumEccentricityMessage(candidate.eccentricityMm)}`
+    }
+  })
+  return solved.reduce((governing, candidate) =>
+    (candidate.utilization ?? Number.POSITIVE_INFINITY) >
+    (governing.utilization ?? Number.POSITIVE_INFINITY)
+      ? candidate
+      : governing
+  )
+}
+
+/**
+ * Solve a load-combination batch against one loadcase-independent design surface.
+ *
+ * Keeping construction here makes surface reuse the default for reports and batch consumers.
+ */
+export const solveEquivalentBlockDemandsFromPrepared = (
+  prepared: PreparedBlockAnalysis,
+  options: EquivalentBlockAnalysisOptions,
+  loadcases: readonly LoadCombination[],
+  preparedDesignSurface?: EquivalentBlockDesignSurface,
+  checkBasis: DemandCheckBasis = 'proportional3D'
+): InversePreviewResult[] => {
+  if (loadcases.length === 0) return []
+  const designSurface =
+    preparedDesignSurface ?? buildEquivalentBlockDesignSurfaceFromPrepared(prepared, options)
+  return loadcases.map((loadcase) =>
+    solveEquivalentBlockDemandFromPrepared(prepared, options, loadcase, designSurface, checkBasis)
+  )
+}
+
+export const buildEquivalentBlockFieldMapFromPrepared = (
+  prepared: PreparedBlockAnalysis,
+  state: BlockSectionState
+): SectionFieldMap => {
+  const nominalEvaluation = prepared.model.bindNominalEvaluator(prepared.section)(state)
+  const nominal = nominalEvaluation.source as NominalBlockEvaluation
+  const strain = strainState(prepared.section, state, prepared.model.blockLaw)
+  const at = (x: number, y: number) => {
+    const localX = x - prepared.section.referencePoint.x
+    const localY = y - prepared.section.referencePoint.y
+    return strain.e0 + strain.kx * localY + strain.ky * localX
+  }
+  const rebars = prepared.rebars.map((bar) => {
+    const barStrain = at(bar.x, bar.y)
+    const steelLawId = String(bar.steelMaterialId ?? prepared.materialStore.defaults.steelMaterialId)
+    const stress = prepared.model.steelLaws[steelLawId].stressAt(barStrain)
+    const area = rebarArea(bar, 'equivalent-block')
+    return { id: bar.id, x: bar.x, y: bar.y, dia: bar.dia, area, strain: barStrain, stress, force: stress * area }
+  })
+  return {
+    mechanics: 'equivalent-rectangular-block',
+    origin: { ...prepared.section.referencePoint },
+    samples: [],
+    triangles: [],
+    rebars,
+    bounds: {
+      minX: prepared.section.bounds.minX,
+      maxX: prepared.section.bounds.maxX,
+      minY: prepared.section.bounds.minY,
+      maxY: prepared.section.bounds.maxY
+    },
+    mesh: {
+      cellSize: 0,
+      minCaliperWidth: prepared.section.characteristicLength,
+      gridX: 0,
+      gridY: 0,
+      cells: 0,
+      components: prepared.section.solids.length,
+      triangles: 0,
+      points: 0,
+      exact: { area: prepared.section.grossArea, firstMomentX: 0, firstMomentY: 0 },
+      meshed: { area: prepared.section.grossArea, firstMomentX: 0, firstMomentY: 0 },
+      areaError: 0,
+      firstMomentXError: 0,
+      firstMomentYError: 0,
+      discardedArea: 0,
+      ok: true,
+      warnings: ['No mesh: strain is analytic and concrete compression uses exact block clipping.']
+    },
+    equivalentBlock: {
+      neutralAxisAngle: state.neutralAxisAngle,
+      neutralAxisDepth: state.neutralAxisDepth,
+      blockDepth: prepared.model.blockLaw.depthFactor * state.neutralAxisDepth,
+      compressionStress: prepared.model.blockLaw.compressionStress,
+      geometry: nominal.concrete.geometry
+    }
+  }
+}

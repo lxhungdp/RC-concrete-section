@@ -1,0 +1,19 @@
+{
+  "name": "@pm/equivalent-block",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node ../../tools/runtime/check-runtime.mjs && node --import tsx --test test/*.test.ts",
+    "bench": "node ../../tools/runtime/check-runtime.mjs && tsx ../../bench/equivalent-block/run.ts"
+  },
+  "dependencies": {
+    "@pm/geometry": "0.1.0",
+    "@pm/stations": "0.1.0"
+  }
+}

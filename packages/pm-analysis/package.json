@@ -1,0 +1,20 @@
+{
+  "name": "@pm/analysis",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": { ".": "./src/index.ts", "./capacity-field": "./src/capacity-field.ts", "./load-direction": "./src/load-direction.ts" },
+  "scripts": {
+    "test": "node ../../tools/runtime/check-runtime.mjs && node --import tsx --test test/*.test.ts",
+    "fixture:complex-section-json": "node ../../tools/runtime/check-runtime.mjs && tsx test/fixtures/write-complex-section.ts"
+  },
+  "dependencies": {
+    "@pm/design": "0.1.0",
+    "@pm/geometry": "0.1.0",
+    "@pm/materials": "0.1.0",
+    "@pm/project": "0.1.0",
+    "@pm/results": "0.1.0"
+  }
+}

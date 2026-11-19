@@ -1,0 +1,1248 @@
+import { checkBasisLabels } from '../model/check-basis'
+import { createDefaultProjectInformation, type DemandCheckBasis } from '@pm/project'
+import type { UnitSelection } from '@pm/units'
+import { appendPresentationSummary } from './presentation-summary'
+/**
+ * Excel export of the equivalent rectangular stress-block section calculation.
+ *
+ * It is the block counterpart of `./index.ts`, laid out so the two workbooks can be opened side by
+ * side on the same project: the same Input / Design_Check / Geometry / Steel / PM_Angle /
+ * MxMy_FixedP / PM_Theta / Equilibrium spine, the same named inputs where the two mechanics share a
+ * quantity, and the same rule about what may be a constant.
+ *
+ * It is deliberately **not** the fibre workbook with different numbers. The block kernel has no
+ * integration mesh, so `Mesh` and `Concrete` are replaced by:
+ *
+ *   Block       one row per active neutral-axis layer at the audited direction: c, a = β1·c, the clipped
+ *               compression area and its first moments, and the concrete resultants as formulas
+ *   Block_Clip  the clipped compression polygon of every active layer, with area and first moments
+ *               recomputed by shoelace formula and reconciled against the values `Block` uses
+ *
+ * Constants are limited to what a spreadsheet cannot express: exact polygon clipping against the
+ * half-plane `u ≥ u_max − a`, and the surface grid the solver produced. Every strain, stress,
+ * force, moment, φ, contour interpolation and residual stays a formula.
+ *
+ * Two angles are kept strictly apart, as in the fibre workbook:
+ *   `theta`   block-normal direction that generates the boundary states;
+ *   `theta_L` demand moment direction, `ATAN2(Mux, Muy)`, used only to query the finished surface.
+ *
+ * Both mechanics use the project-wide resultant convention `Mx = Σ F·y`, `My = Σ F·x`
+ * (`docs/engineering/02`). The workbook publishes that convention on `Input` and keeps every
+ * concrete and steel component formula consistent with it.
+ */
+import { rebarArea, rebarAreaSourceLabel, type GeometryInputRebarView, type SectionGeometry } from '@pm/geometry'
+import type { MaterialStore, SteelMaterial } from '@pm/materials'
+import {
+  designBasisRequiresOverrideReason,
+  buildResistanceMaterialSets,
+  withSteelModelModification,
+  resolveMaterialFactorExpression,
+  resolveTensionControlledStrainLimit,
+  type DesignBasis
+} from '@pm/design'
+import {
+  calculationProfile,
+  type EquivalentBlockAnalysisOptions,
+  type EquivalentBlockProfileId,
+  type LoadCombination
+} from '@pm/project'
+import {
+  buildEquivalentBlockDesignSurfaceFromPrepared,
+  buildEquivalentBlockExactDirectionCurveFromPrepared,
+  buildEquivalentBlockPreviewSurfaceFromPrepared,
+  prepareBlockAnalysis,
+  solveEquivalentBlockDemandFromPrepared
+} from '@pm/analysis-equivalent-block'
+import { resolveSteelStrainLimits, type NominalBlockEvaluation } from '@pm/equivalent-block'
+import {
+  applyDesignCheckToInverse,
+  activeDesignDirectionPoints,
+  activeDesignSurfaceDataset,
+  checkLoadcaseUtilizationFromSurface,
+  intersectFixedPContourWithMomentRay,
+  sliceFixedPContour,
+  sliceMomentPlane
+} from '@pm/analysis'
+import {
+  createDefineName,
+  createWorkbook,
+  ExcelExportError,
+  headerRow,
+  noteCell,
+  orderedCurve,
+  sectionHeading,
+  steelDesignFy,
+  steelLaw,
+  steelHardeningWorkbookInputs,
+  title,
+  CONST_FILL,
+  INPUT_FILL
+} from './workbook-common'
+
+export type EquivalentBlockExcelInput = {
+  presentationUnits?: UnitSelection
+  projectName: string
+  sectionName: string
+  calculationProfileId: EquivalentBlockProfileId
+  section: SectionGeometry
+  rebars: GeometryInputRebarView[]
+  materialStore: MaterialStore
+  designBasis: DesignBasis
+  analysisOptions: EquivalentBlockAnalysisOptions
+  /** Exact block-normal direction of the audited station ledger, degrees. */
+  thetaDeg: number
+  /** Axial level for the Mx-My contour sheet, N. */
+  fixedP: number
+  loadcase: LoadCombination | null
+  checkBasis?: DemandCheckBasis
+}
+
+const TAU = 2 * Math.PI
+const wrap = (angle: number) => ((angle % TAU) + TAU) % TAU
+const deg = (radians: number) => (radians * 180) / Math.PI
+
+/** Smallest signed difference between two directions on the circle. */
+const angularDistance = (a: number, b: number) => {
+  const raw = wrap(a - b)
+  return Math.min(raw, TAU - raw)
+}
+
+export const equivalentBlockWorkbookFileName = (
+  input: Pick<EquivalentBlockExcelInput, 'projectName' | 'thetaDeg' | 'loadcase'>
+) => {
+  const safe = (input.projectName || 'project').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
+  const theta = Math.round(((input.thetaDeg % 360) + 360) % 360)
+  const suffix = input.loadcase ? `LC${input.loadcase.id}` : 'fixedP'
+  return `${safe || 'project'}-equivalent-block-${suffix}-theta${theta}.xlsx`
+}
+
+export const buildEquivalentBlockWorkbook = async (input: EquivalentBlockExcelInput) => {
+  const { section, rebars, materialStore } = input
+  if (rebars.length === 0) throw new ExcelExportError('The section has no reinforcement to report.')
+  const basis = withSteelModelModification(input.designBasis, materialStore)
+  const usesDesignMaterials = basis.format === 'designMaterialReevaluation'
+  const usesAs3600CapacityFactors = input.calculationProfileId === 'as-3600-2018-amd2-equivalent-block'
+  const profile = calculationProfile(input.calculationProfileId)
+
+  const prepared = prepareBlockAnalysis(
+    input.calculationProfileId,
+    section,
+    rebars,
+    materialStore,
+    basis
+  )
+  const origin = prepared.section.referencePoint
+  const blockLaw = prepared.model.blockLaw
+  const steel =
+    materialStore.steel.find((item) => item.id === materialStore.defaults.steelMaterialId) ?? materialStore.steel[0]
+  if (!steel) throw new ExcelExportError('No steel material is defined.')
+
+  // Named inputs describe the first used grade. Mixed-grade rows use each bar's own resolved law.
+  const usedSteelIds = new Set(
+    rebars.map((bar) => String(bar.steelMaterialId ?? materialStore.defaults.steelMaterialId))
+  )
+  const stageMaterials = buildResistanceMaterialSets(materialStore, basis)
+  const stageSteel = basis.format === 'designMaterialReevaluation' ? stageMaterials.designMaterials.steel : stageMaterials.referenceMaterials.steel
+  const barSteelId = [...usedSteelIds][0]
+  const barSteel = materialStore.steel.find((item) => String(item.id) === barSteelId) ?? steel
+  const stageDefinition = stageSteel.find((item) => item.id === barSteel.id) ?? barSteel
+  const sLaw = steelLaw(stageDefinition)
+  const designSteelLaw = prepared.designModel.steelLaws[String(barSteelId)]
+  const fyModel = designSteelLaw?.yieldStrain !== undefined
+    ? designSteelLaw.yieldStrain * barSteel.elasticModulus
+    : steelDesignFy(barSteel)
+  const epsY = designSteelLaw?.yieldStrain ?? barSteel.limits?.epsY ?? fyModel / barSteel.elasticModulus
+  const epsU = barSteel.limits?.epsU
+  const activeTensionLimit = designSteelLaw && resolveSteelStrainLimits(designSteelLaw).tension
+
+  const designSurfaceCore = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, input.analysisOptions)
+  const surface = buildEquivalentBlockPreviewSurfaceFromPrepared(prepared, input.analysisOptions, designSurfaceCore)
+  const fixedOptions = structuredClone(input.analysisOptions)
+  fixedOptions.neutralAxisStations.refinement = { type: 'fixed' }
+  fixedOptions.directions.refinement = { type: 'fixed' }
+  const designFixedSurfaceCore = buildEquivalentBlockDesignSurfaceFromPrepared(prepared, fixedOptions)
+  // Under a design-material basis these are the design-material resultants and an identity design
+  // evaluator. The characteristic reference is the independently sampled `nominalPoints` surface.
+  const nominalEvaluator = prepared.designModel.bindNominalEvaluator(prepared.section)
+  const designEvaluator = prepared.designModel.bindDesignEvaluator(prepared.section)
+
+  // ---- audited direction: calculate the requested meridian exactly -------------------------
+  const sampledDirections = [...new Set(designSurfaceCore.directions.map(wrap))].sort((a, b) => a - b)
+  const fixedDirections = [...new Set(designFixedSurfaceCore.directions.map(wrap))].sort((a, b) => a - b)
+  if (sampledDirections.length === 0 || fixedDirections.length === 0) {
+    throw new ExcelExportError('The block surface carries no sampled direction.')
+  }
+  const theta = wrap((input.thetaDeg * Math.PI) / 180)
+  const thetaDeg = deg(theta)
+  const exactCurve = buildEquivalentBlockExactDirectionCurveFromPrepared(
+    prepared,
+    input.analysisOptions,
+    wrap(Math.PI / 2 - theta)
+  )
+
+  const auditedDepths = [...new Set(
+    activeDesignDirectionPoints(exactCurve)
+      .flatMap((point) => point.equivalentBlock ? [point.equivalentBlock.neutralAxisDepth] : [])
+  )].sort((a, b) => b - a)
+  if (auditedDepths.length === 0) {
+    throw new ExcelExportError('The audited direction carries no neutral-axis state to report.')
+  }
+
+  type AuditedStation = {
+    index: number
+    c: number
+    nominal: NominalBlockEvaluation
+    phi: number
+    classification: string
+  }
+  const stations: AuditedStation[] = auditedDepths.map((c, index) => {
+    const state = { neutralAxisAngle: theta, neutralAxisDepth: c }
+    const nominal = nominalEvaluator(state).source as NominalBlockEvaluation
+    const design = designEvaluator(state)
+    return {
+      index: index + 1,
+      c,
+      nominal,
+      phi: typeof design.metadata?.phi === 'number' ? design.metadata.phi : 1,
+      classification: String(design.metadata?.classification ?? 'compression-controlled')
+    }
+  })
+
+  const compressionEdge = stations[0].nominal.diagnostics.compressionEdgeProjection
+  const projectedDepth = stations[0].nominal.diagnostics.projectedSectionDepth
+
+  const bars = rebars.map((bar, index) => ({
+    no: index + 1,
+    id: String(bar.id),
+    steelMaterialId: bar.steelMaterialId ?? materialStore.defaults.steelMaterialId,
+    dia: bar.dia,
+    x: bar.x - origin.x,
+    y: bar.y - origin.y,
+    absX: bar.x,
+    absY: bar.y,
+    area: rebarArea(bar, 'equivalent-block'),
+    storedArea: bar.area !== undefined,
+    areaSource: rebarAreaSourceLabel(bar)
+  }))
+
+  const demandP = input.loadcase ? input.loadcase.P : input.fixedP
+  const thetaLoad = input.loadcase ? Math.atan2(input.loadcase.My, input.loadcase.Mx) : 0
+  const activeDesignSurface = activeDesignSurfaceDataset(surface)
+  const engineContour = sliceFixedPContour(
+    activeDesignSurface.points,
+    demandP,
+    activeDesignSurface.triangles
+  )
+  const engineBoundary = intersectFixedPContourWithMomentRay(engineContour, thetaLoad)
+  const demand = input.loadcase
+    ? applyDesignCheckToInverse(
+        solveEquivalentBlockDemandFromPrepared(prepared, input.analysisOptions, input.loadcase, designSurfaceCore, input.checkBasis),
+        checkLoadcaseUtilizationFromSurface(surface, input.loadcase, input.checkBasis)
+      )
+    : null
+
+  const workbook = await createWorkbook()
+  const defineName = createDefineName(workbook)
+
+  // ==========================================================================
+  // Input
+  // ==========================================================================
+  const inputSheet = workbook.addWorksheet('Input', { views: [{ showGridLines: false }] })
+  inputSheet.columns = [{ width: 4 }, { width: 30 }, { width: 20 }, { width: 10 }, { width: 66 }]
+  title(inputSheet, 1, 'EQUIVALENT RECTANGULAR STRESS BLOCK — SECTION CALCULATION', 4)
+  inputSheet.getCell('B2').value = 'Project'
+  inputSheet.getCell('C2').value = input.projectName
+  inputSheet.getCell('B3').value = 'Section'
+  inputSheet.getCell('C3').value = input.sectionName
+  inputSheet.getCell('B4').value = 'Generated'
+  inputSheet.getCell('C4').value = new Date().toISOString().slice(0, 19).replace('T', ' ')
+  noteCell(inputSheet, 2, 5,
+    'Every shaded cell drives live formulas on the other sheets. Only the clipped-polygon geometry and the sampled surface grid are engine values; the ledger, φ, contour and residual are formulas.')
+  inputSheet.mergeCells('E2:E4')
+
+  type NamedInput = {
+    row: number
+    label: string
+    value: number | string
+    unit: string
+    name?: string
+    note?: string
+    formula?: string
+  }
+
+  let row = 6
+  sectionHeading(inputSheet, row, 'Calculation profile', 4)
+  row += 1
+  const profileInputs: NamedInput[] = [
+    { row: row++, label: 'profile', value: profile.label, unit: '', note: `method ${profile.mechanics}` },
+    { row: row++, label: 'resistance profile', value: basis.identity.document, unit: '', note: basis.identity.edition },
+    { row: row++, label: 'verification status', value: basis.verificationStatus, unit: '', note: 'not an engineering approval; see docs/00-README §4' },
+    { row: row++, label: 'modified from defaults', value: basis.modified ? 'yes' : 'no', unit: '', note: basis.overrideReason || (designBasisRequiresOverrideReason(basis) ? 'a reason is required and missing' : '') },
+    { row: row++, label: 'concrete model basis', value: basis.materialModelModified ? 'user-defined / modified' : 'code-default', unit: '', note: basis.materialModelModified ? 'the selected model replaces the profile default' : '' },
+    { row: row++, label: 'steel model basis', value: basis.steelModelModified ? 'project-modified' : 'profile-supported', unit: '', note: basis.steelModelModified ? basis.overrideReason : '' }
+  ]
+
+  row += 1
+  sectionHeading(inputSheet, row, 'Concrete — equivalent block', 4)
+  row += 1
+  const blockStressFactor = blockLaw.compressionStress / materialStore.concrete.fck
+  const concreteInputs: NamedInput[] = [
+    { row: row++, label: 'standard', value: materialStore.concrete.standard, unit: '', note: materialStore.concrete.name },
+    { row: row++, label: 'fck', value: materialStore.concrete.fck, unit: 'MPa', name: 'fck', note: 'characteristic/input strength' },
+    { row: row++, label: usesAs3600CapacityFactors ? "α₂ (σblock/f'c)" : 'α (σblock/fck)', value: blockStressFactor, unit: '-', name: 'alpha', note: usesAs3600CapacityFactors ? 'AS 3600 stress factor resolved by the code adapter' : 'resolved by the code adapter; KDS writes it as η·0.85, ACI as 0.85' },
+    { row: row++, label: usesAs3600CapacityFactors ? "σblock = α₂·f'c" : 'σblock = α·fck', value: blockLaw.compressionStress, unit: 'MPa', name: 'sig_blk', formula: 'alpha*fck' },
+    { row: row++, label: usesAs3600CapacityFactors ? 'γ' : 'β1', value: blockLaw.depthFactor, unit: '-', name: 'beta_1', note: usesAs3600CapacityFactors ? 'AS 3600 block depth a = γ·c' : 'block depth a = β1·c' },
+    { row: row++, label: 'εcu', value: blockLaw.extremeCompressionStrain, unit: '-', name: 'ecu', note: 'extreme compression fibre strain' },
+    { row: row++, label: 'εc,pivot', value: blockLaw.compressionPivotStrain ?? 0, unit: '-', name: 'ec_pivot', note: blockLaw.compressionPivotStrain === undefined ? 'not active' : 'all-compression strain-domain pivot; pure compression reaches εc0 while an internal neutral axis reaches εcu' },
+    { row: row++, label: 'displaced concrete deducted', value: blockLaw.subtractDisplacedConcrete ? 'yes' : 'no', unit: '', note: 'bars inside the block carry σs − σblock' }
+  ]
+  if (usesAs3600CapacityFactors) {
+    concreteInputs.push({
+      row: row++,
+      label: 'Workbook named-range aliases',
+      value: 'alpha = α₂; beta_1 = γ',
+      unit: '',
+      note: "sigma_block = alpha2*f'c and a = gamma*c; legacy workbook names remain stable"
+    })
+  }
+
+  row += 1
+  sectionHeading(inputSheet, row, 'Reinforcement', 4)
+  row += 1
+  const appliesSteelGamma = stageDefinition.factors?.gammaS !== undefined
+  const steelResistanceScale = usesDesignMaterials
+    ? resolveMaterialFactorExpression(basis.factors.reinforcement)
+    : 1
+  const factorReferences = (expression: { components: ReadonlyArray<{ clauseRef: string }> }) =>
+    [...new Set(expression.components.map((component) => component.clauseRef))].join('; ')
+  const steelInputs: NamedInput[] = [
+    { row: row++, label: 'standard', value: barSteel.standard, unit: '', note: barSteel.name },
+    { row: row++, label: 'Es', value: barSteel.elasticModulus, unit: 'MPa', name: 'Es' },
+    { row: row++, label: 'fy (characteristic)', value: barSteel.fy, unit: 'MPa', name: 'fy_char' },
+    { row: row++, label: 'γs', value: stageDefinition.factors?.gammaS ?? 1, unit: '-', name: 'gamma_s', note: appliesSteelGamma ? 'material partial factor' : 'not applied by this material family' },
+    {
+      row: row++, label: 'reinforcement resistance multiplier', value: steelResistanceScale,
+      unit: '-', name: 'steel_res_scale', note: usesDesignMaterials ? factorReferences(basis.factors.reinforcement) : 'no material-strength reduction'
+    },
+    {
+      row: row++, label: 'fy (model)', value: fyModel, unit: 'MPa', name: 'fy',
+      formula: usesDesignMaterials ? 'fy_char*steel_res_scale' : appliesSteelGamma ? 'fy_char/gamma_s' : 'fy_char'
+    },
+    { row: row++, label: 'εy = fy/Es', value: epsY, unit: '-', name: 'epsy', formula: 'fy/Es' },
+    ...steelHardeningWorkbookInputs(stageDefinition).map((entry) => ({ ...entry, row: row++ })),
+    { row: row++, label: 'εu physical (independent)', value: epsU ?? 'not declared', unit: '-', name: epsU === undefined ? undefined : 'epsu',
+      note: epsU === undefined ? 'No independent physical bound; a design cutoff can still apply.' : 'Physical bound restricts both tension and compression.' },
+    { row: row++, label: 'Active tensile strain limit', value: activeTensionLimit ?? 'not declared', unit: '-',
+      formula: activeTensionLimit === undefined ? undefined : stageDefinition.stressStrain.type === 'linear-hardening'
+        ? epsU === undefined ? 'steel_eps_limit' : 'MIN(steel_eps_limit,epsu)'
+        : 'epsu',
+      note: activeTensionLimit === undefined ? 'No finite tensile bound is declared.' : 'Design cutoff restricted by the independent physical bound, when declared. Named inputs describe the first used grade.' },
+    { row: row++, label: 'law', value: sLaw.description, unit: '', note: '' }
+  ]
+
+  row += 1
+  sectionHeading(inputSheet, row, 'Strength reduction and axial cap', 4)
+  row += 1
+  const compressionPhi = basis.format === 'globalResultantFactor'
+    ? basis.transverseReinforcement === 'qualifying-spiral'
+      ? basis.factors.phiCompressionSpiral
+      : basis.factors.phiCompressionOther
+    : 1
+  const capRatio = basis.format === 'globalResultantFactor'
+    ? basis.transverseReinforcement === 'qualifying-spiral'
+      ? basis.factors.axialCapSpiral
+      : basis.factors.axialCapOther
+    : 1
+  const tensionLimit = basis.format === 'globalResultantFactor'
+    ? resolveTensionControlledStrainLimit(basis, epsY, barSteel.fy)
+    : epsY
+  const resistanceInputs: NamedInput[] = basis.format === 'globalResultantFactor'
+    ? [
+        { row: row++, label: 'resistance format', value: 'global resultant factor', unit: '', note: 'one φ scales the complete P-Mx-My resultant' },
+        { row: row++, label: 'transverse reinforcement', value: basis.transverseReinforcement, unit: '', note: 'selects the compression-controlled φ and the cap ratio' },
+        { row: row++, label: 'φ compression (active)', value: compressionPhi, unit: '-', name: 'phi_c' },
+        { row: row++, label: 'φ tension', value: basis.factors.phiTension, unit: '-', name: 'phi_t' },
+        { row: row++, label: 'εt,limit', value: tensionLimit, unit: '-', name: 'ept_lim', note: basis.transition.type === 'yield-plus-strain' ? `εy + ${basis.transition.extraStrain}` : `fixed ${basis.transition.fixedStrainLimit} at or below fy = ${basis.transition.yieldStressThreshold} MPa, else ${basis.transition.highStrengthYieldMultiple}·εy` },
+        { row: row++, label: 'axial cap ratio', value: capRatio, unit: '-', name: 'cap_r' },
+        { row: row++, label: 'axial cap applied', value: basis.axialCapEnabled ? 'yes' : 'no', unit: '', note: 'clips the design surface at cap ratio × the factored compression pole' }
+      ]
+    : [
+        { row: row++, label: 'resistance format', value: 'two-pass design-material reevaluation', unit: '', note: 'characteristic reference and reduced-material design surfaces are solved independently' },
+        { row: row++, label: 'concrete resistance multiplier', value: resolveMaterialFactorExpression(basis.factors.concrete), unit: '-', note: factorReferences(basis.factors.concrete) },
+        { row: row++, label: 'reinforcement resistance multiplier', value: steelResistanceScale, unit: '-', note: factorReferences(basis.factors.reinforcement) },
+        { row: row++, label: 'resultant φ', value: 1, unit: '-', name: 'phi_c', note: 'not applied; material strengths are already reduced' },
+        { row: row++, label: 'resultant φ (tension)', value: 1, unit: '-', name: 'phi_t', note: 'not applied' },
+        { row: row++, label: 'transition placeholder', value: tensionLimit, unit: '-', name: 'ept_lim', note: 'not used by the design-material route' },
+        { row: row++, label: 'axial cap ratio', value: 1, unit: '-', name: 'cap_r', note: 'not applied' },
+        { row: row++, label: 'compression strain boundary', value: basis.compressionEndpoint === 'peak-stress-strain' ? 'εc0' : 'εcu', unit: '', note: factorReferences(basis.factors.concrete) },
+        { row: row++, label: 'minimum eccentricity', value: basis.minimumEccentricity ? `${basis.minimumEccentricity.constantMm} + ${basis.minimumEccentricity.depthFactor}h mm` : 'not applied', unit: '', note: basis.minimumEccentricity?.clauseRef ?? '' }
+      ]
+  if (usesAs3600CapacityFactors) {
+    resistanceInputs.push({
+      row: row++,
+      label: 'AS capacity-factor evaluation',
+      value: 'code adapter',
+      unit: '',
+      note: 'Table 2.2.2 bending/axial interaction; PM_Angle carries the evaluated phi for audit'
+    })
+  }
+
+  row += 1
+  sectionHeading(inputSheet, row, 'Analysis', 4)
+  row += 1
+  const analysisInputs: NamedInput[] = [
+    { row: row++, label: 'θ (block-normal direction)', value: thetaDeg, unit: 'deg', name: 'theta', note: 'exact requested direction; no angular interpolation or nearest-direction snapping' },
+    { row: row++, label: 'u_max (compression edge)', value: compressionEdge, unit: 'mm', name: 'u_max', note: 'max of n·(x,y) over the outer boundary at θ; an engine value because it needs the polygon' },
+    { row: row++, label: 'Dθ (projected depth)', value: projectedDepth, unit: 'mm', name: 'd_theta' },
+    {
+      row: row++,
+      label: 'block-boundary tolerance',
+      value: 1e-10 * prepared.section.characteristicLength,
+      unit: 'mm',
+      name: 'blk_tol',
+      note: 'the kernel\'s own 1e-10 · characteristic length; a bar within it counts as inside the block'
+    },
+    { row: row++, label: 'xc', value: origin.x, unit: 'mm', name: 'xc', note: 'analysis origin = net concrete centroid' },
+    { row: row++, label: 'yc', value: origin.y, unit: 'mm', name: 'yc', note: 'all X, Y below are measured from it' },
+    {
+      row: row++,
+      label: 'requested station schedule',
+      value: input.analysisOptions.neutralAxisStations.values.length + 2,
+      unit: '-',
+      note: input.analysisOptions.neutralAxisStations.basedOn
+    },
+    {
+      row: row++,
+      label: 'active layers at θ',
+      value: stations.length,
+      unit: '-',
+      note: 'non-pole layers remaining after coincident layers and the design axial cap are removed from mesh topology'
+    },
+    { row: row++, label: 'Design directions', value: sampledDirections.length, unit: '-', note: `fixed ${input.analysisOptions.directions.seedCount}` },
+    { row: row++, label: 'fixed-P directions', value: fixedDirections.length, unit: '-', note: 'independent fixed grid used by MxMy_FixedP' },
+    { row: row++, label: 'direction interpolation error', value: designSurfaceCore.maxDirectionalInterpolationError, unit: '-', note: designSurfaceCore.directionRefinementConverged ? 'within the requested tolerance' : 'TOLERANCE NOT REACHED' },
+    {
+      row: row++,
+      label: 'station chord diagnostic',
+      value: exactCurve.stationError.maxRelative,
+      unit: '-',
+      note: input.analysisOptions.neutralAxisStations.refinement.type === 'adaptive'
+        ? exactCurve.stationError.withinTolerance ? 'within the requested tolerance' : 'TOLERANCE NOT REACHED'
+        : 'diagnostic only; the requested station schedule is fixed'
+    },
+    { row: row++, label: 'surface closed', value: designSurfaceCore.topology.closed ? 'yes' : 'no', unit: '', note: `${designSurfaceCore.topology.boundaryEdges} boundary edges` }
+  ]
+
+  row += 1
+  sectionHeading(inputSheet, row, 'Demand (factored ULS)', 4)
+  row += 1
+  const demandInputs: NamedInput[] = [
+    { row: row++, label: 'Pu', value: demandP / 1e3, unit: 'kN', name: 'Pu', note: input.loadcase?.name ?? 'fixed-P slider value' },
+    { row: row++, label: 'Mux', value: input.loadcase ? input.loadcase.Mx / 1e6 : 0, unit: 'kN·m', name: 'Mux' },
+    { row: row++, label: 'Muy', value: input.loadcase ? input.loadcase.My / 1e6 : 0, unit: 'kN·m', name: 'Muy' }
+  ]
+
+  for (const entry of [...profileInputs, ...concreteInputs, ...steelInputs, ...resistanceInputs, ...analysisInputs, ...demandInputs]) {
+    inputSheet.getCell(entry.row, 2).value = entry.label
+    const valueCell = inputSheet.getCell(entry.row, 3)
+    valueCell.value = entry.formula ? { formula: entry.formula, result: entry.value } : entry.value
+    valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INPUT_FILL } }
+    valueCell.border = { top: { style: 'hair' }, left: { style: 'hair' }, bottom: { style: 'hair' }, right: { style: 'hair' } }
+    if (typeof entry.value === 'number') {
+      valueCell.numFmt = Math.abs(entry.value) < 0.01 && entry.value !== 0 ? '0.000000' : '#,##0.000'
+    } else {
+      valueCell.alignment = { horizontal: 'left' }
+    }
+    inputSheet.getCell(entry.row, 4).value = entry.unit
+    if (entry.note) noteCell(inputSheet, entry.row, 5, entry.note)
+    if (entry.name) defineName(`Input!$C$${entry.row}`, entry.name)
+  }
+
+  const thetaLoadRow = row + 1
+  inputSheet.getCell(thetaLoadRow, 2).value = 'θ_L (demand direction)'
+  inputSheet.getCell(thetaLoadRow, 3).value = { formula: 'IF(AND(Mux=0,Muy=0),0,DEGREES(ATAN2(Mux,Muy)))' }
+  inputSheet.getCell(thetaLoadRow, 3).numFmt = '#,##0.0000'
+  inputSheet.getCell(thetaLoadRow, 3).font = { bold: true }
+  inputSheet.getCell(thetaLoadRow, 4).value = 'deg'
+  noteCell(inputSheet, thetaLoadRow, 5,
+    'atan2 of the demand moment vector. Used only to query the finished surface. It is not the block-normal direction θ above.')
+  defineName(`Input!$C$${thetaLoadRow}`, 'theta_L')
+
+  const muRow = thetaLoadRow + 1
+  inputSheet.getCell(muRow, 2).value = 'Mu resultant'
+  inputSheet.getCell(muRow, 3).value = { formula: 'SQRT(Mux^2+Muy^2)' }
+  inputSheet.getCell(muRow, 3).numFmt = '#,##0.00'
+  inputSheet.getCell(muRow, 4).value = 'kN·m'
+  defineName(`Input!$C$${muRow}`, 'Mu')
+
+  const signRow = muRow + 2
+  sectionHeading(inputSheet, signRow, 'Sign convention used by this workbook', 4)
+  inputSheet.getCell(signRow + 1, 2).value = 'Mx'
+  inputSheet.getCell(signRow + 1, 3).value = '+Σ F·(y−yc)'
+  inputSheet.getCell(signRow + 2, 2).value = 'My'
+  inputSheet.getCell(signRow + 2, 3).value = '+Σ F·(x−xc)'
+  noteCell(inputSheet, signRow + 2, 5,
+    'Project-wide convention used by both stress-strain and equivalent-block mechanics. Positive force eccentricity along +x produces +My.')
+
+  const provRow = signRow + 4
+  sectionHeading(inputSheet, provRow, 'What is a formula and what is an engine value', 4)
+  const provenance: Array<[string, string, string]> = [
+    ['Geometry vertices, bar schedule', 'engine value', 'input data'],
+    ['Clipped block polygon (Block_Clip)', 'engine value', 'half-plane clipping of a multiply connected polygon is not a spreadsheet operation'],
+    ['Block area and first moments', 'formula', 'shoelace over the clipped polygon, reconciled against the value the ledger uses'],
+    ['u_max, Dθ', 'engine value', 'support extremum over the boundary at θ'],
+    ['Station depths c', 'engine value', 'solved so a bar sits exactly at a code/rupture strain'],
+    ['Strain, stress, force, moment ledger', 'formula', 'the audit trail a reviewer follows term by term'],
+    [
+      'φ and design resultants',
+      usesAs3600CapacityFactors ? 'engine value + formula resultants' : 'formula',
+      usesAs3600CapacityFactors
+        ? 'AS 3600 Table 2.2.2 axial/bending interaction is evaluated by the code adapter; multiplication into P-M-M remains visible'
+        : 'the transition rule is algebra over εt, εy and the named φ factors'
+    ],
+    [`${fixedDirections.length} x fixed-station surface grid (MxMy_FixedP)`, 'engine value', 'fixed-P deliberately excludes adaptive vertices; two sentinels flag a stale import'],
+    ['Contour, ray query, plane cut', 'formula', 'this is the logic under audit, so it stays visible'],
+    ['Converged capacity-ray state (Equilibrium)', 'engine value', 'bracketed scalar solve on the design-surface boundary; the workbook verifies the state instead of re-deriving it'],
+    ['Capacity-state residual', 'formula', 'the workbook proves the stored state balances the scaled demand ray at capacity']
+  ]
+  provenance.forEach(([what, kind, why], index) => {
+    const r = provRow + 1 + index
+    inputSheet.getCell(r, 2).value = what
+    const kindCell = inputSheet.getCell(r, 3)
+    kindCell.value = kind
+    kindCell.font = { bold: kind !== 'formula', color: { argb: kind === 'formula' ? 'FF1F3864' : 'FF92400E' } }
+    kindCell.alignment = { horizontal: 'left' }
+    if (kind !== 'formula') kindCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CONST_FILL } }
+    noteCell(inputSheet, r, 5, why)
+  })
+
+  // ==========================================================================
+  // Materials — published curve for a tabulated steel law
+  // ==========================================================================
+  if (sLaw.kind === 'tabulated') {
+    const samples = orderedCurve((barSteel.stressStrain as Extract<SteelMaterial['stressStrain'], { type: 'user-curve' }>).points)
+    const matSheet = workbook.addWorksheet('Materials', { views: [{ state: 'frozen', ySplit: 4 }] })
+    matSheet.columns = [{ width: 4 }, { width: 8 }, { width: 16 }, { width: 16 }, { width: 60 }]
+    title(matSheet, 1, 'TABULATED STEEL LAW', 4)
+    noteCell(matSheet, 2, 2,
+      'A law given only as points cannot be written as algebra, so it is published here and every stress cell interpolates it with INDEX/MATCH — the same clamp-and-interpolate rule the engine uses.')
+    matSheet.mergeCells('B2:E2')
+    headerRow(matSheet, 4, ['#', 'ε', 'σ (MPa)'])
+    samples.forEach((sample, index) => {
+      const r = 5 + index
+      matSheet.getCell(r, 2).value = index + 1
+      matSheet.getCell(r, 3).value = sample.strain
+      matSheet.getCell(r, 3).numFmt = '0.000000'
+      matSheet.getCell(r, 4).value = sample.stress
+      matSheet.getCell(r, 4).numFmt = '#,##0.000'
+    })
+    defineName(`Materials!$C$5:$C$${4 + samples.length}`, 'Stl_eps')
+    defineName(`Materials!$D$5:$D$${4 + samples.length}`, 'Stl_sig')
+    const countRow = 6 + samples.length
+    matSheet.getCell(countRow, 2).value = 'points'
+    matSheet.getCell(countRow, 3).value = samples.length
+    defineName(`Materials!$C$${countRow}`, 'Stl_n')
+  }
+
+  // ==========================================================================
+  // Geometry
+  // ==========================================================================
+  const geomSheet = workbook.addWorksheet('Geometry', { views: [{ state: 'frozen', ySplit: 4 }] })
+  geomSheet.columns = [
+    { width: 4 }, { width: 8 }, { width: 8 }, { width: 8 },
+    { width: 14 }, { width: 14 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 40 }
+  ]
+  title(geomSheet, 1, 'SECTION GEOMETRY ABOUT THE ANALYSIS ORIGIN', 8)
+  noteCell(geomSheet, 2, 2,
+    'Ring vertices are input data. Area and first moments are recomputed here by the shoelace formula so the origin used by every other sheet is verifiable.')
+  geomSheet.mergeCells('B2:J2')
+
+  headerRow(geomSheet, 4, ['#', 'solid', 'ring', 'X (mm)', 'Y (mm)', 'X·Ynext − Xnext·Y', '(X+Xnext)·cross', '(Y+Ynext)·cross'])
+  const rings: Array<{ solid: number; ring: number; sign: 1 | -1; points: Array<{ x: number; y: number }> }> = [
+    ...section.solids.map((solid, index) => ({
+      solid: index + 1,
+      ring: 0,
+      sign: 1 as const,
+      points: solid.outer.map((point) => ({ x: point.x - origin.x, y: point.y - origin.y }))
+    })),
+    ...section.solids.flatMap((solid, index) =>
+      solid.holes.map((hole, holeIndex) => ({
+        solid: index + 1,
+        ring: holeIndex + 1,
+        sign: -1 as const,
+        points: hole.map((point) => ({ x: point.x - origin.x, y: point.y - origin.y }))
+      }))
+    )
+  ]
+  let geomRow = 5
+  const ringTotals: Array<{ sign: number; areaRow: number }> = []
+  for (const ring of rings) {
+    const first = geomRow
+    ring.points.forEach((point, index) => {
+      const next = first + ((index + 1) % ring.points.length)
+      const r = first + index
+      geomSheet.getCell(r, 2).value = index + 1
+      geomSheet.getCell(r, 3).value = ring.solid
+      geomSheet.getCell(r, 4).value = ring.ring === 0 ? 'outer' : `hole ${ring.ring}`
+      geomSheet.getCell(r, 5).value = point.x
+      geomSheet.getCell(r, 6).value = point.y
+      geomSheet.getCell(r, 5).numFmt = '#,##0.000'
+      geomSheet.getCell(r, 6).numFmt = '#,##0.000'
+      geomSheet.getCell(r, 7).value = { formula: `E${r}*F${next}-E${next}*F${r}` }
+      geomSheet.getCell(r, 8).value = { formula: `(E${r}+E${next})*G${r}` }
+      geomSheet.getCell(r, 9).value = { formula: `(F${r}+F${next})*G${r}` }
+      for (const c of [7, 8, 9]) geomSheet.getCell(r, c).numFmt = '#,##0.000'
+    })
+    const last = first + ring.points.length - 1
+    const totalRow = last + 1
+    geomSheet.getCell(totalRow, 4).value = 'ring total'
+    geomSheet.getCell(totalRow, 4).font = { bold: true }
+    geomSheet.getCell(totalRow, 7).value = { formula: `SUM(G${first}:G${last})/2` }
+    geomSheet.getCell(totalRow, 8).value = { formula: `SUM(H${first}:H${last})/6` }
+    geomSheet.getCell(totalRow, 9).value = { formula: `SUM(I${first}:I${last})/6` }
+    for (const c of [7, 8, 9]) {
+      geomSheet.getCell(totalRow, c).numFmt = '#,##0.000'
+      geomSheet.getCell(totalRow, c).font = { bold: true }
+    }
+    geomSheet.getCell(totalRow, 10).value = ring.ring === 0 ? 'signed area, Sx, Sy of this ring' : 'subtracted as a hole'
+    geomSheet.getCell(totalRow, 10).font = { italic: true, color: { argb: 'FF6B7280' } }
+    ringTotals.push({ sign: ring.sign, areaRow: totalRow })
+    geomRow = totalRow + 2
+  }
+  const netRow = geomRow
+  geomSheet.getCell(netRow, 4).value = 'NET'
+  geomSheet.getCell(netRow, 4).font = { bold: true }
+  /**
+   * Combine rings without assuming an input winding order.
+   *
+   * The shoelace area is orientation-signed, and so are its first moments — they flip together. So
+   * the area can be normalised with `ABS`, but a first moment must be normalised by the *area's*
+   * sign instead: taking its own absolute value would discard the side of the origin the ring sits
+   * on, which is the whole content of a first moment for an asymmetric section.
+   */
+  const netAreaFormula = ringTotals
+    .map((total) => `${total.sign < 0 ? '-' : '+'}ABS(G${total.areaRow})`)
+    .join('')
+    .replace(/^\+/, '')
+  const netMomentFormula = (column: string) =>
+    ringTotals
+      .map((total) => `${total.sign < 0 ? '-' : '+'}SIGN(G${total.areaRow})*${column}${total.areaRow}`)
+      .join('')
+      .replace(/^\+/, '')
+  geomSheet.getCell(netRow, 7).value = { formula: netAreaFormula }
+  geomSheet.getCell(netRow, 8).value = { formula: netMomentFormula('H') }
+  geomSheet.getCell(netRow, 9).value = { formula: netMomentFormula('I') }
+  for (const c of [7, 8, 9]) {
+    geomSheet.getCell(netRow, c).numFmt = '#,##0.000'
+    geomSheet.getCell(netRow, c).font = { bold: true }
+  }
+  defineName(`Geometry!$G$${netRow}`, 'Geom_Area')
+  geomSheet.getCell(netRow, 10).value = {
+    formula: `IF(ABS(H${netRow})+ABS(I${netRow})<=0.000001*ABS(G${netRow})*${Math.max(1, prepared.section.characteristicLength).toFixed(6)},"OK - the origin is the net centroid","CHECK - first moments about the origin are not zero")`
+  }
+  geomSheet.getCell(netRow, 10).font = { italic: true, color: { argb: 'FF6B7280' } }
+
+  const barHeaderRow = netRow + 3
+  sectionHeading(geomSheet, barHeaderRow - 1, 'Reinforcement schedule', 8)
+  headerRow(geomSheet, barHeaderRow, ['#', 'id', 'Ø (mm)', 'X (mm)', 'Y (mm)', 'As (mm²)', 'n·(X,Y) (mm)', 'As source'])
+  bars.forEach((bar, index) => {
+    const r = barHeaderRow + 1 + index
+    geomSheet.getCell(r, 2).value = bar.no
+    geomSheet.getCell(r, 3).value = bar.id
+    geomSheet.getCell(r, 4).value = bar.dia
+    geomSheet.getCell(r, 5).value = bar.x
+    geomSheet.getCell(r, 6).value = bar.y
+    geomSheet.getCell(r, 7).value = bar.storedArea ? bar.area : { formula: `PI()*D${r}^2/4` }
+    geomSheet.getCell(r, 9).value = bar.areaSource
+    geomSheet.getCell(r, 8).value = { formula: `COS(RADIANS(theta))*(E${r}+xc)+SIN(RADIANS(theta))*(F${r}+yc)` }
+    for (const c of [5, 6, 7, 8]) geomSheet.getCell(r, c).numFmt = '#,##0.000'
+  })
+  const barFirst = barHeaderRow + 1
+  const barLast = barHeaderRow + bars.length
+  defineName(`Geometry!$B$${barFirst}:$B$${barLast}`, 'Bar_No')
+  defineName(`Geometry!$E$${barFirst}:$E$${barLast}`, 'Bar_X')
+  defineName(`Geometry!$F$${barFirst}:$F$${barLast}`, 'Bar_Y')
+  defineName(`Geometry!$G$${barFirst}:$G$${barLast}`, 'Bar_As')
+  defineName(`Geometry!$H$${barFirst}:$H$${barLast}`, 'Bar_U')
+  const asTotalRow = barLast + 1
+  geomSheet.getCell(asTotalRow, 3).value = 'ΣAs'
+  geomSheet.getCell(asTotalRow, 3).font = { bold: true }
+  geomSheet.getCell(asTotalRow, 7).value = { formula: `SUM(G${barFirst}:G${barLast})` }
+  geomSheet.getCell(asTotalRow, 7).numFmt = '#,##0.0'
+  geomSheet.getCell(asTotalRow, 7).font = { bold: true }
+  noteCell(geomSheet, asTotalRow, 10,
+    'n·(X,Y) is the bar projection on the block normal, computed from the absolute coordinates the kernel uses.')
+
+  // ==========================================================================
+  // Block_Clip — the clipped compression polygon of every audited station
+  // ==========================================================================
+  const clipSheet = workbook.addWorksheet('Block_Clip', { views: [{ state: 'frozen', ySplit: 4 }] })
+  clipSheet.columns = [
+    { width: 4 }, { width: 10 }, { width: 8 }, { width: 8 }, { width: 14 }, { width: 14 },
+    { width: 18 }, { width: 18 }, { width: 18 }
+  ]
+  title(clipSheet, 1, 'CLIPPED COMPRESSION POLYGON, u ≥ u_max − β1·c', 8)
+  noteCell(clipSheet, 2, 2,
+    'The clipping itself is an engine value. Its area and first moments are recomputed here by shoelace so the numbers the Block ledger multiplies by σblock are independently verifiable.')
+  clipSheet.mergeCells('B2:I2')
+  headerRow(clipSheet, 4, ['station', 'ring', 'sign', 'X (mm)', 'Y (mm)', 'cross', '(X+Xn)·cross', '(Y+Yn)·cross'])
+
+  let clipRow = 5
+  const clipTotals = new Map<number, { areaRow: number; sxRow: number; syRow: number }>()
+  for (const station of stations) {
+    const ringRows: Array<{ sign: number; row: number }> = []
+    const clipRings: Array<{ sign: 1 | -1; points: Array<{ x: number; y: number }> }> = station.nominal.concrete.geometry
+      .flatMap((solid) => [
+        { sign: 1 as const, points: solid.outer },
+        ...solid.holes.map((hole) => ({ sign: -1 as const, points: hole }))
+      ])
+    if (clipRings.length === 0) {
+      const r = clipRow
+      clipSheet.getCell(r, 2).value = station.index
+      clipSheet.getCell(r, 3).value = 'empty'
+      clipSheet.getCell(r, 7).value = 0
+      clipSheet.getCell(r, 8).value = 0
+      clipSheet.getCell(r, 9).value = 0
+      clipTotals.set(station.index, { areaRow: r, sxRow: r, syRow: r })
+      clipRow = r + 1
+      continue
+    }
+    for (const [ringIndex, ring] of clipRings.entries()) {
+      const first = clipRow
+      ring.points.forEach((point, index) => {
+        const next = first + ((index + 1) % ring.points.length)
+        const r = first + index
+        clipSheet.getCell(r, 2).value = station.index
+        clipSheet.getCell(r, 3).value = ringIndex === 0 ? 'outer' : `hole ${ringIndex}`
+        clipSheet.getCell(r, 4).value = ring.sign
+        clipSheet.getCell(r, 5).value = point.x
+        clipSheet.getCell(r, 6).value = point.y
+        clipSheet.getCell(r, 5).numFmt = '#,##0.0000'
+        clipSheet.getCell(r, 6).numFmt = '#,##0.0000'
+        clipSheet.getCell(r, 7).value = { formula: `E${r}*F${next}-E${next}*F${r}` }
+        clipSheet.getCell(r, 8).value = { formula: `(E${r}+E${next})*G${r}` }
+        clipSheet.getCell(r, 9).value = { formula: `(F${r}+F${next})*G${r}` }
+      })
+      const last = first + ring.points.length - 1
+      const totalRow = last + 1
+      clipSheet.getCell(totalRow, 3).value = 'ring Σ'
+      clipSheet.getCell(totalRow, 2).value = station.index
+      clipSheet.getCell(totalRow, 7).value = { formula: `D${first}*ABS(SUM(G${first}:G${last})/2)` }
+      clipSheet.getCell(totalRow, 8).value = { formula: `D${first}*SIGN(SUM(G${first}:G${last}))*SUM(H${first}:H${last})/6` }
+      clipSheet.getCell(totalRow, 9).value = { formula: `D${first}*SIGN(SUM(G${first}:G${last}))*SUM(I${first}:I${last})/6` }
+      for (const c of [7, 8, 9]) clipSheet.getCell(totalRow, c).font = { bold: true }
+      ringRows.push({ sign: ring.sign, row: totalRow })
+      clipRow = totalRow + 1
+    }
+    const stationTotalRow = clipRow
+    clipSheet.getCell(stationTotalRow, 2).value = station.index
+    clipSheet.getCell(stationTotalRow, 3).value = 'station Σ'
+    clipSheet.getCell(stationTotalRow, 3).font = { bold: true }
+    const sum = (column: string) => ringRows.map((entry) => `${column}${entry.row}`).join('+')
+    clipSheet.getCell(stationTotalRow, 7).value = { formula: sum('G') }
+    clipSheet.getCell(stationTotalRow, 8).value = { formula: sum('H') }
+    clipSheet.getCell(stationTotalRow, 9).value = { formula: sum('I') }
+    for (const c of [7, 8, 9]) {
+      clipSheet.getCell(stationTotalRow, c).numFmt = '#,##0.000'
+      clipSheet.getCell(stationTotalRow, c).font = { bold: true }
+    }
+    clipTotals.set(station.index, { areaRow: stationTotalRow, sxRow: stationTotalRow, syRow: stationTotalRow })
+    clipRow = stationTotalRow + 2
+  }
+
+  // ==========================================================================
+  // Block — per-station concrete ledger at the audited direction
+  // ==========================================================================
+  const blockSheet = workbook.addWorksheet('Block', { views: [{ state: 'frozen', ySplit: 5, xSplit: 2 }] })
+  blockSheet.columns = [
+    { width: 4 }, { width: 8 }, { width: 14 }, { width: 14 }, { width: 16 }, { width: 16 }, { width: 16 },
+    { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 18 }
+  ]
+  title(blockSheet, 1, 'CONCRETE BLOCK LEDGER AT θ', 11)
+  noteCell(blockSheet, 2, 2,
+    'One row per neutral-axis state at the audited direction. Cc, Mcx and Mcy are formulas over σblock and the clipped moments recomputed on Block_Clip, so changing fck or α on Input propagates through the whole ledger.')
+  blockSheet.mergeCells('B2:M3')
+  blockSheet.getRow(2).height = 28
+  headerRow(blockSheet, 5, [
+    'st', 'c (mm)', 'a = β1·c', 'A_blk (mm²)', 'Sx (mm³)', 'Sy (mm³)',
+    'x̄ (mm)', 'ȳ (mm)', 'Cc (kN)', 'Mcx (kN·m)', 'Mcy (kN·m)', 'A engine (mm²)'
+  ])
+  const blockFirst = 6
+  stations.forEach((station, index) => {
+    const r = blockFirst + index
+    const totals = clipTotals.get(station.index)!
+    blockSheet.getCell(r, 2).value = station.index
+    blockSheet.getCell(r, 3).value = station.c
+    blockSheet.getCell(r, 3).numFmt = '#,##0.0000'
+    blockSheet.getCell(r, 4).value = { formula: `beta_1*C${r}` }
+    blockSheet.getCell(r, 5).value = { formula: `Block_Clip!G${totals.areaRow}` }
+    blockSheet.getCell(r, 6).value = { formula: `Block_Clip!H${totals.sxRow}` }
+    blockSheet.getCell(r, 7).value = { formula: `Block_Clip!I${totals.syRow}` }
+    blockSheet.getCell(r, 8).value = { formula: `IF(E${r}=0,0,F${r}/E${r})` }
+    blockSheet.getCell(r, 9).value = { formula: `IF(E${r}=0,0,G${r}/E${r})` }
+    blockSheet.getCell(r, 10).value = { formula: `sig_blk*E${r}/1000` }
+    blockSheet.getCell(r, 11).value = { formula: `sig_blk*(G${r}-yc*E${r})/1000000` }
+    blockSheet.getCell(r, 12).value = { formula: `sig_blk*(F${r}-xc*E${r})/1000000` }
+    const engineArea = blockSheet.getCell(r, 13)
+    engineArea.value = station.nominal.concrete.area
+    engineArea.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CONST_FILL } }
+    for (const c of [4, 5, 6, 7, 8, 9, 13]) blockSheet.getCell(r, c).numFmt = '#,##0.000'
+    for (const c of [10, 11, 12]) blockSheet.getCell(r, c).numFmt = '#,##0.000'
+  })
+  const blockLast = blockFirst + stations.length - 1
+  defineName(`Block!$B$${blockFirst}:$B$${blockLast}`, 'Blk_St')
+  defineName(`Block!$C$${blockFirst}:$C$${blockLast}`, 'Blk_c')
+  defineName(`Block!$J$${blockFirst}:$J$${blockLast}`, 'Blk_Cc')
+  defineName(`Block!$K$${blockFirst}:$K$${blockLast}`, 'Blk_Mcx')
+  defineName(`Block!$L$${blockFirst}:$L$${blockLast}`, 'Blk_Mcy')
+
+  const clipCheckRow = blockLast + 2
+  blockSheet.getCell(clipCheckRow, 2).value = 'shoelace vs engine'
+  blockSheet.getCell(clipCheckRow, 2).font = { bold: true }
+  blockSheet.getCell(clipCheckRow, 5).value = {
+    formula: `MAX(ABS(E${blockFirst}:E${blockLast}-M${blockFirst}:M${blockLast}))`
+  }
+  blockSheet.getCell(clipCheckRow, 5).numFmt = '0.000000'
+  blockSheet.getCell(clipCheckRow, 6).value = {
+    formula: `IF(E${clipCheckRow}<=0.000001*MAX(M${blockFirst}:M${blockLast}),"OK - the clipped polygon reproduces the area used by the kernel","CHECK - clipped area disagrees")`
+  }
+  noteCell(blockSheet, clipCheckRow, 8,
+    'Array comparison; on older Excel builds confirm with Ctrl+Shift+Enter.')
+
+  // ==========================================================================
+  // Steel — per bar, per station
+  // ==========================================================================
+  const steelSheet = workbook.addWorksheet('Steel', { views: [{ state: 'frozen', ySplit: 5, xSplit: 3 }] })
+  steelSheet.columns = [
+    { width: 4 }, { width: 8 }, { width: 8 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 12 },
+    { width: 12 }, { width: 14 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 14 }, { width: 14 }, { width: 14 }
+  ]
+  title(steelSheet, 1, 'REINFORCEMENT LEDGER — EVERY BAR AT EVERY STATION', 13)
+  noteCell(steelSheet, 2, 2,
+    'ε = εc,max·(1 − depth/c), with depth measured from the compression edge. Normally εc,max = εcu. For the KDS Appendix all-compression domain, εc,max follows the εc0 compression pivot until the neutral axis reaches the far edge. A bar inside the block carries σs − σblock.')
+  steelSheet.mergeCells('B2:P3')
+  steelSheet.getRow(2).height = 28
+  headerRow(steelSheet, 5, [
+    'st', 'bar', 'c (mm)', 'u (mm)', 'depth (mm)', 'ε', 'εt', 'σs (MPa)',
+    'in block', 'σdisp', 'σnet', 'F (kN)', 'Mx (kN·m)', 'My (kN·m)'
+  ])
+  let steelRow = 6
+  const steelFirst = steelRow
+  const stationRowRanges = new Map<number, { first: number; last: number }>()
+  for (const station of stations) {
+    const first = steelRow
+    bars.forEach((bar) => {
+      const r = steelRow
+      steelSheet.getCell(r, 2).value = station.index
+      steelSheet.getCell(r, 3).value = bar.no
+      steelSheet.getCell(r, 4).value = { formula: `INDEX(Blk_c,MATCH(B${r},Blk_St,0))` }
+      steelSheet.getCell(r, 5).value = { formula: `INDEX(Bar_U,MATCH(C${r},Bar_No,0))` }
+      steelSheet.getCell(r, 6).value = { formula: `u_max-E${r}` }
+      steelSheet.getCell(r, 7).value = {
+        formula: `IF(AND(ec_pivot>0,D${r}>d_theta),ec_pivot*D${r}/(D${r}-(1-ec_pivot/ecu)*d_theta),ecu)*(1-F${r}/D${r})`
+      }
+      steelSheet.getCell(r, 8).value = { formula: `MAX(0,-G${r})` }
+      const definition = stageSteel.find((item) => item.id === bar.steelMaterialId)
+      if (!definition) throw new ExcelExportError(`Steel material ${bar.steelMaterialId} is missing.`)
+      const rowLaw = usedSteelIds.size > 1 ? steelLaw(definition, true) : sLaw
+      steelSheet.getCell(r, 9).value = { formula: rowLaw.scalar(`G${r}`) }
+      steelSheet.getCell(r, 10).value = { formula: `IF(E${r}>=u_max-beta_1*D${r}-blk_tol,1,0)` }
+      steelSheet.getCell(r, 11).value = { formula: blockLaw.subtractDisplacedConcrete ? `J${r}*sig_blk` : '0' }
+      steelSheet.getCell(r, 12).value = { formula: `I${r}-K${r}` }
+      steelSheet.getCell(r, 13).value = { formula: `INDEX(Bar_As,MATCH(C${r},Bar_No,0))*L${r}/1000` }
+      steelSheet.getCell(r, 14).value = { formula: `M${r}*INDEX(Bar_Y,MATCH(C${r},Bar_No,0))/1000` }
+      steelSheet.getCell(r, 15).value = { formula: `M${r}*INDEX(Bar_X,MATCH(C${r},Bar_No,0))/1000` }
+      for (const c of [4, 5, 6, 9, 11, 12, 13, 14, 15]) steelSheet.getCell(r, c).numFmt = '#,##0.0000'
+      for (const c of [7, 8]) steelSheet.getCell(r, c).numFmt = '0.0000000'
+      steelRow += 1
+    })
+    stationRowRanges.set(station.index, { first, last: steelRow - 1 })
+  }
+  const steelLast = steelRow - 1
+  defineName(`Steel!$B$${steelFirst}:$B$${steelLast}`, 'Stl_St')
+  defineName(`Steel!$H$${steelFirst}:$H$${steelLast}`, 'Stl_Ept')
+  defineName(`Steel!$M$${steelFirst}:$M$${steelLast}`, 'Stl_F')
+  defineName(`Steel!$N$${steelFirst}:$N$${steelLast}`, 'Stl_Mx')
+  defineName(`Steel!$O$${steelFirst}:$O$${steelLast}`, 'Stl_My')
+
+  // ==========================================================================
+  // PM_Angle — station totals, phi and design resultants at the audited direction
+  // ==========================================================================
+  const pmSheet = workbook.addWorksheet('PM_Angle', { views: [{ state: 'frozen', ySplit: 6, xSplit: 2 }] })
+  pmSheet.columns = [
+    { width: 4 }, { width: 8 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 },
+    { width: 14 }, { width: 14 }, { width: 12 }, { width: 12 }, { width: 14 }, { width: 14 }, { width: 14 },
+    { width: 14 }, { width: 24 }
+  ]
+  title(pmSheet, 1, 'NOMINAL AND DESIGN RESULTANTS AT θ', 14)
+  noteCell(pmSheet, 2, 2, usesDesignMaterials
+    ? 'P = Cc + ΣFs using the reduced concrete and reinforcement strengths. Resultant φ = 1: no second resistance factor is applied. The characteristic reference surface is solved independently.'
+    : 'P = Cc + ΣFs. φ interpolates linearly between φc at εy and φt at εt,limit on the controlling (most tensile) bar — the same rule the adapter applies, written out. The engine columns are the solver\'s own design resultants; the Δ column is the reconciliation.')
+  pmSheet.mergeCells('B2:Q4')
+  pmSheet.getRow(2).height = 34
+  headerRow(pmSheet, 6, [
+    'st', 'c (mm)', 'Cc (kN)', 'ΣFs (kN)', 'Pn (kN)', 'Mnx (kN·m)', 'Mny (kN·m)',
+    'εt,ctrl', 'φ', 'class', 'φPn (kN)', 'φMnx (kN·m)', 'φMny (kN·m)',
+    'engine φPn', 'Δ (kN)'
+  ])
+  const pmFirst = 7
+  stations.forEach((station, index) => {
+    const r = pmFirst + index
+    const blockRow = blockFirst + index
+    const range = stationRowRanges.get(station.index)!
+    const designEval = designEvaluator({ neutralAxisAngle: theta, neutralAxisDepth: station.c })
+    pmSheet.getCell(r, 2).value = station.index
+    pmSheet.getCell(r, 3).value = { formula: `Block!C${blockRow}` }
+    pmSheet.getCell(r, 4).value = { formula: `Block!J${blockRow}` }
+    pmSheet.getCell(r, 5).value = { formula: `SUM(Steel!M${range.first}:M${range.last})` }
+    pmSheet.getCell(r, 6).value = { formula: `D${r}+E${r}` }
+    pmSheet.getCell(r, 7).value = { formula: `Block!K${blockRow}+SUM(Steel!N${range.first}:N${range.last})` }
+    pmSheet.getCell(r, 8).value = { formula: `Block!L${blockRow}+SUM(Steel!O${range.first}:O${range.last})` }
+    pmSheet.getCell(r, 9).value = { formula: `MAX(Steel!H${range.first}:H${range.last})` }
+    pmSheet.getCell(r, 10).value = usesAs3600CapacityFactors || usesDesignMaterials
+      ? station.phi
+      : { formula: `IF(I${r}<=epsy,phi_c,IF(I${r}>=ept_lim,phi_t,phi_c+(phi_t-phi_c)*(I${r}-epsy)/(ept_lim-epsy)))` }
+    pmSheet.getCell(r, 11).value = usesAs3600CapacityFactors || usesDesignMaterials
+      ? station.classification
+      : { formula: `IF(I${r}<=epsy,"compression",IF(I${r}>=ept_lim,"tension","transition"))` }
+    pmSheet.getCell(r, 12).value = { formula: `J${r}*F${r}` }
+    pmSheet.getCell(r, 13).value = { formula: `J${r}*G${r}` }
+    pmSheet.getCell(r, 14).value = { formula: `J${r}*H${r}` }
+    const enginePhiP = pmSheet.getCell(r, 15)
+    enginePhiP.value = designEval.resultants.P / 1e3
+    enginePhiP.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CONST_FILL } }
+    pmSheet.getCell(r, 16).value = { formula: `L${r}-O${r}` }
+    for (const c of [3, 4, 5, 6, 7, 8, 12, 13, 14, 15]) pmSheet.getCell(r, c).numFmt = '#,##0.000'
+    pmSheet.getCell(r, 9).numFmt = '0.0000000'
+    pmSheet.getCell(r, 10).numFmt = '0.0000'
+    pmSheet.getCell(r, 16).numFmt = '0.000000'
+  })
+  const pmLast = pmFirst + stations.length - 1
+  const pmCheckRow = pmLast + 2
+  pmSheet.getCell(pmCheckRow, 2).value = 'worst |Δ|'
+  pmSheet.getCell(pmCheckRow, 2).font = { bold: true }
+  pmSheet.getCell(pmCheckRow, 16).value = { formula: `MAX(ABS(P${pmFirst}:P${pmLast}))` }
+  pmSheet.getCell(pmCheckRow, 16).numFmt = '0.000000'
+  pmSheet.getCell(pmCheckRow, 12).value = {
+    formula: `IF(P${pmCheckRow}<=0.000001*MAX(ABS(O${pmFirst}:O${pmLast})),"OK - the sheet reproduces the design resultants","CHECK - the sheet and the solver disagree")`
+  }
+
+  // ==========================================================================
+  // MxMy_FixedP — sampled surface grid, contour at Pu and the demand-ray query
+  // ==========================================================================
+  const mmSheet = workbook.addWorksheet('MxMy_FixedP', { views: [{ state: 'frozen', ySplit: 7, xSplit: 1 }] })
+  mmSheet.columns = [{ width: 4 }, { width: 10 }, { width: 12 }, ...Array.from({ length: 12 }, () => ({ width: 14 }))]
+  title(mmSheet, 1, 'DESIGN SURFACE AT P = Pu, AND THE DEMAND-RAY QUERY', 13)
+  noteCell(mmSheet, 2, 2,
+    'The grid is the independent fixed Design surface with its configured stations and directions. Everything after it — the P-interval bracket, the linear interpolation to Pu, and the ray query at θ_L — is a formula. No adaptive vertices are generated.')
+  mmSheet.mergeCells('B2:N4')
+  mmSheet.getRow(2).height = 30
+
+  const gridDirections = fixedDirections
+  const gridByDirection = gridDirections.map((direction) => {
+    const points = designFixedSurfaceCore.points
+      .filter((point) => point.kind === 'state' && point.state && angularDistance(wrap(point.state.neutralAxisAngle), direction) <= 1e-9)
+      .sort((a, b) => (b.state!.neutralAxisDepth - a.state!.neutralAxisDepth))
+    return { direction, points }
+  })
+  headerRow(mmSheet, 7, ['dir', 'θ (deg)', 'row', 'P (kN)', 'Mx (kN·m)', 'My (kN·m)', 'P next', 'Mx next', 'My next', 'brackets Pu', 't', 'Mx @ Pu', 'My @ Pu'])
+  let mmRow = 8
+  const contourRows: number[] = []
+  gridByDirection.forEach((entry, directionIndex) => {
+    const first = mmRow
+    entry.points.forEach((point, index) => {
+      const r = mmRow
+      const isLast = index === entry.points.length - 1
+      mmSheet.getCell(r, 2).value = directionIndex + 1
+      mmSheet.getCell(r, 3).value = deg(entry.direction)
+      mmSheet.getCell(r, 4).value = index + 1
+      for (const [offset, value] of [[0, point.resultants.P / 1e3], [1, point.resultants.Mx / 1e6], [2, point.resultants.My / 1e6]] as const) {
+        const cell = mmSheet.getCell(r, 5 + offset)
+        cell.value = value
+        cell.numFmt = '#,##0.000'
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CONST_FILL } }
+      }
+      if (!isLast) {
+        mmSheet.getCell(r, 8).value = { formula: `E${r + 1}` }
+        mmSheet.getCell(r, 9).value = { formula: `F${r + 1}` }
+        mmSheet.getCell(r, 10).value = { formula: `G${r + 1}` }
+        mmSheet.getCell(r, 11).value = { formula: `IF(AND(Pu>=MIN(E${r},H${r}),Pu<=MAX(E${r},H${r}),E${r}<>H${r}),1,0)` }
+        mmSheet.getCell(r, 12).value = { formula: `IF(K${r}=1,(Pu-E${r})/(H${r}-E${r}),"")` }
+        mmSheet.getCell(r, 13).value = { formula: `IF(K${r}=1,F${r}+L${r}*(I${r}-F${r}),"")` }
+        mmSheet.getCell(r, 14).value = { formula: `IF(K${r}=1,G${r}+L${r}*(J${r}-G${r}),"")` }
+        for (const c of [8, 9, 10, 13, 14]) mmSheet.getCell(r, c).numFmt = '#,##0.000'
+        contourRows.push(r)
+      }
+      mmRow += 1
+    })
+    void first
+    mmRow += 1
+  })
+  const gridFirst = 8
+  const gridLast = mmRow - 1
+
+  const rayRow = mmRow + 1
+  sectionHeading(mmSheet, rayRow, 'Demand-ray query at θ_L', 12)
+  const queryRows: Array<[string, string, string]> = [
+    ['contour crossings at Pu', `SUMPRODUCT(--(K${gridFirst}:K${gridLast}=1))`, 'number of grid edges the P = Pu plane cuts'],
+    ['M(θ) on the contour', `IFERROR(SUMPRODUCT((K${gridFirst}:K${gridLast}=1)*(ABS(MOD(DEGREES(ATAN2(IF(M${gridFirst}:M${gridLast}="",1,M${gridFirst}:M${gridLast}),IF(N${gridFirst}:N${gridLast}="",0,N${gridFirst}:N${gridLast})))-theta_L+180,360)-180)<=6)*SQRT(IF(M${gridFirst}:M${gridLast}="",0,M${gridFirst}:M${gridLast})^2+IF(N${gridFirst}:N${gridLast}="",0,N${gridFirst}:N${gridLast})^2))/MAX(1,SUMPRODUCT((K${gridFirst}:K${gridLast}=1)*(ABS(MOD(DEGREES(ATAN2(IF(M${gridFirst}:M${gridLast}="",1,M${gridFirst}:M${gridLast}),IF(N${gridFirst}:N${gridLast}="",0,N${gridFirst}:N${gridLast})))-theta_L+180,360)-180)<=6))),"")`, 'mean radius of the contour points within 6° of the demand direction'],
+    ['Mu demand', 'Mu', 'from Input'],
+    ['fixed-P utilization', `IFERROR(Mu/C${rayRow + 2},"")`, 'Mu / M(θ) — a diagnostic, not the governing check']
+  ]
+  queryRows.forEach(([label, formula, why], index) => {
+    const r = rayRow + 1 + index
+    mmSheet.getCell(r, 2).value = label
+    mmSheet.getCell(r, 3).value = { formula }
+    mmSheet.getCell(r, 3).numFmt = '#,##0.0000'
+    noteCell(mmSheet, r, 5, why)
+  })
+  const engineMbRow = rayRow + 6
+  mmSheet.getCell(engineMbRow, 2).value = 'engine M(θ) on the triangulated surface'
+  const engineMbCell = mmSheet.getCell(engineMbRow, 3)
+  engineMbCell.value = engineBoundary ? engineBoundary.M / 1e6 : 'no intersection'
+  engineMbCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CONST_FILL } }
+  if (engineBoundary) engineMbCell.numFmt = '#,##0.0000'
+  noteCell(mmSheet, engineMbRow, 5,
+    'The engine cuts a triangulated surface; this sheet can only interpolate the sampled grid it carries. Both readings are reported instead of pretending they are identical.')
+
+  // ==========================================================================
+  // PM_Theta — independent geometric demand-plane diagnostic
+  // ==========================================================================
+  const ptSheet = workbook.addWorksheet('PM_Theta', { views: [{ state: 'frozen', ySplit: 6 }] })
+  ptSheet.columns = [{ width: 4 }, { width: 10 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 46 }]
+  title(ptSheet, 1, 'GEOMETRIC P–Mθ DEMAND-PLANE DIAGNOSTIC', 5)
+  noteCell(ptSheet, 2, 2,
+    'Independent geometric demand-plane diagnostic on the configured fixed Design surface. The application Vertical chart is instead a direct exact-β meridian recovered from the valid equilibrium state.')
+  ptSheet.mergeCells('B2:G3')
+  const planePaths = sliceMomentPlane(
+    activeDesignSurface.points,
+    thetaLoad,
+    activeDesignSurface.triangles
+  )
+  headerRow(ptSheet, 6, ['#', 'path', 'P (kN)', 'Mθ (kN·m)', 'Mx (kN·m)', 'My (kN·m)'])
+  let ptRow = 7
+  planePaths.forEach((path, pathIndex) => {
+    path.points.forEach((point, index) => {
+      const r = ptRow
+      ptSheet.getCell(r, 2).value = index + 1
+      ptSheet.getCell(r, 3).value = pathIndex + 1
+      for (const [offset, value] of [[0, point.P / 1e3], [1, point.M / 1e6], [2, point.Mx / 1e6], [3, point.My / 1e6]] as const) {
+        const cell = ptSheet.getCell(r, 4 + offset)
+        cell.value = value
+        cell.numFmt = '#,##0.000'
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CONST_FILL } }
+      }
+      ptRow += 1
+    })
+    ptRow += 1
+  })
+  if (planePaths.length === 0) {
+    ptSheet.getCell(7, 2).value = 'The demand direction does not cut the design surface.'
+  }
+
+  // ==========================================================================
+  // Equilibrium — the converged inverse state, verified by formula
+  // ==========================================================================
+  const eqSheet = workbook.addWorksheet('Equilibrium', { views: [{ showGridLines: false }] })
+  eqSheet.columns = [{ width: 4 }, { width: 34 }, { width: 20 }, { width: 12 }, { width: 66 }]
+  title(eqSheet, 1, input.checkBasis === 'constantAxial'
+    ? 'CONVERGED EQUIVALENT-BLOCK CAPACITY STATE ON THE CONSTANT-P RAY'
+    : 'CONVERGED EQUIVALENT-BLOCK CAPACITY STATE ON THE DEMAND RAY', 4)
+  if (!demand || !demand.equivalentBlock) {
+    eqSheet.getCell(3, 2).value = input.loadcase
+      ? 'The solver did not converge on an equilibrium state for this demand.'
+      : 'No load combination was selected, so there is no inverse state to verify.'
+    eqSheet.getCell(3, 2).font = { bold: true }
+    if (demand) noteCell(eqSheet, 4, 2, demand.message)
+  } else {
+    const trace = demand.equivalentBlock
+    const constantAxial = input.checkBasis === 'constantAxial'
+    const state = { neutralAxisAngle: trace.neutralAxisAngle, neutralAxisDepth: trace.neutralAxisDepth }
+    const nominal = nominalEvaluator(state).source as NominalBlockEvaluation
+    const designEval = designEvaluator(state)
+    const phi = typeof designEval.metadata?.phi === 'number' ? designEval.metadata.phi : 1
+    let eqRow = 3
+    const entries: Array<[string, number | string, string, string?]> = [
+      ['θ* (block normal)', deg(trace.neutralAxisAngle), 'deg', 'solved direction; not the demand moment direction'],
+      ['c*', trace.neutralAxisDepth, 'mm', 'solved neutral-axis depth'],
+      ['a* = β1·c*', trace.blockDepth, 'mm'],
+      ['A_blk*', nominal.concrete.area, 'mm²', 'exact clipping at the solved state'],
+      ['Cc*', nominal.concrete.force / 1e3, 'kN'],
+      ['ΣFs*', (nominal.resultants.P - nominal.concrete.force) / 1e3, 'kN'],
+      ['Pn*', nominal.resultants.P / 1e3, 'kN'],
+      ['Mnx*', nominal.resultants.Mx / 1e6, 'kN·m'],
+      ['Mny*', nominal.resultants.My / 1e6, 'kN·m'],
+      ['εt,ctrl', nominal.controllingTensileStrain, '-', `controlling bar ${nominal.controllingBarId ?? 'n/a'}`],
+      ['φ*', phi, '-', String(designEval.metadata?.classification ?? '')],
+      [
+        constantAxial ? 'inverse constant-P moment utilization' : 'inverse proportional utilization',
+        demand.inverseProportionalUtilization ?? 'not found',
+        '-',
+        constantAxial ? 'exact constant-P moment ratio from the inverse solver; not the governing adequacy value'
+          : 'exact capacity-ray diagnostic from the inverse solver; not the governing adequacy value'
+      ],
+      [
+        'capacity load factor λ',
+        demand.inverseProportionalUtilization !== null &&
+        demand.inverseProportionalUtilization !== undefined &&
+        demand.inverseProportionalUtilization > 0
+          ? 1 / demand.inverseProportionalUtilization
+          : 'not found',
+        '-',
+        constantAxial ? 'P capacity = Pu; moment capacity = λ × demand moments; inverse moment ratio = 1/λ'
+          : 'boundary capacity = λ × factored demand; inverse proportional utilization = 1/λ'
+      ],
+      ['axial cap governed', demand.resistance?.axialCapApplied ? 'yes' : 'no', '']
+    ]
+    const rowOf = new Map<string, number>()
+    for (const [label, value, unit, note] of entries) {
+      eqSheet.getCell(eqRow, 2).value = label
+      const cell = eqSheet.getCell(eqRow, 3)
+      cell.value = value
+      if (typeof value === 'number') {
+        cell.numFmt = Math.abs(value) < 0.01 && value !== 0 ? '0.00000000' : '#,##0.0000'
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CONST_FILL } }
+      }
+      eqSheet.getCell(eqRow, 4).value = unit
+      if (note) noteCell(eqSheet, eqRow, 5, note)
+      rowOf.set(label, eqRow)
+      eqRow += 1
+    }
+    eqRow += 1
+    sectionHeading(eqSheet, eqRow, constantAxial ? 'Residual against the constant-P ray at capacity' : 'Residual against the scaled demand ray at capacity', 4)
+    eqRow += 1
+    const phiRow = rowOf.get('φ*')!
+    const lambdaRow = rowOf.get('capacity load factor λ')!
+    const residuals: Array<[string, string, string]> = [
+      ['P capacity residual', `C${phiRow}*C${rowOf.get('Pn*')!}-${constantAxial ? 'Pu' : `C${lambdaRow}*Pu`}`, 'kN'],
+      ['Mx capacity residual', `C${phiRow}*C${rowOf.get('Mnx*')!}-C${lambdaRow}*Mux`, 'kN·m'],
+      ['My capacity residual', `C${phiRow}*C${rowOf.get('Mny*')!}-C${lambdaRow}*Muy`, 'kN·m']
+    ]
+    const residualRows: number[] = []
+    for (const [label, formula, unit] of residuals) {
+      eqSheet.getCell(eqRow, 2).value = label
+      eqSheet.getCell(eqRow, 3).value = { formula }
+      eqSheet.getCell(eqRow, 3).numFmt = '0.000000'
+      eqSheet.getCell(eqRow, 4).value = unit
+      residualRows.push(eqRow)
+      eqRow += 1
+    }
+    eqSheet.getCell(eqRow, 2).value = 'relative residual'
+    eqSheet.getCell(eqRow, 2).font = { bold: true }
+    const designRows = [rowOf.get('Pn*')!, rowOf.get('Mnx*')!, rowOf.get('Mny*')!]
+    const demandNames = ['Pu', 'Mux', 'Muy']
+    eqSheet.getCell(eqRow, 3).value = {
+      formula: `SQRT(${residualRows.map((r, index) => `(C${r}/MAX(1,ABS(C${phiRow}*C${designRows[index]}),ABS(${constantAxial && index === 0 ? '' : `C${lambdaRow}*`}${demandNames[index]})))^2`).join('+')})`
+    }
+    eqSheet.getCell(eqRow, 3).numFmt = '0.000E+00'
+    eqSheet.getCell(eqRow, 5).value = {
+      formula: constantAxial
+        ? `IF(C${eqRow}<=0.0001,"capacity state reconciled with the constant-P ray","CHECK - the stored state does not balance the constant-P ray")`
+        : `IF(C${eqRow}<=0.0001,"capacity state reconciled with the scaled demand ray","CHECK - the stored state does not balance the scaled demand ray")`
+    }
+    eqSheet.getCell(eqRow, 5).font = { italic: true, color: { argb: 'FF6B7280' } }
+    noteCell(eqSheet, eqRow + 2, 2,
+      constantAxial ? 'The constant-P solver holds P = Pu and scales only moments by λ to the boundary. This residual verifies that state; it is not an independent check of the surface.'
+        : 'A general demand does not lie on the design surface. The proportional solver scales it by λ to the boundary; this residual verifies that boundary state. It is not an independent check of the surface.')
+  }
+
+  // ==========================================================================
+  // Design_Check — governing assessment, written last so it can cite the sheets
+  // ==========================================================================
+  const checkSheet = workbook.addWorksheet('Design_Check', { views: [{ showGridLines: false }] })
+  checkSheet.columns = [{ width: 4 }, { width: 34 }, { width: 22 }, { width: 12 }, { width: 70 }]
+  title(checkSheet, 1, 'GOVERNING DESIGN-RESISTANCE CHECK', 4)
+  noteCell(checkSheet, 2, 2,
+    'The design surface is authoritative for acceptance. Nominal resultants stay available for audit and are never compared directly with factored ULS demand.')
+  checkSheet.mergeCells('B2:E3')
+  checkSheet.getRow(2).height = 28
+
+  let checkRow = 5
+  const checkEntries: Array<[string, number | string, string, string?]> = [
+    ['calculation profile', profile.label, ''],
+    ['resistance profile', basis.identity.document, '', basis.identity.methodId],
+    ['verification status', basis.verificationStatus, '', 'preview status only; not an engineering approval'],
+    ['resistance format', usesDesignMaterials ? 'two-pass design-material reevaluation' : 'global resultant factor', '', usesDesignMaterials ? 'material strengths are reduced before equilibrium; no resultant φ is added' : 'one φ scales the complete P-Mx-My resultant'],
+    ['transverse reinforcement', basis.format === 'globalResultantFactor' ? basis.transverseReinforcement : 'not used by this resistance route', ''],
+    ['axial cap', basis.format === 'globalResultantFactor' && basis.axialCapEnabled ? `${capRatio} × factored compression pole` : 'not applied', ''],
+    ['demand basis', input.loadcase?.actionBasis ?? 'none selected', '', 'the governing check accepts factored ULS only']
+  ]
+  for (const [label, value, unit, note] of checkEntries) {
+    checkSheet.getCell(checkRow, 2).value = label
+    checkSheet.getCell(checkRow, 3).value = value
+    checkSheet.getCell(checkRow, 3).alignment = { horizontal: 'left' }
+    checkSheet.getCell(checkRow, 4).value = unit
+    if (note) noteCell(checkSheet, checkRow, 5, note)
+    checkRow += 1
+  }
+  checkRow += 1
+  sectionHeading(checkSheet, checkRow, 'Factored ULS assessment', 4)
+  checkRow += 1
+  if (!input.loadcase) {
+    checkSheet.getCell(checkRow, 2).value = 'No load combination selected.'
+  } else {
+    const rows: Array<[string, number | string, string, string?]> = [
+      ['Pu', input.loadcase.P / 1e3, 'kN'],
+      ['Mux', input.loadcase.Mx / 1e6, 'kN·m'],
+      ['Muy', input.loadcase.My / 1e6, 'kN·m'],
+      ['governing utilization', demand?.utilization ?? 'no intersection', '-', checkBasisLabels(input.checkBasis).basis],
+      ['kernel adequacy', demand?.designCheck.evaluated
+        ? demand.designCheck.adequacy.toUpperCase()
+        : 'NOT CHECKED', '', 'three-state decision copied from the kernel'],
+      ['UR interval', demand?.designCheck.evaluated &&
+        demand.designCheck.utilizationInterval.lower !== null &&
+        demand.designCheck.utilizationInterval.upper !== null
+        ? `${demand.designCheck.utilizationInterval.lower.toFixed(6)} – ${demand.designCheck.utilizationInterval.upper.toFixed(6)}`
+        : 'unavailable', '', demand?.designCheck.evaluated
+          ? demand.designCheck.utilizationInterval.evidence
+          : 'the governing Design-surface check was not composed'],
+      input.checkBasis === 'constantAxial'
+        ? ['proportional 3D utilization', demand?.proportionalUtilization ?? 'n/a', '-', 'secondary diagnostic along the origin ray']
+        : ['fixed-P utilization', demand?.fixedPUtilization ?? 'n/a', '-', 'secondary diagnostic at constant axial force'],
+      ['solver converged', demand?.converged ? 'yes' : 'no', ''],
+      [
+        'strain admissible',
+        demand?.admissibility?.evaluated === false ? 'not evaluated' : demand?.admissibility?.ok ? 'yes' : 'no',
+        '',
+        demand?.admissibility?.evaluated === false
+          ? 'A code-envelope face has no unique material strain state, so admissibility cannot be evaluated there.'
+          : demand?.admissibility?.violations
+              .map((violation) => `${violation.code}: ${violation.value} exceeds ${violation.limit}`)
+              .join('; ') ?? ''
+      ],
+      ['message', demand?.message ?? '', '']
+    ]
+    for (const [label, value, unit, note] of rows) {
+      checkSheet.getCell(checkRow, 2).value = label
+      const cell = checkSheet.getCell(checkRow, 3)
+      cell.value = value
+      if (typeof value === 'number') cell.numFmt = '#,##0.0000'
+      else cell.alignment = { horizontal: 'left', wrapText: true }
+      checkSheet.getCell(checkRow, 4).value = unit
+      if (note) noteCell(checkSheet, checkRow, 5, note)
+      checkRow += 1
+    }
+    checkSheet.getCell(checkRow + 1, 2).value = 'verdict'
+    checkSheet.getCell(checkRow + 1, 2).font = { bold: true }
+    checkSheet.getCell(checkRow + 1, 3).value = demand?.designCheck.evaluated
+      ? demand.designCheck.adequacy.toUpperCase()
+      : 'NOT CHECKED'
+    checkSheet.getCell(checkRow + 1, 3).font = { bold: true }
+    noteCell(checkSheet, checkRow + 1, 5,
+      'Copied from the kernel uncertainty-aware decision; inverse convergence and strain admissibility are diagnostics, not the adequacy rule.')
+    noteCell(checkSheet, checkRow + 3, 2,
+      'Preview output. It is not an accepted design result and must not be released as a design report.')
+    checkSheet.mergeCells(checkRow + 3, 2, checkRow + 3, 5)
+  }
+
+  appendPresentationSummary(workbook, { ...input, surface })
+  return workbook
+}
+
+export const exportEquivalentBlockWorkbook = async (input: EquivalentBlockExcelInput) => {
+  const workbook = await buildEquivalentBlockWorkbook(input)
+  const buffer = await workbook.xlsx.writeBuffer()
+  return new Blob([buffer as ArrayBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  })
+}

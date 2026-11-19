@@ -1,0 +1,333 @@
+{
+  "schema": "pm-column-project",
+  "version": 1,
+  "meta": {
+    "id": 1,
+    "name": "KDS-EB 01 - Rectangle 400 x 500 mm, 8 bars",
+    "information": {
+      "client": "Reference benchmark",
+      "company": "P-M Column Designer",
+      "designedBy": "Engineering example",
+      "checkedBy": "",
+      "address": "",
+      "date": "2026-08-04"
+    },
+    "createdAt": "2026-08-04T00:00:00.000Z",
+    "updatedAt": "2026-08-04T00:00:00.000Z"
+  },
+  "inputs": {
+    "calculationProfileId": "kds-142020-equivalent-block",
+    "geometry": {
+      "id": 1,
+      "name": "Benchmark 01 - Rectangle 400 x 500 mm, 8 bars",
+      "outers": [
+        {
+          "id": 1,
+          "points": [
+            {
+              "id": 1,
+              "x": -200,
+              "y": -250
+            },
+            {
+              "id": 2,
+              "x": 200,
+              "y": -250
+            },
+            {
+              "id": 3,
+              "x": 200,
+              "y": 250
+            },
+            {
+              "id": 4,
+              "x": -200,
+              "y": 250
+            }
+          ],
+          "holes": []
+        }
+      ],
+      "rebars": [
+        {
+          "id": 1,
+          "dia": 22.56758334191025,
+          "x": -150,
+          "y": -200,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 2,
+          "dia": 22.56758334191025,
+          "x": 0,
+          "y": -200,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 3,
+          "dia": 22.56758334191025,
+          "x": 150,
+          "y": -200,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 4,
+          "dia": 22.56758334191025,
+          "x": 150,
+          "y": 0,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 5,
+          "dia": 22.56758334191025,
+          "x": 150,
+          "y": 200,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 6,
+          "dia": 22.56758334191025,
+          "x": 0,
+          "y": 200,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 7,
+          "dia": 22.56758334191025,
+          "x": -150,
+          "y": 200,
+          "steelMaterialId": 1
+        },
+        {
+          "id": 8,
+          "dia": 22.56758334191025,
+          "x": -150,
+          "y": 0,
+          "steelMaterialId": 1
+        }
+      ]
+    },
+    "materials": {
+      "strainSign": "compression-positive",
+      "concrete": {
+        "id": 1,
+        "name": "Concrete C40",
+        "standard": "KDS",
+        "fck": 40,
+        "mc": 2350,
+        "stressStrain": {
+          "type": "kds-parabolic",
+          "n": 2,
+          "eps0": 0.002,
+          "epsCu": 0.0033,
+          "alpha": 0.85
+        },
+        "limits": {
+          "epsCu": 0.0033,
+          "ignoreTension": true,
+          "eps0": 0.002
+        },
+        "elasticModulus": 30967.78031257298,
+        "factors": {
+          "alpha": 0.85
+        }
+      },
+      "steel": [
+        {
+          "id": 1,
+          "name": "Rebar fy 420",
+          "standard": "KDS",
+          "fy": 420,
+          "elasticModulus": 200000,
+          "stressStrain": {
+            "type": "elastic-perfectly-plastic"
+          },
+          "limits": {
+            "epsY": 0.0021
+          }
+        }
+      ],
+      "defaults": {
+        "steelMaterialId": 1
+      }
+    },
+    "loadings": {
+      "combinations": [
+        {
+          "id": 1,
+          "name": "Audit ray 55% - NA 26.93 deg, c/D 0.55",
+          "actionBasis": "factoredULS",
+          "P": 732333.9960725956,
+          "Mx": 99910508.65391329,
+          "My": 129855737.35632461
+        },
+        {
+          "id": 2,
+          "name": "Cardinal audit 85% - NA 0 deg, c/D 0.55",
+          "actionBasis": "factoredULS",
+          "P": 2267460,
+          "Mx": 1.2692374487717945e-8,
+          "My": 242260200
+        },
+        {
+          "id": 3,
+          "name": "Cardinal audit 85% - NA 90 deg, c/D 0.55",
+          "actionBasis": "factoredULS",
+          "P": 1657058,
+          "Mx": 338306800,
+          "My": -2.5727786123752594e-10
+        }
+      ]
+    },
+    "analysis": {
+      "optionsVersion": 1,
+      "methodId": "equivalent-block-surface-v1",
+      "neutralAxisStations": {
+        "basedOn": "unified-27-v2",
+        "values": [
+          {
+            "type": "depth-ratio",
+            "ratio": 3
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 2
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1.5
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1.2
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1.1
+          },
+          {
+            "type": "depth-ratio",
+            "ratio": 1
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 0
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 0.25
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 0.375
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 0.5
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 0.625
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 0.75
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 0.875
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 1
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 1.25
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 1.5
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 1.75
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 2
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 2.5
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 3
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 4
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 5
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 7.5
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 10
+          },
+          {
+            "type": "bar-tension-yield-ratio",
+            "ratio": 20
+          }
+        ],
+        "refinement": {
+          "type": "fixed"
+        }
+      },
+      "directions": {
+        "seedCount": 36,
+        "startDeg": 0,
+        "refinement": {
+          "type": "fixed"
+        }
+      }
+    },
+    "design": {
+      "basisVersion": 2,
+      "identity": {
+        "organization": "MOLIT/KDS",
+        "document": "KDS 2024 current set · resistance: KDS 14 20 10:2021 + KDS 14 20 20:2022",
+        "edition": "2024 partial-revision framework (effective 2025-01-05)",
+        "amendment": "MOLIT Notice 2024-879, 2024-12-30",
+        "methodId": "kds-2024-current-set-global-strength-reduction",
+        "profileVersion": "1.0.0"
+      },
+      "profileId": "kds-2024-current-set",
+      "verificationStatus": "draft",
+      "modified": false,
+      "overrideReason": "",
+      "format": "globalResultantFactor",
+      "transverseReinforcement": "other",
+      "axialCapEnabled": true,
+      "factors": {
+        "phiCompressionOther": 0.65,
+        "phiCompressionSpiral": 0.7,
+        "phiTension": 0.85,
+        "axialCapOther": 0.8,
+        "axialCapSpiral": 0.85
+      },
+      "transition": {
+        "type": "fixed-or-yield-multiple",
+        "yieldStressThreshold": 400,
+        "fixedStrainLimit": 0.005,
+        "highStrengthYieldMultiple": 2.5
+      }
+    }
+  }
+}
